@@ -19,26 +19,14 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from decktalk.artifacts import RecordingLog
 from decktalk.errors import Exit
-from decktalk.findings import Code
 from decktalk.template import EXAMPLES, STARTER
-from support.commands import HOSTILE_DIRECTORY, clean_environ, codes, flat
-from support.timing_policy import (
-    EVERY_PACKAGED_PROJECT_SECONDS,
-    FIRST_FETCH_SECONDS,
-    LATE_FRAME,
-    assert_build_finished,
-    budget,
-    faults,
-    gates_timing,
-    judged,
-    note_late_reveals,
-)
+from support.commands import HOSTILE_DIRECTORY, clean_environ, errors, flat
+from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
 BUILD_BUDGET_SECONDS = budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
 """How long one packaged project may take to build, which the lesson example sets and nothing else.
@@ -62,11 +50,6 @@ PACKAGED = [NO_EXAMPLE, *(example.name for example in EXAMPLES if example.shippe
 IDS = [STARTER, *(name for name in PACKAGED[1:] if name)]
 
 
-def sentences(doc: dict[str, Any], wanted: tuple[Code, ...]) -> list[str]:
-    """What the run said about the codes named, which is the news a runner that reports prints."""
-    return [str(row["message"]) for row in doc["findings"] if Code(row["code"]) in wanted]
-
-
 def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[str]:
     """One `decktalk` command, run as the subprocess an author or an agent would run.
 
@@ -84,17 +67,12 @@ def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[
 
 
 @pytest.mark.parametrize("example", PACKAGED, ids=IDS)
-def test_a_packaged_project_builds_and_verifies_without_a_voice(
-    tmp_path: Path, example: str | None, pytestconfig: pytest.Config
-) -> None:
+def test_a_packaged_project_builds_and_verifies_without_a_voice(tmp_path: Path, example: str | None) -> None:
     """`init`, then `build --no-spend`, then `verify`, on a project straight out of the wheel.
 
-    This suite runs whole builds one after another on a runner that renders in software, so its leg
-    reports cue timing rather than gating it and `tests/support/timing_policy.py` says what that
-    means. Nothing else is weakened: a cue that never changed the picture, a phrase the page never
-    found and a page that threw fail this test on every runner it is ever run on.
+    The recorder steps the section clock, so a runner that renders in software records the same
+    frames a fast one does, and every finding fails this test on every runner it is ever run on.
     """
-    gate = gates_timing(pytestconfig)
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
     name = example or STARTER
@@ -109,7 +87,7 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
 
     built = decktalk("--project", str(root), "build", "--no-spend", "--json", cwd=home, cache=home)
     report = flat(built.stdout)
-    assert_build_finished(built.returncode, codes(report), built.stderr, pytestconfig)
+    assert built.returncode == Exit.FOUND_NOTHING, built.stderr
     film = root / report["film"]
     assert film.is_file() and film.stat().st_size > 0
 
@@ -120,15 +98,13 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
         assert list(log.findings) == [], (log_path.name, log.findings)
         assert list(log.recording.external) == [], (log_path.name, log.recording.external)
 
-    # Read the finished film back. No packaged project may raise an error this runner
-    # judges, because that is a cue that did not land. An example is a project that was really made
+    # Read the finished film back. No packaged project may raise an error, because that is a cue
+    # that did not land. An example is a project that was really made
     # and its art is its own, so a reveal of its that sits at the measurement floor may be
     # a warning. What it may never be is a missed cue.
     checked = decktalk("--project", str(root), "verify", "--json", "--fail-on", "never", cwd=home, cache=home)
     measured = flat(checked.stdout)
-    assert faults(codes(measured), gate) == [], measured["findings"]
+    assert errors(measured) == [], measured["findings"]
     if example is NO_EXAMPLE:
         clean = "the starter is the page every author copies, so it is clean"
-        assert judged(codes(measured), gate) == [], f"{clean}: {measured['findings']}"
-    if news := sentences(measured, LATE_FRAME):
-        note_late_reveals(pytestconfig, name, news)
+        assert measured["findings"] == [], f"{clean}: {measured['findings']}"

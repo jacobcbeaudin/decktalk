@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import subprocess
 import sys
 import threading
 import time
@@ -362,3 +363,36 @@ def test_a_reader_that_fails_fails_the_call_rather_than_ending_it_quietly(monkey
 
     with pytest.raises(ValueError, match="not the size"):
         ffmpeg.stream("-i", "film.mp4", "-", into=refuse)
+
+
+def feeding(monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+    """Replace the tool with a Python process running `script`, with its input piped as a fed call pipes it."""
+
+    def fake(_cmd: list[str], *, stdin: int = subprocess.DEVNULL):
+        with children_see(os.environ):
+            return SPAWN([sys.executable, "-c", script], stdin=stdin)
+
+    monkeypatch.setattr(ffmpeg, "_spawn", fake)
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_fed_call_hands_the_tool_every_byte_in_the_order_it_was_written(monkeypatch, tmp_path):
+    """A recording is a pipe of frames into one encode, so the encode reads exactly what was written."""
+    received = tmp_path / "received"
+    feeding(monkeypatch, f"import sys; open({str(received)!r}, 'wb').write(sys.stdin.buffer.read())")
+    with ffmpeg.fed("-i", "-", what="the encode of 01.mp4") as write:
+        for chunk in (b"one ", b"two ", b"three"):
+            write(chunk)
+    assert received.read_bytes() == b"one two three"
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_fed_tool_that_fails_is_a_tool_error_naming_what_it_was_making(monkeypatch):
+    """A broken encode is the tool failing, named by the file it was writing, never a recording that reads as made."""
+    feeding(monkeypatch, "import sys; sys.stderr.write('Unknown encoder x265'); sys.exit(1)")
+    with pytest.raises(ToolError) as raised:
+        with ffmpeg.fed("-i", "-", what="the encode of 03.mp4") as write:
+            for _ in range(200):
+                write(b"x" * 65536)
+    assert "the encode of 03.mp4" in str(raised.value)
+    assert "Unknown encoder x265" in str(raised.value)

@@ -17,6 +17,7 @@ from decktalk.media.pagereport import Recording
 from decktalk.pagescan import asset_findings, page_findings
 from decktalk.pipeline import Stage
 from decktalk.settings import Settings
+from decktalk.settings.numbers import truncated_slack_seconds
 
 LUMA_POINTS = (0.1, 0.5, 0.9)
 """Derived: a tenth, a half and nine tenths of a recording, which is where its brightness is read."""
@@ -44,7 +45,7 @@ def check_recording(webm: Path, recording: Recording) -> RecordingChecks:
 def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settings: Settings) -> list[Finding]:
     """One judgement per way the frames of a recording fall short of what the recorder asked for."""
     black = settings.verify.black_max_luma
-    slack = settings.record.truncated_slack_seconds
+    slack = truncated_slack_seconds(settings)
     found: list[Finding] = []
     if checks.luma.peak_at_half <= black:
         found.append(
@@ -71,20 +72,6 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
     return found
 
 
-def stall_finding(gap_ms: int, *, where: Path, section: int, settings: Settings) -> Finding | None:
-    """The judgement a recording whose frames froze carries, or None when none of them did."""
-    limit = settings.record.frame_gap_max_ms
-    if gap_ms <= limit:
-        return None
-    return judge(
-        Code.RECORD_STALLED,
-        f"the picture held still for {gap_ms} ms after the section clock started, which is over the {limit} ms "
-        "a recorded section may ever stall for.",
-        Location(where=where.as_posix(), file=where, section=section),
-        stage=Stage.RECORD,
-    )
-
-
 def recording_findings(
     recording: Recording,
     checks: RecordingChecks,
@@ -99,15 +86,11 @@ def recording_findings(
     They are one list rather than three, so a reader of the log dispatches on a code and never on
     which of three places a sentence came from.
     """
-    found = [
+    return (
         *page_findings(recording.report, page=page, section=section, stage=Stage.RECORD),
         *frame_findings(checks, where=where, section=section, settings=settings),
         *asset_findings(recording.external, where=page, section=section),
-    ]
-    stalled = stall_finding(recording.report.worst_gap_ms, where=where, section=section, settings=settings)
-    if stalled is not None:
-        found.append(stalled)
-    return tuple(found)
+    )
 
 
 __all__ = [
@@ -116,5 +99,4 @@ __all__ = [
     "frame_findings",
     "measure_luma",
     "recording_findings",
-    "stall_finding",
 ]

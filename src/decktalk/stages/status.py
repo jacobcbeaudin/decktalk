@@ -126,6 +126,8 @@ def source_of(section: Section) -> str:
     else, and the word for that is the query key the runtime publishes rather than a second spelling
     of it here.
     """
+    if isinstance(section, PageSection) and section.rendered:
+        return " ".join(section.render_command)
     if isinstance(section, PageSection):
         return f"{section.page}?{Q.SCENE.value}={section.scene}"
     return section.clip
@@ -226,6 +228,8 @@ def judgements(inputs: Inputs, run: Run) -> None:
     _judge_input(inputs, run, inputs.script_path, inputs.script, missing=True)
     _judge_input(inputs, run, inputs.cues_path, inputs.cues, missing=False)
     for section in inputs.document.sections:
+        if isinstance(section, PageSection) and section.rendered:
+            continue
         named = section.page if isinstance(section, PageSection) else section.clip
         optional = isinstance(section, ClipSection) and section.optional
         path = inputs.path(named)

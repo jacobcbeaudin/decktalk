@@ -113,7 +113,7 @@ def graph(argv: list[str]) -> str:
     return argv[argv.index(flag) + 1]
 
 
-@pytest.mark.parametrize("read", [lambda: frames.luma_at(Path("a.webm"), 7.5)])
+@pytest.mark.parametrize("read", [lambda: frames.luma_at(Path("a.mp4"), 7.5)])
 def test_every_reader_of_a_frame_jumps_coarsely_and_drops_the_remainder_in_the_graph(monkeypatch, read):
     """One exact path, because a reader that took the coarse jump alone would measure a neighbouring frame."""
     argv: list[list[str]] = []
@@ -139,5 +139,63 @@ def test_the_cover_scan_reads_a_scaled_copy_of_each_frame(monkeypatch):
     """A full 1080p frame cost three times the scan and changed no verdict the scan makes."""
     argv: list[list[str]] = []
     monkeypatch.setattr(frames.ffmpeg, "stderr", lambda *a: argv.append(list(a)) or "")
-    frames.frame_stats(Path("a.webm"), 4.0)
+    frames.frame_stats(Path("a.mp4"), 4.0)
     assert graph(argv[0]).startswith(f"scale={frames.STATS_WIDTH}:{frames.STATS_HEIGHT},signalstats")
+
+
+# ---- masking what the page said moves -------------------------------------------------------------
+
+
+def a_film(*drawn: dict[int, list[tuple[int, int, int, int]]], size: frames.Size) -> frames.Decoded:
+    """A decoded film of one frame per mapping, each a black frame with white rectangles (x, y, w, h)."""
+    kept: dict[int, bytes] = {}
+    for index, rects in enumerate(drawn):
+        pixels = bytearray(size.width * size.height)
+        for x, y, w, h in rects.get(0, []):
+            for row in range(y, y + h):
+                pixels[row * size.width + x : row * size.width + x + w] = b"\xff" * w
+        kept[index] = bytes(pixels)
+    return frames.Decoded(rate=frames.Fraction(25), frames={size: kept}, ends={size: len(kept)})
+
+
+def test_a_mask_leaves_the_pixels_it_covers_out_of_a_comparison_and_out_of_its_share() -> None:
+    size = frames.Size(40, 20)
+    film = a_film({0: [(0, 0, 4, 4)]}, {0: [(10, 0, 4, 4), (30, 10, 10, 10)]}, size=size)
+    mask = frames.Mask((frames.Rect(0, 0, 20, 20),), size)
+    assert film.changed(0, 0.04, level=10, size=size) == pytest.approx((16 + 16 + 100) / 800 * 100)
+    assert film.changed(0, 0.04, level=10, size=size, mask=mask) == pytest.approx(100 / 400 * 100)
+    assert mask.share(size) == pytest.approx(50.0)
+    assert [share for _, share in film.series(0, 0, 0.08, level=10, size=size, mask=mask)] == [0.0, 25.0]
+
+
+def test_a_box_that_stops_on_its_lane_edge_changes_nothing_outside_its_mask_once_scaled_down(tmp_path: Path) -> None:
+    # A black box crosses its lane and stops with its edge on the lane's own edge, the way a motion
+    # arrives on its word. Every small pixel is read from the film pixels under it alone, so the lane,
+    # masked out to every small pixel it touches, hides the whole crossing and nothing next to it reads
+    # as a change.
+    scale = 4
+    lane = frames.Rect(40, 40, 160, 40)
+    small = frames.Size(W // scale, H // scale)
+    moved = (
+        f"drawbox=x={lane.x}:y={lane.y}:w=40:h={lane.h}:color=black:t=fill:enable='eq(n,0)',"
+        f"drawbox=x={lane.x + lane.w - 40}:y={lane.y}:w=40:h={lane.h}:color=black:t=fill:enable='eq(n,1)'"
+    )
+    film = tmp_path / "lane.mp4"
+    with machine_tools():
+        ffmpeg.run(
+            "-f", "lavfi", "-i", f"color=c=white:s={W}x{H}:r={FPS}:d=0.08,{moved}",
+            "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", str(film),
+        )  # fmt: skip
+        wanted = frames.Wanted()
+        wanted.point(small, 0.0, 1 / FPS)
+        decoded = frames.decode(film, wanted)
+    mask = frames.Mask((lane,), frames.Size(W, H))
+    assert decoded.changed(0.0, 1 / FPS, level=1, size=small) > 0.0
+    assert decoded.changed(0.0, 1 / FPS, level=1, size=small, mask=mask) == 0.0
+
+
+def test_the_motion_inside_one_box_is_read_frame_to_frame_as_a_share_of_its_own_area() -> None:
+    size = frames.Size(40, 20)
+    film = a_film({0: [(0, 0, 4, 4)]}, {0: [(1, 0, 4, 4)]}, {0: [(1, 0, 4, 4)]}, size=size)
+    box = frames.Rect(0, 0, 10, 4)
+    assert film.energy(0.04, 0.12, box, area=16, level=10, size=size) == [(0.04, 50.0), (0.08, 0.0)]

@@ -114,7 +114,7 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
                 kind="page",
                 start=index * SECTION_SECONDS,
                 end=(index + 1) * SECTION_SECONDS,
-                source=f"build/recordings/{section.key}.webm",
+                source=f"build/recordings/{section.key}.mp4",
                 chapter=f"Section {section.number}",
             )
             for index, section in enumerate(inputs.document.sections)

@@ -1,6 +1,6 @@
 ---
 name: decktalk-fix
-description: Read a DeckTalk finding and make the smallest change that removes its cause. Use when a command reports a finding, when a cue is unresolved or unknown, when a reveal lands off its word or shows no change, when a recording stalls or opens black, or when a check could measure nothing at all. It covers telling a finding from an error, telling an error from a warning, fixing the cause rather than the measurement, choosing the cheapest file that can hold the fix, and knowing when to stop. Do not use it to plan a rewrite, which belongs to decktalk-revise.
+description: Read a DeckTalk finding and make the smallest change that removes its cause. Use when a command reports a finding, when a cue is unresolved or unknown, when a reveal lands off its word or shows no change, when a recording opens black or runs short, or when a check could measure nothing at all. It covers telling a finding from an error, telling an error from a warning, fixing the cause rather than the measurement, choosing the cheapest file that can hold the fix, and knowing when to stop. Do not use it to plan a rewrite, which belongs to decktalk-revise.
 compatibility: This is judgement rather than a code table. Every code carries its own sentence, its location and often a fix, and `decktalk schema finding` prints the whole set.
 metadata:
   ends_with: The smallest edit that removes the cause, and the command that failed run again on what changed.
@@ -55,7 +55,8 @@ touching anything, and never parse a printed table when the JSON is right there.
   read both counts together.
 - A page that opens black is usually a scene number that does not match its section, or a first
   slide with nothing on it at the mount.
-- A recording that stalls is usually the page waiting for something that never arrives.
+- A picture that stops moving part way through is usually a handler or a frame hook that threw, and
+  the page names which one.
 - Maths that shows as red or as raw source is a typesetting refusal, and maths that shows as plain
   text means the typesetter never loaded.
 - `SCRIPT_VOICE_UNKNOWN` is a `[voice NAME]` line whose name no `[voices.NAME]` table declares,

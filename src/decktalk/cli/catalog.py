@@ -231,7 +231,7 @@ def page_schema() -> dict[str, Any]:
         "query": {key.value: meaning for key, meaning in page.QUERY.items()},
         "t0_signal": page.T0_SIGNAL,
         "measurable_span_seconds": page.MEASURABLE_SPAN_SECONDS,
-        "capture_fps": page.CAPTURE_FPS,
+        "slowest_fps": page.SLOWEST_FPS,
     }
 
 

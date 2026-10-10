@@ -2,8 +2,8 @@
 
 The rule these tests exist for is the pair on disk. The log of the recording being replaced goes
 before anything is captured and the log of what was recorded is written last, so a run that stops in
-between leaves a webm with no log or a log with no start, and the next run records the
-section again rather than trimming a new picture at an old moment.
+between leaves a video with no log or a log with no checks, and the next run records the
+section again rather than assembling a picture nobody judged.
 """
 
 from __future__ import annotations
@@ -21,11 +21,12 @@ from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Event, Level, RunLog, SectionDone, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg, frames, recording
+from decktalk.media import browser, ffmpeg, frames, stepping
 from decktalk.media.pagereport import PageReport, Recording
-from decktalk.media.recording import RecordingSink
+from decktalk.media.stepping import RecordingSink
 from decktalk.pipeline import Outcome
 from decktalk.results import Word
+from decktalk.settings import Settings
 from decktalk.stages.record import plan, pool, record, stale_recording
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
@@ -51,8 +52,8 @@ scene = "2"
 SPAN_SECONDS = 4.0
 """How long each section of the test project speaks for, which is what the recorder asks the page for."""
 
-COVER_CHROMA = 200.0
-"""A chroma high enough on both planes that a frame reads as the recorder's own cover."""
+FPS = Settings().video.fps
+"""The rate the fake recorder writes at, which is the rate a project records at by default."""
 
 BRIGHT_LUMA = 200.0
 """A luma bright enough that no frame of a test recording reads as black."""
@@ -71,26 +72,31 @@ def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: d
 class Driven:
     """A recorder that writes what a real one writes, in the order a real one writes it."""
 
-    def __init__(self, report: PageReport | None = None, *, stalls: int = 0) -> None:
+    def __init__(self, report: PageReport | None = None) -> None:
         self.report = report or a_report()
-        self.stalls = stalls
         self.urls: list[str] = []
         self.order: list[str] = []
         self.launched = 0
         self.policies: list[str] = []
+        self.switches: list[tuple[str, ...]] = []
         self.missing: tuple[str, ...] = ()
+        # Each file runs the requested span rounded to whole frames, which is what the stepped recorder writes.
+        self.lengths: dict[Path, float] = {}
         # When set, no launch returns until every party has launched, so no worker can finish first.
         self.launches_together: threading.Barrier | None = None
         # Launches released together count at once, and an unguarded increment could lose one.
         self.counting = threading.Lock()
 
     @contextmanager
-    def chromium(self, _executable: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
+    def chromium(
+        self, _executable: str = "", *, policy: str = "trusted", switches: tuple[str, ...] = (), **_launch: object
+    ) -> Iterator[object]:
         if self.launches_together is not None:
             self.launches_together.wait()
         with self.counting:
             self.launched += 1
         self.policies.append(policy)
+        self.switches.append(switches)
         yield object()
 
     def record_page(
@@ -107,21 +113,18 @@ class Driven:
         log_sink.clear()
         self.order.append(f"cleared {out.name}")
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"webm")
+        out.write_bytes(b"mp4")
+        self.lengths[out] = stepping.frame_count(seconds, FPS) / FPS
         self.order.append(f"placed {out.name}")
         report = self.report
-        if self.stalls:
-            self.stalls -= 1
-            report = a_report(frameGaps=[{"at": 1.0, "ms": 5000}])
         recording = Recording(
             url=url,
             assets=("deck/index.html",),
             external=(),
             missing=self.missing,
             requested_seconds=seconds,
+            fps=FPS,
             load_seconds=0.2,
-            settle_seconds=0.5,
-            clock_start_seconds=1.5,
             page_errors=(),
             report=report,
         )
@@ -137,17 +140,9 @@ def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
     # One recording at a time, so the order a test reads is the order a single recorder writes in.
     monkeypatch.setattr(pool, "available_cpus", lambda: float(pool.CPUS_PER_RECORDING))
     monkeypatch.setattr(browser, "chromium", fake.chromium)
-    monkeypatch.setattr(recording, "record_page", fake.record_page)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: SPAN_SECONDS)
+    monkeypatch.setattr(stepping, "record_page", fake.record_page)
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: fake.lengths[path])
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, BRIGHT_LUMA))
-    monkeypatch.setattr(
-        frames,
-        "frame_stats",
-        lambda _path, _seconds: [
-            frames.FrameStats(pts=0.0, yavg=100.0, ymax=BRIGHT_LUMA, uavg=COVER_CHROMA, vavg=COVER_CHROMA),
-            frames.FrameStats(pts=0.04, yavg=90.0, ymax=BRIGHT_LUMA, uavg=128.0, vavg=128.0),
-        ],
-    )
     return fake
 
 
@@ -156,7 +151,7 @@ def test_every_page_section_is_recorded_and_reported_in_section_order(tmp_path: 
     result = record(inputs, a_run(inputs.root))
     assert [row.section for row in result.sections] == [1, 2]
     assert [row.kept for row in result.sections] == [False, False]
-    assert [row.file for row in result.sections] == [Path("build/recordings/01.webm"), Path("build/recordings/02.webm")]
+    assert [row.file for row in result.sections] == [Path("build/recordings/01.mp4"), Path("build/recordings/02.mp4")]
     assert driven.launched == 1
 
 
@@ -166,28 +161,39 @@ def test_a_host_that_marks_the_page_untrusted_records_it_under_that_policy(tmp_p
     assert driven.policies == ["untrusted"]
 
 
+def test_the_recorder_launches_chromium_with_the_capture_switches_this_machine_names(
+    tmp_path: Path, driven: Driven
+) -> None:
+    inputs = a_project(tmp_path, machine={"record": {"capture_switches": []}})
+    record(inputs, a_run(inputs.root))
+    record(a_project(tmp_path), a_run(inputs.root), force=True)
+    assert driven.switches == [(), Settings().record.capture_switches]
+    assert driven.switches[-1], "the recorder launches with its capture switches unless a machine turns them off"
+
+
 @pytest.mark.usefixtures("driven")
 def test_a_row_carries_the_length_and_the_frame_count_of_its_recording(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     row = record(inputs, a_run(inputs.root)).sections[0]
-    assert row.seconds == SPAN_SECONDS
-    assert row.frames == round(SPAN_SECONDS * 25)
+    log = RecordingLog.read(inputs.workspace.recording_log("01"))
+    assert log is not None and log.checks is not None
+    assert row.frames == stepping.frame_count(log.checks.wanted_seconds, FPS)
+    assert row.seconds == pytest.approx(row.frames / FPS)
 
 
 def test_the_log_is_cleared_before_the_capture_and_written_after_it(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
     record(inputs, a_run(inputs.root))
-    assert driven.order[:3] == ["cleared 01.webm", "placed 01.webm", "logged 01.webm"]
+    assert driven.order[:3] == ["cleared 01.mp4", "placed 01.mp4", "logged 01.mp4"]
 
 
 @pytest.mark.usefixtures("driven")
-def test_the_finished_log_carries_narration_t0_the_frames_and_the_judgements(tmp_path: Path) -> None:
+def test_the_finished_log_carries_the_frames_and_the_judgements(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     record(inputs, a_run(inputs.root))
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None
     assert log.section == 1
-    assert log.start is not None
     assert log.checks is not None
     assert log.checks.wanted_seconds == pytest.approx(SPAN_SECONDS + 0.3)
 
@@ -199,10 +205,10 @@ def test_a_run_stopped_before_it_measured_leaves_a_log_the_next_run_records_agai
     record(inputs, a_run(inputs.root))
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None
-    log.model_copy(update={"start": None}).write(inputs.workspace.recording_log("01"))
+    log.model_copy(update={"checks": None}).write(inputs.workspace.recording_log("01"))
     driven.order.clear()
     record(inputs, a_run(inputs.root))
-    assert "cleared 01.webm" in driven.order
+    assert "cleared 01.mp4" in driven.order
 
 
 def test_a_section_nothing_moved_under_is_kept_and_no_browser_opens(tmp_path: Path, driven: Driven) -> None:
@@ -323,18 +329,6 @@ def test_a_run_that_records_the_section_with_damaged_estimated_words_is_not_buil
     assert damaged.name in str(refused.value)
 
 
-def test_a_page_that_stalls_is_recorded_again_while_the_machine_is_quieter(
-    tmp_path: Path, driven: Driven, caplog: pytest.LogCaptureFixture
-) -> None:
-    inputs = a_project(tmp_path)
-    driven.stalls = 1
-    with caplog.at_level("WARNING", logger="decktalk"):
-        record(inputs, a_run(inputs.root), only=[1])
-    assert driven.urls.count(driven.urls[0]) == 2
-    retried = [vars(record)["data"] for record in caplog.records if "recorded again" in record.getMessage()]
-    assert [(row["attempt"], row["retries"]) for row in retried] == [(1, inputs.settings.record.retries)]
-
-
 def test_what_the_page_could_not_honour_reaches_the_result_as_its_own_code(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
     driven.report = a_report(warnings=[{"code": "PAGE_KATEX_MISSING", "message": "KaTeX never arrived."}])
@@ -355,7 +349,7 @@ def test_one_progress_line_is_emitted_per_section(tmp_path: Path) -> None:
 def test_every_file_the_run_wrote_is_reported(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     result = record(inputs, a_run(inputs.root), only=[1])
-    assert set(result.written) == {Path("build/recordings/01.webm"), Path("build/recordings/01.json")}
+    assert set(result.written) == {Path("build/recordings/01.mp4"), Path("build/recordings/01.json")}
 
 
 @pytest.mark.usefixtures("driven")

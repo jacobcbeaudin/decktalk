@@ -1,0 +1,22 @@
+# The v3 p1 prototype, the waveform landing, as a DeckTalk project the e2e suite builds and verifies.
+
+[project]
+name = "landing"
+script = "script.md"
+cues = "cues.json"
+build = "build"
+
+[[section]]
+number = 1
+chapter = "The landing"
+page = "deck/index.html"
+scene = "1"
+record_margin_seconds = 0.3
+hold_seconds = 1.0
+
+[narration]
+tail_seconds = 1.0
+
+[voices.narrator]
+provider = "elevenlabs"
+id = ""

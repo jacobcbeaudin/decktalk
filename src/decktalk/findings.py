@@ -221,6 +221,22 @@ class Code(Enum):
         "PAGE_HANDLER_THREW",
         "A moment handler threw, so the change it was to make never happened.",
     )
+    PAGE_MOTION_UNDECLARED = (
+        "PAGE_MOTION_UNDECLARED",
+        "Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it.",
+    )
+    PAGE_MOTION_CUE_UNKNOWN = (
+        "PAGE_MOTION_CUE_UNKNOWN",
+        "A motion names a cue no slide declares, so it never starts or never lands.",
+    )
+    PAGE_REALTIME_MEDIA = (
+        "PAGE_REALTIME_MEDIA",
+        "A page holds a video or an audio element, which plays at its own rate and not on the stepped clock.",
+    )
+    PAGE_FRAME_THREW = (
+        "PAGE_FRAME_THREW",
+        "A frame hook threw, so whatever it drew stopped moving from that frame on.",
+    )
     PAGE_WAIT_REJECTED = (
         "PAGE_WAIT_REJECTED",
         "A wait the page declared was rejected, so the runtime carried on without what it waited for.",
@@ -297,12 +313,6 @@ class Code(Enum):
         RaisedBy.PYTHON,
         PAGE_REPORTERS,
     )
-    RECORD_STALLED = (
-        "RECORD_STALLED",
-        "The picture held still for longer than a recorded section ever should.",
-        RaisedBy.PYTHON,
-        (Stage.RECORD.value, Stage.VERIFY.value),
-    )
     RECORD_BLACK = (
         "RECORD_BLACK",
         "A recorded frame is black, so the film shows nothing at that moment.",
@@ -314,6 +324,34 @@ class Code(Enum):
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
         RaisedBy.PYTHON,
         (Stage.RECORD.value, Stage.VERIFY.value),
+    )
+
+    # Measured in Python, about a declared motion.
+    MOTION_EASE_UNMEASURABLE = (
+        "MOTION_EASE_UNMEASURABLE",
+        "A motion eases to rest on an arrival verify would measure, and an ease to rest has no edge to measure.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+    )
+
+    MOTION_OFF = (
+        "MOTION_OFF",
+        "A declared motion departed or arrived outside the offset limit of the word it was promised to.",
+        RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
+    )
+    MOTION_NO_EDGE = (
+        "MOTION_NO_EDGE",
+        "A declared motion came to rest before its word, so it has no edge on its cue a viewer sees it land on.",
+        RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
+    )
+    MOTION_MASK_LARGE = (
+        "MOTION_MASK_LARGE",
+        "Declared motion covered so much of the frame at a cue that verify measured less of the picture than usual.",
+        RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
+        Severity.WARNING,
     )
 
     # Measured in Python, about the script, the cues, the cut and the files.

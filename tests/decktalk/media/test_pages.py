@@ -12,7 +12,7 @@ from decktalk.errors import InputError, ToolError
 from decktalk.media import browser, pages
 from decktalk.media.origin import Allowed, page_url
 from decktalk.settings import COLOR_SCHEMES
-from support.recorder import BARE, FakeBrowser, FakeContext, FakePage, Sink, deck_of, record
+from support.recorder import BARE, FakeContext, FakePage, deck_of
 
 
 def test_page_error_text_keeps_the_message_and_the_file_and_line():
@@ -35,11 +35,11 @@ def test_page_error_text_keeps_the_message_and_the_file_and_line():
 
 def test_every_call_into_the_page_carries_a_deadline(tmp_path):
     """A deck's own script runs in the page's one thread, so a call with no deadline is a build with none."""
-    out = tmp_path / "01.webm"
-    fake = FakeBrowser()
-    record(tmp_path, Sink(out), out=out, fake=fake, seconds=0.1)
-    page = fake.contexts[0].page
-    assert page is not None and page.scripts
+    page = FakePage(FakeContext(tmp_path))
+    pages.await_painted(page.page())
+    pages.read_report(page.page(), "01")
+    pages.page_errors(page.page(), [], "01")
+    assert page.scripts
     for script in page.scripts:
         assert "Promise.race" in script, script
         assert f"{pages.DEADLINE_SECONDS * 1000:.0f}" in script, script
@@ -81,10 +81,9 @@ def test_a_page_that_cannot_report_leaves_a_report_that_says_so():
 
 def test_the_probe_is_sealed_onto_the_window_before_the_page_runs(tmp_path):
     """A deck shares its window with the recorder's instrument, so the instrument is not the deck's to take."""
-    fake = FakeBrowser()
-    out = tmp_path / "01.webm"
-    record(tmp_path, Sink(out), out=out, fake=fake)
-    scripts = fake.contexts[0].scripts
+    context = FakeContext(tmp_path)
+    pages.instrument(context.context())
+    scripts = context.scripts
     assert scripts[0] == pages.PROBE_JS
     assert scripts[1] == pages.SEAL_JS
     assert "writable: false" in pages.SEAL_JS and "configurable: false" in pages.SEAL_JS

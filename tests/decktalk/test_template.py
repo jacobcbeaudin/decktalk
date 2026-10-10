@@ -24,7 +24,7 @@ from support.git import git
 
 
 def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
-    assert [found.name for found in EXAMPLES] == ["lesson", "interview", "product", "tutorial"]
+    assert [found.name for found in EXAMPLES] == ["lesson", "interview", "motion", "product", "tutorial"]
     assert "product (reserved)" in listed_names()
     assert example("lesson").shipped and not example("product").shipped
 

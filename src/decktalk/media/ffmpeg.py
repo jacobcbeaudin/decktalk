@@ -123,15 +123,14 @@ Sink = Callable[[bytes], None]
 """Where a call's stdout goes as it arrives, for a caller that reads a stream rather than one result."""
 
 
-def _spawn(cmd: list[str]) -> subprocess.Popen[bytes]:
-    """Start one tool with both outputs piped and no input, so it can neither wait on a terminal nor block on one.
+def _spawn(cmd: list[str], *, stdin: int = subprocess.DEVNULL) -> subprocess.Popen[bytes]:
+    """Start one tool with both outputs piped, so it can neither wait on a terminal nor block on one.
 
-    The tool is handed the scrubbed environment a browser is handed, never the process's own, so a
+    Its input is nothing unless the caller feeds it, which is the one call that pipes frames in. The
+    tool is handed the scrubbed environment a browser is handed, never the process's own, so a
     credential a host left in its environment does not reach a program that opens other people's files.
     """
-    return subprocess.Popen(
-        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment()
-    )
+    return subprocess.Popen(cmd, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment())
 
 
 class _Reader(threading.Thread):
@@ -391,6 +390,51 @@ def raw(*args: str) -> bytes:
 def stream(*args: str, into: Sink) -> None:
     """ffmpeg run whose stdout is handed to `into` as it arrives, for a decode too long to hold whole."""
     _checked([ffmpeg(), "-v", "error", *args], "ffmpeg", into=into)
+
+
+@contextmanager
+def fed(*args: str, what: str) -> Iterator[Sink]:
+    """ffmpeg run whose input is written by the caller, for an encode of frames made one at a time.
+
+    The block writes through the function it is given, and leaving the block closes the input and
+    waits for the tool. A tool that stops reading, exits non-zero or outlives `[tools] timeout_seconds`
+    after its input closed raises `ToolError` naming `what` with the tail of what it said, and a block
+    that raises kills the tool, so a half-written file is never taken for a finished one.
+    """
+    cmd = [ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", *args]
+    err: list[bytes] = []
+    started = time.monotonic()
+    with _spawn(cmd, stdin=subprocess.PIPE) as proc:
+        readers = (_Reader(proc.stdout, lambda _chunk: None), _Reader(proc.stderr, err.append))
+        for reader in readers:
+            reader.start()
+        into = proc.stdin
+        if into is None:  # pragma: no cover  (a piped input is always opened)
+            raise ToolError(f"{what} could not be given its input.")
+
+        def write(chunk: bytes) -> None:
+            try:
+                into.write(chunk)
+            except (BrokenPipeError, OSError, ValueError):
+                proc.wait()
+                for reader in readers:
+                    reader.join()
+                raise ToolError(f"{what} failed: {tail(b''.join(err))}") from None
+
+        try:
+            yield write
+            into.close()
+        except BaseException:
+            _stop(proc, readers)
+            raise
+        bound = TOOLS.get()
+        _watch(proc, readers, cmd, what, bound.cancel if bound else None, bound_tools().timeout_seconds, None)
+        for reader in readers:
+            reader.join()
+    stderr = b"".join(err)
+    traced(log, what, cmd, code=proc.returncode, seconds=time.monotonic() - started, said=stderr)
+    if proc.returncode != 0:
+        raise ToolError(f"{what} failed: {tail(stderr)}")
 
 
 def concat_line(path: Path | str) -> str:

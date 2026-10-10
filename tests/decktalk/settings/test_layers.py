@@ -66,8 +66,8 @@ class TestTheFiveLayers:
         assert row.line == 2
 
     def test_an_environment_value_is_read_as_the_key_s_own_type(self) -> None:
-        here = load(machine={}, project={}, environ={"DECKTALK_RECORD_SETTLE_SECONDS": "0.8"})
-        assert here.settings.record.settle_seconds == 0.8
+        here = load(machine={}, project={}, environ={"DECKTALK_VERIFY_AFTER_DIP_SECONDS": "0.8"})
+        assert here.settings.verify.after_dip_seconds == 0.8
 
     def test_a_bad_environment_value_is_refused(self) -> None:
         with pytest.raises(InputError):
@@ -324,13 +324,8 @@ class TestAValueOutOfItsRange:
 class TestCrossTableRelations:
     """A relation an editor cannot check is enforced by the loader, which is the only place it can be."""
 
-    def test_a_frame_gap_under_the_runtime_s_own_floor_is_refused(self) -> None:
-        with pytest.raises(InputError):
-            load(machine={}, project={"record": {"frame_gap_max_ms": 50}}, environ={})
-
     def test_the_relation_reads_a_published_number_by_name(self) -> None:
-        assert BY_ID["record.frame_gap_max_ms"].requires == "record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS"
-        assert BY_ID["video.fps"].requires == "video.fps >= CAPTURE_FPS"
+        assert BY_ID["video.fps"].requires == "video.fps >= SLOWEST_FPS"
 
 
 MOVED: list[tuple[str, str, Any]] = [

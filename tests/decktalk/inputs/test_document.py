@@ -83,3 +83,37 @@ def test_an_unknown_table_is_refused_with_the_nearest_one() -> None:
     said = str(refused.value)
     assert said.startswith("decktalk.toml: unknown table(s) ['voice']. The known tables are [")
     assert said.endswith("]. Did you mean 'voices'?")
+
+
+# ---- a section whose picture an external command renders ----------------------------------------
+
+
+def test_a_render_section_is_narrated_and_names_the_command_that_draws_its_picture() -> None:
+    """The voice reads it like a page section, so the narration runs through it, and a command draws its picture."""
+    doc = Document.from_toml(
+        {
+            "section": [
+                {"number": 1, "page": "deck/index.html", "scene": "1"},
+                {"number": 2, "render_command": ["{python}", "render/bars.py", "{motion}", "{out}"]},
+            ]
+        },
+        default_name="t",
+    )
+    rendered = doc.section(2)
+    assert isinstance(rendered, PageSection)
+    assert rendered.render_command == ("{python}", "render/bars.py", "{motion}", "{out}")
+    assert rendered.rendered and not rendered.is_clip
+    assert [one.number for one in doc.page_sections] == [1, 2]
+    assert [one.number for one in doc.drawn_sections] == [1]
+
+
+def test_a_render_command_that_is_not_a_list_of_words_is_refused() -> None:
+    with pytest.raises(InputError, match="render_command"):
+        Document.from_toml({"section": [{"number": 1, "render_command": "make film"}]}, default_name="t")
+
+
+def test_a_section_cannot_be_both_a_page_and_a_render() -> None:
+    with pytest.raises(InputError, match="render_command"):
+        Document.from_toml(
+            {"section": [{"number": 1, "page": "deck/index.html", "render_command": ["make"]}]}, default_name="t"
+        )

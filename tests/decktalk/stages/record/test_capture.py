@@ -168,6 +168,16 @@ def test_the_page_policy_a_render_runs_under_joins_the_key(tmp_path: Path) -> No
     )
 
 
+def test_the_capture_switches_stay_out_of_the_key(tmp_path: Path) -> None:
+    """A recording with the switches decodes to the frames of one without them, so turning them over keeps it."""
+    switched = a_project(tmp_path)
+    plain = Inputs.load(tmp_path, environ={}, machine={"record": {"capture_switches": []}})
+    assert switched.settings.record.capture_switches != plain.settings.record.capture_switches
+    assert section_digest(switched, section_of(switched, 1), "url", 10.0, ()) == section_digest(
+        plain, section_of(plain, 1), "url", 10.0, ()
+    )
+
+
 def test_a_swapped_asset_moves_the_key_although_no_markup_changed(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     picture = tmp_path / "deck" / "one.png"
@@ -184,14 +194,12 @@ def test_a_job_with_no_recording_on_disk_has_not_been_made(tmp_path: Path) -> No
     assert job.out == inputs.workspace.recording("01")
 
 
-def test_a_log_with_no_narration_start_in_it_is_a_recording_that_never_finished(tmp_path: Path) -> None:
+def test_a_log_with_no_checks_in_it_is_a_recording_that_never_finished(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     job = plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0)
     job.out.parent.mkdir(parents=True, exist_ok=True)
-    job.out.write_bytes(b"webm")
-    RecordingLog(
-        section=1, digest=job.digest, recording=a_recording(requested_seconds=10.0, clock_start_seconds=1.5)
-    ).write(job.log_path)
+    job.out.write_bytes(b"mp4")
+    RecordingLog(section=1, digest=job.digest, recording=a_recording(requested_seconds=10.0)).write(job.log_path)
     assert not plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0).unchanged
 
 

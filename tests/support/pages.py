@@ -80,15 +80,14 @@ def catalog(scene: str, moments: dict[str, list[str]], *, text: str = "x", **ext
 
 
 def a_recording(**fields: object) -> Recording:
-    """What the recorder knew about one section's webm, with a short page and nothing it loaded."""
+    """What the recorder knew about one section's video, with a short page and nothing it loaded."""
     base: dict[str, object] = {
         "url": "http://project.localhost/deck/index.html",
         "assets": (),
         "external": (),
         "requested_seconds": 2.0,
+        "fps": 25,
         "load_seconds": 0.1,
-        "settle_seconds": 0.1,
-        "clock_start_seconds": 0.2,
         "page_errors": (),
         "report": PageReport(),
     }

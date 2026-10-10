@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import generated
 from decktalk.results import Scope
@@ -78,7 +78,8 @@ def type_of(key: Key) -> dict[str, Any]:
     """One key's JSON Schema type, an array being described by the type of what it holds."""
     if key.annotation in TYPES:
         return {"type": TYPES[key.annotation]}
-    return {"type": "array", "items": {"type": "number"}}
+    (item, *_rest) = get_args(key.annotation)
+    return {"type": "array", "items": {"type": TYPES[item]}}
 
 
 def property_of(key: Key) -> dict[str, Any]:

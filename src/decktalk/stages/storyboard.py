@@ -391,7 +391,7 @@ def storyboard(
     """
     chosen = Selection.of(slide, after, before, at)
     wanted = selects(only)
-    sections = [one for one in inputs.document.page_sections if wanted(one.number)]
+    sections = [one for one in inputs.document.drawn_sections if wanted(one.number)]
     panels = _draw(inputs, run, sections, chosen) if sections else []
     voices = section_voices(inputs, inputs.spoken())
     page = write_page(inputs.workspace, panels, title=inputs.document.name, voices=voices) if panels else None

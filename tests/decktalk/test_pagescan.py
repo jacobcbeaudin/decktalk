@@ -230,3 +230,36 @@ def test_an_entrance_with_no_seconds_of_its_own_takes_the_span_of_the_style_it_n
     default = page.ATTRS[page.Attr.IN_STYLE].default
     assert default is not None
     assert row().entrance == page.ENTRANCES[default].seconds
+
+
+# ---- declared motions ---------------------------------------------------------------------------
+
+
+def moving(ease: str, *, to: str | None = "1.1:land") -> MeasuredScene:
+    """A scene whose one slide moves one element from one cue to another under one ease."""
+    motion = {"kind": "motion", "name": "travel", "from": "1.1:go", "to": to, "ease": ease}
+    return entry("1", {"1.1": ["1.1:go"]}, motions={"1.1": [motion]})
+
+
+def test_a_motion_that_eases_to_rest_on_a_measured_arrival_is_refused_at_check() -> None:
+    """An ease to rest has no edge for verify to find, so its arrival must be opted out of the measurement."""
+    (found,) = pagescan.ease_findings(moving("settle"), opted=set(), where=PAGE, section=1)
+    assert found.code is Code.MOTION_EASE_UNMEASURABLE
+    assert found.location.cue == "1.1:land"
+    assert "settle" in found.message and "firm" in found.message
+
+
+def test_a_spring_eases_to_rest_too() -> None:
+    assert codes(pagescan.ease_findings(moving("spring"), opted=set(), where=PAGE, section=1)) == [
+        Code.MOTION_EASE_UNMEASURABLE
+    ]
+
+
+def test_an_arrival_opted_out_of_verify_or_a_firm_arrival_is_not_judged() -> None:
+    assert pagescan.ease_findings(moving("settle"), opted={"1.1:land"}, where=PAGE, section=1) == []
+    assert pagescan.ease_findings(moving("firm"), opted=set(), where=PAGE, section=1) == []
+    assert pagescan.ease_findings(moving("glide"), opted=set(), where=PAGE, section=1) == []
+
+
+def test_a_departure_alone_is_always_measurable() -> None:
+    assert pagescan.ease_findings(moving("settle", to=None), opted=set(), where=PAGE, section=1) == []

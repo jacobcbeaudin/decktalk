@@ -15,7 +15,9 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
 | project | One directory holding `script.md`, `decktalk.toml`, `cues.json`, the deck pages and the `build/` directory those four produce. | | [decktalk.toml](/reference/decktalk-toml) |
-| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene or a clip. | segment | [decktalk.toml](/reference/decktalk-toml) |
+| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene, a program that draws it or a clip. | segment | [decktalk.toml](/reference/decktalk-toml) |
+| render section | A section whose picture a program draws, which `render_command` names. It is narrated like a page section and names no page and no scene. | | [Things that move](/guides/motion#a-render-section) |
+| motion document | `build/recordings/render/NN/motion.json`, the frame rate, the size, the length, every spoken word and every cue's second that `record` hands a render section's program. | | [Things that move](/guides/motion#a-render-section) |
 | section key | The two-digit `"01"` that names a section's files and its rows in `cues.json`. | | [cues.json](/reference/cues-json) |
 | chapter | The title a section shows in the chapter markers, the transcript and a slate. | | [decktalk.toml](/reference/decktalk-toml) |
 | script | `script.md`, which the voice reads once it is cleaned into spoken text. | | [script.md](/reference/script-md) |
@@ -33,6 +35,16 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | freeze | One slide drawn with its cues already fired and nothing in motion, which `?freeze=ID` asks the page for. | ?slide | [The runtime](/reference/runtime) |
 | container | An element whose children carry moments, so one cue can stagger them or a spotlight can walk them. | | [The page contract](/concepts/page-contract) |
 | moment | One of the four things an element does, which are `data-in`, `data-back`, `data-front` and `data-out`. A moment is never an event, a cue name or a time. | | [The page contract](/concepts/page-contract) |
+| motion | Something an element does for longer than a moment, from the cue it departs on to the cue it arrives on, declared with `data-motion` or `DeckTalk.motion`. Its length is the seconds between the two cues and is never written on the page. | | [The page contract](/concepts/page-contract#motion) |
+| ease | How a motion moves between its two cues: `firm`, `glide`, `settle` or `spring`. | | [Things that move](/guides/motion#the-four-eases) |
+| firm arrival | An arrival that keeps a little speed into its last frame, so it stops on a frame edge verify can measure. `firm` and `glide` arrive firm. | | [Things that move](/guides/motion#the-four-eases) |
+| ease to rest | An arrival that slows to nothing, which `settle` and `spring` make. It has no edge to measure, so its cue must be marked `"verify": false`. | | [Things that move](/guides/motion#the-four-eases) |
+| loop | An element that turns through its `@keyframes` for as long as its slide is on screen, declared with `data-loop`. It names no cue. | | [Things that move](/guides/motion#a-loop) |
+| frame hook | A function `DeckTalk.frame` calls on every frame with the section second, which draws something from that second alone. | | [Runtime](/reference/runtime#the-decktalk-object) |
+| region | The element a frame hook draws inside, which `DeckTalk.frame` names in `region` and verify masks. | | [Things that move](/guides/motion#a-frame-hook-and-its-region) |
+| composition page | A deck page that draws its whole picture itself, in a canvas, WebGL or three.js, from a frame hook and the runtime's cues and words. It plays in an ordinary page section. | | [Things that move](/guides/motion#a-composition-page) |
+| lane | One declared motion, loop or region as the recorder saw it: the box it swept, its size, when it moved and the cues it lands on. Verify masks a lane out of every cue and measures a motion's landings on it. | | [The page contract](/concepts/page-contract#the-lane-report) |
+| landing | One cue a motion lands on, either its departure, `depart`, or its arrival, `arrive`. | | [Verify](/reference/verify#motions) |
 | cue name | The name a moment attribute writes, such as `expand`, which means something inside its own slide alone. | local name | [The page contract](/concepts/page-contract) |
 | cue id | The slide id, a colon and the cue name. `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`. | wire id | [Cues](/concepts/cues) |
 | cue | One row of `cues.json`, pairing a cue id with the phrase its moment waits for. | | [cues.json](/reference/cues-json) |
@@ -40,6 +52,7 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | description | The text an author writes in `data-describe` and its kin, which the transcript is written from. It is never called a phrase. | | [The page contract](/concepts/page-contract) |
 | cue time | The second a cue lands on, counted on its section clock. | | [Cues](/concepts/cues) |
 | section clock | The seconds since a section starts, which its words, its cues and its page all run on. | narration clock | [Cues](/concepts/cues) |
+| stepped clock | The section clock as the recorder moves it, one frame at a time, so frame `k` of a recording is the page at second `k / fps`. | | [The recorder steps the clock](/decisions/the-recorder-steps-the-clock) |
 | film clock | The seconds since the film starts, which `verify` reports on. | | [Verify](/reference/verify) |
 | canvas | The 1920 by 1080 surface the runtime draws on, which is `#dt-canvas` on the page. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
 | runtime | `decktalk-runtime.js`, the page's script, which the engine serves beside every deck. The recorder reads it through `window.__decktalkProbe`. | __dtprobe | [The runtime](/reference/runtime) |

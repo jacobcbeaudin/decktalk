@@ -233,14 +233,6 @@ def test_the_tools_cache_is_the_one_directory_doctor_names() -> None:
     assert named[0]["if"] == restore["if"]
 
 
-# ---- cue timing ----------------------------------------------------------------------------------
-
-
-def test_the_linux_e2e_row_reports_timing_until_it_is_trusted_to_gate() -> None:
-    (command,) = [command for command in check.BY_NAME["e2e"].commands if "pytest" in command]
-    assert (check.REPORT_TIMING in command) is not check.LINUX_GATES_TIMING
-
-
 # ---- one row per contract ------------------------------------------------------------------------
 
 

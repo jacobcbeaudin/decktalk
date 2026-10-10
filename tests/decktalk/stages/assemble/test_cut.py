@@ -75,7 +75,7 @@ def test_a_page_section_with_no_recording_plays_black_and_is_an_error(tmp_path):
     assert [row.substitute for row in rows] == [Substitute.BLACK] * 3
     assert opened.codes() == ["FILE_MISSING"] * 3
     said = next(line.finding.message for line in opened.of(FindingRaised))
-    assert "build/recordings/01.webm" in said
+    assert "build/recordings/01.mp4" in said
     assert "a black frame plays" in said
 
 
@@ -167,12 +167,12 @@ def test_the_join_opens_every_cut_through_the_file_protocol_and_the_closed_demux
 
 
 def recorded(tmp_path: Path) -> tuple[Inputs, Takes]:
-    """Three narrated sections with a webm on disk for each, so every cut is encoded from a recording."""
+    """Three narrated sections with a recording on disk for each, so every cut is encoded from a recording."""
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
     inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
     for number in (1, 2, 3):
-        inputs.workspace.recording(f"{number:02d}").write_bytes(f"webm {number}".encode())
+        inputs.workspace.recording(f"{number:02d}").write_bytes(f"mp4 {number}".encode())
     return inputs, takes
 
 

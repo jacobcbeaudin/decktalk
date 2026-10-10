@@ -13,9 +13,10 @@ from support.logs import data_of
 
 @pytest.mark.parametrize(
     ("cpus", "want"),
-    [(1.0, 1), (2.0, 1), (3.5, 1), (4.0, 2), (6.0, 3), (8.0, 4), (64.0, pool.MOST_AT_ONCE)],
+    [(1.0, 1), (2.0, 1), (5.5, 1), (6.0, 2), (9.0, 3), (12.0, 4), (64.0, pool.MOST_AT_ONCE)],
 )
-def test_an_automatic_choice_is_one_recording_per_two_cpus_and_never_more_than_four(cpus, want):
+def test_an_automatic_choice_is_one_recording_per_three_cpus_and_never_more_than_four(cpus, want):
+    """A recording with the capture switches keeps between two and three cores busy, so it is given three."""
     assert at_once(0, 16, cpus=cpus, windows=False) == want
 
 
@@ -62,9 +63,9 @@ def test_a_cgroup_v1_quota_is_read_when_there_is_no_v2_file(tmp_path, monkeypatc
 
 def test_the_number_of_recorders_chosen_is_recorded_beside_the_cpus_it_was_chosen_from(monkeypatch, caplog):
     """How many recorders ran is the first question about a slow container."""
-    monkeypatch.setattr(pool, "available_cpus", lambda: 6.0)
+    monkeypatch.setattr(pool, "available_cpus", lambda: 9.0)
     monkeypatch.setattr(pool.sys, "platform", "linux")
     with caplog.at_level("DEBUG", logger="decktalk"):
         assert pool.automatic(0, 5) == 3
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.pool"]
-    assert data_of(record) == {"workers": 3, "jobs": 5, "cpus": 6.0, "requested": 0}
+    assert data_of(record) == {"workers": 3, "jobs": 5, "cpus": 9.0, "requested": 0}

@@ -55,8 +55,8 @@ PYTEST = (*UV, "pytest", "-q", "-rs")
 PARALLEL = ("-n", "auto")
 """What a suite adds to run on every core, which pytest-xdist reads and only the unit row passes.
 
-The suites that drive a real tool stay serial, because a recording shares the machine's compositor
-and two at once is a timing measurement of the runner rather than of the deck.
+The suites that drive a real tool stay serial, because a build already records its sections across
+the machine's cores, so two builds at once would only wait on each other.
 """
 
 MEASURE = ("--cov", "--cov-report=")
@@ -370,41 +370,6 @@ class Group:
         return (*self.preparations, *self.commands)
 
 
-REPORT_TIMING = "--timing=report"
-"""What a leg whose compositor is not trustworthy passes to a suite that measures a cue.
-
-A hosted macOS or Windows runner composites through a stack DeckTalk does not own, and a hosted
-Linux runner that renders in software presents a frame tens of milliseconds after the paint it
-answers. Either way the measurement moves and the deck did not, so these legs report a late reveal
-and Linux is the one meant to gate it, once `LINUX_GATES_TIMING` says it may. This weakens nothing
-else: `tests/support/timing_policy.py` tolerates a late landing alone, and a cue that never changed
-the picture still fails every runner.
-"""
-
-
-def reports_timing(command: tuple[str, ...]) -> tuple[str, ...]:
-    """The same command with cue timing reported, which only a suite has an opinion about.
-
-    The flag is `tests/conftest.py`'s own option, so it is added to the suites and to nothing else.
-    A tool that never collected a test would exit on an argument it has never heard of.
-    """
-    return (*command, REPORT_TIMING) if "pytest" in command and REPORT_TIMING not in command else command
-
-
-LINUX_GATES_TIMING = False
-"""Whether a late reveal fails the Linux e2e row, which is the one row meant to gate cue timing.
-
-It reports until the row's own runs show whether a GitHub Linux runner's compositor is
-trustworthy. When three runs of ci in a row on `main` show the row's log with no late
-reveal, this becomes True and the row gates from then on, as `REPORT_TIMING` describes.
-"""
-
-
-def linux_timing(command: tuple[str, ...]) -> tuple[str, ...]:
-    """The Linux row's suite with cue timing gated or reported, as `LINUX_GATES_TIMING` decides."""
-    return command if LINUX_GATES_TIMING else reports_timing(command)
-
-
 def elsewhere(group: Group) -> Group:
     """The same group on macOS and Windows, gating a merge and a release rather than a pull request.
 
@@ -412,15 +377,11 @@ def elsewhere(group: Group) -> Group:
     happens a few times a year. Running all three on every push would make every change wait for
     three legs to buy one difference, so the Linux leg gates the change and this one gates the merge,
     which is still before a user meets it.
-
-    These two runners are also the ones whose compositor is not trustworthy, so cue timing is
-    reported here, and the Linux row of the same group is the one meant to gate it.
     """
     return replace(
         group,
         name=f"{group.name}-platforms",
         why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
-        commands=tuple(reports_timing(command) for command in group.commands),
         runners=(MACOS, WINDOWS),
         when=("main",),
     )
@@ -452,7 +413,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, and the docs samples DeckTalk writes from a real run.",
-        commands=(linux_timing(measuring("e2e", "-m", "e2e")), generator(SAMPLES)),
+        commands=(measuring("e2e", "-m", "e2e"), generator(SAMPLES)),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
@@ -622,13 +583,7 @@ GROUPS: tuple[Group, ...] = (
         # The row judges what was already released rather than gating the release: it runs weekly,
         # because seven minutes on every merge buys one answer that the template's own data tests
         # give on every pull request. A release is never more than a week from its first scaffold run.
-        #
-        # This row records five projects in one job, so the runner renders in software throughout and
-        # presents a reveal tens of milliseconds after the frame it belongs on. The promise being
-        # judged is that a project out of the wheel builds and verifies, which the cue timing of the
-        # machine it was built on is no part of, so this row reports a late landing and fails on
-        # every other finding exactly as the gated rows do.
-        commands=(reports_timing((*PYTEST, "-m", "scaffold")),),
+        commands=((*PYTEST, "-m", "scaffold"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),

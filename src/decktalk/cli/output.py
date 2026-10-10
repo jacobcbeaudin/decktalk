@@ -316,8 +316,6 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
     yield Text(f"Platform  {result.platform}")
     for key in result.api_keys:
         yield Text(f"API key   {key.provider} {key.variable} {key.state.value}")
-    if result.bias_ms is not None:
-        yield Text(f"Bias      {result.bias_ms:.0f} ms")
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:
@@ -436,7 +434,8 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
     yield Text(f"Verifying {result.film.as_posix()}, {clock(result.film_seconds)} long.")
     measured = [cue for cue in result.cues if cue.offset_seconds is not None]
     if measured:
-        table = _table("Section", "Cue", "Spoken", "Shown", "Offset")
+        # A cue measured with declared motion masked out says how much of the frame that took.
+        table = _table("Section", "Cue", "Spoken", "Shown", "Offset", "Masked")
         for cue in measured:
             table.add_row(
                 str(cue.section),
@@ -444,6 +443,19 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
                 f"{cue.spoken:.2f}",
                 "" if cue.shown is None else f"{cue.shown:.2f}",
                 f"{cue.offset_seconds:+.2f}" if cue.offset_seconds is not None else "",
+                "" if cue.masked_percent is None else f"{cue.masked_percent:.1f}%",
+            )
+        yield table
+    if result.motions:
+        table = _table("Section", "Motion", "Landing", "Spoken", "Shown", "Offset")
+        for row in result.motions:
+            table.add_row(
+                str(row.section),
+                row.cue,
+                row.kind,
+                f"{row.spoken:.2f}",
+                "" if row.shown is None else f"{row.shown:.2f}",
+                "" if row.offset_seconds is None else f"{row.offset_seconds:+.2f}",
             )
         yield table
 

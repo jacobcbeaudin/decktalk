@@ -1,9 +1,8 @@
 """The URL a page section is opened at, and what its recording is keyed on.
 
 The page is opened on the local origin with the section's scene, the cues `cue` resolved and the
-section's words, and it is recorded for its span in the narration plus its record margin. A
-section whose frames stall is recorded again while the machine is quieter, up to `[record] retries`
-times.
+section's words, and its clock is stepped through its span in the narration plus its record margin,
+one frame at a time.
 
 A section is keyed on that URL, which already carries the scene, the resolved cues and the spoken
 words with their times, on the frame geometry, the colour scheme and the motion the render asks for,
@@ -23,6 +22,7 @@ would say nothing had moved.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -35,6 +35,7 @@ from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
 from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, T0_SIGNAL, TIME_MARK, Q
 from decktalk.results import Word
+from decktalk.stages.record import render
 
 log = logging.getLogger(__name__)
 
@@ -260,29 +261,72 @@ class Job:
     digest: str
     previous: RecordingLog | None
     """The log of the recording already on disk, when there is one."""
+    document: dict[str, object] | None = None
+    """What a rendered section's command reads, or None for a section a page draws."""
 
     @property
     def unchanged(self) -> bool:
         """Whether the recording on disk was made from these exact inputs, and is finished.
 
-        A log with no start in it belongs to a run that was stopped between placing the webm
-        and measuring it, so the section is recorded again rather than assembled from a picture whose
-        first frame nobody found.
+        A log with no checks in it belongs to a run that was stopped between placing the video
+        and measuring it, so the section is recorded again rather than assembled from a picture
+        nobody judged.
         """
         return (
             self.previous is not None
             and bool(self.previous.digest)
             and self.previous.digest == self.digest
-            and self.previous.start is not None
+            and self.previous.checks is not None
             and self.out.exists()
         )
 
 
+def motion_of(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, seconds: float) -> dict[str, object]:
+    """The motion document a rendered section's command reads, from its take's words and its cue seconds."""
+    video = inputs.settings.video
+    return render.motion_document(
+        fps=video.fps,
+        width=video.width,
+        height=video.height,
+        seconds=seconds,
+        words=inputs.words(section.number).words,
+        cues=cue_times.times(section.number) if cue_times is not None else {},
+    )
+
+
+def rendered_digest(inputs: Inputs, section: PageSection, document: dict[str, object]) -> str:
+    """The digest of everything a rendered section's video is drawn from: its command, its document and its files.
+
+    Every word of the command that names a project file joins the key by content, so editing the
+    script the command runs records the section again, as editing a page does.
+    """
+    named = {word: inputs.path(word) for word in section.render_command if not word.startswith("{")}
+    files = {word: path for word, path in named.items() if path.is_file()}
+    lines = [RENDERED_MARK, *section.render_command, json.dumps(document, sort_keys=True)]
+    return input_digest(lines, files)
+
+
+RENDERED_MARK = "render"
+"""What a rendered section's key opens with, so it can never equal the key of a page's recording."""
+
+
 def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, seconds: float) -> Job:
     """What recording one section would open and write, and whether the recording on disk still stands."""
-    url = scene_url(inputs, section, scene_params(section, cue_times))
     workspace = inputs.workspace
     previous = RecordingLog.previous(workspace.recording_log(section.key))
+    if section.rendered:
+        document = motion_of(inputs, section, cue_times, seconds)
+        return Job(
+            section=section,
+            url=f"{RENDERED_MARK}:{' '.join(section.render_command)}",
+            seconds=seconds,
+            out=workspace.recording(section.key),
+            log_path=workspace.recording_log(section.key),
+            digest=rendered_digest(inputs, section, document),
+            previous=previous,
+            document=document,
+        )
+    url = scene_url(inputs, section, scene_params(section, cue_times))
     return Job(
         section=section,
         url=url,

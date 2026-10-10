@@ -29,8 +29,8 @@ section that shows it. Nothing else is recorded again, and nothing else is voice
 | `cues.json` | The phrase each callout waits for. |
 | `deck/index.html` | The title cards, the callouts and the closing card. |
 
-A section is either a page section, which names a `page` and a `scene`, or a clip section, which
-names a `clip` file instead. A clip section may also name a `words` file of the speech inside it, so
+A section is a page section, which names a `page` and a `scene`, a clip section, which names a
+`clip` file instead, or a render section, whose picture a program you name draws. A clip section may also name a `words` file of the speech inside it, so
 the captions carry those words too, and `seamless = true` says the clip continues the previous
 section's picture, which `verify` then measures at the seam.
 
@@ -39,6 +39,10 @@ and an optional `caption`, `db` and `offset_seconds`. `decktalk score` is what g
 along with the music bed and the ambience, from the prompts in `[score.music]`,
 `[score.ambience]` and `[score.effects.<name>]`. That stage spends, so it runs after
 `record` and a draft loop that stops at `record` never reaches it.
+
+A cursor that travels from one control to the next, or a progress bar that fills while the voice
+explains it, is a motion: it departs on one word and arrives on another, and verify measures both.
+[Things that move](/guides/motion) shows how to declare one.
 
 ## The workflow
 

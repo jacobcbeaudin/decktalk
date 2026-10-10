@@ -30,8 +30,8 @@ Each stage reads what the stages before it wrote. `decktalk build` runs all six 
 one is also a command of its own with the same name.
 
 <Frame caption="The script, the voice, the cues, the slides and the film, and the file each one is. The cues are the join.">
-  <img className="block dark:hidden" src="/images/pipeline-light.svg" alt="Five stations from left to right: the script, the voice, the cues, the slides and the video, each with its file. The script is script.md, one heading a section. The voice reads it and every word gets a time, in a take and its words file. The cues are cues.json, where you name the phrase and the picture starts on it, such as the phrase This is DeckTalk for the cue 1.1:title. The slides are plain HTML in deck/index.html, one scene a section. The video is recorded in real time, and every reveal is measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." />
-  <img className="hidden dark:block" src="/images/pipeline-dark.svg" alt="Five stations from left to right: the script, the voice, the cues, the slides and the video, each with its file. The script is script.md, one heading a section. The voice reads it and every word gets a time, in a take and its words file. The cues are cues.json, where you name the phrase and the picture starts on it, such as the phrase This is DeckTalk for the cue 1.1:title. The slides are plain HTML in deck/index.html, one scene a section. The video is recorded in real time, and every reveal is measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." />
+  <img className="block dark:hidden" src="/images/pipeline-light.svg" alt="Five stations from left to right: the script, the voice, the cues, the slides and the video, each with its file. The script is script.md, one heading a section. The voice reads it and every word gets a time, in a take and its words file. The cues are cues.json, where you name the phrase and the picture starts on it, such as the phrase This is DeckTalk for the cue 1.1:title. The slides are plain HTML in deck/index.html, one scene a section. The video is recorded frame by frame, and every reveal is measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." />
+  <img className="hidden dark:block" src="/images/pipeline-dark.svg" alt="Five stations from left to right: the script, the voice, the cues, the slides and the video, each with its file. The script is script.md, one heading a section. The voice reads it and every word gets a time, in a take and its words file. The cues are cues.json, where you name the phrase and the picture starts on it, such as the phrase This is DeckTalk for the cue 1.1:title. The slides are plain HTML in deck/index.html, one scene a section. The video is recorded frame by frame, and every reveal is measured. A line from the slides joins the cues. Under the stations: change one sentence, and only that section is voiced and recorded again." />
 </Frame>
 
 | Stage | Command | Reads | Writes |
@@ -98,25 +98,25 @@ and `--at`.
 
 ## Why the cuts are exact
 
-Every reveal starts on its word because DeckTalk finds the start of the section clock inside every
-recording, to the frame.
+Every reveal starts on its word because the recorder decides what second each frame shows, rather
+than finding out afterwards when a browser happened to paint it.
 
-<Frame caption="The recording opens on the magenta cover, and the section clock starts on the first clean frame.">
-  <img className="block dark:hidden" src="/images/narration-zero-light.svg" alt="A strip of recorded frames opens on three magenta cover frames. The section clock starts on the first clean frame, where the narration &quot;A bowl. A ball. Watch it step down&quot; starts. The bowl appears whole in the first frame after the word bowl, and the ball in the first frame after the word ball." />
-  <img className="hidden dark:block" src="/images/narration-zero-dark.svg" alt="A strip of recorded frames opens on three magenta cover frames. The section clock starts on the first clean frame, where the narration &quot;A bowl. A ball. Watch it step down&quot; starts. The bowl appears whole in the first frame after the word bowl, and the ball in the first frame after the word ball." />
+<Frame caption="Frame k of a recording is the page at second k / fps, so frame 0 is the start of the section clock.">
+  <img className="block dark:hidden" src="/images/narration-zero-light.svg" alt="A strip of recorded frames, each labelled with its second on the section clock: 0, 1/fps, 2/fps and on. Frame 0 is the start of the section clock, where the narration &quot;A bowl. A ball. Watch it step down&quot; starts. The bowl first shows in the first frame after the word bowl, and the ball in the first frame after the word ball." />
+  <img className="hidden dark:block" src="/images/narration-zero-dark.svg" alt="A strip of recorded frames, each labelled with its second on the section clock: 0, 1/fps, 2/fps and on. Frame 0 is the start of the section clock, where the narration &quot;A bowl. A ball. Watch it step down&quot; starts. The bowl first shows in the first frame after the word bowl, and the ball in the first frame after the word ball." />
 </Frame>
 
 | Risk | What DeckTalk does |
 |---|---|
-| A browser starts to record at a moment nobody chose. Chromium on Windows starts later than on Linux. | The recorder covers the page in magenta from the first paint, and the section clock starts on the first clean frame after the cover. |
-| Chromium sends a frame only when the page paints. | The cover carries a 2 pixel square in the bottom-right corner that turns once every half second at 3 percent opacity, so frames keep coming under the cover and through the recording. |
-| The start of the section clock is known only to the nearest frame. | The recorder captures at 25 frames a second, which is not a setting, so the start is exact to one frame of 40 milliseconds. |
-| No cover is found at all. | `record` takes the first painted frame plus `record.settle_seconds`, and failing that `record.fallback_first_paint_seconds` plus the settle, and it says in both cases that the start was a guess. |
+| A browser starts to record at a moment nobody chose, and Chromium on Windows starts later than on Linux. | The recorder holds the page clock still once the page has loaded and painted, so frame 0 is second 0 and there is no start to find. |
+| A browser paints when it can, so a busy frame lands later than an idle one. | For each frame `k` the recorder moves the page's timers on by one frame, steps the section clock to `k / fps` and captures what the page shows, so every frame is the page at its own second. |
+| Something animates between two frames. | The runtime holds every CSS animation, transition and Web Animation at the second since its cue was due, and calls every `DeckTalk.frame` hook with the frame's second. |
+| A heavy page takes longer to draw than one frame lasts. | The recorder waits for each frame, so a heavy page records slower than real time and never wrongly. |
 | Section lengths add up to fractions of a frame. | `assemble` cuts each section to whole frames counted from the start of the narration. |
 
-`record` looks for the cover only in the first `record.cover_scan_seconds` of each recording, which
-is 4 seconds by default. Nothing here depends on wall-clock time.
-[The handshake](/concepts/page-contract#the-handshake) shows each wait the recorder makes.
+The recorder steps at `video.fps`, and nothing here depends on wall-clock time.
+[The handshake](/concepts/page-contract#the-handshake) shows each wait the recorder makes, and
+[the decision note](/decisions/the-recorder-steps-the-clock) says why time belongs to the recorder.
 
 ## The build that does not spend
 

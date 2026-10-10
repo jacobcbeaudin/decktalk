@@ -4,7 +4,7 @@
 
 The log is the recorder's whole account of one section: what it opened, which project files the page
 loaded, how long it asked for, every judgement the page and the frames produced, what each cue and
-each synced line did, where the start of the section clock landed in the webm, and the frames it measured. One
+each synced line did, and the frames it measured. One
 command writes all of it, so a measurement always belongs to the recording beside it and a reader of
 a long run sees each section's log as soon as that section is done.
 
@@ -64,44 +64,21 @@ class RecordingChecks(Model):
     luma: Luma = Field(description="How bright the recording is at three points along it.")
 
 
-class Start(Model):
-    """Where the start of the section clock sits in one recording, how it was found, and whether it was measured."""
-
-    seconds: float = Field(
-        ge=0,
-        description="The start of the section clock in the webm, which is the first clean frame after the cover.",
-    )
-    method: str = Field(
-        description="How the start of the section clock was found, in one sentence for a reader, which nothing "
-        "matches a code against."
-    )
-    guessed: bool = Field(False, description="True when no cover was found, so every reveal in the section moves.")
-
-
 class RecordingLog(Stored):
-    """What `record` did for one section, where its section clock starts in the webm, and how it checked out."""
+    """What `record` did for one section and how it checked out."""
 
     label: ClassVar[str] = "the log of one section's recording"
 
     section: SectionNumber
     digest: str = Field(description="The digest of what this section was recorded from, which keys a skip.")
     recording: Recording = Field(description="What the recorder knew: the page, its files, its timings and its report.")
-    start: Start | None = Field(
-        None, description="Where the start of the section clock sits in the webm, or null before it was found."
-    )
     findings: tuple[Finding, ...] = Field((), description="Every judgement the page and the frames made.")
     checks: RecordingChecks | None = Field(None, description="What the frames measured, or null when none were.")
-
-    @property
-    def trim_seconds(self) -> float:
-        """Where the assembler cuts the head off this recording, which is the start of the section clock in the webm."""
-        return self.start.seconds if self.start is not None else self.recording.clock_start_seconds
 
 
 __all__ = [
     "Luma",
     "RecordingChecks",
     "RecordingLog",
-    "Start",
     "input_digest",
 ]

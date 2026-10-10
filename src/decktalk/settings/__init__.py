@@ -77,11 +77,17 @@ HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 PAGE_POLICIES = ("trusted", "untrusted")
 """The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
-# The four constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
+CAPTURE_SWITCHES = ("disable-frame-rate-limit", "disable-gpu-vsync")
+"""Truth: the Chromium switches `record` may launch with, each named as Chromium spells it without its dashes.
+
+They are a closed set because each one is held to recording the same frames as a launch without it,
+and a free switch would be a launch nobody held to that.
+"""
+
+# The three constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
 # one with its unit and its reason, so the reason is written there alone.
 BLOCK_PX = 8
 GUARD_FRAMES = 1.5
-REPORT_FRAME_GAP_MS = 100
 CLICK_LEVEL_DBFS = -24.0
 
 
@@ -105,15 +111,12 @@ class VideoConfig:
     )
     fps: int = tune(
         25,
-        "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
+        "Frame rate of every recording and of the final mp4. The recorder steps the section clock one frame "
+        "of this rate at a time, so every frame of a film is the page at its own second.",
         unit="frames per second",
         bounds=Bounds(enum=(25, 30, 50, 60)),
-        requires="video.fps >= CAPTURE_FPS",
-        hazard=(
-            "Encoding below the rate the recorder captured at drops presented frames, which both loses "
-            "motion a viewer saw and corrupts the frames verify measures its own verdicts from."
-        ),
-        see_also=("CAPTURE_FPS",),
+        requires="video.fps >= SLOWEST_FPS",
+        see_also=("SLOWEST_FPS",),
     )
     preset: str = tune(
         "medium",
@@ -304,20 +307,8 @@ class NarrationConfig:
 
 @dataclass(frozen=True)
 class RecordConfig:
-    """These keys tune the headless Chromium recording and how the start of the section clock is found in it."""
+    """These keys tune how `record` opens each page section in headless Chromium and steps it frame by frame."""
 
-    settle_seconds: float = tune(
-        0.5,
-        "Shortest wait after the page is ready and before the start of the section clock.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=30),
-    )
-    cover_min_seconds: float = tune(
-        1.5,
-        "Shortest time from the start of the recorder to the start of the section clock.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=30),
-    )
     color_scheme: str = tune(
         "light",
         "Color scheme that Chromium reports to the page.",
@@ -345,87 +336,67 @@ class RecordConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         hazard=(
-            "Each recording needs about two dedicated CPUs to present its frames on time, and a starved "
-            "recording stalls or lands its reveals late, so a number above the machine's share costs "
-            "correctness rather than only speed."
+            "Each recording steps its own Chromium and its own encode, so a number above the machine's share "
+            "makes every section wait on the others and the run slower rather than faster."
         ),
     )
-    retries: int = tune(
-        2,
-        "How many more times `record` records a section whose frames stalled.",
-        bounds=Bounds(ge=0, le=10),
-        see_also=("record.frame_gap_max_ms",),
-    )
-    cover_scan_seconds: float = tune(
-        4.0,
-        "Seconds at the start of each recording that `record` scans for the magenta cover.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=30),
-    )
-    fallback_first_paint_seconds: float = tune(
-        1.1,
-        "Guessed first paint when `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=10),
-    )
-    cover_min_luma: float = tune(
-        70.0,
-        "A cover frame has an average luma above this.",
-        unit="luma",
-        bounds=Bounds(ge=40, le=120),
-        typed=A_LUMA,
+    capture_switches: tuple[str, ...] = tune(
+        CAPTURE_SWITCHES,
+        "Chromium switches `record` launches its browser with, which stop it holding its frames to the display's "
+        "refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same "
+        "frames as one without them. An empty list launches Chromium with none.",
+        bounds=Bounds(items=Bounds(enum=CAPTURE_SWITCHES)),
+        scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
-    )
-    cover_max_luma: float = tune(
-        140.0,
-        "A cover frame has an average luma below this.",
-        unit="luma",
-        bounds=Bounds(ge=80, le=200),
-        typed=A_LUMA,
-        nature=Nature.APPARATUS,
-    )
-    cover_min_chroma: float = tune(
-        165.0,
-        "A cover frame has an average U and an average V above this.",
-        unit="chroma",
-        bounds=Bounds(ge=128, le=255),
-        typed=A_LUMA,
-        nature=Nature.APPARATUS,
-    )
-    painted_peak_min_luma: float = tune(
-        60.0,
-        "A painted frame has a brightest luma above this.",
-        unit="luma",
-        bounds=Bounds(ge=1, le=200),
-        typed=A_LUMA,
-    )
-    painted_mean_max_luma: float = tune(
-        120.0,
-        "A painted frame has an average luma below this, so a white flash does not count as the picture.",
-        unit="luma",
-        bounds=Bounds(ge=20, le=240),
-        typed=A_LUMA,
-    )
-    truncated_slack_seconds: float = tune(
-        0.5,
-        "Allowed shortfall of a recording against its requested length.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=5),
-        decides=(Code.RECORD_TRUNCATED,),
-    )
-    frame_gap_max_ms: int = tune(
-        150,
-        "Longest gap between two presented frames after the start of the section clock. A longer gap makes "
-        "`record` try again.",
-        unit="milliseconds",
-        bounds=Bounds(ge=REPORT_FRAME_GAP_MS, le=2000),
-        requires="record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS",
-        decides=(Code.RECORD_STALLED,),
         hazard=(
-            "The runtime reports a gap no finer than its own reporting floor, so a limit under that floor "
-            "makes every section stall and every retry spend the recording again."
+            "With the switches no frame waits for a display refresh, so each recording keeps more of the CPU "
+            "busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on "
+            "each other."
         ),
-        see_also=("REPORT_FRAME_GAP_MS", "record.retries"),
+        see_also=("record.concurrency",),
+    )
+    frame_wait_seconds: float = tune(
+        15.0,
+        "Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every "
+        "image decoded and the step laid out and painted, before it fails the section rather than capture "
+        "the frame half drawn.",
+        unit="seconds",
+        bounds=Bounds(gt=0, le=120),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "A wait too short for this machine fails sections whose pages are only slow to fetch a font or "
+            "decode an image. It never shortens a recording that succeeds, because a page that has drawn "
+            "its frame is captured at once."
+        ),
+    )
+    skip_still: bool = tune(
+        True,
+        "Write a frame again rather than capture it when the page reports that nothing it draws changed "
+        "since the frame before, which is most frames of a narrated slide, and write every frame before the "
+        "next change the page reports without stepping the page to each. The frames are the same either "
+        "way, so it changes how long `record` takes and nothing it writes.",
+        nature=Nature.APPARATUS,
+        hazard=(
+            "A page that changes its picture outside what DeckTalk knows of, such as through its style "
+            "sheet's object model or inside a shadow root, records the frame before until something it "
+            "knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off."
+        ),
+        see_also=("record.skip_audit_every",),
+    )
+    skip_audit_every: int = tune(
+        0,
+        "Step to and capture every this many frames `record` writes again anyway, and stop the section if "
+        "one differs from the frame before. Zero audits none, which is the fast path, and the test suite "
+        "sets it to prove the frames written again.",
+        unit="frames",
+        bounds=Bounds(ge=0, le=10_000),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "Every audited frame costs one step and one capture, so one audits every skipped frame and saves no time."
+        ),
+        see_also=("record.skip_still",),
     )
 
 
@@ -597,12 +568,42 @@ class VerifyConfig:
         "How far the measured onset may sit from the cue time, early or late.",
         unit="milliseconds",
         bounds=Bounds(ge=20, le=400),
-        decides=(Code.CUE_OFF,),
+        decides=(Code.CUE_OFF, Code.MOTION_OFF, Code.MOTION_NO_EDGE),
         hazard=(
             "A viewer sees a reveal land late at about a fifth of a second, so above roughly 200 "
             "milliseconds the limit passes films whose pictures visibly miss their words."
         ),
         see_also=("verify.av_offset_max_ms", "verify.reference_lead_seconds"),
+    )
+    motion_floor_percent: float = tune(
+        0.5,
+        "How much of a moving element's own area must change from one frame to the next for verify to "
+        "read it as moving, which is where a motion's departure and arrival are found.",
+        unit="percent",
+        bounds=Bounds(ge=0.05, le=20),
+        typed=A_PERCENT,
+        decides=(Code.MOTION_OFF, Code.MOTION_NO_EDGE),
+        hazard=(
+            "Above a few percent the slow last frames of a firm arrival read as still, so its arrival is "
+            "measured early and a motion that landed on its word fails."
+        ),
+        evidence=(
+            "Calibration: on the motion prototype a firm arrival measured on its cue frame at half a percent "
+            "at both the full and the quarter size."
+        ),
+    )
+    motion_mask_max_percent: float = tune(
+        40.0,
+        "The most of the frame verify may mask out of a cue's measurement before it says it measured less "
+        "of the picture than usual.",
+        unit="percent",
+        bounds=Bounds(ge=5, le=90),
+        typed=A_PERCENT,
+        decides=(Code.MOTION_MASK_LARGE,),
+        hazard=(
+            "Near the top of the range a cue is judged on a sliver of the frame, so a reveal under a large "
+            "declared motion passes on very little evidence."
+        ),
     )
     av_offset_max_ms: float = tune(
         120.0,
@@ -624,7 +625,6 @@ class VerifyConfig:
         bounds=Bounds(ge=1, le=200),
         typed=A_LUMA,
         decides=(Code.RECORD_BLACK,),
-        see_also=("record.painted_peak_min_luma",),
     )
     cut_window_seconds: float = tune(
         0.15,

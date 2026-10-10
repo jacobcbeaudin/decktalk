@@ -63,14 +63,8 @@ def test_doctor_reports_the_machine_and_fetches_nothing(run, machine, answers) -
     made = machine(doctor=answers["doctor"])
     ran = run("doctor")
     assert ran.exit_code == 0
-    assert made.called("doctor")["measure"] is False
+    assert "threshold" in made.called("doctor")
     assert "Python" in ran.out
-
-
-def test_doctor_measures_only_when_asked(run, machine, answers) -> None:
-    made = machine(doctor=answers["doctor"])
-    run("doctor", "--measure")
-    assert made.called("doctor")["measure"] is True
 
 
 def test_doctor_is_judged_by_the_threshold_its_flags_name(run, machine) -> None:

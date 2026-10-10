@@ -85,6 +85,11 @@ EXAMPLES: tuple[Example, ...] = (
         "examples/interview",
     ),
     Example(
+        "motion",
+        "things that travel between two words: a firm arrival, a spring, a loop and a bar that fills",
+        "examples/motion",
+    ),
+    Example(
         "product",
         "the project behind the product film, which is that film's deck and script without its voice",
         None,

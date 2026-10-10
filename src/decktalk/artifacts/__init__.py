@@ -25,7 +25,6 @@ from decktalk.artifacts.recordings import (
     Luma,
     RecordingChecks,
     RecordingLog,
-    Start,
     input_digest,
 )
 from decktalk.artifacts.stored import (
@@ -87,7 +86,6 @@ __all__ = [
     "ProviderWords",
     "RecordingChecks",
     "RecordingLog",
-    "Start",
     "Stored",
     "Unreadable",
     "UnreadableCache",

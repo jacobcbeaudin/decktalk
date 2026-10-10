@@ -119,7 +119,7 @@ def check(
     states = _states(inputs, run, spoken)
     cost = states.plan(spend=True).cost
     resolved, times = _resolve(inputs, run, states, wanted)
-    sections = [one for one in inputs.document.page_sections if wanted(one.number)]
+    sections = [one for one in inputs.document.drawn_sections if wanted(one.number)]
 
     looked = _look(inputs, run, sections, extra, times, frames=frames) if pages else _unreached(run, frames=frames)
     if pages:
@@ -338,8 +338,9 @@ def _sections(
             continue
         slides[section.number] = found
         resolved = times.get(section.number, {})
+        opted = {cue for number, cue in skipped if number == section.number}
         looked.findings += static_findings(
-            entry, resolved, where=section.page, section=section.number, settings=inputs.settings
+            entry, resolved, where=section.page, section=section.number, settings=inputs.settings, opted=opted
         )
         if not frames:
             continue

@@ -8,12 +8,14 @@ mp4 and measures it against the clock the earlier stages promised it would keep.
 a later run reads: the only files it touches are its own events file and the build lock it holds
 while it measures. This is the page to read when a number it printed is not the number you expected.
 
-Four things are measured. Every section must open on a real picture past its dip to black. The
+Five things are measured. Every section must open on a real picture past its dip to black. The
 narration must be quiet in the window before each cut, so no cut lands on a word. A section that
-declares itself seamless must open on the picture the section before it ended on. And every cue must
-change the picture, by enough to be seen, within the offset limit of the word it was promised to.
+declares itself seamless must open on the picture the section before it ended on. Every cue must
+change the picture, by enough to be seen, within the offset limit of the word it was promised to,
+with every declared motion around it masked out. And every declared motion must depart and arrive on
+its own lane within that same limit of its words.
 
-Beside those four it repeats what every recording log already judged, rather than measuring it again,
+Beside those five it repeats what every recording log already judged, rather than measuring it again,
 so a page that threw or an equation that was never typeset is still a finding after the build that
 recorded it, and after a build somebody else recorded.
 
@@ -43,15 +45,15 @@ that carries no placements file and has no section files to read a shape from. B
 ```text
 Verifying build/final/my-lesson.mp4, 0:50 long.
 
- Section   Cue           Spoken   Shown   Offset
- ───────────────────────────────────────────────
+ Section   Cue           Spoken   Shown   Offset   Masked
+ ────────────────────────────────────────────────────────
  1         1.1:title     0.50     0.52    +0.02
  1         1.1:files     1.93     1.96    +0.04
  1         1.2:script    8.56     8.60    +0.04
- 1         1.2:deck      11.87    11.92   +0.05
+ 1         1.2:deck      11.87    11.88   +0.01
  1         1.2:word      17.08    17.12   +0.04
  2         2.1:average   21.23    21.28   +0.05
- 2         2.1:formula   25.46    25.52   +0.06
+ 2         2.1:formula   25.46    25.48   +0.02
  2         2.1:code      29.22    29.24   +0.02
  2         2.1:waited    31.10    31.12   +0.02
  3         3.1:idea      37.09    37.12   +0.03
@@ -72,6 +74,10 @@ and what is wrong about any of them is a finding.
 | `Spoken` | `spoken` | When the cue's word is spoken in the film, in seconds. After a build on placeholders this is where the click for that word actually sounds. After a voiced build it is the cue's own second in the film. |
 | `Shown` | `shown` | When the picture changed, in seconds, which is the onset. |
 | `Offset` | `offset_seconds` | `Shown` less `Spoken`, in seconds. A negative value means the picture moved early. |
+| `Masked` | `masked_percent` | How much of the frame declared motion masked out of this cue, or empty when nothing did. [Motions](#motions) says what is masked. |
+
+A deck that declares motions prints a second table under the first, with one row per landing that
+was measured. [Motions](#motions) gives its columns.
 
 `change_percent` is in the JSON and not in the table: it is how much of the picture the reported
 probe found changed.
@@ -121,10 +127,11 @@ Over `verify.cut_change_max_percent` of the frame changing is a visible seam, an
 `CUT_POP` against it. A seam is only ever a seamless cut, so a section that does not set `seamless`
 has no row here and its cut is never judged for the picture.
 
-When the two do not match, the next three frames are read as well, because a picture that arrives a
-frame or two late is a section whose clock has slipped rather than a section showing something else.
-The row's `drift_seconds` is how far past the cut the outgoing picture was found, in seconds, and it is zero
-when the seam matched straight away.
+The recorder steps the section clock, so a seamless section opens on the very frame the section
+before it ended on, and the first frame alone decides `CUT_POP`. A picture that arrives even one frame
+late is a frame a viewer sees jump. When the two do not match, the next three frames are read as well,
+so the row can say how late the outgoing picture arrived: `drift_seconds` is how far past the cut it
+was found, in seconds, and it is zero when the seam matched straight away.
 
 ## Cues
 
@@ -138,13 +145,13 @@ the whole reference lead before the cue.
 
 ```text
 verify.reference_lead_seconds = verify.cue_offset_max_ms / 1000
-                              + GUARD_FRAMES / CAPTURE_FPS
+                              + GUARD_FRAMES / video.fps
                               + verify.reference_lead_extra_ms / 1000
 ```
 
 `GUARD_FRAMES` is 1.5, which is half a frame of rounding guard on each side of the window the offset
-limit allows, and `CAPTURE_FPS` is 25, the rate the recorder captures at, which DeckTalk cannot set
-and so never asks for. The lead has to be at least that wide: a reveal that lands at the early edge of
+limit allows, and `video.fps` is the rate the recorder steps the section clock at, so the guard is
+always one and a half of the film's own frames. The lead has to be at least that wide: a reveal that lands at the early edge of
 the offset limit would otherwise already be showing in the reference frame, and the check would
 measure the change only once the reveal had settled.
 
@@ -310,6 +317,71 @@ raise `CUE_OFF`, and each message says which of the two it is.
 A whole run that lands a frame or two late is usually a slow machine rather than a bad deck.
 [Build in CI and offline](/guides/ci-and-offline) shows how to widen a limit on one runner.
 
+## Motions
+
+A page declares everything that moves for longer than a moment, as a motion, a loop or the region a
+frame hook draws in, and a render section's program may write the same declarations as its
+landings. The recorder keeps one lane for each in the recording log, with the box it swept and the
+seconds it moved, and verify reads the lanes from there.
+[The lane report](/concepts/page-contract#the-lane-report) gives their fields.
+
+### The mask
+
+Every cue is measured with every lane alive anywhere from the start of its control spans to its last
+probe masked out. The mask is the union of those lanes' boxes, scaled to the probe size, and it is
+taken out of the changed share, the control share and the onset scan alike, so a ring turning in a
+corner never reads as a reveal starting early.
+
+`masked_percent` is the share of the frame the mask covered. Over
+`verify.motion_mask_max_percent`, which is 40 by default, verify raises `MOTION_MASK_LARGE`. It is a
+warning, because the cue was still measured, on the part of the picture that was left.
+
+### Landings
+
+A cue that is only a motion's departure or arrival, where the page reveals nothing else, has no step
+in the frame to read. It is skipped in the cue rows as `motion_landing` and measured on the motion's
+own lane instead. A cue where the page also reveals something is measured both ways: as a reveal
+with the motion masked, and as a landing on the lane.
+
+Inside the lane, frame by frame, the motion counts as moving while more than
+`verify.motion_floor_percent` of the moving element's own area changes from one frame to the next,
+which is 0.5 percent by default. The comparison is made at `verify.onset_diff_luma`.
+
+```text
+departure = the first moving frame at or after the cue less verify.reference_lead_seconds
+arrival   = the last moving frame up to the later of the cue and the lane's last second,
+            plus the offset limit and two frames
+```
+
+The landing table holds one row per landing, in film order.
+
+| Column | JSON field | Meaning |
+|---|---|---|
+| `Section` | `section` | The section number. |
+| `Motion` | `cue` | The cue id the motion lands on. |
+| `Landing` | `kind` | `depart` or `arrive`. |
+| `Spoken` | `spoken` | When the cue's word is spoken in the film, in seconds. |
+| `Shown` | `shown` | The first moving frame for a departure or the last for an arrival, or null when the lane never moved. |
+| `Offset` | `offset_seconds` | `Shown` less `Spoken`, in seconds. |
+
+```text
+MOTION_NO_EDGE when an arrival shows earlier than its word by more than the offset limit, or never moved
+MOTION_OFF     when a departure never moved, or any other landing is outside the offset limit
+```
+
+The limit is `verify.cue_offset_max_ms` plus half a frame, as it is for a cue. An arrival that came
+to rest early is `MOTION_NO_EDGE` rather than `MOTION_OFF`, because the fix is the ease rather than
+the cue: a motion that eases to rest has no edge on its word, and `firm` gives it one.
+
+A landing on a cue that `cues.json` marks `"verify": false` has no row and no finding, which is how a
+`settle` or `spring` arrival is written.
+
+### A render section
+
+A render section's lanes are the landings its program wrote. When it wrote none, nothing says what
+moves in its picture, so every cue of that section is skipped as `rendered` and verify says once on
+its stream that it measured none of them. Such a cue is never passed.
+
 ## Every finding `verify` can raise
 
 | Code | Severity | What it means | Keys that move it |
@@ -322,9 +394,12 @@ A whole run that lands a frame or two late is usually a slow machine rather than
 | `CUE_NO_ONSET` | warning | The reveal changed the picture and no frame of it steps, so there is no second to compare with the word. | `verify.onset_rise_points`, `verify.onset_diff_luma` |
 | `CUE_OFF` | error | The change lands further from its word than the offset limit allows, or the click does. | `verify.cue_offset_max_ms`, `verify.av_offset_max_ms`, `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.reference_lead_extra_ms` |
 | `CUE_UNRESOLVED` | error | `cues.json` lists a cue that no run could give a second to, so the film never plays it. | none |
+| `MOTION_OFF` | error | A declared motion departed or arrived outside the offset limit of its word, or a departure never moved. | `verify.cue_offset_max_ms`, `verify.motion_floor_percent` |
+| `MOTION_NO_EDGE` | error | A declared motion came to rest before its word, so no frame shows it land on the word. | `verify.cue_offset_max_ms`, `verify.motion_floor_percent` |
+| `MOTION_MASK_LARGE` | warning | Declared motion covered more of the frame around a cue than the mask allows before it says so. | `verify.motion_mask_max_percent` |
 | `CUE_STALE` | error | The cue times on disk were placed from a different `cues.json` than the project's, so the film was cut to moments nobody asks for now. Run `decktalk build`. | none |
 
-`verify` also raises again every finding the recording logs hold, such as `RECORD_STALLED`,
+`verify` also raises again every finding the recording logs hold, such as
 `RECORD_TRUNCATED`, `PAGE_KATEX_ERROR` and every warning the runtime reported while it recorded. Those
 are read from the log rather than measured, which is why recording that section again is the only
 thing that clears one.
@@ -336,7 +411,7 @@ Each finding has a page of its own under `/reference/findings/`, and
 ## Skipped cues
 
 A skipped cue has no `shown`, no `offset_seconds` and no `change_percent`, and its `skipped` field says why
-it has none. Two of the six reasons carry a finding, and the table says which.
+it has none. Two of the eight reasons carry a finding, and the table says which.
 
 | `skipped` | Cause | What to do |
 |---|---|---|
@@ -346,10 +421,12 @@ it has none. Two of the six reasons carry a finding, and the table says which.
 | `at_section_start` | No frame fits between the section's floor and one frame before the cue, which is what a cue at or very near the section's own start looks like. | Give the cue a later phrase, or an offset that moves it clear of the start. |
 | `too_close_to_end` | Every probe would fall later than 0.05 seconds before the section ends. | Move the cue earlier, or give the section a longer hold. |
 | `no_onset` | The picture changed and no frame of the change steps or passes the floor. This row carries `CUE_NO_ONSET`. | Make the reveal arrive in one jump rather than growing, or look at it with `decktalk storyboard`. |
+| `motion_landing` | The cue is only a motion's departure or arrival, and the page reveals nothing else at it. | Nothing. The landing is measured on its own lane, in `motions`. |
+| `rendered` | The section's picture was drawn by a `render_command` that wrote no landings. | Have the program write `{landings}`, as [A render section](/guides/motion#landings) shows. |
 
 ## The JSON
 
-`decktalk verify --json` prints one flat object with the four reserved keys, `run`, and seven fields
+`decktalk verify --json` prints one flat object with the four reserved keys, `run`, and eight fields
 of its own.
 
 {/* sample: verify-json, decktalk verify --json, a --no-spend build of a fresh starter */}
@@ -359,11 +436,11 @@ of its own.
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "2e8554a685b2",
+  "run": "e7a28596d3d0",
   "film": "build/final/my-lesson.mp4",
   "film_seconds": 50.4,
   "starts": [
-    { "section": 1, "at_seconds": 0.2, "luma": 242.0 }
+    { "section": 1, "at_seconds": 0.2, "luma": 240.0 }
   ],
   "cuts": [
     { "section": 1, "at_seconds": 19.787, "speech_dbfs": -120.0, "step_dbfs": 0.0 }
@@ -376,11 +453,13 @@ of its own.
       "spoken": 0.504,
       "shown": 0.52,
       "offset_seconds": 0.016,
-      "change_percent": 1.87,
-      "skipped": null
+      "change_percent": 1.88,
+      "skipped": null,
+      "masked_percent": null
     }
   ],
-  "elapsed_seconds": 3.052
+  "motions": [],
+  "elapsed_seconds": 1.816
 }
 ```
 
@@ -392,6 +471,7 @@ of its own.
 | `cuts[]` | array | One object per section with a take, with `section`, `at_seconds` for where its narration ends in the film, `speech_dbfs` for the level in the window before it and `step_dbfs` for the jump across it. |
 | `seams[]` | array | One object per assembled section that sets `seamless`, with `section`, `at_seconds` and `drift_seconds`. |
 | `cues[]` | array | One object per cue, with the columns of the printed table plus `change_percent` and `skipped`. |
+| `motions[]` | array | One object per measured landing, with `section`, `cue`, `kind`, `spoken`, `shown` and `offset_seconds`, in film order. |
 | `elapsed_seconds` | number | How long this call took. |
 
 A skipped cue has `null` in `shown`, `offset_seconds` and `change_percent`. A measured cue has `null` in

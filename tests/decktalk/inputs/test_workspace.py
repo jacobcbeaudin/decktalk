@@ -75,7 +75,7 @@ def test_one_run_writes_one_events_file() -> None:
 
 
 def test_a_section_names_its_recording_its_log_and_its_cut() -> None:
-    assert SPACE.recording("03").name == "03.webm"
+    assert SPACE.recording("03").name == "03.mp4"
     assert SPACE.recording_log("03").name == "03.json"
     assert SPACE.section_video("03").name == "03.mp4"
 

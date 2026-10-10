@@ -92,7 +92,7 @@ def test_a_note_says_what_plays_where_nothing_was_said():
     clip = Placement(
         section=2, key="02", kind=SectionKind.CLIP, start=0.0, end=1.0, source=Path("media/b.mp4"), chapter="c"
     )
-    page = Placement(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.webm"), chapter="c")
+    page = Placement(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.mp4"), chapter="c")
     slated = clip.model_copy(update={"substitute": Substitute.SLATE})
     assert placement_note(clip) == "A clip plays here: media/b.mp4."
     assert placement_note(page) == ""

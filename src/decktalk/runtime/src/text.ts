@@ -7,8 +7,8 @@
  */
 
 import { CLASS, motionScale, styleClass } from "./canvas.ts";
-import { now, round } from "./clock.ts";
-import { APPEAR_WORDS_MAX, BACK_OPACITY, MILLISECONDS, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
+import { every, now, round } from "./clock.ts";
+import { APPEAR_WORDS_MAX, BACK_OPACITY, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
 import { recorder } from "./telemetry.ts";
 import { warn } from "./warn.ts";
 
@@ -87,19 +87,19 @@ export function count(el: HTMLElement, text: string, first: boolean, seconds: nu
     if (grouped) body = body.replace(THOUSANDS, ",");
     el.textContent = text.slice(0, at) + body + text.slice(at + written.length);
   };
-  const started = performance.now();
-  const length = seconds * MILLISECONDS;
+  const started = now();
   let live = true;
   scene.onLeave(() => {
     live = false;
   });
-  const tick = (stamp: number) => {
-    if (!live) return;
-    const part = Math.min(1, (stamp - started) / length);
+  // The count is drawn from the section second and not the wall clock, so a recorder stepping the
+  // clock one frame at a time sees the number each frame's own second holds.
+  every((at) => {
+    if (!live) return false;
+    const part = Math.min(1, (at - started) / seconds);
     draw(target * eased(part));
-    if (part < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+    return part < 1;
+  });
 }
 
 // ---- the line on the voice -------------------------------------------------------------------------
@@ -149,9 +149,8 @@ export function line(el: HTMLElement, text: string, style: WordStyle, scene: Sce
   scene.onLeave(() => {
     live = false;
   });
-  const tick = () => {
-    if (!live) return;
-    const at = now();
+  const tick = (at: number) => {
+    if (!live) return false;
     let waiting = false;
     const words = el.querySelectorAll(`.${CLASS.word}`);
     words.forEach((word, index) => {
@@ -170,9 +169,9 @@ export function line(el: HTMLElement, text: string, style: WordStyle, scene: Sce
         }
       } else waiting = true;
     });
-    if (waiting) requestAnimationFrame(tick);
+    return waiting;
   };
-  tick();
+  if (tick(cueAt)) every(tick);
 }
 
 /** What a word looks like before it is said, which is dim for a highlight and absent for an appear. */

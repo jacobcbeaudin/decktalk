@@ -70,7 +70,7 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
        Built build/final/my-lesson.mp4, $0.00, 3 findings
 ```
 
-The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. On Linux, run `decktalk install` first, because it adds the system libraries Chromium needs. Recording runs in real time, several sections at once, so on a machine with a few cores to spare the build takes less time than the film it makes. [What is measured](#what-is-measured) has the times.
+The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. On Linux, run `decktalk install` first, because it adds the system libraries Chromium needs. Recording steps each section one frame at a time, several sections at once, so a longer film takes longer to record. [What is measured](#what-is-measured) has the times.
 
 To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs API key, set `[voices.narrator] id` in `decktalk.toml` to your voice id, and run `decktalk build --spend --max-cost 1`. `decktalk check` prices the narration before anything is bought, and `decktalk storyboard` puts every slide at every cue on one page for a look first. The [quickstart](https://docs.decktalk.ai/quickstart) walks each step with its output.
 
@@ -81,7 +81,7 @@ To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs A
 | File | What it holds |
 |---|---|
 | `script.md` | What the voice says, under one `## N. Title` heading per section. |
-| `decktalk.toml` | The project file, which ties each section to a page or to a clip of your own. |
+| `decktalk.toml` | The project file, which ties each section to a page, to a clip of your own or to a program that draws it. |
 | `cues.json` | The spoken phrase each moment on the page waits for. |
 | A page in `deck/` | The slides, as plain HTML with no JavaScript of your own. |
 

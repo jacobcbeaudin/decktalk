@@ -380,7 +380,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     here may cost a film that is already written, so every refusal the media layer raises is one
     sentence on the stream and no poster.
     """
-    section = next((s for s in inputs.document.sections if isinstance(s, PageSection)), None)
+    section = next(iter(inputs.document.drawn_sections), None)
     if section is None:
         return None
     key = inputs.still_key(section.page, POSTER_MARK, section.scene, documents=inputs.documents())

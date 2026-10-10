@@ -692,11 +692,8 @@ strings, spelled as `--set` spells them.
 | `aligners` | The aligners it answers with by name, each a function from a `decktalk.speech.AlignerContext` to a `decktalk.speech.Aligner`, which time a take whose voice sent no word times. |
 | `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
-| `doctor(*, measure=False, threshold=Threshold(), cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. `threshold` is which of its findings make `ok` false. |
+| `doctor(*, threshold=Threshold(), cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. `threshold` is which of its findings make `ok` false. |
 | `apply(findings, *, unsafe=False)` | Carry out the fixes a machine can make. |
-
-`doctor(measure=True)` drives a browser to measure this host's presentation bias and reports it as
-`bias_ms`. It writes nothing, because no stage reads it.
 
 ```python
 import decktalk

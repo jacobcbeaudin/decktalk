@@ -12,8 +12,9 @@
 
 import { CLASS, countSeconds, span, styleClass } from "./canvas.ts";
 import { now, schedule } from "./clock.ts";
-import { ATTENTION, type Attr, type Count, cueId, EXITS } from "./contract.ts";
+import { ATTENTION, type Attr, type Count, cueId, EXITS, MILLISECONDS } from "./contract.ts";
 import { fallback } from "./katex.ts";
+import { wire } from "./motion.ts";
 import {
   ATTR,
   classChangesOf,
@@ -57,6 +58,8 @@ export type Playing = {
   readonly frozen: boolean;
   readonly held: ReadonlySet<string> | null;
   readonly words: readonly Spoken[] | null;
+  /** The second a cue id is due, which is how a motion learns its own length, or null when unknown. */
+  readonly at: (cue: string) => number | null;
 };
 
 /** A slide on the canvas, with every cue of it wired and every stop it owes when it leaves. */
@@ -113,6 +116,9 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
   }
   for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`))
     spotlight(container as HTMLElement, slide, actions);
+  wire(el, slide, { frozen: playing.frozen, at: playing.at }, (cue, run) =>
+    push(actions, cue, { attr: ATTR.motion, run, line: null }),
+  );
   if (playing.frozen) {
     for (const [cue, list] of actions) {
       if (playing.held?.has(cue)) continue;
@@ -226,12 +232,12 @@ function arrival(
   return {
     attr: ATTR.in,
     run: () => {
-      if (step === null) show(el, style, seconds);
+      if (step === null) show(el, style, seconds, cue);
       else {
         [...el.children].forEach((child, at) => {
           const one = child as HTMLElement;
           one.style.animationDelay = `${step * at}s`;
-          show(one, style, seconds);
+          show(one, style, seconds, cue);
         });
       }
       const counted = countOf(el);
@@ -247,16 +253,21 @@ function arrival(
  * Draw one element with its entrance, which is the one place a style word becomes a class.
  *
  * The entrance class is taken off once it has played, so the element rests in the plain shown state
- * and a later step back is a change of class rather than an argument with a finished animation.
+ * and a later step back is a change of class rather than an argument with a finished animation. The
+ * taking off is owed to the section clock at the second the entrance ends, its delay included, and
+ * never left to the animation's end event. The browser sends that event from a frame it draws on its
+ * own wall clock, so a recorder that reached a frame by its index and one that stepped every frame
+ * before it would find the class on or off by chance when a later cue steps the element back.
  */
-function show(el: HTMLElement, style: string, seconds: number): void {
+function show(el: HTMLElement, style: string, seconds: number, cue: string): void {
   const entrance = styleClass("in", style);
   el.classList.remove(CLASS.hidden);
   span(el, seconds);
   el.classList.add(CLASS.shown, entrance);
-  el.addEventListener("animationend", (event) => {
-    if (event.target === el) el.classList.remove(entrance);
-  });
+  const played = el.getAnimations().find((one) => one instanceof CSSAnimation && one.animationName === entrance);
+  const ends = played?.effect?.getComputedTiming().endTime;
+  if (typeof ends !== "number") return;
+  schedule(now() + ends / MILLISECONDS, "reveal", cue, () => el.classList.remove(entrance));
 }
 
 /**

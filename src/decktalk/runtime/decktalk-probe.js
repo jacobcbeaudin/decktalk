@@ -22,6 +22,7 @@
    * `MEASURABLE_SPAN_SECONDS`, because an effect still moving half a second after its cue marks its
    * own cue unmeasurable.
    */
+  var MILLISECONDS = 1e3;
   var EXITS = {
     fade: { seconds: 0.2 },
     fall: { seconds: 0.2 },
@@ -45,6 +46,7 @@
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
+  var LOOP_SECONDS_RANGE = { min: 0.2, max: 60, step: 0.04, unit: "seconds" };
   var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
@@ -264,6 +266,80 @@
       affects: ["transcript"],
       summary: "Overrides the departure sentence when leaving means something of its own.",
     },
+    "data-motion": {
+      name: "data-motion",
+      on: ["element"],
+      kind: "keyframes",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_UNDECLARED",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element moves through these @keyframes from one cue to another, masked from every reveal check and landing on its cues.",
+    },
+    "data-motion-from": {
+      name: "data-motion-from",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The motion departs at this cue.",
+    },
+    "data-motion-to": {
+      name: "data-motion-to",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The motion arrives at this cue, so its length is the two cues' seconds apart.",
+    },
+    "data-motion-ease": {
+      name: "data-motion-ease",
+      on: ["element"],
+      kind: "word",
+      values: ["firm", "glide", "settle", "spring"],
+      default: "firm",
+      range: null,
+      code: "PAGE_BAD_VALUE",
+      span: 0,
+      affects: ["motion", "style"],
+      summary: "How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify.",
+    },
+    "data-loop": {
+      name: "data-loop",
+      on: ["element"],
+      kind: "keyframes",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_UNDECLARED",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element turns through these @keyframes for as long as its slide is on screen, masked and never a landing.",
+    },
+    "data-loop-seconds": {
+      name: "data-loop-seconds",
+      on: ["element"],
+      kind: "seconds",
+      values: [],
+      default: "1",
+      range: LOOP_SECONDS_RANGE,
+      code: "PAGE_BAD_VALUE",
+      span: 0,
+      affects: ["motion"],
+      summary: "How long one turn of the loop takes.",
+    },
     "data-scene": {
       name: "data-scene",
       on: ["scene"],
@@ -350,20 +426,21 @@
   /*! The recorder's instrumentation, injected into a page before it loads.
    *
    * Every DeckTalk command that opens a page drives a headless Chromium, and what that command needs
-   * from the page is not what a reader needs: a cover over the first paint so the recording starts on
-   * a known frame, a helper that says when the page has settled, a measured catalog that says where
-   * every reveal sits, a freeze that stops at one cue, and a record of how the page behaved while it
-   * was captured. None of that belongs to a deck, so none of it is in the runtime a deck loads.
+   * from the page is not what a reader needs: a step that moves the section clock to one recorded
+   * frame, a helper that says when the page has settled, a measured catalog that says where every
+   * reveal sits, a freeze that stops at one cue, and a record of what the page did while it was
+   * recorded. None of that belongs to a deck, so none of it is in the runtime a deck loads.
    *
    * Playwright adds this file with `add_init_script`, so it runs before the page's own scripts and no
    * page ever references it. A page opened without it plays, previews, freezes and lists its scenes
    * the same, and keeps nothing.
    *
    * What the recorder calls
-   *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
-   *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
-   *                                    frame, whose stamp is the recording's t=0 on the section clock, and
-   *                                    resolving to performance.now() read in that frame
+   *   window.__decktalkProbe.step(t, s) move the section clock to second t and answer the next due second,
+   *                                    whether the picture may have changed and the earliest second it next
+   *                                    can, once the page has drawn it, or refuse once s seconds pass without that
+   *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
+   *                                    refuse once s seconds pass without that
    *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
    *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
    *
@@ -376,44 +453,109 @@
    * split honest: the probe knows the vocabulary and it knows the sink, and it knows no DOM the
    * runtime owns.
    */
-  var COVER_ID = "dt-cover";
-  var KEEPALIVE_ID = "dt-keepalive";
-  var GAP_MS = 100;
-  var AFTER = "after";
-  var BEFORE = "before";
   var KEEP = 5e3;
   var TEXT_MAX = 80;
-  function cover() {
-    const add = () => {
-      if (document.getElementById(COVER_ID)) return;
-      const parent = document.body || document.documentElement;
-      const sheet = document.createElement("div");
-      sheet.id = COVER_ID;
-      sheet.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-      parent.appendChild(sheet);
-      const alive = document.createElement("div");
-      alive.id = KEEPALIVE_ID;
-      alive.setAttribute("aria-hidden", "true");
-      alive.style.cssText = `position:fixed;right:1px;bottom:1px;width:2px;height:2px;background:#808080;opacity:.03;z-index:2147483647;pointer-events:none;animation:${KEEPALIVE_ID} .5s linear infinite`;
-      const style = document.createElement("style");
-      style.textContent = `@keyframes ${KEEPALIVE_ID}{to{transform:rotate(360deg)}}`;
-      alive.appendChild(style);
-      parent.appendChild(alive);
+  var AFTER = "after";
+  var BEFORE = "before";
+  var nativeFrame = window.requestAnimationFrame.bind(window);
+  var nativeTimer = window.setTimeout.bind(window);
+  var nativeCancel = window.clearTimeout.bind(window);
+  var decoded = /* @__PURE__ */ new WeakSet();
+  var SELF_DRAWN = "canvas, video, iframe, embed, object";
+  var touched = true;
+  var touch = () => {
+    touched = true;
+  };
+  var watcher = new MutationObserver(touch);
+  watcher.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  document.addEventListener("scroll", touch, { capture: true, passive: true });
+  var PAGE_CLOCK = "__pwClock";
+  function nextTimer(seconds) {
+    const clock = window[PAGE_CLOCK]?.controller;
+    if (typeof clock?._firstTimer !== "function" || typeof clock.performanceNow !== "function") return seconds;
+    const timer = clock._firstTimer();
+    if (!timer) return null;
+    return seconds + Math.max(0, timer.callAt - clock.performanceNow()) / MILLISECONDS;
+  }
+  function sooner(one, other) {
+    if (one === null) return other;
+    if (other === null) return one;
+    return Math.min(one, other);
+  }
+  function mutated() {
+    const seen = touched || watcher.takeRecords().length > 0;
+    touched = false;
+    return seen;
+  }
+  function rendered() {
+    return new Promise((done) => {
+      nativeFrame(() => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => done();
+        channel.port2.postMessage(null);
+      });
+    });
+  }
+  function outstanding() {
+    const waits = [];
+    if (document.fonts && document.fonts.status !== "loaded") waits.push(document.fonts.ready);
+    for (const image of Array.from(document.images)) {
+      if (decoded.has(image)) continue;
+      waits.push(
+        image
+          .decode()
+          .catch(() => void 0)
+          .then(() => decoded.add(image)),
+      );
+    }
+    return waits;
+  }
+  async function drawn() {
+    let waited = false;
+    for (;;) {
+      await rendered();
+      const waits = outstanding();
+      if (!waits.length) return waited;
+      waited = true;
+      await Promise.all(waits);
+    }
+  }
+  function step(seconds, waitSeconds) {
+    const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
+    const touchedBefore = mutated();
+    return new Promise((answer, refuse) => {
+      const late = nativeTimer(
+        () => refuse(new Error(`the page had not drawn second ${seconds} within ${waitSeconds} seconds`)),
+        waitSeconds * MILLISECONDS,
+      );
+      drawn().then((waited) => {
+        nativeCancel(late);
+        const touchedWhileDrawn = mutated();
+        const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+        const heard = waited || touchedWhileDrawn || selfDrawn;
+        answer({
+          due: stepped.due,
+          changed: stepped.changed || touchedBefore || heard,
+          stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+        });
+      });
+    });
+  }
+  function started(waitSeconds) {
+    const pending = () => document.getAnimations().filter((animation) => animation.pending);
+    const settle = async () => {
+      for (let waiting = pending(); waiting.length; waiting = pending()) {
+        await Promise.all(waiting.map((animation) => animation.ready.catch(() => void 0)));
+      }
     };
-    if (document.documentElement) add();
-    else document.addEventListener("DOMContentLoaded", add, { once: true });
-  }
-  var origin = null;
-  function clockAt(ms) {
-    return origin === null ? null : Number(((ms - origin) / 1e3).toFixed(3));
-  }
-  function lift() {
-    return new Promise((resolve) => {
-      document.getElementById(COVER_ID)?.remove();
-      requestAnimationFrame((at) => {
-        origin = at;
-        window.DeckTalk?.startClock?.();
-        resolve(performance.now());
+    return new Promise((answer, refuse) => {
+      const late = nativeTimer(
+        () => refuse(new Error(`the page's animations had not started within ${waitSeconds} seconds`)),
+        waitSeconds * MILLISECONDS,
+      );
+      settle().then(() => {
+        nativeCancel(late);
+        answer(true);
       });
     });
   }
@@ -424,48 +566,14 @@
   }
   var cues = [];
   var words = [];
-  var frameGaps = [];
-  var longFrames = [];
   var recorder = {
     cue(event) {
-      if (cues.length >= KEEP) return;
-      const row = { ...event, next: null, after: null };
-      cues.push(row);
-      requestAnimationFrame((next) => {
-        row.next = clockAt(next);
-        requestAnimationFrame((after) => {
-          row.after = clockAt(after);
-        });
-      });
+      if (cues.length < KEEP) cues.push(event);
     },
     words(event) {
       if (words.length < KEEP) words.push(event);
     },
   };
-  function watchFrames() {
-    let last = null;
-    const tick = (at) => {
-      if (last !== null && at - last > GAP_MS && frameGaps.length < KEEP) {
-        frameGaps.push({ at: clockAt(at), ms: Math.round(at - last) });
-      }
-      last = at;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    const kinds = window.PerformanceObserver ? PerformanceObserver.supportedEntryTypes || [] : [];
-    if (!kinds.includes("long-animation-frame")) return;
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        if (origin === null || entry.startTime < origin || longFrames.length >= KEEP) continue;
-        longFrames.push({
-          start: clockAt(entry.startTime),
-          ms: Math.round(entry.duration),
-          render: entry.renderStart === void 0 ? null : clockAt(entry.renderStart),
-          presented: entry.presentationTime === void 0 ? null : clockAt(entry.presentationTime),
-        });
-      }
-    }).observe({ type: "long-animation-frame" });
-  }
   function report() {
     const view = window.__decktalk;
     return {
@@ -477,8 +585,7 @@
       catalog: view?.catalog ?? [],
       cues,
       words,
-      frameGaps,
-      longFrames,
+      motions: view?.motions ?? [],
     };
   }
   function freezeCues(order, slideId, warn) {
@@ -558,7 +665,6 @@
     layer.remove();
     return catalog;
   }
-  watchFrames();
-  var probe = { cover, lift, ready, report, recorder, freezeCues, measure };
+  var probe = { step, started, ready, report, recorder, freezeCues, measure };
   window.__decktalkProbe = probe;
 })();

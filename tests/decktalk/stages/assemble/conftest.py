@@ -202,7 +202,7 @@ def rendered(inputs: Inputs, seconds: dict[int, float], *, audio: dict[int, Path
             section=section,
             path=inputs.workspace.section_video(section.key),
             seconds=seconds[section.number],
-            source=Path(f"build/recordings/{section.key}.webm"),
+            source=Path(f"build/recordings/{section.key}.mp4"),
             audio=audio.get(section.number),
         )
         for section in inputs.document.sections

@@ -97,6 +97,14 @@ class TestLoading:
         with pytest.raises(InputError, match="must be above 0"):
             from_mapping(Outer, base={"delays": [0.7, -1.0]}, environ={})
 
+    def test_an_empty_variable_is_the_empty_array_and_is_judged_as_one(self) -> None:
+        """A variable or a `--set` has no other way to write an empty array, so it is that and not one empty item."""
+        names = Bounds(items=Bounds(enum=("x", "y")))
+        empty = read_value(tuple[str, ...], "", where="names", bounds=names, hazard=None, from_env=True, said="a test")
+        assert empty == ()
+        with pytest.raises(InputError, match="must hold at least 1"):
+            from_mapping(Outer, base={}, environ={"DECKTALK_DELAYS": ""})
+
     def test_one_value_answers_the_same_way_from_a_file_and_from_the_environment(self) -> None:
         bounds = next(f for f in Inner.__dataclass_fields__.values() if f.name == "count").metadata["bounds"]
         assert read_value(int, "5", where="inner.count", bounds=bounds, hazard=None, from_env=True, said="a test") == 5

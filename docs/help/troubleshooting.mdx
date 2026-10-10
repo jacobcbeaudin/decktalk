@@ -161,8 +161,8 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | Two reveals ran into each other | [CUE_OVERLAP](/reference/findings/CUE_OVERLAP) | [An unresolved cue](#an-unresolved-cue) |
 | `verify` says the cue times are older than cues.json | [CUE_STALE](/reference/findings/CUE_STALE) | [An unresolved cue](#an-unresolved-cue) |
 | A cue resolved and nothing on screen changed | [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE), [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE), [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | [A picture that does not change](#a-picture-that-does-not-change) |
-| The film is black somewhere, stops moving, or a section is short | [RECORD_BLACK](/reference/findings/RECORD_BLACK), [RECORD_STALLED](/reference/findings/RECORD_STALLED), [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
-| Something on the page threw, or a wait never settled | [PAGE_RENDER_THREW](/reference/findings/PAGE_RENDER_THREW), [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW), [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW), [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW), [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED), [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
+| The film is black somewhere, stops moving, or a section is short | [RECORD_BLACK](/reference/findings/RECORD_BLACK), [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | [A recording that opens black or runs short](#a-recording-that-opens-black-or-runs-short) |
+| Something on the page threw, or a wait never settled | [PAGE_RENDER_THREW](/reference/findings/PAGE_RENDER_THREW), [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW), [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW), [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW), [PAGE_FRAME_THREW](/reference/findings/PAGE_FRAME_THREW), [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED), [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | [A recording that opens black or runs short](#a-recording-that-opens-black-or-runs-short) |
 | A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
 | A motion was still playing when the next cue was read | [PAGE_MOTION_OVERRUN](/reference/findings/PAGE_MOTION_OVERRUN), [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN), [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | [A late landing](#a-late-landing) |
 | A cut slices a word, or the picture pops at a seam | [CUT_SPEECH](/reference/findings/CUT_SPEECH), [CUT_POP](/reference/findings/CUT_POP) | [A late landing](#a-late-landing) |
@@ -392,34 +392,26 @@ build/frames/01/freeze-1.1-after-1.1_title.png: CUE_NO_CHANGE freezing the slide
 three, because a harder compression smooths away small changes before anything measures them. Read
 any of them whole with `decktalk config explain verify.changed_share_min_percent`.
 
-## A recording that opens black or stalls
+## A recording that opens black or runs short
 
-These three are measured against a recording rather than against a file you wrote. `record` measures
-all three on the file it has just written, and `verify` measures `RECORD_BLACK` again on the finished
+These two are measured against a recording rather than against a file you wrote. `record` measures
+both on the file it has just written, and `verify` measures `RECORD_BLACK` again on the finished
 film.
 
 | Code | Look at | The setting that decides it |
 |---|---|---|
 | [RECORD_BLACK](/reference/findings/RECORD_BLACK) | Whether the page had drawn anything by that second. | `verify.black_max_luma`, `verify.after_dip_seconds` |
-| [RECORD_STALLED](/reference/findings/RECORD_STALLED) | Whether something on the page threw and stopped the drawing. | `record.frame_gap_max_ms` |
-| [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | Whether the section's page was still working when its narration ended. | `record.truncated_slack_seconds` |
+| [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | Whether the recording stopped before the section's clock ran out. | None: one frame, the derived `record.truncated_slack_seconds` |
 
-**Where the black usually comes from.** The recorder covers the page in magenta from its first paint
-until the section clock starts, and takes the first clean frame after that run of cover frames as
-the start of the section clock. When the scan finds no cover frames, the run falls back to the first painted frame plus the
-settle, and failing that to `record.fallback_first_paint_seconds` plus the settle. It says so when it
-does:
+**Where the black usually comes from.** The recorder steps the section clock from second 0, and
+frame `k` is exactly what the page shows at second `k / fps`. A black frame is therefore a page that
+showed nothing visible at that second: a slide whose every element waits for a later cue, a
+background that is black on purpose, or a page that threw before it drew. There is no start to
+guess, so a black frame never moves the reveals around it.
 
-{/* sample: no-cover, decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line */}
-```text
-Section 2 shows no cover, so the start of the section clock is a guess at 1.436s (the first painted frame and the settle), and every reveal in the section moves with it.
-```
-
-Treat that warning as the first thing to fix, because a guessed start moves every reveal in the
-section together and every later code in that section is measuring against the wrong zero.
-
-**Where a stall usually comes from.** Something on the page threw, so nothing drew after it. The page
-reports that itself, through the probe, as one of these:
+**Where a frozen picture usually comes from.** Something on the page threw, so whatever it drew
+stopped there while the recording carried on. The page reports that itself, through the probe, as
+one of these:
 
 | Code | Which of your own code to open |
 |---|---|
@@ -427,6 +419,7 @@ reports that itself, through the probe, as one of these:
 | [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW) | The slide's enter. |
 | [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW) | That slide's own handler for the cue named in the message. |
 | [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW) | The handler registered for the cue named in the message. |
+| [PAGE_FRAME_THREW](/reference/findings/PAGE_FRAME_THREW) | The function handed to `DeckTalk.frame`, which stops drawing from the frame it threw on. |
 | [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED) | Whatever the page asked the runtime to wait for, which rejected. |
 | [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | The same wait, which never settled at all. |
 
@@ -438,13 +431,14 @@ reports that itself, through the probe, as one of these:
    page that asks for it with other capitals is refused.
    [Browser preview and recording](/concepts/page-contract#browser-preview-and-recording) says what
    the origin serves.
-2. Read the browser console. These six codes are the page's own report from the browser, so the
+2. Read the browser console. These seven codes are the page's own report from the browser, so the
    detail behind each one is there.
 3. Run `decktalk check`, which opens the same page through the same probe without recording
    anything.
-4. For a truncation, look at whether the section's page is still doing work when its narration ends.
-   `record_margin_seconds` on a `[[section]]` records past the narration so the cut never lands on a
-   frame that was never drawn.
+4. For a truncation, record the section again with `decktalk record --section N`. A stepped
+   recording holds one frame for every step of the section clock, so a short one is an encode that
+   ended early rather than a page that was slow. `record_margin_seconds` on a `[[section]]` records
+   past the narration so the cut never lands on a frame that was never drawn.
 
 ## A late landing
 
@@ -461,9 +455,10 @@ picture did not.
 **What to do about `CUE_OFF`.**
 
 1. Read the number in the message. It says how far off the change landed and what the limit is.
-2. A whole section that is late by the same amount is a machine bias rather than a deck problem. Run
-   `decktalk doctor --measure`, which drives a browser to measure this host's presentation bias, and
-   read the offsets the message names against that number.
+2. A whole section that is late by the same amount is usually motion that keeps a clock of its own.
+   The recorder steps every timer, animation frame and animation on the page, but not a Worker's
+   clock, so draw that motion from `DeckTalk.frame` with the region it draws in instead. A `<video>`
+   or an `<audio>` is refused as `PAGE_REALTIME_MEDIA` before it can drift.
 3. One cue that is late on its own is usually a phrase that resolves to the wrong word. Run
    `decktalk words` and read what the section really says around it. Set `occurrence` on the row
    when the phrase repeats.
@@ -482,6 +477,11 @@ it.
 | [PAGE_MOTION_OVERRUN](/reference/findings/PAGE_MOTION_OVERRUN) | `data-in-seconds` on the element, or `motion.scale` for the whole render. |
 | [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN) | `data-stagger`, or the number of children the container staggers. |
 | [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | The line itself, or swap `data-words` from `appear` to `highlight`. |
+
+Something meant to move for longer than half a second is a motion or a loop rather than a moment.
+Declare it, and verify masks it out of every cue and measures its own departure and arrival, as
+[Things that move](/guides/motion) shows. `MOTION_OFF`, `MOTION_NO_EDGE` and `MOTION_MASK_LARGE`
+are the codes it raises, and [the findings](/guides/motion#the-findings) gives the fix for each.
 
 [How long a moment may move](/concepts/page-contract#how-long-a-moment-may-move) gives the range of
 `data-in-seconds` and `data-stagger` and the stagger's arithmetic, and `decktalk schema page` prints

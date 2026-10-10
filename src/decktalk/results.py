@@ -242,6 +242,8 @@ class SkipReason(Enum):
     NO_CUES = "no_cues"
     NO_ONSET = "no_onset"
     NO_SLIDE = "no_slide"
+    MOTION_LANDING = "motion_landing"
+    RENDERED = "rendered"
     NOT_ASSEMBLED = "not_assembled"
     OPTED_OUT = "opted_out"
     TOO_CLOSE_TO_END = "too_close_to_end"
@@ -810,6 +812,20 @@ class CueCheck(Model):
     offset_seconds: float | None = Field(None, description="How far the change is from its word, in seconds.")
     change_percent: float | None = Field(None, ge=0, description="How much of the picture changed, as a percent.")
     skipped: SkipReason | None = Field(None, description="Why this cue was not measured, or null when it was.")
+    masked_percent: float | None = Field(
+        None, ge=0, description="How much of the frame declared motion masked out of this cue, or null when none did."
+    )
+
+
+class MotionCheck(Model):
+    """One landing of a declared motion, measured on its own lane against the word it was promised to."""
+
+    section: SectionNumber
+    cue: str = Field(description="The cue id the motion lands on.")
+    kind: Literal["depart", "arrive"] = Field(description="Whether the motion departs or arrives at this cue.")
+    spoken: float = Field(ge=0, description="When the cue's word is spoken in the film, in seconds.")
+    shown: float | None = Field(None, ge=0, description="The frame the motion was first or last seen moving, or null.")
+    offset_seconds: float | None = Field(None, description="How far the landing is from its word, in seconds.")
 
 
 class StageRun(Model):
@@ -952,7 +968,6 @@ class DoctorResult(Result):
         description="Every key a shipped provider is bought with, and whether it is set. A machine has no project, "
         "so it names every provider's that needs one."
     )
-    bias_ms: float | None = Field(None, description="This host's measured presentation bias, or null when unmeasured.")
 
 
 class StatusResult(Result):
@@ -1174,6 +1189,9 @@ class VerifyResult(Result):
     cuts: tuple[CutCheck, ...] = Field((), description="Every cut between two sections, in film order.")
     seams: tuple[SeamCheck, ...] = Field((), description="Every seamless cut, in film order.")
     cues: tuple[CueCheck, ...] = Field((), description="Every cue measured against its word, in film order.")
+    motions: tuple[MotionCheck, ...] = Field(
+        (), description="Every landing of every declared motion, measured on its own lane, in film order."
+    )
     elapsed_seconds: Elapsed
 
 
@@ -1261,6 +1279,7 @@ __all__ = [
     "LayerValue",
     "LiveRun",
     "Loudness",
+    "MotionCheck",
     "NarrateResult",
     "Nature",
     "NumberView",

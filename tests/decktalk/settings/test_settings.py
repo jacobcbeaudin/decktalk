@@ -9,7 +9,7 @@ else here holds a rule the design states in a sentence.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, get_args
 
 import jsonschema
 import pytest
@@ -80,7 +80,7 @@ def values(key_id: str) -> st.SearchStrategy[object]:
     key = concrete(key_id)
     assert key.bounds is not None
     if key.bounds.items is not None:
-        return st.lists(around(key.bounds.items), max_size=3)
+        return st.lists(around(key.bounds.items, words=get_args(key.annotation)[0] is str), max_size=3)
     return around(key.bounds, words=key.annotation is str)
 
 

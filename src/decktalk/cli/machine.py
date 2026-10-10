@@ -119,9 +119,6 @@ _SUDO_QUESTION = "Installing Chromium's system libraries asks for your password.
 )
 def doctor(
     ctx: Context,
-    measure: Annotated[
-        bool, typer.Option("--measure", help="Measure this host's presentation bias, which drives a browser.")
-    ] = False,
     fix: Fix = None,
 ) -> DoctorResult:
     """Report what is installed and what a run would use.
@@ -131,11 +128,11 @@ def doctor(
     """
     session = sessions.of(ctx)
     with session.watching(session.machine.events):
-        reported = session.machine.doctor(measure=measure, threshold=session.threshold, cancel=session.cancel)
+        reported = session.machine.doctor(threshold=session.threshold, cancel=session.cancel)
     if reported.findings and session.approve(fix, "Fetch what is missing now?", default=True):
         with session.watching(session.machine.events):
             session.machine.apply(reported.findings)
-            return session.machine.doctor(measure=measure, threshold=session.threshold, cancel=session.cancel)
+            return session.machine.doctor(threshold=session.threshold, cancel=session.cancel)
     return reported
 
 

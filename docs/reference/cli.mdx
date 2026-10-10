@@ -81,6 +81,10 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`PAGE_ENTER_THREW`](/reference/findings/PAGE_ENTER_THREW) | error | A slide's enter threw, so its opening moment never ran. |
 | [`PAGE_SLIDE_HANDLER_THREW`](/reference/findings/PAGE_SLIDE_HANDLER_THREW) | error | A slide's own moment handler threw, so that moment did not play. |
 | [`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW) | error | A moment handler threw, so the change it was to make never happened. |
+| [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | error | Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it. |
+| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | error | A motion names a cue no slide declares, so it never starts or never lands. |
+| [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA) | error | A page holds a video or an audio element, which plays at its own rate and not on the stepped clock. |
+| [`PAGE_FRAME_THREW`](/reference/findings/PAGE_FRAME_THREW) | error | A frame hook threw, so whatever it drew stopped moving from that frame on. |
 | [`PAGE_WAIT_REJECTED`](/reference/findings/PAGE_WAIT_REJECTED) | error | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
 | [`PAGE_WAIT_UNSETTLED`](/reference/findings/PAGE_WAIT_UNSETTLED) | error | A wait the page declared never settled inside its budget, so the runtime carried on without it. |
 | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | error | An element changes class with no description, so the transcript cannot say what changed. |
@@ -96,9 +100,12 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | error | An element changes the picture and describes nothing, so the transcript loses the change. |
 | [`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) | warning | A swap's two halves land far enough apart that a viewer sees the gap between them. |
 | [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) | error | The page loads an asset from a network origin, so the film depends on somebody else's server. |
-| [`RECORD_STALLED`](/reference/findings/RECORD_STALLED) | error | The picture held still for longer than a recorded section ever should. |
 | [`RECORD_BLACK`](/reference/findings/RECORD_BLACK) | error | A recorded frame is black, so the film shows nothing at that moment. |
 | [`RECORD_TRUNCATED`](/reference/findings/RECORD_TRUNCATED) | error | A recording stopped before its section's clock ran out, so the film is short of picture. |
+| [`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE) | error | A motion eases to rest on an arrival verify would measure, and an ease to rest has no edge to measure. |
+| [`MOTION_OFF`](/reference/findings/MOTION_OFF) | error | A declared motion departed or arrived outside the offset limit of the word it was promised to. |
+| [`MOTION_NO_EDGE`](/reference/findings/MOTION_NO_EDGE) | error | A declared motion came to rest before its word, so it has no edge on its cue a viewer sees it land on. |
+| [`MOTION_MASK_LARGE`](/reference/findings/MOTION_MASK_LARGE) | warning | Declared motion covered so much of the frame at a cue that verify measured less of the picture than usual. |
 | [`CUE_UNLISTED`](/reference/findings/CUE_UNLISTED) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. |
 | [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. |
 | [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. |
@@ -140,7 +147,7 @@ It answers with the `init` result: `decktalk schema init`.
 | Option | Meaning |
 |---|---|
 | `--name` `NAME` | The project's name. |
-| `--example` `NAME` | The packaged example to write: lesson, interview, product (reserved), tutorial (reserved). |
+| `--example` `NAME` | The packaged example to write: lesson, interview, motion, product (reserved), tutorial (reserved). |
 | `--no-skills` | Leave the packaged skills out. |
 | `--overwrite` | Write into a directory that already holds files. |
 
@@ -166,7 +173,6 @@ It answers with the `doctor` result: `decktalk schema doctor`.
 
 | Option | Meaning |
 |---|---|
-| `--measure` | Measure this host's presentation bias, which drives a browser. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |

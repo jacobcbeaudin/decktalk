@@ -23,13 +23,8 @@ values a run decides, and `--check` holds those in its own block by their place 
 value. The machine decides how long a stage takes, so every block holds a stage's time that way
 without a row naming it. Every run prints at one width in UTF-8, and `--check` reads both sides
 without their line endings and trailing space, so the same run on Linux, macOS and Windows passes.
-A slower machine records a stalled section again and says so in one line, which no block shows.
-
-A row whose last command verifies the film names in `measured` the findings a slower machine can
-add to that verdict, because a page is recorded in real time and a starved recording lands a reveal
-late where the docs machine's did not. Their lines are left out of the block, and the findings exit
-they bring is accepted only when every error the run names is one of them. What DeckTalk measures
-and the limits it holds are unchanged: the block is what the docs machine printed.
+The recorder steps the section clock one frame at a time, so a slower machine records the same
+frames and every verdict a block shows is the verdict any machine prints.
 """
 
 from __future__ import annotations
@@ -53,14 +48,12 @@ from pathlib import Path
 from typing import Any
 
 import generated
-from decktalk.findings import Code, Severity
 from decktalk.machine import MACHINE_FILE_VARIABLE, Machine, Toolchain
 from decktalk.media import ffmpeg
 from decktalk.pipeline import Stage
 from decktalk.settings import BY_ID
 from decktalk.speech import DECLARED
 from decktalk.speech.dtsp import SPEECH_PATH
-from decktalk.stages.record import STALLED
 from decktalk.toolchain.cache import standard_cache_dir
 
 ROOT = generated.ROOT
@@ -98,14 +91,8 @@ EMPTY = "{empty}"
 FINDINGS_EXIT = 1
 """Truth: the exit of a command that ran and found something, which a step before the last may end with."""
 
-CODE_WORD = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
-"""A word shaped like a finding code, which output names in a line, a JSON field or an event."""
-
 STAGE_TIME = re.compile(rf"^(\s*(?:{'|'.join(stage.value.title() for stage in Stage)}) .*?   )\d+(?::\d\d){{1,2}}\b")
 """The time on a stage's line, which the machine decides and `--check` holds by its place in every block."""
-
-RETRY = re.compile("^" + re.escape(STALLED).replace("%d", r"\d+") + "$")
-"""The line a slower machine prints when it records a stalled section again, which no block shows."""
 
 
 @dataclass(frozen=True)
@@ -152,7 +139,6 @@ class Row:
     keep: tuple[tuple[str, int], ...] = ()
     varies: tuple[str, ...] = ()
     masks: tuple[str, ...] = ()
-    measured: tuple[str, ...] = ()
 
     @property
     def start(self) -> tuple[object, ...]:
@@ -198,11 +184,7 @@ def rows() -> list[Row]:
             keep=tuple(row.get("keep", {}).items()),
             varies=tuple(row.get("varies", ())),
             masks=tuple(row.get("masks", ())),
-            measured=tuple(row.get("measured", ())),
         )
-        unknown = [code for code in made.measured if code not in Code.__members__]
-        if unknown:
-            raise SystemExit(f"{ROWS.name}: the sample {name} names {', '.join(unknown)}, which no finding is.")
         if (made.file is None) == (made.stream is None) or (made.stream and made.stream not in STREAMS):
             raise SystemExit(f"{ROWS.name}: the sample {name} shows one file or one of {', '.join(STREAMS)}.")
         if made.stream is not None and not (made.steps and isinstance(made.steps[-1], tuple)):
@@ -321,12 +303,10 @@ def decktalk(
     environ: dict[str, str],
     stream: str | None,
     exits: set[int],
-    measured: tuple[str, ...] = (),
 ) -> str:
     """One command and what it printed on `stream`, refused when its exit is not one of `exits`.
 
-    A findings exit where 0 was wanted is accepted when every error the run names is `measured`.
-    A sample of a run that failed some other way would mislead, so the refusal says what it printed.
+    A sample of a run that exited some other way would mislead, so the refusal says what it printed.
     """
     done = subprocess.run(
         [sys.executable, "-m", "decktalk", *argv],
@@ -339,10 +319,7 @@ def decktalk(
         timeout=generated.COMMAND_TIMEOUT_SECONDS,
         check=False,
     )
-    slower = (
-        done.returncode == FINDINGS_EXIT and 0 in exits and only_measured(done.stdout + (done.stderr or ""), measured)
-    )
-    if done.returncode not in exits and not slower:
+    if done.returncode not in exits:
         raise SystemExit(
             f"decktalk {' '.join(argv)} exited {done.returncode}, not {' or '.join(map(str, sorted(exits)))}:\n"
             f"{done.stdout}{done.stderr or ''}"
@@ -407,7 +384,7 @@ class Runs:
         key = (row.start, row.steps, stream)
         if key not in self.printed:
             folder = self.copy(self.state(row, row.steps[:-1]).folder)
-            printed = self.command(row, last, folder, stream=stream, exits={row.exit}, measured=row.measured)
+            printed = self.command(row, last, folder, stream=stream, exits={row.exit})
             self.printed[key] = Ran(folder, printed)
             self.states.setdefault((row.start, row.steps), self.printed[key])
         return self.printed[key]
@@ -451,7 +428,6 @@ class Runs:
         *,
         stream: str | None,
         exits: set[int],
-        measured: tuple[str, ...] = (),
     ) -> str:
         """One command of `row` run in `folder`, read by the fake voice when the row names it."""
         machine = self.machine(row)
@@ -464,49 +440,7 @@ class Runs:
         with fake_voice(environ, machine) if row.voice == "dtsp" else nullcontext("") as base_url:
             if base_url:
                 environ[BY_ID["dtsp.base_url"].environment] = base_url
-            return decktalk(argv, cwd=cwd, environ=environ, stream=stream, exits=exits, measured=measured)
-
-
-# ---- a measured verdict --------------------------------------------------------------------------
-
-
-def errors_named(printed: str) -> set[str]:
-    """Every error code `printed` names, in a finding line, a JSON result or an event."""
-    named = {Code.__members__.get(word) for word in CODE_WORD.findall(printed)}
-    return {code.name for code in named if code is not None and code.severity is Severity.ERROR}
-
-
-def only_measured(printed: str, measured: tuple[str, ...]) -> bool:
-    """Whether a findings exit is one a slower machine added: it names an error, and every one it names is measured."""
-    named = errors_named(printed)
-    return bool(named) and named <= set(measured)
-
-
-def steady(text: str) -> str:
-    """`text` without the retry lines a stalled recording adds, which a slower machine prints and the docs did not."""
-    return "\n".join(line for line in text.splitlines() if not RETRY.match(line))
-
-
-def unmeasured(text: str, measured: tuple[str, ...]) -> str:
-    """`text` without the lines of a measured finding, each with the fix line printed under it."""
-    if not measured:
-        return text
-    naming = re.compile(rf"^\S+: (?:{'|'.join(map(re.escape, measured))}) ")
-    out: list[str] = []
-    dropping = False
-    for line in text.splitlines():
-        dropping = bool(naming.match(line)) or (dropping and line.startswith("  fix"))
-        if not dropping:
-            out.append(line)
-    return "\n".join(out)
-
-
-def unmeasured_value(value: object, measured: tuple[str, ...]) -> object:
-    """A JSON result without its measured findings, with every other finding as it was."""
-    if not measured or not isinstance(value, dict) or not isinstance(value.get("findings"), list):
-        return value
-    kept = [found for found in value["findings"] if not (isinstance(found, dict) and found.get("code") in measured)]
-    return {**value, "findings": kept}
+            return decktalk(argv, cwd=cwd, environ=environ, stream=stream, exits=exits)
 
 
 # ---- a block -------------------------------------------------------------------------------------
@@ -609,10 +543,10 @@ def block(row: Row, ran: Ran) -> str:
         fence = row.fence or "text"
         text = ran.printed
     if fence.split(" ")[0] == "json":
-        value = cut(unmeasured_value(json.loads(text), row.measured), key=row.key, only=row.only, keep=row.keep)
+        value = cut(json.loads(text), key=row.key, only=row.only, keep=row.keep)
         shown = fragment(row.key, value) if row.fragment and row.key else dumped(value)
     else:
-        shown = shown_text(unmeasured(steady(text), row.measured), head=row.head, grep=row.grep)
+        shown = shown_text(text, head=row.head, grep=row.grep)
     return f"{FENCE}{fence}\n{shown}\n{FENCE}\n"
 
 

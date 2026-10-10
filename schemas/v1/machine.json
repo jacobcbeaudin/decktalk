@@ -75,7 +75,7 @@
     },
     "record": {
       "type": "object",
-      "description": "These keys tune the headless Chromium recording and how the start of the section clock is found in it.",
+      "description": "These keys tune how `record` opens each page section in headless Chromium and steps it frame by frame.",
       "x-kind": "tuning",
       "properties": {
         "page_policy": {
@@ -103,8 +103,63 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.",
+          "x-hazard": "Each recording steps its own Chromium and its own encode, so a number above the machine's share makes every section wait on the others and the run slower rather than faster.",
           "x-environment": "DECKTALK_RECORD_CONCURRENCY"
+        },
+        "capture_switches": {
+          "description": "Chromium switches `record` launches its browser with, which stop it holding its frames to the display's refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same frames as one without them. An empty list launches Chromium with none.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "disable-frame-rate-limit",
+              "disable-gpu-vsync"
+            ]
+          },
+          "default": [
+            "disable-frame-rate-limit",
+            "disable-gpu-vsync"
+          ],
+          "x-range": "must hold values that each must be one of disable-frame-rate-limit, disable-gpu-vsync",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "With the switches no frame waits for a display refresh, so each recording keeps more of the CPU busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on each other.",
+          "x-see-also": [
+            "record.concurrency"
+          ],
+          "x-environment": "DECKTALK_RECORD_CAPTURE_SWITCHES"
+        },
+        "frame_wait_seconds": {
+          "description": "Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every image decoded and the step laid out and painted, before it fails the section rather than capture the frame half drawn.",
+          "type": "number",
+          "default": 15.0,
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "x-range": "must be above 0 and must be at most 120",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A wait too short for this machine fails sections whose pages are only slow to fetch a font or decode an image. It never shortens a recording that succeeds, because a page that has drawn its frame is captured at once.",
+          "x-environment": "DECKTALK_RECORD_FRAME_WAIT_SECONDS"
+        },
+        "skip_audit_every": {
+          "description": "Step to and capture every this many frames `record` writes again anyway, and stop the section if one differs from the frame before. Zero audits none, which is the fast path, and the test suite sets it to prove the frames written again.",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 10000,
+          "x-range": "must be between 0 and 10000",
+          "x-unit": "frames",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Every audited frame costs one step and one capture, so one audits every skipped frame and saves no time.",
+          "x-see-also": [
+            "record.skip_still"
+          ],
+          "x-environment": "DECKTALK_RECORD_SKIP_AUDIT_EVERY"
         }
       },
       "additionalProperties": false

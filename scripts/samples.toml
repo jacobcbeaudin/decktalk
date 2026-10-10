@@ -25,9 +25,6 @@
 #   keep      how many items to keep of each named list, by a dotted path, so a long file is cut to its first rows
 #   varies    the json keys whose values a run decides, which `--check` holds by key and not by value
 #   masks     the patterns whose matches a run decides, which `--check` holds by place and not by value
-#   measured  the findings a slower machine can add to the verdict of a last command that verifies the film,
-#             since a page is recorded in real time: their lines are left out of the block, and the findings
-#             exit they bring is accepted only when every error the run names is one of them
 #
 # Rows that begin with the same steps share the project those steps made, and run only the steps
 # after them in a copy of it.
@@ -395,7 +392,6 @@ varies = ["elapsed_seconds"]
 [build]
 page = "docs/quickstart.mdx"
 what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 stream = "both"
 masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
@@ -403,7 +399,6 @@ masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
 [build-assemble-line]
 page = "docs/help/troubleshooting.mdx"
 what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 stream = "both"
 grep = "^The loudness pass"
@@ -411,7 +406,6 @@ grep = "^The loudness pass"
 [build-events]
 page = "docs/agents/json.mdx"
 what = "decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend", "--events", "--json"]]
 stream = "stderr"
 fence = "jsonl"
@@ -428,7 +422,6 @@ stream = "both"
 [build-unchanged]
 page = "docs/guides/rebuild-one-section.mdx"
 what = "a second decktalk build --no-spend on an unchanged starter named my-lesson"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"], ["build", "--no-spend"]]
 stream = "both"
 masks = ['[0-9a-f]{12}', '\b\d+ findings?\b', '\b\d+ errors?\b']
@@ -436,7 +429,6 @@ masks = ['[0-9a-f]{12}', '\b\d+ findings?\b', '\b\d+ errors?\b']
 [verify]
 page = "docs/reference/verify.mdx"
 what = "decktalk verify, a --no-spend build of a fresh starter"
-measured = ["CUE_OFF"]
 grep = '^Verifying|^ |^$'
 run = [["build", "--no-spend"], ["verify"]]
 stream = "both"
@@ -445,7 +437,6 @@ masks = ['(?<=\d)  +\d+\.\d\d   +[-+]\d\.\d\d$']
 [verify-close-pair]
 page = "docs/reference/verify.mdx"
 what = "decktalk -v verify, a --no-spend build of a fresh starter"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"], ["-v", "verify"]]
 stream = "both"
 grep = "sits close to another cue"
@@ -453,7 +444,6 @@ grep = "sits close to another cue"
 [verify-json]
 page = "docs/reference/verify.mdx"
 what = "decktalk verify --json, a --no-spend build of a fresh starter"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"], ["verify", "--json"]]
 stream = "stdout"
 fence = "json"
@@ -477,24 +467,21 @@ varies = ["run", "elapsed_seconds"]
 [cue-times-json]
 page = "docs/reference/artifacts.mdx"
 what = "build/cue-times.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section's first two cues"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 file = "build/cue-times.json"
 keep = { sections = 1, "sections.0.cues" = 2 }
 
 [recording-json]
 page = "docs/reference/artifacts.mdx"
-what = "build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues, words, frame gaps and long frames cut to []"
-measured = ["CUE_OFF"]
+what = "build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues and words cut to []"
 run = [["build", "--no-spend"]]
 file = "build/recordings/01.json"
-keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0, "recording.report.frameGaps" = 0, "recording.report.longFrames" = 0 }
-varies = ["digest", "load_seconds", "settle_seconds", "clock_start_seconds", "seconds", "method", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
+keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0 }
+varies = ["digest", "load_seconds", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
 
 [section-json]
 page = "docs/reference/artifacts.mdx"
 what = "build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 file = "build/sections/01.json"
 varies = ["digest"]
@@ -502,7 +489,6 @@ varies = ["digest"]
 [placements-json]
 page = "docs/reference/artifacts.mdx"
 what = "build/final/placements.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 file = "build/final/placements.json"
 keep = { sections = 1 }
@@ -528,14 +514,6 @@ run = [
 exit = 1
 stream = "both"
 grep = "CUE_STALE"
-
-[no-cover]
-page = "docs/help/troubleshooting.mdx"
-what = "decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line"
-run = [["narrate", "--no-spend"], ["cue"], ["record", "--section", "2", "--force", "--set", "record.cover_min_chroma=255"]]
-stream = "both"
-grep = "shows no cover"
-masks = ['\d+\.\d+s']
 
 [effect-plan]
 page = "docs/guides/effects-on-a-cue.mdx"
@@ -764,7 +742,6 @@ stream = "both"
 [first-deck-build]
 page = "docs/guides/first-deck.mdx"
 what = "decktalk build --no-spend, on the same project, which exits 0"
-measured = ["CUE_OFF"]
 edits = [
     ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
 
@@ -821,7 +798,6 @@ masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
 [first-deck-verify]
 page = "docs/guides/first-deck.mdx"
 what = "decktalk verify --section 4, on the same project after the build, which exits 0"
-measured = ["CUE_OFF"]
 grep = '^Verifying|^ |^$'
 edits = [
     ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.

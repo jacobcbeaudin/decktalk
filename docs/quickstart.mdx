@@ -202,8 +202,8 @@ cache paths.
     take yet and each plays a placeholder. Each is a warning, so the build still exits 0, and each
     names the command that buys its take. [Build times](/reference/measured#build-times) says how
     long this build takes on a named machine that already has Chromium and ffmpeg. Recording is the
-    long part. It runs in real time, with several sections recording at once as the machine's CPU
-    allows, so a longer film takes longer.
+    long part. It steps each section one frame at a time, with several sections recording at once as
+    the machine's CPU allows, so a longer film takes longer.
 
     The two middle lines are the run explaining itself. The starter declares no score, so that
     stage has nothing to do. The loudness pass is skipped because normalising a placeholder to a

@@ -127,8 +127,8 @@ sentence, so `decktalk check` is the call that prices an edit before you run it.
 
 ## What makes a recording stale
 
-A recording is one page section captured in Chromium, and its key is written into its log beside the
-webm as `digest`. It holds everything that decides what those pixels look like:
+A recording is one page section stepped through Chromium frame by frame, and its key is written into
+its log beside the mp4 as `digest`. It holds everything that decides what those pixels look like:
 
 - the page URL the recorder opens, which already carries the scene, every cue resolved to its second
   and every spoken word with its start

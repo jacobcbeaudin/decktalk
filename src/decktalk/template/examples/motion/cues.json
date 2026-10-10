@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Which spoken phrase each moment on the page lands on. `id` is a cue id: the slide id, a colon,",
+    "then the cue name the page writes. A motion departs on one cue and arrives on another, so both",
+    "are cues here. An arrival that eases to rest has no edge to measure, so its cue says verify false."
+  ],
+  "sections": {
+    "1": {
+      "cues": [
+        { "id": "1.1:title", "phrase": "This is a packet", "occurrence": 1 },
+        { "id": "1.1:go", "phrase": "when I say go", "occurrence": 1 },
+        { "id": "1.1:now", "phrase": "one word now", "occurrence": 1 },
+        { "id": "1.1:spring", "phrase": "on a spring", "occurrence": 1 },
+        { "id": "1.1:rest", "phrase": "without a bounce", "occurrence": 1, "verify": false }
+      ]
+    },
+    "2": {
+      "cues": [
+        { "id": "2.1:title", "phrase": "Every frame", "occurrence": 1 },
+        { "id": "2.1:fill", "phrase": "the first word", "occurrence": 1 },
+        { "id": "2.1:finish", "phrase": "the last one", "occurrence": 1 },
+        { "id": "2.1:talk", "phrase": "talks over it", "occurrence": 1 }
+      ]
+    },
+    "3": {
+      "cues": [
+        { "id": "3.1:one", "phrase": "for one", "occurrence": 1 },
+        { "id": "3.1:two", "phrase": "for two", "occurrence": 1 },
+        { "id": "3.1:three", "phrase": "for three", "occurrence": 1 }
+      ]
+    }
+  }
+}

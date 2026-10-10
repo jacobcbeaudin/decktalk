@@ -1,0 +1,41 @@
+#:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
+# The motion example: things that travel between two words, a loop, a spring and a bar that fills.
+# `decktalk init --example motion DIR` writes it. Run `decktalk schema setting` for every key.
+
+[project]
+name = "__NAME__"
+script = "script.md"
+cues = "cues.json"
+build = "build"
+
+[[section]]
+number = 1
+chapter = "A thing that travels"
+page = "deck/index.html"
+scene = "1"
+record_margin_seconds = 0.3   # recorded past the narration, so the cut never lands on a frame that was never drawn
+
+[[section]]
+number = 2
+chapter = "A clock you can see"
+page = "deck/index.html"
+scene = "2"
+
+# A section a program draws rather than a page. The voice reads it like any other section and keeps
+# going through it, and `record` runs the command with the section's word and cue times.
+[[section]]
+number = 3
+chapter = "A picture from elsewhere"
+render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landings}", "{ffmpeg}"]
+hold_seconds = 1.0     # the last frame holds this long after the narration
+
+[narration]
+tail_seconds = 1.0  # silence kept after the last word of a section, so a cut breathes
+
+[voices.narrator]
+provider = "elevenlabs"
+id = ""   # the voice that reads the script, a published name rather than a secret, so commit it
+speed = 1.0
+
+[elevenlabs]
+dollars_per_1000_characters = 0.30   # what your plan charges, which is what `decktalk check` prices the narration at

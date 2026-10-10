@@ -13,7 +13,7 @@ from support.pages import a_recording
 
 
 def log(**fields: object) -> RecordingLog:
-    base = {"section": 3, "digest": "abc", "recording": a_recording(clock_start_seconds=0.8)}
+    base = {"section": 3, "digest": "abc", "recording": a_recording()}
     return RecordingLog.model_validate({**base, **fields})
 
 
@@ -44,23 +44,18 @@ def test_a_newer_engine_records_again_what_an_older_one_recorded(
     assert input_digest(["url"], {"hero.png": picture}) != before
 
 
-def test_the_head_is_cut_at_the_cover_when_one_was_found_and_at_the_estimate_otherwise() -> None:
-    assert log(start={"seconds": 1.1, "method": "the cover"}).trim_seconds == 1.1
-    assert log().trim_seconds == 0.8
-
-
 def test_every_judgement_the_recorder_made_is_one_list_of_findings() -> None:
     """The page's own warnings and the checks over the frames are read by code, never as sentences."""
     judged = log(
         findings=(
             Finding(
-                code=Code.RECORD_STALLED,
-                message="the page went 120 ms without drawing, which a viewer sees as a freeze.",
+                code=Code.RECORD_BLACK,
+                message="the frame half way through is black, so nothing the slide declares was on screen.",
                 location=Location(where="deck/index.html", section=3),
             ),
         )
     )
-    assert [found.code for found in judged.findings] == [Code.RECORD_STALLED]
+    assert [found.code for found in judged.findings] == [Code.RECORD_BLACK]
 
 
 def test_the_log_round_trips_through_its_own_file(tmp_path: Path) -> None:

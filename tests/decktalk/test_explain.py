@@ -89,7 +89,7 @@ class TestTheKeyItself:
         assert found.hazard == key.hazard
         assert found.range == key.range
         assert found.unit == "milliseconds"
-        assert found.decides == (Code.CUE_OFF,)
+        assert found.decides == (Code.CUE_OFF, Code.MOTION_OFF, Code.MOTION_NO_EDGE)
         assert found.scope is Scope.PROJECT
         assert found.nature is Nature.TASTE
         assert found.source is Source.CHOSEN

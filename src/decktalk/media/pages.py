@@ -34,10 +34,10 @@ from .pagereport import PageReport
 log = logging.getLogger(__name__)
 
 # decktalk-probe.js is the instrumentation every command needs from a page and no page carries:
-# the magenta cover over the first paint, the helper that says when a page has settled, the
+# the step that moves a recorded page one frame, the helper that says when a page has settled, the
 # measured catalog's boxes and the freeze that stops at one cue. It is added as an init script, so
 # it runs before the page's own scripts and the runtime finds it, and it is never a <script src>
-# in a deck. The cover is drawn only where it is asked for, so a screenshot never shows it.
+# in a deck.
 PROBE_JS = probe_path().read_text(encoding="utf-8")
 # The probe is the recorder's own instrument, so a deck cannot take its name once it is on the
 # window. This runs as the init script after the probe's own and before any script of the page.
@@ -48,7 +48,6 @@ SEAL_JS = """(() => {
   Object.freeze(probe);
   Object.defineProperty(window, "__decktalkProbe", { value: probe, writable: false, configurable: false });
 })()"""
-COVER_JS = "() => window.__decktalkProbe.cover()"
 # How much this render slows every declared length down, which the runtime reads off the root. The
 # tag is appended once the page's own sheets are in the head, so the setting decides and not a deck.
 MOTION_JS = """(() => {
@@ -61,8 +60,6 @@ MOTION_JS = """(() => {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add, { once: true });
   else add();
 })()"""
-# Remove the cover, then start the page clock on the next animation frame.
-START_JS = "() => window.__decktalkProbe.lift()"
 READY_JS = "() => window.__decktalkProbe.ready()"
 # Two animation frames after the page is ready, so what the page drew in answer to ready() has been
 # through layout and paint before a frozen frame is taken.
@@ -121,15 +118,17 @@ def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECO
     The expression is raced against a timer inside the page, because the page is where a deck's own
     promises are kept and a call that hangs there hangs this build. A page whose script never yields
     the thread at all cannot be raced from inside itself, and that is what `page.close()` on the way
-    out of the recording context is for.
+    out of the recording context is for. The timer is cleared once the race is decided, so a page on
+    the recorder's clock is left holding no timer of the recorder's own to end a still stretch.
     """
     raced = (
         "async () => {"
+        "  let timer;"
         f"  const answer = Promise.resolve().then({script});"
-        "  const timer = new Promise((_ok, no) => setTimeout("
+        "  const late = new Promise((_ok, no) => { timer = setTimeout("
         f"    () => no(new Error('the page did not answer within {deadline_seconds:g} seconds')),"
-        f"    {deadline_seconds * 1000:.0f}));"
-        "  return await Promise.race([answer, timer]);"
+        f"    {deadline_seconds * 1000:.0f}); }});"
+        "  try { return await Promise.race([answer, late]); } finally { clearTimeout(timer); }"
         "}"
     )
     with driving("the page could not answer"):

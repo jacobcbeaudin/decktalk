@@ -1,0 +1,10 @@
+{
+  "sections": {
+    "1": {
+      "cues": [
+        { "id": "1.1:click", "phrase": "Click Send", "occurrence": 1 },
+        { "id": "1.1:client", "phrase": "your client", "occurrence": 1 }
+      ]
+    }
+  }
+}

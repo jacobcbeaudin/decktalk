@@ -204,7 +204,7 @@ jobs:
       - run: mkdir -p reports
       - run: decktalk doctor --no-input --json > reports/doctor.json
       - run: decktalk check --no-input --json > reports/check.json
-      - run: decktalk build --no-spend --no-input --allow CUE_OFF --json > reports/build.json
+      - run: decktalk build --no-spend --no-input --json > reports/build.json
         env:
           DECKTALK_VIDEO_PRESET: veryfast
       - name: Keep the film, its files and the reports
@@ -291,25 +291,14 @@ A pull request from a fork runs the fork's page on your runner. Under the defaul
 `record.page_policy` that page reaches the network as it would in a browser.
 [A page someone else wrote](/requirements#a-page-someone-else-wrote) explains the policy that refuses it.
 
-### Report cue timing on a hosted runner
+### Cue timing on a hosted runner
 
-A hosted runner has no GPU that Chromium can use, so every frame is drawn in software and the
-moment a frame reaches the recording moves from run to run. A reveal can land a few frames late on
-any hosted runner, Linux included, and `verify` reports [`CUE_OFF`](/reference/findings/CUE_OFF)
-on a deck that is correct.
-
-So the job above passes `--allow CUE_OFF`. The finding stays in `build.json` with its offset, and
-it stops counting toward the exit, so the job still fails on every other finding. Judge timing on the
-machine that records the published film, with the defaults.
-
-DeckTalk's own end-to-end suite makes the same choice. It reports cue timing on every hosted runner,
-and its Linux row will gate it once three runs in a row on `main` show no late reveal.
-
-A job that has to gate on timing anyway can widen the limits for the whole job instead, with
-`DECKTALK_VERIFY_CUE_OFFSET_MAX_MS` in its `env`. Every key publishes the range that is safe to turn
-it through, and the loader refuses a value outside it, naming the file and the line.
-[Configuration](/reference/configuration#verify) states each range and what a value past it costs
-you.
+A hosted runner has no GPU that Chromium can use, so every frame is drawn in software and a recording
+takes longer. It does not land a reveal any later. The recorder steps the section clock one frame at
+a time and draws each frame at its own second, so a reveal shows on the same frame on a hosted runner
+as on your own machine, and [`CUE_OFF`](/reference/findings/CUE_OFF) fails the job above exactly as
+it fails a build on your desk. DeckTalk's own end-to-end suite holds every reveal to its frame on
+every runner it runs on.
 
 ## Build offline
 

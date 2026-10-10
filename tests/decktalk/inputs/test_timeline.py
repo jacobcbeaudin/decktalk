@@ -55,3 +55,12 @@ def test_a_section_the_film_does_not_play_takes_the_offset_of_the_first_run() ->
 def test_a_film_with_no_spoken_section_offsets_nothing() -> None:
     assert narration_runs([clip(1)], index(), {1: 0.0}) == ()
     assert narration_offsets([clip(1)], index(), {1: 0.0}) == {}
+
+
+def test_a_rendered_section_between_two_pages_keeps_the_voice_going_in_one_run() -> None:
+    """A program draws its picture, and the voice reads it like a page, so nothing pauses the track."""
+    rendered = PageSection(number=2, page="", scene="", render_command=("{python}", "render/draw_bars"))
+    sections = [page(1), rendered, page(3)]
+    takes = index(a_take(1, seconds=2.0), a_take(2, seconds=3.0), a_take(3, seconds=3.0))
+    (run,) = narration_runs(sections, takes, {1: 0.0, 2: 2.0, 3: 5.0})
+    assert run.sections == (1, 2, 3) and run.end is None

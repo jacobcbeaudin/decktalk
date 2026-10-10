@@ -222,7 +222,11 @@ class Workspace:
         return self.events_dir / f"{run}{EVENTS_SUFFIX}"
 
     def recording(self, key: str) -> Path:
-        return self.recordings_dir / f"{key}.webm"
+        return self.recordings_dir / f"{key}.mp4"
+
+    def render_dir(self, key: str) -> Path:
+        """Where a rendered section's motion document and landings are written, one directory per section."""
+        return self.recordings_dir / "render" / key
 
     def recording_log(self, key: str) -> Path:
         return self.recordings_dir / f"{key}.json"

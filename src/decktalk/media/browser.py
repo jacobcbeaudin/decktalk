@@ -5,6 +5,11 @@ machine without Chromium gets it here, the first time a command needs it, the wa
 ffmpeg. `pages.py` drives a page in the browser this launches, and `recording.py` records one, so a
 stage above asks for a recording or a frame and never for a browser.
 
+`[record] capture_switches` names the switches the recorder's Chromium is launched with, which stop
+it holding its frames to the display's refresh rate. They come from a closed set, each held to recording the
+same frames as a launch without it, so they make a recording faster and never different. The other
+launches pass none, because nothing they capture has been held to that.
+
 `[record] page_policy` decides how far the page itself is trusted, and every launch reads it, so
 `check`, `storyboard` and the poster follow the same policy as `record`. A trusted page is the
 author's own work and reaches the network as it would in the author's browser. An untrusted page is
@@ -24,7 +29,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -33,7 +38,7 @@ from playwright.sync_api import Browser, Playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import ApprovalRequired, InputError, ToolError
-from ..settings import PAGE_POLICIES
+from ..settings import CAPTURE_SWITCHES, PAGE_POLICIES
 from ..toolchain import chromium_fetch
 from .environment import child_environment
 
@@ -65,6 +70,16 @@ reached only by what routing cannot stop, which is every channel an untrusted pa
 
 EVERY_HOST = "<-loopback>"
 """Truth: Chromium's word for taking loopback off its implicit bypass list, so no host skips the proxy."""
+
+RASTER_ARGS = ("--disable-partial-raster",)
+"""Truth: what every Chromium is started with, so a tile the compositor draws again is drawn whole.
+
+Partial raster draws only the changed rectangle of a tile over the pixels the tile held before, and
+the anti-aliased edge it draws inside that rectangle is not the edge a whole tile draws. A frame would
+then carry which states the page painted before it, so a frame reached by its index and the same frame
+reached by stepping every frame before it would differ. Drawing every changed tile whole makes the
+picture a function of the page as it stands.
+"""
 
 UNTRUSTED_ARGS = ("--force-webrtc-ip-handling-policy=disable_non_proxied_udp",)
 """What an untrusted page's Chromium is started with, which keeps WebRTC from sending UDP past the proxy."""
@@ -109,20 +124,27 @@ def admitted(policy: str, *, spend: bool) -> PagePolicy:
     return sealed
 
 
-def launch_options(policy: PagePolicy) -> dict[str, Any]:
+def capture_switch(name: str) -> str:
+    """One `[record] capture_switches` name as the switch Chromium reads, refused unless the closed set holds it."""
+    return f"--{choice_of('capture_switches', name, CAPTURE_SWITCHES)}"
+
+
+def launch_options(policy: PagePolicy, switches: Sequence[str] = ()) -> dict[str, Any]:
     """The keyword arguments a launch under `policy` passes to Playwright, beyond the executable.
 
-    The environment is scrubbed under both policies. The sandbox, the proxy and the WebRTC switch are
-    the untrusted policy's alone, because a trusted page is a deck on its author's own machine and
-    the machine's own proxy is the one it should use.
+    The environment is scrubbed and the raster switch is passed under both policies. The sandbox, the
+    proxy and the WebRTC switch are the untrusted policy's alone, because a trusted page is a deck on
+    its author's own machine and the machine's own proxy is the one it should use. `switches` are
+    capture switches by their `[record] capture_switches` names, passed after every other switch.
     """
     options: dict[str, Any] = {"env": child_environment()}
     if policy == UNTRUSTED:
         options |= {
             "chromium_sandbox": True,
             "proxy": {"server": DEAD_PROXY, "bypass": EVERY_HOST},
-            "args": list(UNTRUSTED_ARGS),
         }
+    sealing = UNTRUSTED_ARGS if policy == UNTRUSTED else ()
+    options["args"] = [*RASTER_ARGS, *sealing, *(capture_switch(name) for name in switches)]
     return options
 
 
@@ -140,7 +162,7 @@ class Chromium:
 
 
 @contextmanager
-def chromium(executable: str = "", *, policy: str, spend: bool) -> Iterator[Chromium]:
+def chromium(executable: str = "", *, policy: str, spend: bool, switches: Sequence[str] = ()) -> Iterator[Chromium]:
     """A launched headless Chromium and its page policy, as the machine and the project configure it, closed on exit.
 
     Under the trusted policy no proxy argument is passed. Request routing answers the local origin
@@ -155,16 +177,17 @@ def chromium(executable: str = "", *, policy: str, spend: bool) -> Iterator[Chro
     default, because a default would be the policy a caller that forgot it gets, and a caller that
     forgot it is the one most likely to open a stranger's page. `spend` is whether the run may buy,
     which the caller passes from its run for the same reason: a default would be a fail-open guess.
+    `switches` is `[record] capture_switches`, which the recorder passes and no other caller does.
     """
     with chromium_fetch.driver(chromium_fetch.browsers_dir()) as pw:
-        browser = launch(pw, executable, policy=policy, spend=spend)
+        browser = launch(pw, executable, policy=policy, spend=spend, switches=switches)
         try:
             yield Chromium(browser, page_policy(policy))
         finally:
             browser.close()
 
 
-def launch(pw: Playwright, executable: str = "", *, policy: str, spend: bool) -> Browser:
+def launch(pw: Playwright, executable: str = "", *, policy: str, spend: bool, switches: Sequence[str] = ()) -> Browser:
     """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
 
     This is the one place a browser starts, so every command gets the browser it needs without
@@ -182,7 +205,7 @@ def launch(pw: Playwright, executable: str = "", *, policy: str, spend: bool) ->
     stranger's page out of one run.
     """
     sealed = admitted(policy, spend=spend)
-    options = launch_options(sealed)
+    options = launch_options(sealed, switches)
     started = time.monotonic()
     try:
         return _launched(pw.chromium.launch(executable_path=executable or None, **options), sealed, started)

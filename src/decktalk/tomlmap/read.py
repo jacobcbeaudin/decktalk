@@ -284,6 +284,8 @@ def _coerce(annotation: Any, raw: str) -> Any:
     An environment variable carries a string and nothing else, so every value here is converted.
     A mapping's value goes through `_as_written` instead, which refuses a value of another type,
     and that is how one key answers the same way whether it was written in a file or exported.
+    An array is its items separated by commas, and an empty string is the empty array, which a
+    variable or a `--set` has no other way to write.
     """
     if annotation is bool:
         return raw.lower() not in SWITCHED_OFF
@@ -291,7 +293,7 @@ def _coerce(annotation: Any, raw: str) -> Any:
         return _coerce(get_args(annotation)[0], raw)
     if get_origin(annotation) is tuple:
         inner = get_args(annotation)[0] if get_args(annotation) else str
-        return tuple(_coerce(inner, x.strip()) for x in raw.split(","))
+        return tuple(_coerce(inner, x.strip()) for x in raw.split(",")) if raw.strip() else ()
     if annotation is int:
         return int(raw)
     if annotation is float:

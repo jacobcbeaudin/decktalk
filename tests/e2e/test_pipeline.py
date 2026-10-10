@@ -28,7 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -43,23 +43,10 @@ from decktalk.findings import Code
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import CostState, Layer, SectionKind, Substitute, TakeState, Word
+from decktalk.settings import Settings
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
-from support.commands import (
-    HOSTILE_DIRECTORY,
-    clean_environ,
-    codes,
-    flat,
-)
-from support.timing_policy import (
-    BASE_BUDGET_SECONDS,
-    FIRST_FETCH_SECONDS,
-    assert_build_finished,
-    budget,
-    gates_timing,
-    held_to,
-    note_late_reveals,
-    offset_limit_ms,
-)
+from support.commands import HOSTILE_DIRECTORY, clean_environ, errors, flat
+from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget, due_seconds, frames_late
 
 # An advisory lock on the output directory, where the platform has one.
 fcntl: ModuleType | None = importlib.import_module("fcntl") if importlib.util.find_spec("fcntl") else None
@@ -142,17 +129,12 @@ def moment(line: type[Event]) -> str:
 
 @dataclass
 class Run:
-    """One `decktalk` command that has finished, with its exit code, its two streams and this leg.
-
-    The run carries the session's configuration because the timing policy is a property of the leg
-    rather than of a test, and a run is what every test here reads a finding from.
-    """
+    """One `decktalk` command that has finished, with its exit code and its two streams."""
 
     args: tuple[str, ...]
     code: int
     stdout: str
     stderr: str
-    config: pytest.Config
 
     @property
     def json(self) -> dict[str, Any]:
@@ -163,18 +145,9 @@ class Run:
     def findings(self) -> list[dict[str, Any]]:
         return list(self.json["findings"])
 
-    def errors(self) -> list[Mapping[str, Any]]:
-        """Every finding the run is sure about that this leg holds the deck to, and prints the rest.
-
-        Reading the rows through the timing policy here rather than in each test is what puts every
-        test of this suite on the policy, including the ones that are about something else and read
-        a run's findings to say that the command found nothing.
-        """
-        return held_to(self.config, " ".join(self.args), self.findings)
-
-    def codes(self) -> list[Code]:
-        """Every finding as the model's own member, which is what the timing policy judges."""
-        return codes(self.json)
+    def errors(self) -> list[dict[str, Any]]:
+        """Every finding the run is sure about, which is every row a deck is held to on every runner."""
+        return errors(self.json)
 
 
 BLOCK_THE_NETWORK = '''
@@ -212,7 +185,6 @@ class Project:
     root: Path
     shim: Path
     attempts: Path
-    config: pytest.Config
     built: Run | None = None
     verified: Run | None = None
 
@@ -234,7 +206,7 @@ class Project:
             env=env,
             cwd=self.shim,
         )
-        return Run((*args,), done.returncode, done.stdout, done.stderr, self.config)
+        return Run((*args,), done.returncode, done.stdout, done.stderr)
 
     @property
     def build_dir(self) -> Path:
@@ -308,7 +280,7 @@ def hold(path: Path) -> IO[str] | None:
 
 
 @pytest.fixture(scope="session")
-def built(pytestconfig: pytest.Config) -> Iterator[Project]:
+def built() -> Iterator[Project]:
     """Copy the fixture, generate the media, and build it with no voice, with the runtime and KaTeX the engine's."""
     assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
@@ -325,7 +297,7 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
     assert not list(root.rglob(RUNTIME_FILE)) and not list(root.rglob("katex.min.js")), "the fixture holds a copy"
     generate_media(root)
 
-    project = Project(root=root, shim=shim, attempts=shim / "attempts.txt", config=pytestconfig)
+    project = Project(root=root, shim=shim, attempts=shim / "attempts.txt")
     try:
         project.built = project.cli("build", "--no-spend", "--json")
         # One reading over the sections that carry cues, kept on disk for the CI upload on a failure.
@@ -341,15 +313,11 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
 # ---- the build -----------------------------------------------------------------------------------
 
 
-def test_the_build_finds_nothing_with_the_network_blocked(built: Project, pytestconfig: pytest.Config) -> None:
-    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word.
-
-    Where timing is reported rather than gated, a build that exited on late reveals alone is a
-    finished build too, which is the one judgement `assert_build_finished` makes.
-    """
+def test_the_build_finds_nothing_with_the_network_blocked(built: Project) -> None:
+    """The build's last stage is the real verify, so exit 0 means every reveal landed on its word."""
     assert built.built is not None
     assert built.network_attempts() == [], built.network_attempts()
-    assert_build_finished(built.built.code, built.built.codes(), built.built.stderr, pytestconfig)
+    assert built.built.code == Exit.FOUND_NOTHING, built.built.stderr
     assert built.film.is_file() and built.film.stat().st_size > 0
 
 
@@ -418,7 +386,7 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     logs = {key: built.recording_log(key) for key in SPOKEN}
     assert {key: list(log.findings) for key, log in logs.items()} == {key: [] for key in SPOKEN}
     assert all(log.checks is not None for log in logs.values())
-    assert all(log.start is not None and not log.start.guessed for log in logs.values())
+    assert all(log.recording.fps == Settings().video.fps for log in logs.values())
     assert all(log.recording.url.startswith("http://") for log in logs.values())
     # Every project file the page loaded is named, which is what the next run keys its skip on. The
     # runtime is the engine's and no file of the project, so it is not one of them, and the page ran it.
@@ -435,15 +403,15 @@ def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
 
 
 def test_a_second_record_run_keeps_every_section(built: Project) -> None:
-    """Nothing the pages are recorded from has moved, so the run opens no browser and keeps each webm."""
-    before = {key: (built.build_dir / "recordings" / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    """Nothing the pages are recorded from has moved, so the run opens no browser and keeps each recording."""
+    before = {key: (built.build_dir / "recordings" / f"{key}.mp4").stat().st_mtime_ns for key in SPOKEN}
     again = built.cli("record", "--json")
     doc = again.json
     assert again.code == Exit.FOUND_NOTHING, again.stderr
     rows = {row["key"]: row for row in doc["sections"]}
     assert set(rows) == set(SPOKEN)
     assert all(row["kept"] for row in rows.values()), rows
-    after = {key: (built.build_dir / "recordings" / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    after = {key: (built.build_dir / "recordings" / f"{key}.mp4").stat().st_mtime_ns for key in SPOKEN}
     assert after == before
 
 
@@ -451,11 +419,7 @@ def test_a_second_record_run_keeps_every_section(built: Project) -> None:
 
 
 def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(built: Project) -> None:
-    """Every cue the fixture declares is measured, and nothing it measured is an error.
-
-    What this test is about is which rows a reading produces, so a late landing on a runner that
-    reports timing may not fail it. The test above it is the one that judges the landings.
-    """
+    """Every cue the fixture declares is measured, and nothing it measured is an error."""
     assert built.verified is not None
     doc = built.verified.json
     assert [qualified(row) for row in doc["cues"]] == list(CUES)
@@ -481,31 +445,27 @@ def test_every_cue_changed_the_picture_it_was_measured_against(built: Project) -
     assert unchanged == [], unchanged
 
 
-def test_every_cue_lands_inside_the_limit_the_project_publishes(built: Project, pytestconfig: pytest.Config) -> None:
-    """The limit is read from the project's own settings, so no number here decides a verdict.
+def test_every_reveal_shows_on_the_frame_its_cue_is_due(built: Project) -> None:
+    """The recorder steps the section clock, so each reveal shows on the first frame at or after its cue.
 
-    A leg that reports timing is held to that same limit plus the slack the policy declares, because
-    a report is not an amnesty: a reveal half a second late is a broken deck on any runner.
+    That frame is known from the cue's second and the section's start alone, so a reveal one frame
+    late or one frame early is a broken recorder or a broken page on every runner. The fixture's
+    reveals are instant, so the frame verify reads the onset on is the frame the reveal showed on.
     """
     assert built.verified is not None
-    published = built.cli("config", "get", "verify.cue_offset_max_ms", "--json")
-    stated_ms = float(published.json["setting"]["value"])
-    allowed_ms = offset_limit_ms(stated_ms, gates_timing(pytestconfig))
-    late = [
-        (qualified(row), abs(row["offset_seconds"]) * 1000)
+    due = due_seconds(built.build_dir)
+    fps = Settings().video.fps
+    late = {
+        qualified(row): frames_late(row["shown"], *due[(row["section"], row["cue"])], fps)
         for row in built.verified.json["cues"]
-        if row["offset_seconds"] is not None and abs(row["offset_seconds"]) * 1000 > stated_ms
-    ]
-    assert [(cue, out) for cue, out in late if out > allowed_ms] == [], late
-    if late:
-        note_late_reveals(pytestconfig, FILM_NAME, (f"{cue} landed {out:.0f} ms from its word" for cue, out in late))
+    }
+    assert late == dict.fromkeys(CUES, 0)
 
 
 def test_section_2_opens_on_section_1s_last_frame(built: Project) -> None:
     assert built.verified is not None
     [seam] = built.verified.json["seams"]
-    assert seam["section"] == 2
-    assert seam["drift_seconds"] is not None
+    assert (seam["section"], seam["drift_seconds"]) == (2, 0.0), "a seamless section opens on the frame it continues"
 
 
 # ---- the finished film ------------------------------------------------------------------------------
@@ -543,7 +503,7 @@ def test_the_placements_record_where_every_section_plays(built: Project) -> None
     rows = {row.key: row for row in placements.sections}
     assert set(rows) == set(EVERY_SECTION)
     assert rows["03"].kind is SectionKind.CLIP and rows["03"].source.as_posix() == "media/broll.mp4"
-    assert rows["01"].source.as_posix() == "build/recordings/01.webm"
+    assert rows["01"].source.as_posix() == "build/recordings/01.mp4"
     assert [row.key for row in placements.sections if row.substitute is not None] == ["05"]
     assert placements.fps > 0
     for key, (start, end) in spans.items():
@@ -753,7 +713,7 @@ def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(buil
     root = tmp_path / HOSTILE_DIRECTORY / "sync"
     shutil.copytree(built.root, root, ignore=shutil.ignore_patterns("build"))
     shutil.copytree(built.build_dir, root / "build", ignore=shutil.ignore_patterns("final", "sections", "events"))
-    project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt", config=built.config)
+    project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt")
 
     takes = Takes.read(root / "build" / Artifact.TAKES.value)
     assert takes is not None
@@ -788,12 +748,12 @@ def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(buil
 
 def test_building_one_section_records_that_section_and_no_other(built: Project) -> None:
     recordings = built.build_dir / "recordings"
-    before = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    before = {key: (recordings / f"{key}.mp4").stat().st_mtime_ns for key in SPOKEN}
     length = ffmpeg.probe_duration(built.film)
     run = built.cli("build", "--no-spend", "--section", "4", "--json")
     assert run.errors() == [], run.stderr
     assert run.code in (Exit.FOUND_NOTHING, Exit.FOUND_SOMETHING), run.stderr
-    after = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
+    after = {key: (recordings / f"{key}.mp4").stat().st_mtime_ns for key in SPOKEN}
     assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 is recorded again"
     assert after["04"] > before["04"]
     assert abs(ffmpeg.probe_duration(built.film) - length) < SECOND_TOLERANCE

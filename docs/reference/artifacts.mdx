@@ -91,8 +91,10 @@ my-lesson/build/
     narration.mp3               the takes joined into one track, which assemble mixes under the picture
   cue-times.json                every cue resolved to a second on its own section's clock
   recordings/
-    NN.webm                     one section as the browser recorded it
+    NN.mp4                      one section as the recorder stepped it, losslessly encoded
     NN.json                     what record did for that section, judged and measured
+    render/NN/motion.json       the motion document a render section's program reads
+    render/NN/landings.json     the lanes that program says it drew, when it writes them
   score/
     music.mp3                   the music bed joined from its parts, when the project declares one
   sections/
@@ -314,13 +316,15 @@ instead.
 
 ## `build/recordings/`
 
-`record` writes two files per page section, both named by the section's key.
+`record` writes two files per page section, both named by the section's key, and a render section
+has two more of its own.
 
-`NN.webm` is the recording as the browser produced it. `NN.json` is the recorder's whole account of
+`NN.mp4` is the recording, one frame for each step of the section clock at `video.fps`, losslessly
+encoded because `assemble` encodes it once more at the film's own quality. `NN.json` is the recorder's whole account of
 that section, written when that section is finished, so a reader of a long run sees each section's
 log as soon as that section is done and a measurement always belongs to the recording beside it.
 
-{/* sample: recording-json, build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues, words, frame gaps and long frames cut to [] */}
+{/* sample: recording-json, build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues and words cut to [] */}
 ```json build/recordings/01.json
 {
   "section": 1,
@@ -331,9 +335,8 @@ log as soon as that section is done and a measurement always belongs to the reco
     "external": [],
     "missing": [],
     "requested_seconds": 20.087,
-    "load_seconds": 0.074,
-    "settle_seconds": 1.434,
-    "clock_start_seconds": 1.508,
+    "fps": 25,
+    "load_seconds": 0.049,
     "page_errors": [],
     "report": {
       "version": "0.5.0",
@@ -344,17 +347,15 @@ log as soon as that section is done and a measurement always belongs to the reco
       "catalog": [],
       "cues": [],
       "words": [],
-      "frameGaps": [],
-      "longFrames": [],
+      "motions": [],
       "unreadable": []
     }
   },
-  "start": { "seconds": 1.48, "method": "the frame after the last of 36 cover frames", "guessed": false },
   "findings": [],
   "checks": {
-    "duration_seconds": 22.52,
+    "duration_seconds": 20.08,
     "wanted_seconds": 20.087,
-    "luma": { "at_tenth": 231.924, "at_half": 218.761, "at_nine_tenths": 187.515, "peak_at_half": 242.0 }
+    "luma": { "at_tenth": 221.082, "at_half": 218.765, "at_nine_tenths": 187.524, "peak_at_half": 235.0 }
   }
 }
 ```
@@ -368,18 +369,13 @@ log as soon as that section is done and a measurement always belongs to the reco
 | `recording.assets` | Every project file the page loaded, project-relative. |
 | `recording.external` | Every other origin the page reached for while recording. |
 | `recording.missing` | Every project file the page asked for that is not there. |
-| `recording.requested_seconds` | How long the recorder asked the page to play for. |
-| `recording.load_seconds` | How long the page took to load. |
-| `recording.settle_seconds` | How long the page was left to settle before the clock started. |
-| `recording.clock_start_seconds` | The recorder's own estimate of where the section clock starts. |
+| `recording.requested_seconds` | How many seconds of section clock the page was stepped through. |
+| `recording.fps` | The rate the section clock was stepped at, which is one frame of the video a step. |
+| `recording.load_seconds` | How long the page took to load and paint before its first step. |
 | `recording.page_errors` | Uncaught exceptions, or the one line for no runtime at all. |
 | `recording.report` | What the page said about itself, read once as it was recorded. |
-| `start` | Where the section clock starts in the webm, or null before it was found. |
-| `start.seconds` | The first clean frame after the cover. |
-| `start.method` | How that start was found, in one sentence. |
-| `start.guessed` | True when no cover was found, so every reveal in the section moves. |
 | `findings` | Every judgement the page and the frames made, each a whole finding. |
-| `checks` | What the frames measured, or null when none were. |
+| `checks` | What the frames measured, or null when none were. A log with no checks is a recording that never finished, and the next run records it again. |
 
 Every judgement the recorder makes is a finding, so the page's own warnings, the exceptions it threw
 and the checks over the frames are one list a reader dispatches on by code.
@@ -391,6 +387,58 @@ whose digest is unchanged would be recorded again for nothing, so it is kept.
 
 `report` is what the page answered `window.__decktalkProbe.report()` with, kept whole.
 [Runtime](/reference/runtime) gives every field of it.
+
+`report.motions` is the lane of every motion, loop and region the page declared, which is what
+verify masks and measures. A deck that declares none has an empty list, as the starter's log above
+does.
+
+```json build/recordings/01.json
+"motions": [
+  {
+    "id": "motion-1",
+    "kind": "motion",
+    "box": { "x": 120, "y": 352, "w": 1680, "h": 140 },
+    "size": { "w": 140, "h": 140 },
+    "departs": 6.12,
+    "arrives": 8.4,
+    "landings": [
+      { "cue": "1.1:go", "kind": "depart", "at": 6.12 },
+      { "cue": "1.1:now", "kind": "arrive", "at": 8.4 }
+    ]
+  }
+]
+```
+
+The lane above is the packet of `decktalk init --example motion`, with seconds that show the shape
+rather than a real run.
+
+| Field | Meaning |
+|---|---|
+| `motions[].id` | The lane's own name, numbered in the order the page declared it. |
+| `motions[].kind` | `motion`, `loop` or `region`. |
+| `motions[].box` | The union of every box the element filled on every frame it was alive, in the recording's pixels, or null when it was never seen. |
+| `motions[].size` | The element's own width and height. |
+| `motions[].departs` | The first second on the section clock the recorder saw the lane alive, or null. |
+| `motions[].arrives` | The last such second, or null. |
+| `motions[].landings[]` | Each cue a motion lands on, with `cue`, `kind` as `depart` or `arrive`, and `at`, the second the cue was due. |
+
+### A render section's files
+
+A render section is drawn by its `render_command` rather than recorded from a page, and it still
+leaves `NN.mp4` and `NN.json`. Its `recording.url` is `render:` followed by the command, its report
+carries only `motions`, which are the landings its program wrote, and its `digest` is taken over the
+command, the motion document and the content of every project file the command names. So editing
+the program, a word of the narration or a cue's second draws the section again.
+
+Beside them, under `build/recordings/render/NN/`, are the two files the program trades with
+`record`.
+
+| File | Written by | What it holds |
+|---|---|---|
+| `motion.json` | `record`, before the program runs | `fps`, `width`, `height`, `seconds`, `frames`, `words` as `{ word, start, end }` and `cues` as cue id against second, every second on the section clock. |
+| `landings.json` | the program, if it chooses | A list of lanes in the shape of `report.motions`. `record` deletes it before the program runs, so a file left by an earlier run is never read. |
+
+[A render section](/guides/motion#a-render-section) shows a program that writes both.
 
 ## `score/ledger.json`
 
@@ -447,7 +495,7 @@ Beside each section video, `NN.json` holds the key it was encoded from.
 
 {/* sample: section-json, build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson */}
 ```json build/sections/01.json
-{ "digest": "9d9dd88b087eefd6ebbe538ae1bf4cf3e495a1c6129143eea78cce2e5e1c5edb" }
+{ "digest": "11f3147c1d949306024987459271861d34b651d3cbc521569e08881cf5161a5b" }
 ```
 
 The digest is a sha256 over the whole argument list of the encode, the BLAKE3 digest of every file it
@@ -535,7 +583,7 @@ that wants to jump to a section read it instead of adding section files up.
       "kind": "page",
       "start": 0.0,
       "end": 19.8,
-      "source": "build/recordings/01.webm",
+      "source": "build/recordings/01.mp4",
       "chapter": "Open",
       "substitute": null,
       "dip_in": false,
@@ -568,16 +616,16 @@ file per run, never truncated, so a watch loop running beside a build by hand ca
 the other is writing. `--events` prints the same lines on stderr as they happen.
 
 {/* sample: cue-events, decktalk cue, on a starter built with --no-spend, the whole events file it wrote */}
-```jsonl build/events/58a6859ff5ce.jsonl
-{"event":"run.start","time":"2026-10-07T17:46:30.835248Z","seq":0,"run":"58a6859ff5ce","events_file":"build/events/58a6859ff5ce.jsonl"}
-{"event":"run.log","time":"2026-10-07T17:46:30.836107Z","seq":1,"run":"58a6859ff5ce","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":75302,"lock":".lock"}}
-{"event":"section.start","time":"2026-10-07T17:46:30.838156Z","seq":2,"run":"58a6859ff5ce","stage":"cue","section":1,"turn":null}
-{"event":"section.done","time":"2026-10-07T17:46:30.838228Z","seq":3,"run":"58a6859ff5ce","stage":"cue","section":1,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-07T17:46:30.838282Z","seq":4,"run":"58a6859ff5ce","stage":"cue","section":2,"turn":null}
-{"event":"section.done","time":"2026-10-07T17:46:30.838323Z","seq":5,"run":"58a6859ff5ce","stage":"cue","section":2,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-07T17:46:30.838359Z","seq":6,"run":"58a6859ff5ce","stage":"cue","section":3,"turn":null}
-{"event":"section.done","time":"2026-10-07T17:46:30.838394Z","seq":7,"run":"58a6859ff5ce","stage":"cue","section":3,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"run.done","time":"2026-10-07T17:46:30.840058Z","seq":8,"run":"58a6859ff5ce","outcome":"ran","elapsed_seconds":0.005,"error":null,"dropped":0}
+```jsonl build/events/750e5d4bb6a6.jsonl
+{"event":"run.start","time":"2026-10-08T06:37:57.018102Z","seq":0,"run":"750e5d4bb6a6","events_file":"build/events/750e5d4bb6a6.jsonl"}
+{"event":"run.log","time":"2026-10-08T06:37:57.019071Z","seq":1,"run":"750e5d4bb6a6","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":29597,"lock":".lock"}}
+{"event":"section.start","time":"2026-10-08T06:37:57.021055Z","seq":2,"run":"750e5d4bb6a6","stage":"cue","section":1,"turn":null}
+{"event":"section.done","time":"2026-10-08T06:37:57.021146Z","seq":3,"run":"750e5d4bb6a6","stage":"cue","section":1,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-08T06:37:57.021201Z","seq":4,"run":"750e5d4bb6a6","stage":"cue","section":2,"turn":null}
+{"event":"section.done","time":"2026-10-08T06:37:57.021245Z","seq":5,"run":"750e5d4bb6a6","stage":"cue","section":2,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-08T06:37:57.021283Z","seq":6,"run":"750e5d4bb6a6","stage":"cue","section":3,"turn":null}
+{"event":"section.done","time":"2026-10-08T06:37:57.021320Z","seq":7,"run":"750e5d4bb6a6","stage":"cue","section":3,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"run.done","time":"2026-10-08T06:37:57.024962Z","seq":8,"run":"750e5d4bb6a6","outcome":"ran","elapsed_seconds":0.007,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. `time`, `seq` and `run` are on every line, and `seq` counts per run

@@ -38,6 +38,7 @@ from decktalk.toolchain import assets
 STARTER = "starter"
 LESSON = "lesson"
 INTERVIEW = "interview"
+MOTION = "motion"
 
 
 def packaged(name: str) -> Path:
@@ -49,7 +50,7 @@ def packaged(name: str) -> Path:
     return assets.package_file(f"template/{found.path}")
 
 
-PROJECTS = {name: packaged(name) for name in (STARTER, LESSON, INTERVIEW)}
+PROJECTS = {name: packaged(name) for name in (STARTER, LESSON, INTERVIEW, MOTION)}
 SKILLS = assets.package_file("skills")
 
 
@@ -61,7 +62,7 @@ class Deck(HTMLParser):
 
     A static read is enough here because a packaged page is written entirely in markup, which is the
     shape the slide guide teaches. The one cue a handler serves is declared in `data-owns`, so it is
-    read from the markup like any other.
+    read from the markup like any other, and so are the two cues a motion departs and arrives on.
     """
 
     def __init__(self) -> None:
@@ -81,14 +82,19 @@ class Deck(HTMLParser):
             self.cues.setdefault(self._slide, [])
         if self._slide is None:
             return
-        for moment in MOMENTS:
-            if written.get(moment.value):
-                self._add(written[moment.value])
-        for pair in written.get(Attr.CLASS.value, "").split(PAIR_SEPARATOR):
-            if PAIR_MARK in pair:
-                self._add(pair.split(PAIR_MARK, 1)[0])
-        for local in written.get(Attr.OWNS.value, "").split():
+        for local in self._declared(written):
             self._add(local)
+
+    @staticmethod
+    def _declared(written: dict[str, str]) -> list[str]:
+        """Every cue name one element declares: its moments, its class pairs, what it owns and its motion's two cues."""
+        named = [written[moment.value] for moment in MOMENTS if written.get(moment.value)]
+        pairs = written.get(Attr.CLASS.value, "").split(PAIR_SEPARATOR)
+        named += [pair.split(PAIR_MARK, 1)[0] for pair in pairs if PAIR_MARK in pair]
+        named += written.get(Attr.OWNS.value, "").split()
+        # A motion departs and arrives on cues of its slide, so both join the slide's cue order.
+        named += [written[edge.value] for edge in (Attr.MOTION_FROM, Attr.MOTION_TO) if written.get(edge.value)]
+        return named
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "template":
@@ -125,7 +131,7 @@ def read(name: str) -> Project:
     raw = (root / "decktalk.toml").read_text(encoding="utf-8")
     document = Document.from_toml(tomllib.loads(filled(raw)), default_name=name)
     decks: dict[str, Deck] = {}
-    for page in sorted({section.page for section in document.page_sections}):
+    for page in sorted({section.page for section in document.drawn_sections}):
         deck = Deck()
         deck.feed(filled((root / page).read_text(encoding="utf-8")))
         decks[page] = deck
@@ -143,8 +149,8 @@ PARSED = {name: read(name) for name in PROJECTS}
 # ---- the exercised attribute table ----------------------------------------------------------
 
 EXERCISED: dict[Attr, tuple[str, ...]] = {
-    Attr.IN: (STARTER, LESSON, INTERVIEW),
-    Attr.DESCRIBE: (STARTER, LESSON, INTERVIEW),
+    Attr.IN: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.DESCRIBE: (STARTER, LESSON, INTERVIEW, MOTION),
     Attr.TEX: (STARTER,),
     Attr.TEX_DISPLAY: (STARTER,),
     Attr.IN_STYLE: (STARTER, LESSON, INTERVIEW),
@@ -161,12 +167,18 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
     Attr.OUT_STYLE: (LESSON,),
     Attr.SWAPS: (LESSON,),
     Attr.DESCRIBE_OUT: (LESSON,),
-    Attr.SCENE: (STARTER, LESSON, INTERVIEW),
-    Attr.NAME: (STARTER, LESSON, INTERVIEW),
-    Attr.SLIDE: (STARTER, LESSON, INTERVIEW),
-    Attr.PREVIEW_SECONDS: (STARTER, LESSON, INTERVIEW),
-    Attr.OWNS: (LESSON,),
+    Attr.SCENE: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.NAME: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.SLIDE: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.PREVIEW_SECONDS: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.OWNS: (LESSON, MOTION),
     Attr.ENTER: (LESSON,),
+    Attr.MOTION: (MOTION,),
+    Attr.MOTION_FROM: (MOTION,),
+    Attr.MOTION_TO: (MOTION,),
+    Attr.MOTION_EASE: (MOTION,),
+    Attr.LOOP: (MOTION,),
+    Attr.LOOP_SECONDS: (MOTION,),
 }
 """Which packaged example writes which attribute, declared so a gap is named rather than found.
 
@@ -204,7 +216,7 @@ def test_the_project_file_opens_with_the_line_an_editor_binds_a_schema_by(projec
 
 @pytest.mark.parametrize("project", PARSED.values(), ids=lambda p: p.name)
 def test_every_section_names_a_scene_the_page_it_names_declares(project: Project) -> None:
-    for section in project.document.page_sections:
+    for section in project.document.drawn_sections:
         scenes = project.decks[section.page].scenes
         assert section.scene in scenes, (
             f"section {section.number} names scene {section.scene}, and {section.page} declares {sorted(scenes)}"
@@ -218,6 +230,8 @@ def test_the_page_and_the_cue_file_name_the_same_moments(project: Project) -> No
         for section in load_cues(
             project.root / project.document.cues, project.root, {s.number for s in project.document.sections}
         )
+        # A section a program draws declares its cues in the program, which no page parse can read.
+        if section.number in {one.number for one in project.document.drawn_sections}
         for cue in section.cues
     }
     assert listed == project.cue_ids, (
@@ -382,5 +396,5 @@ def test_the_agents_file_init_writes_points_at_the_help_rather_than_repeating_it
 def test_the_starter_and_the_shipped_examples_are_the_only_projects_the_wheel_ships() -> None:
     """A reserved example name has no directory, so nothing can be written from it by accident."""
     shipped = {found.name for found in template.EXAMPLES if found.shipped}
-    assert shipped == {LESSON, INTERVIEW}
+    assert shipped == {LESSON, INTERVIEW, MOTION}
     assert json.loads((PROJECTS[STARTER] / "cues.json").read_text(encoding="utf-8"))["sections"]

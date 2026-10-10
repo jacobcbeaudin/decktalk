@@ -1,18 +1,19 @@
-"""Stage 3: record each page section in a headless browser, find where the section clock starts, and judge the result.
+"""Stage 3: record each page section in a headless browser, one frame at a time, and judge the result.
 
 One command does the whole of it. It opens the page on the local origin with the section's resolved
-cues and spoken words, records it for its span in the narration, reads the webm to find where
-the section clock starts under the cover, judges the frames and what the page reported, and writes all of
-that to `build/recordings/NN.json` before it moves on to the next section. The measurement therefore
-belongs to the recording beside it, and a long run can be read while it runs.
+cues and spoken words, steps its section clock through its span in the narration one frame at a
+time, judges the frames and what the page reported, and writes all of that to
+`build/recordings/NN.json` before it moves on to the next section. Frame zero of every recording is
+second zero of its section, so there is no start to find. The measurement belongs to the recording
+beside it, and a long run can be read while it runs.
 
     capture.py   the page URL, what a recording is keyed on, and the page cut into its scenes
-    start.py     where the section clock starts in one recording
+    render.py    a section whose picture a command draws, which is the second source of a picture
     checks.py    the frames, the page's own codes and the origins it reached for
     pool.py      how many sections record at once, on the pool in `decktalk.stages.pool`
 
-Sections are recorded several at a time, each worker with a Chromium of its own, because a
-recording waits for its span in real time and the sections of a film share nothing but the project.
+Sections are recorded several at a time, each worker with a Chromium of its own, because each
+recording is one browser and one encode and the sections of a film share nothing but the project.
 The rows, the progress lines and the result come back in section order whatever order the workers
 finish in.
 
@@ -24,9 +25,9 @@ A section named by `--section` is always recorded, which is how an author asks f
 page that has not changed.
 
 The order the recorder writes in is the whole of its safety. The log of the recording being replaced
-goes before anything is captured, the webm is placed next, and the log of what was just recorded is
+goes before anything is captured, the video is placed next, and the log of what was just recorded is
 written last, so the pair on disk is complete or absent and a crash can never leave a new picture
-under an old start.
+under an old judgement.
 """
 
 from __future__ import annotations
@@ -37,21 +38,22 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import RecordingChecks, RecordingLog, Start, UnreadableCache, UnreadablePaidRecord
+from decktalk.artifacts import RecordingChecks, RecordingLog, UnreadableCache, UnreadablePaidRecord
 from decktalk.errors import InputError
 from decktalk.events import Level, Unit
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs, PageSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
-from decktalk.media import browser, recording
+from decktalk.media import browser, stepping
 from decktalk.media.origin import Allowed
-from decktalk.media.pagereport import Recording
-from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
+from decktalk.media.pagereport import PageReport, Recording
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
 from decktalk.stages import selects
 from decktalk.stages.pool import Halt, Pool
+from decktalk.stages.record import render
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
@@ -59,23 +61,19 @@ from decktalk.stages.record.capture import (
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import automatic
-from decktalk.stages.record.start import find_start
 
 log = logging.getLogger(__name__)
-
-STALLED = "Section %d stalled for %d ms, which is over the %d ms limit, so it is recorded again (%d of %d)."
-"""The line a retry prints: the section, its worst frame gap, the limit, the attempt and the retries allowed."""
 
 
 @dataclass(frozen=True, eq=False)
 class LogSink:
     """Where one section's recording log is kept, cleared before the capture and written after it.
 
-    The media layer clears this before it captures anything and writes it once the webm is in place,
+    The media layer clears this before it captures anything and writes it once the video is in place,
     which is what keeps the pair on disk complete or absent. What it writes here is everything the
-    recorder knows, and the stage writes the log again with the start of the section clock, the frame measurements and
-    the judgements as soon as it has measured them, so a run stopped in between leaves a log with no
-    start in it, which the next run reads as a section it has not finished recording.
+    recorder knows, and the stage writes the log again with the frame measurements and the judgements
+    as soon as it has measured them, so a run stopped in between leaves a log with no checks in it,
+    which the next run reads as a section it has not finished recording.
     """
 
     inputs: Inputs
@@ -89,14 +87,13 @@ class LogSink:
         self.path.unlink(missing_ok=True)
 
     def write(self, recording: Recording) -> None:
-        """Write what the recorder knows about the webm now on disk, before anything measures it."""
+        """Write what the recorder knows about the video now on disk, before anything measures it."""
         self.log(recording).write(self.path)
 
     def log(
         self,
         recording: Recording,
         *,
-        start: Start | None = None,
         checks: RecordingChecks | None = None,
         findings: tuple[Finding, ...] = (),
     ) -> RecordingLog:
@@ -110,7 +107,6 @@ class LogSink:
             section=self.section.number,
             digest=section_digest(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
             recording=recording,
-            start=start,
             findings=findings,
             checks=checks,
         )
@@ -211,56 +207,32 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
 def capture(
     inputs: Inputs, run: Run, opened: browser.Chromium, job: Job, sink: LogSink, check: Callable[[], None]
 ) -> Recording:
-    """Record one section, retrying while its frames stall, and give back the recording that stuck.
-
-    A stalled page froze a reveal for a few frames, which no cut can repair, so the section is
-    recorded again while the machine is quieter.
-    """
+    """Record one section by stepping its clock through its span, and give back what the page reported."""
     settings = inputs.settings
     # The variable is not called `record`, because that is this module's own stage function.
     recorder, video = settings.record, settings.video
+    if job.section.rendered:
+        return rendered_section(inputs, job, sink)
     allowed = Allowed.of(inputs.root, inputs.served_paths())
     documents = inputs.documents()
-    taken: Recording | None = None
-    for attempt in range(1, recorder.retries + 2):
-        taken = recording.record_page(
-            opened,
-            job.url,
-            job.seconds,
-            job.out,
-            allowed=allowed,
-            log_sink=sink,
-            settle_seconds=recorder.settle_seconds,
-            cover_min_seconds=recorder.cover_min_seconds,
-            width=video.width,
-            height=video.height,
-            color_scheme=recorder.color_scheme,
-            motion=settings.motion,
-            documents=documents,
-            check=check,
-        )
-        gap = taken.report.worst_gap_ms
-        if gap <= recorder.frame_gap_max_ms or attempt > recorder.retries:
-            break
-        # A retry is a standard record, so a host's own logging hears why a section took twice as long.
-        log.warning(
-            STALLED,
-            job.section.number,
-            gap,
-            recorder.frame_gap_max_ms,
-            attempt,
-            recorder.retries,
-            extra={
-                "data": {
-                    "gap_ms": gap,
-                    "limit_ms": recorder.frame_gap_max_ms,
-                    "attempt": attempt,
-                    "retries": recorder.retries,
-                }
-            },
-        )
-    if taken is None:  # pragma: no cover  (the loop runs at least once)
-        raise InputError(f"section {job.section.number} was not recorded.")
+    taken = stepping.record_page(
+        opened,
+        job.url,
+        job.seconds,
+        job.out,
+        allowed=allowed,
+        log_sink=sink,
+        width=video.width,
+        height=video.height,
+        fps=video.fps,
+        frame_wait_seconds=recorder.frame_wait_seconds,
+        skip_still=recorder.skip_still,
+        skip_audit_every=recorder.skip_audit_every,
+        color_scheme=recorder.color_scheme,
+        motion=settings.motion,
+        documents=documents,
+        check=check,
+    )
     for name in taken.page_errors:
         run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
     for name in taken.missing:
@@ -270,18 +242,49 @@ def capture(
     return taken
 
 
+def rendered_section(inputs: Inputs, job: Job, sink: LogSink) -> Recording:
+    """Draw one rendered section by running its command, and keep the log in the order a page's recording is kept.
+
+    The command is the second source of a section's picture, so what it hands back is the same
+    recording a page's is: the video at the section's own path, and a report carrying the lanes it
+    said it drew for verify to mask and measure.
+    """
+    render.admitted(inputs.settings.record.page_policy, number=job.section.number)
+    sink.clear()
+    done = render.run_command(
+        job.section.render_command,
+        root=inputs.root,
+        work=inputs.workspace.render_dir(job.section.key),
+        out=job.out,
+        document=job.document or {},
+        timeout=inputs.settings.tools.timeout_seconds,
+        label=f"section {job.section.number}",
+    )
+    taken = Recording(
+        url=job.url,
+        assets=(),
+        external=(),
+        requested_seconds=round(job.seconds, SECOND_DIGITS),
+        fps=inputs.settings.video.fps,
+        load_seconds=done.seconds,
+        page_errors=(),
+        report=PageReport(motions=done.motions),
+    )
+    sink.write(taken)
+    return taken
+
+
 def recorded(
     inputs: Inputs, run: Run, opened: browser.Chromium, job: Job, check: Callable[[], None]
 ) -> SectionRecording:
     """Record one section, measure it, and leave its log beside the webm with every judgement in it.
 
-    `check` raises when the section should stop, which the recorder asks while it waits.
+    `check` raises when the section should stop, which the recorder asks before every frame.
     """
     sink = LogSink(inputs, job.section, job.url, job.seconds, job.log_path)
     recording = capture(inputs, run, opened, job, sink, check)
-    start = find_start(job.out, recording.settle_seconds, inputs.settings.record)
     checks = check_recording(job.out, recording)
-    page = inputs.relative(inputs.path(job.section.page)).as_posix()
+    page = job.url if job.section.rendered else inputs.relative(inputs.path(job.section.page)).as_posix()
     where = inputs.relative(job.out)
     found = recording_findings(
         recording,
@@ -293,13 +296,7 @@ def recorded(
     )
     for finding in found:
         run.found(finding)
-    if start.guessed:
-        run.note(
-            f"Section {job.section.number} shows no cover, so the start of the section clock is a guess "
-            f"at {start.seconds:g}s ({start.method}), and every reveal in the section moves with it.",
-            level=Level.WARNING,
-        )
-    log = sink.log(recording, start=start, checks=checks, findings=found)
+    log = sink.log(recording, checks=checks, findings=found)
     log.write(job.log_path)
     run.wrote(job.out)
     run.wrote(job.log_path)
@@ -313,7 +310,7 @@ def row(inputs: Inputs, job: Job, seconds: float, *, kept: bool) -> SectionRecor
         key=job.section.key,
         file=inputs.relative(job.out) if job.out.exists() else None,
         seconds=round(seconds, SECOND_DIGITS),
-        frames=round(seconds * CAPTURE_FPS),
+        frames=round(seconds * inputs.settings.video.fps),
         kept=kept,
     )
 
@@ -361,7 +358,12 @@ def record(
 
     def opening(stack: ExitStack) -> browser.Chromium:
         return stack.enter_context(
-            browser.chromium(inputs.settings.tools.chromium, policy=recorder.page_policy, spend=run.spend)
+            browser.chromium(
+                inputs.settings.tools.chromium,
+                policy=recorder.page_policy,
+                spend=run.spend,
+                switches=recorder.capture_switches,
+            )
         )
 
     def one(opened: browser.Chromium, number: int, halt: Halt) -> SectionRecording:
@@ -381,7 +383,6 @@ def record(
 
 
 __all__ = [
-    "STALLED",
     "LogSink",
     "record",
     "stale_recording",

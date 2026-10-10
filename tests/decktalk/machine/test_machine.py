@@ -11,7 +11,6 @@ import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -542,7 +541,6 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path) -> N
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe", "katex"]
     assert not result.ok  # this machine has no encoder, which a build needs
     assert {found.code for found in result.findings} == {Code.FILE_MISSING}
-    assert result.bias_ms is None  # the bias is measured only when a caller asks
 
 
 def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -618,21 +616,6 @@ def test_a_headless_shell_alone_launches_and_is_reported_as_there(
     row = a_machine(tmp_path)._browser_row()
     assert (row.version, row.path) == (BareBrowser.version, None)
     assert [record for record in caplog.records if record.name == "decktalk.machine"] == []
-
-
-@pytest.mark.usefixtures("launched")
-def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No stage reads the bias, so it is read off the report and never written into a settings file."""
-    here = a_machine(tmp_path)
-    monkeypatch.setattr(
-        machine_module,
-        "import_module",
-        lambda _name: SimpleNamespace(measure_presentation_bias=lambda: 12.5),
-    )
-    assert here.doctor(measure=True).bias_ms == 12.5
-    assert not here.machine_file.exists()
 
 
 def rows(*answers: InstalledTool) -> Callable[[Machine], InstalledTool]:

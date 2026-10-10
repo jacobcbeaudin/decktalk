@@ -215,10 +215,10 @@ decktalk build --no-spend
 
 {/* sample: first-deck-build, decktalk build --no-spend, on the same project, which exits 0 */}
 ```text
-run 0ab1f3cab6d8, events build/events/0ab1f3cab6d8.jsonl
+run 022764e35e5e, events build/events/022764e35e5e.jsonl
      Narrate    0:00
          Cue    0:00
-      Record    0:22
+      Record    0:17
 The project declares no score for this run, so there is nothing to generate.
        Score    0:00
 The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
@@ -249,10 +249,10 @@ decktalk verify --section 4
 ```text
 Verifying build/final/my-lesson.mp4, 1:02 long.
 
- Section   Cue           Spoken   Shown   Offset
- ───────────────────────────────────────────────
- 4         4.1:heading   51.77    51.76   -0.01
- 4         4.1:waits     58.24    58.24   -0.01
+ Section   Cue           Spoken   Shown   Offset   Masked
+ ────────────────────────────────────────────────────────
+ 4         4.1:heading   51.77    51.80   +0.03
+ 4         4.1:waits     58.24    58.28   +0.04
 ```
 
 `Spoken` is the second the cue phrase is said on the film's clock. `Shown` is the second the picture

@@ -170,14 +170,20 @@ def test_a_seam_that_matches_at_once_has_drifted_by_nothing(
     assert [(row.section, row.drift_seconds) for row in rows] == [(2, 0.0)]
 
 
-def test_a_seam_whose_picture_arrives_late_reports_the_drift_in_seconds(
+def test_a_seam_whose_picture_arrives_a_frame_late_is_a_pop_that_reports_the_drift(
     assembled: Callable[..., Inputs], measured: Measurements
 ) -> None:
-    """A picture a frame late is a section whose clock slipped, which the row says in seconds."""
+    """The recorder steps the clock, so a seamless section opens on the frame it continues or it pops.
+
+    A picture one frame late is one frame a viewer sees jump, which the row still says in seconds so
+    the author learns how late the section's picture arrived.
+    """
     inputs = assembled(toml=SEAMLESS_TOML)
     measured.shares = iter([9.0, 0.0])
     with opened(inputs.root) as run:
         rows = seams_of(inputs, run)
+        found = [row for row in run.findings if row.code is Code.CUT_POP]
+    assert found and "9.00 percent" in found[0].message
     assert rows[0].drift_seconds == pytest.approx(1 / inputs.settings.video.fps, abs=1e-3)
 
 

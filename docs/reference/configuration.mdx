@@ -50,7 +50,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `narration.store_wait_seconds`, `record.page_policy`, `record.concurrency`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `narration.store_wait_seconds`, `record.page_policy`, `record.concurrency`, `record.capture_switches`, `record.frame_wait_seconds`, `record.skip_audit_every`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -66,13 +66,14 @@ have a code and want the candidates before you run anything.
 | `CUT_POP` | `verify.cut_change_max_percent` |
 | `CUT_SPEECH` | `narration.tail_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs` |
 | `MIX_LOUDNESS` | `audio.target_lufs`, `audio.true_peak_max_dbtp` |
+| `MOTION_MASK_LARGE` | `verify.motion_mask_max_percent` |
+| `MOTION_NO_EDGE` | `verify.cue_offset_max_ms`, `verify.motion_floor_percent` |
+| `MOTION_OFF` | `verify.cue_offset_max_ms`, `verify.motion_floor_percent` |
 | `PAGE_CLASS_NOT_REDUCED` | `motion.reduce` |
 | `PAGE_MOTION_OVERRUN` | `motion.scale` |
 | `PAGE_STAGGER_OVERRUN` | `motion.scale` |
 | `PAGE_THIN_DRAW` | `video.crf`, `verify.changed_share_min_percent` |
 | `RECORD_BLACK` | `verify.after_dip_seconds`, `verify.black_max_luma` |
-| `RECORD_STALLED` | `record.frame_gap_max_ms` |
-| `RECORD_TRUNCATED` | `record.truncated_slack_seconds` |
 
 ## `[video]`
 
@@ -82,14 +83,12 @@ These keys set the frame size and the encoding of every recording and of the fin
 |---|---|---|---|---|---|---|---|
 | `width` | integer | `1920` | must be between 320 and 7680 | pixels | project |  | Frame width in pixels, for every recording and the final mp4. |
 | `height` | integer | `1080` | must be between 240 and 4320 | pixels | project |  | Frame height in pixels, for every recording and the final mp4. |
-| `fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of the final mp4. The recorder's own rate is measured and is not a setting. |
+| `fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of every recording and of the final mp4. The recorder steps the section clock one frame of this rate at a time, so every frame of a film is the page at its own second. |
 | `preset` | string | `"medium"` | must be one of ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow |  | project |  | x264 preset. Use veryfast for drafts. |
 | `crf` | integer | `18` | must be between 0 and 32 |  | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | x264 quality. A lower value gives higher quality and a larger file. |
 | `slate_color` | string | `"0x0e1116"` | must match the pattern ^(#\|0[xX])[0-9A-Fa-f]{6}$ |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB. |
 
 <Warning>
-**`video.fps`** Encoding below the rate the recorder captured at drops presented frames, which both loses motion a viewer saw and corrupts the frames verify measures its own verdicts from.
-
 **`video.crf`** Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
 
 **`video.slate_color`** The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other text could add a filter that opens a file or a rule that loads a URL.
@@ -135,32 +134,30 @@ These keys govern how the script is turned into audio.
 
 ## `[record]`
 
-These keys tune the headless Chromium recording and how the start of the section clock is found in it.
+These keys tune how `record` opens each page section in headless Chromium and steps it frame by frame.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `settle_seconds` | number | `0.5` | must be between 0 and 30 | seconds | project |  | Shortest wait after the page is ready and before the start of the section clock. |
-| `cover_min_seconds` | number | `1.5` | must be between 0 and 30 | seconds | project |  | Shortest time from the start of the recorder to the start of the section clock. |
 | `color_scheme` | string | `"light"` | must be one of light, dark, no-preference |  | project |  | Color scheme that Chromium reports to the page. |
 | `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | machine |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page. |
 | `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
-| `retries` | integer | `2` | must be between 0 and 10 |  | project |  | How many more times `record` records a section whose frames stalled. |
-| `cover_scan_seconds` | number | `4.0` | must be between 0 and 30 | seconds | project |  | Seconds at the start of each recording that `record` scans for the magenta cover. |
-| `fallback_first_paint_seconds` | number | `1.1` | must be between 0 and 10 | seconds | project |  | Guessed first paint when `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it. |
-| `cover_min_luma` | number | `70.0` | must be between 40 and 120 | luma | project |  | A cover frame has an average luma above this. |
-| `cover_max_luma` | number | `140.0` | must be between 80 and 200 | luma | project |  | A cover frame has an average luma below this. |
-| `cover_min_chroma` | number | `165.0` | must be between 128 and 255 | chroma | project |  | A cover frame has an average U and an average V above this. |
-| `painted_peak_min_luma` | number | `60.0` | must be between 1 and 200 | luma | project |  | A painted frame has a brightest luma above this. |
-| `painted_mean_max_luma` | number | `120.0` | must be between 20 and 240 | luma | project |  | A painted frame has an average luma below this, so a white flash does not count as the picture. |
-| `truncated_slack_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project | `RECORD_TRUNCATED` | Allowed shortfall of a recording against its requested length. |
-| `frame_gap_max_ms` | integer | `150` | must be between 100 and 2000 | milliseconds | project | `RECORD_STALLED` | Longest gap between two presented frames after the start of the section clock. A longer gap makes `record` try again. |
+| `capture_switches` | array | `["disable-frame-rate-limit", "disable-gpu-vsync"]` | must hold values that each must be one of disable-frame-rate-limit, disable-gpu-vsync |  | machine |  | Chromium switches `record` launches its browser with, which stop it holding its frames to the display's refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same frames as one without them. An empty list launches Chromium with none. |
+| `frame_wait_seconds` | number | `15.0` | must be above 0 and must be at most 120 | seconds | machine |  | Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every image decoded and the step laid out and painted, before it fails the section rather than capture the frame half drawn. |
+| `skip_still` | boolean | `true` | takes any value of its type |  | project |  | Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes. |
+| `skip_audit_every` | integer | `0` | must be between 0 and 10000 | frames | machine |  | Step to and capture every this many frames `record` writes again anyway, and stop the section if one differs from the frame before. Zero audits none, which is the fast path, and the test suite sets it to prove the frames written again. |
 
 <Warning>
 **`record.page_policy`** A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
 
-**`record.concurrency`** Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.
+**`record.concurrency`** Each recording steps its own Chromium and its own encode, so a number above the machine's share makes every section wait on the others and the run slower rather than faster.
 
-**`record.frame_gap_max_ms`** The runtime reports a gap no finer than its own reporting floor, so a limit under that floor makes every section stall and every retry spend the recording again.
+**`record.capture_switches`** With the switches no frame waits for a display refresh, so each recording keeps more of the CPU busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on each other.
+
+**`record.frame_wait_seconds`** A wait too short for this machine fails sections whose pages are only slow to fetch a font or decode an image. It never shortens a recording that succeeds, because a page that has drawn its frame is captured at once.
+
+**`record.skip_still`** A page that changes its picture outside what DeckTalk knows of, such as through its style sheet's object model or inside a shadow root, records the frame before until something it knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off.
+
+**`record.skip_audit_every`** Every audited frame costs one step and one capture, so one audits every skipped frame and saves no time.
 
 </Warning>
 
@@ -199,7 +196,9 @@ These keys are the limits `verify` judges the assembled mp4 against.
 | `onset_diff_luma` | integer | `12` | must be between 2 and 60 | luma | project | `CUE_OFF`, `CUE_NO_ONSET` | Luma difference a pixel must exceed to count as changed, for the onset scan alone. |
 | `click_search_seconds` | number | `0.25` | must be between 0.02 and 2 | seconds | project | `CUE_OFF` | Seconds on each side of the cued word's start that the click search covers. |
 | `click_floor_dbfs` | number | `-38.0` | must be between -60 and -24 | dBFS | project | `CUE_OFF` | Level a sample must exceed for the click search to call it the click. |
-| `cue_offset_max_ms` | number | `80.0` | must be between 20 and 400 | milliseconds | project | `CUE_OFF` | How far the measured onset may sit from the cue time, early or late. |
+| `cue_offset_max_ms` | number | `80.0` | must be between 20 and 400 | milliseconds | project | `CUE_OFF`, `MOTION_OFF`, `MOTION_NO_EDGE` | How far the measured onset may sit from the cue time, early or late. |
+| `motion_floor_percent` | number | `0.5` | must be between 0.05 and 20 | percent | project | `MOTION_OFF`, `MOTION_NO_EDGE` | How much of a moving element's own area must change from one frame to the next for verify to read it as moving, which is where a motion's departure and arrival are found. |
+| `motion_mask_max_percent` | number | `40.0` | must be between 5 and 90 | percent | project | `MOTION_MASK_LARGE` | The most of the frame verify may mask out of a cue's measurement before it says it measured less of the picture than usual. |
 | `av_offset_max_ms` | number | `120.0` | must be between 80 and 500 | milliseconds | project | `CUE_OFF` | How far the click may sit from the word it marks, early or late. It is wider than the cue limit because the click carries the encoder's own jitter as well. |
 | `black_max_luma` | number | `60.0` | must be between 1 and 200 | luma | project | `RECORD_BLACK` | A frame whose brightest luma is at most this is black, whether `record` or `verify` reads it. |
 | `cut_window_seconds` | number | `0.15` | must be between 0.01 and 2 | seconds | project | `CUT_SPEECH` | Seconds of narration before each cut that the cut check measures. |
@@ -218,6 +217,10 @@ These keys are the limits `verify` judges the assembled mp4 against.
 **`verify.click_floor_dbfs`** DeckTalk generates its own click at -24 dBFS, so a floor at or above that level finds no click at all and every a/v row measures nothing while reporting no failure.
 
 **`verify.cue_offset_max_ms`** A viewer sees a reveal land late at about a fifth of a second, so above roughly 200 milliseconds the limit passes films whose pictures visibly miss their words.
+
+**`verify.motion_floor_percent`** Above a few percent the slow last frames of a firm arrival read as still, so its arrival is measured early and a motion that landed on its word fails.
+
+**`verify.motion_mask_max_percent`** Near the top of the range a cue is judged on a sliver of the frame, so a reveal under a large declared motion passes on very little evidence.
 
 **`verify.av_offset_max_ms`** An mp3 frame smears a transient across about 26 milliseconds and the encode adds its own, so a limit under 80 milliseconds reports a failure that no edit to the film can clear.
 
@@ -446,12 +449,12 @@ can read.
 | `verify.probe_height` | derived | `video.height // PROBE_SCALE` | 270 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
 | `verify.block_width` | derived | `video.width // BLOCK_PX` | 240 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
 | `verify.block_height` | derived | `video.height // BLOCK_PX` | 135 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
-| `verify.reference_lead_seconds` | derived | `verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / CAPTURE_FPS + verify.reference_lead_extra_ms / 1000` | 0.14 seconds | Derived: the reference frame has to sit outside the window the offset limit allows, or the check compares a cue against a frame the same cue had already changed. |
-| `CAPTURE_FPS` | constant | `25` | 25 frames per second | Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for. |
+| `verify.reference_lead_seconds` | derived | `verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / video.fps + verify.reference_lead_extra_ms / 1000` | 0.14 seconds | Derived: the reference frame has to sit outside the window the offset limit allows, or the check compares a cue against a frame the same cue had already changed. |
+| `record.truncated_slack_seconds` | derived | `1 / video.fps` | 0.04 seconds | Derived: the recorder writes a section's span rounded to the nearest whole frame, so a whole recording runs at most half a frame under it, and one more than a frame under it stopped early. |
+| `SLOWEST_FPS` | constant | `25` | 25 frames per second | Truth: the slowest rate a film is recorded at, whose frame is the step every page range is written in. |
 | `PROBE_SCALE` | constant | `4` | 4 times | Calibration: a frame a quarter the film's size keeps every share a cue can move while comparing a sixteenth of the pixels. |
 | `BLOCK_PX` | constant | `8` | 8 pixels | Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over. |
 | `GUARD_FRAMES` | constant | `1.5` | 1.5 frames | Truth: half a frame of rounding guard on each side of the window the offset limit allows. |
-| `REPORT_FRAME_GAP_MS` | constant | `100` | 100 milliseconds | Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen. |
 | `CLICK_LEVEL_DBFS` | constant | `-24.0` | -24.0 dBFS | Truth: the level DeckTalk generates its own click at, which every click floor sits under. |
 | `MEASURABLE_SPAN_SECONDS` | constant | `0.5` | 0.5 seconds | Truth: the span at which an effect covers its own cue, which is the ceiling every declared span, every scaled span and every staggered total is held under. |
 

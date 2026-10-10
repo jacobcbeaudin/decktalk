@@ -11,14 +11,7 @@ from pathlib import Path
 import pytest
 
 import build_samples
-from decktalk.findings import Code
 from support.paths import REPO
-
-CUE_OFF = Code.CUE_OFF.value
-"""A finding a slower machine can add to a verified run, which a measured row leaves out."""
-
-TAKE_MISSING = Code.TAKE_MISSING.value
-"""A finding every run without spend reports, which a measured row keeps."""
 
 PAGE = REPO / "docs" / "page.mdx"
 
@@ -86,34 +79,6 @@ def test_a_verdict_the_run_decides_is_held_by_its_key_alone() -> None:
     one = '{ "ok": true, "error": null }'
     other = '{ "ok": false, "error": null }'
     assert build_samples.masked(one, ("ok",)) == build_samples.masked(other, ("ok",))
-
-
-SLOW_BUILD = """\
-      Verify    0:06
-       Built build/final/my-lesson.mp4, $0.00, 2 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet.
-build/final/my-lesson.mp4: CUE_OFF the reveal at 1.2:script first changed +163 ms from the word it lands on.
-Found 2 findings, 1 error."""
-
-
-def test_a_measured_finding_a_slower_machine_adds_is_left_out_of_the_block() -> None:
-    """A recording is made in real time, so a starved machine can land a reveal late where the docs machine did not."""
-    shown = build_samples.unmeasured(SLOW_BUILD, (CUE_OFF,))
-    assert CUE_OFF not in shown
-    assert TAKE_MISSING in shown
-    assert build_samples.unmeasured(SLOW_BUILD, ()) == SLOW_BUILD
-
-
-def test_a_measured_finding_is_left_out_of_a_json_result_and_every_other_finding_stays() -> None:
-    result = {"ok": False, "findings": [{"code": CUE_OFF}, {"code": TAKE_MISSING}]}
-    assert build_samples.unmeasured_value(result, (CUE_OFF,)) == {"ok": False, "findings": [{"code": TAKE_MISSING}]}
-
-
-def test_a_findings_exit_is_a_measured_one_only_when_every_error_it_names_is_measured() -> None:
-    assert build_samples.only_measured(SLOW_BUILD, (CUE_OFF,))
-    assert not build_samples.only_measured(SLOW_BUILD, ())
-    assert not build_samples.only_measured(SLOW_BUILD + "\nscript.md: SCRIPT_UNFINISHED a placeholder.", (CUE_OFF,))
-    assert not build_samples.only_measured("Found 1 finding, 0 errors.", (CUE_OFF,)), "an exit names its error"
 
 
 def test_the_fake_voice_times_every_word_at_its_pace_with_each_pause_after_its_piece() -> None:
@@ -220,16 +185,6 @@ def test_a_stage_duration_is_held_by_its_place_in_every_block() -> None:
     assert build_samples.masked_page(slower, masks) == build_samples.masked_page(page, masks)
     renamed = page.replace("Record    0:22", "Recorded    0:22")
     assert build_samples.masked_page(renamed, masks) != build_samples.masked_page(page, masks)
-
-
-def test_a_retry_a_stalled_recording_adds_is_left_out_of_the_block() -> None:
-    """A slower machine records a stalled section again and says so, which the docs machine never had to."""
-    stalled = BUILT.replace(
-        "      Record",
-        "Section 3 stalled for 412 ms, which is over the 150 ms limit, so it is recorded again (1 of 2).\n      Record",
-    )
-    assert build_samples.steady(stalled) == BUILT
-    assert build_samples.steady(BUILT) == BUILT
 
 
 STATUS_FRESH = next(row for row in build_samples.rows() if row.id == "status-fresh")

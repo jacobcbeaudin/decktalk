@@ -77,7 +77,7 @@
         "pages": [
           "decisions/overview",
           "decisions/timing-from-the-spoken-words",
-          "decisions/the-magenta-cover",
+          "decisions/the-recorder-steps-the-clock",
           "decisions/the-six-stages",
           "decisions/the-provider-interface",
           "decisions/the-skills-contract",
@@ -94,6 +94,7 @@
           "guides/dialogue",
           "guides/clip-section",
           "guides/effects-on-a-cue",
+          "guides/motion",
           "guides/accessible-video",
           "guides/ci-and-offline",
           "guides/page-by-hand"
@@ -170,6 +171,10 @@
     {
       "source": "/concepts/project-file",
       "destination": "/reference/decktalk-toml"
+    },
+    {
+      "source": "/decisions/the-magenta-cover",
+      "destination": "/decisions/the-recorder-steps-the-clock"
     }
   ]
 }

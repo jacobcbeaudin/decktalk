@@ -12,8 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from decktalk.findings import Code
-from decktalk.page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
-from decktalk.settings import BLOCK_PX, CLICK_LEVEL_DBFS, GUARD_FRAMES, REPORT_FRAME_GAP_MS, Settings
+from decktalk.page import MEASURABLE_SPAN_SECONDS, SLOWEST_FPS
+from decktalk.settings import BLOCK_PX, CLICK_LEVEL_DBFS, GUARD_FRAMES, Settings
 from decktalk.tomlmap import Nature
 
 PROBE_SCALE = 4
@@ -82,9 +82,14 @@ def reference_lead_seconds(settings: Settings) -> float:
     """How far before a cue the reference frame is read, which is the allowance plus the grid guard."""
     return (
         settings.verify.cue_offset_max_ms / 1000
-        + GUARD_FRAMES / CAPTURE_FPS
+        + GUARD_FRAMES / settings.video.fps
         + settings.verify.reference_lead_extra_ms / 1000
     )
+
+
+def truncated_slack_seconds(settings: Settings) -> float:
+    """How far under its requested length a whole recording may run, which is one frame."""
+    return 1 / settings.video.fps
 
 
 NUMBERS: tuple[Number, ...] = (
@@ -126,8 +131,8 @@ NUMBERS: tuple[Number, ...] = (
     ),
     Number(
         id="verify.reference_lead_seconds",
-        formula="verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / CAPTURE_FPS + verify.reference_lead_extra_ms / 1000",
-        reads=("verify.cue_offset_max_ms", "GUARD_FRAMES", "CAPTURE_FPS", "verify.reference_lead_extra_ms"),
+        formula="verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / video.fps + verify.reference_lead_extra_ms / 1000",
+        reads=("verify.cue_offset_max_ms", "GUARD_FRAMES", "video.fps", "verify.reference_lead_extra_ms"),
         unit="seconds",
         nature=Nature.DERIVED,
         sentence=(
@@ -137,12 +142,25 @@ NUMBERS: tuple[Number, ...] = (
         at=reference_lead_seconds,
         decides=(Code.CUE_OFF, Code.CUE_NO_ONSET),
     ),
+    Number(
+        id="record.truncated_slack_seconds",
+        formula="1 / video.fps",
+        reads=("video.fps",),
+        unit="seconds",
+        nature=Nature.DERIVED,
+        sentence=(
+            "Derived: the recorder writes a section's span rounded to the nearest whole frame, so a whole "
+            "recording runs at most half a frame under it, and one more than a frame under it stopped early."
+        ),
+        at=truncated_slack_seconds,
+        decides=(Code.RECORD_TRUNCATED,),
+    ),
     Number.fixed(
-        "CAPTURE_FPS",
-        CAPTURE_FPS,
+        "SLOWEST_FPS",
+        SLOWEST_FPS,
         "frames per second",
         Nature.TRUTH,
-        "Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for.",
+        "Truth: the slowest rate a film is recorded at, whose frame is the step every page range is written in.",
     ),
     Number.fixed(
         "PROBE_SCALE",
@@ -167,13 +185,6 @@ NUMBERS: tuple[Number, ...] = (
         "frames",
         Nature.TRUTH,
         "Truth: half a frame of rounding guard on each side of the window the offset limit allows.",
-    ),
-    Number.fixed(
-        "REPORT_FRAME_GAP_MS",
-        REPORT_FRAME_GAP_MS,
-        "milliseconds",
-        Nature.CALIBRATION,
-        "Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen.",
     ),
     Number.fixed(
         "CLICK_LEVEL_DBFS",

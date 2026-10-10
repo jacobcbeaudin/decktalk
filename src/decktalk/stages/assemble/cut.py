@@ -23,7 +23,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import Placement, Placements, RecordingLog, Takes
+from decktalk.artifacts import Placement, Placements, Takes
 from decktalk.artifacts.placements import SectionVideoKey
 from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
@@ -205,10 +205,10 @@ def _render_slate_section(
 def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, out: Path, dip: float, total: float, *,
                 strict: bool) -> Rendered:  # fmt: skip
     """One page section cut to its span in the narration, from its recording or from black."""
-    webm = inputs.workspace.recording(section.key)
-    source = inputs.relative(webm)
+    video = inputs.workspace.recording(section.key)
+    source = inputs.relative(video)
     fades = inputs.document.fade_flags[section.key]
-    if not webm.exists():
+    if not video.exists():
         if strict:
             raise NotBuiltError(
                 f"section {section.number} has no recording at {source}.", hint=Artifact.RECORDINGS.next_step
@@ -217,15 +217,12 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
         chain = f"{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
         _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
         return Rendered(section, out, ffmpeg.probe_duration(out), source, substitute=Substitute.BLACK)
-    # The recorder covers the page until it starts the section clock, so the head of the webm is
-    # trimmed at the moment its own log recorded as the start of the section clock.
-    log = RecordingLog.read(inputs.workspace.recording_log(section.key))
-    lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
+    # The recorder stepped the section clock from its first frame, so the recording starts at the
+    # section's second zero and is cut from its head.
     chain = (
-        f"{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
-        f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
+        f"{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
     )
-    _cut(out, enc, ffmpeg.source(webm), chain, (webm,), seconds=total)
+    _cut(out, enc, ffmpeg.source(video), chain, (video,), seconds=total)
     return Rendered(section, out, ffmpeg.probe_duration(out), source)
 
 

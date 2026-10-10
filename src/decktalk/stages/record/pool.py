@@ -19,11 +19,14 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-CPUS_PER_RECORDING = 2
-"""Calibration: the CPUs one recording keeps busy while it presents its frames on time.
+CPUS_PER_RECORDING = 3
+"""Calibration: the CPUs one recording keeps busy, rounded up so recordings at once do not starve each other.
 
-The page, the compositor and the encoder of one Chromium kept about two cores of a Linux container
-busy, and three recordings at once in four CPUs still landed every reveal inside the offset limit.
+With `[record] capture_switches` on, no frame waits for a display refresh, so the page, the compositor
+and the encoder of one recording rarely rest. Recording the lesson's 114 second section on an 18 core
+Mac took 124 CPU seconds in 53 seconds, about 2.3 cores, where the same recording without the
+switches took 79 CPU seconds in 97 seconds. A recording that has fewer cores than it would keep busy
+records slower and never differently, because the recorder steps the clock.
 """
 
 MOST_AT_ONCE = 4
@@ -82,7 +85,7 @@ def available_cpus() -> float:
 
 
 def at_once(requested: int, jobs: int, *, cpus: float, windows: bool) -> int:
-    """How many sections to record at once: what the machine asked for, or one per two CPUs, never more than the jobs.
+    """How many sections to record at once: what the machine asked for, or one per `CPUS_PER_RECORDING`, up to the jobs.
 
     `requested` is `[record] concurrency`, and zero asks this function to choose.
     """

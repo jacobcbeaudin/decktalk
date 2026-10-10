@@ -32,9 +32,10 @@ TRACED = frozenset(
         ("media/ffmpeg.py", "_spawn"),
         ("toolchain/chromium_fetch.py", "fetch_chromium"),
         ("machine/fixes.py", "_run_command"),
+        ("stages/record/render.py", "run_command"),
     }
 )
-"""The three functions that start a child process, each of which traces what it started."""
+"""The four functions that start a child process, each of which traces what it started."""
 
 STARTS = {"subprocess": {"run", "Popen", "call", "check_call", "check_output"}, "os": {"system", "popen"}}
 """Every call that starts a child process, by the module it is called on."""

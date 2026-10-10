@@ -159,15 +159,16 @@ machine rather than the film, so they are machine keys like the ones above.
 
 | Key | Default | What it decides |
 |---|---|---|
-| `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per two CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
+| `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per three CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
 | `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
 | `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
 | `narration.store_wait_seconds` | `900` | How many seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request. |
 | `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
 
-A recording needs its CPU on time, because a frame drawn late lands its reveal late. So
-`record.concurrency` set above this machine's share costs correctness rather than only speed: a
-starved recording stalls, or reports reveals that land after their words.
+A recording waits for every frame it steps, so a frame drawn slowly is late on the clock of the
+run and never on the clock of the film. `record.concurrency` set above this machine's share therefore
+costs speed and never correctness: a starved machine records slower, and every reveal still lands on
+its word.
 
 ```console
 decktalk config set record.concurrency 2 --scope machine
@@ -452,8 +453,11 @@ you intend to.
 
 ## Time
 
-Recording runs in real time, so a section takes as long to record as it plays. Several page
-sections record at once, as many as `record.concurrency` allows, so a film of several sections
+Recording steps each section one frame at a time, and each frame the page changed on costs a capture
+and an encode, so a section takes as long to record as its changing frames take to draw and a heavy
+page records slower than it plays. A frame nothing changed on is written again without a capture,
+which is most frames of a narrated slide, and a stretch of them is written again without stepping
+the page to each. Several page sections record at once, as many as `record.concurrency` allows, so a film of several sections
 records in about the time of its longest few rather than of all of them end to end, and most of a
 build is the recording. [Build times](/reference/measured#build-times) gives the starter's build
 cold, kept and after one changed word, measured on a named machine.

@@ -14,7 +14,7 @@ it. The query is typed, so no key outside the contract can reach a page.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import asdict
 
 from decktalk.findings import Code, Finding, Location, judge
@@ -23,7 +23,7 @@ from decktalk.machine.run import Run
 from decktalk.media import frames
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
-from decktalk.pagescan import Slides, measured_rows, slide_findings
+from decktalk.pagescan import Slides, ease_findings, measured_rows, slide_findings
 from decktalk.results import SkipReason
 from decktalk.settings import Settings
 from decktalk.stages import SECTION_START_SECONDS
@@ -74,10 +74,23 @@ def share_message(code: Code, cue: str, share: float, settings: Settings) -> str
 
 
 def static_findings(
-    entry: MeasuredScene, times: Mapping[str, float], *, where: str, section: int | None, settings: Settings
+    entry: MeasuredScene,
+    times: Mapping[str, float],
+    *,
+    where: str,
+    section: int | None,
+    settings: Settings,
+    opted: Set[str] = frozenset(),
 ) -> list[Finding]:
-    """Every judgement the measured catalog supports on its own, before any frame is compared."""
-    return slide_findings(measured_rows(entry), times, where=where, section=section, scale=settings.motion.scale)
+    """Every judgement the measured catalog supports on its own, before any frame is compared.
+
+    `opted` is every cue id of the section `cues.json` marks `"verify": false`, which is where a
+    motion that eases to rest may arrive.
+    """
+    return [
+        *slide_findings(measured_rows(entry), times, where=where, section=section, scale=settings.motion.scale),
+        *ease_findings(entry, opted=opted, where=where, section=section),
+    ]
 
 
 def drawn_cues(entry: MeasuredScene) -> set[str]:

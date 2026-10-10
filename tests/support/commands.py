@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from decktalk.findings import Code
+from decktalk.findings import Code, Severity
 from decktalk.results import SCHEMA
 from decktalk.settings import MACHINE_FILE_VARIABLE, PROJECT_VARIABLE
 from decktalk.speech import DECLARED
@@ -39,8 +39,13 @@ def flat(stdout: str, args: tuple[str, ...] = ()) -> dict[str, Any]:
 
 
 def codes(doc: dict[str, Any]) -> list[Code]:
-    """Every finding as the model's own member, which is what the timing policy judges."""
+    """Every finding of a result as the model's own member, for a test that asks which codes a run reported."""
     return [Code(row["code"]) for row in doc["findings"]]
+
+
+def errors(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every finding a result is sure about, which fails a deck on every runner."""
+    return [row for row in doc["findings"] if row["severity"] == Severity.ERROR.value]
 
 
 def clean_environ(config_dir: Path) -> dict[str, str]:

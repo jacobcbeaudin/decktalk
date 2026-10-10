@@ -20,6 +20,7 @@ from contract.test_runtime import MARKUP_SCENE, deck
 from decktalk.findings import Code
 from decktalk.media.origin import Allowed, page_url, route_pages
 from decktalk.page import REPORT
+from decktalk.settings import RecordConfig
 from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
 from support.browser_pages import Tab, chromium_tab, opened, settled, write_page
 
@@ -92,26 +93,18 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
         bare.close()
 
 
-# ---- the cover and the clock ---------------------------------------------------------------
+# ---- the stepped clock -------------------------------------------------------------------------
 
 
-def test_the_cover_hides_the_page_until_the_clock_starts(page, errors, tmp_path):
-    """The recorder starts capturing before the page settles, so the cover owns every frame until t=0."""
-    page.goto(f"{deck(tmp_path, 'cover.html')}?scene=1&t0=signal")
-    page.evaluate("() => window.__decktalkProbe.cover()")
-    box = page.evaluate("() => document.getElementById('dt-cover').getBoundingClientRect().toJSON()")
-    assert (box["width"], box["height"]) == (1920, 1080)
-    paint = page.evaluate("() => getComputedStyle(document.getElementById('dt-cover')).backgroundColor")
-    assert paint == "rgb(255, 0, 255)"
-    # The keep-alive turns for the whole recording, so the compositor keeps painting frames.
-    alive = "() => document.getElementById('dt-keepalive').getAnimations().length"
-    assert page.evaluate(alive) == 1
-    at = page.evaluate("() => window.__decktalkProbe.lift()")
+def test_a_step_moves_the_section_clock_to_the_second_the_recorder_names(page, errors, tmp_path):
+    """The recorder's one call moves the page, so a recorded frame is the page at the second it asked for."""
+    page.goto(f"{deck(tmp_path, 'step.html')}?scene=1&t0=signal&cues=1.1:ball@0.1")
+    page.wait_for_function("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__decktalk.started()") is False
+    page.evaluate("(wait) => window.__decktalkProbe.step(0.12, wait)", RecordConfig().frame_wait_seconds)
+    assert page.evaluate("() => window.__decktalk.now()") == 0.12
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
     assert page.evaluate("() => document.getElementById('dt-cover')") is None
-    assert at > 0
-    # The clock started on the frame that showed the cover gone, so the page's t=0 is that frame.
-    assert page.evaluate("() => window.__decktalk.now()") >= 0
-    assert page.evaluate(alive) == 1
     assert not errors
 
 

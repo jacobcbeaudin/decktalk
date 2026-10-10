@@ -76,7 +76,8 @@ refusal names what it read and would not accept.
 - A number is `nan` or `inf`, which TOML spells and no range can hold. The same refusal meets one in
   a `DECKTALK_` variable or a `--set`, and it names the file, the variable or the flag that wrote it.
 - Two `[[section]]` tables share a `number`.
-- A section has both `page` and `clip`, or neither.
+- A section names more than one of `page`, `clip` and `render_command`, or none of them.
+- A `render_command` is not a list of words, or holds an empty word.
 - `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effect]]` row names a section that does not exist.
@@ -138,9 +139,11 @@ publishes an environment variable or answers to `--set`.
 ## `[[section]]`
 
 Write one `[[section]]` per section of the film. Sections are sorted by `number`, so the order in the
-file does not matter. A section is a **page section**, which records one scene of an HTML page, or a
-**clip section**, which plays a video file you already have. It is a clip section when it has a
-`clip` key and a page section when it has a `page` key, and having both or neither fails the load.
+file does not matter. A section is a **page section**, which records one scene of an HTML page, a
+**render section**, which is narrated like a page section and drawn by a program you name, or a
+**clip section**, which plays a video file you already have. A `page` key makes a page section, a
+`render_command` key a render section and a `clip` key a clip section, and naming more than one of
+them or none fails the load.
 
 ### Every section
 
@@ -189,6 +192,40 @@ other file in the project is refused, so the script, the cue file, `build/` and 
 page's reach. A declared file is reached by the spelling written here and by no other, so
 `media/Theme.mp3` does not answer a request for `media/theme.mp3` on any platform. A declared
 directory is a place, so every name under it is served however the page spells it.
+
+### A render section
+
+A render section names the program that draws its picture in place of a page. It is narrated
+exactly as a page section is: its take sets its length, `cue` resolves its cues from its words, and
+the narration runs through it without a pause. It names no `page` and no `scene`, and it takes the
+page section keys `record_margin_seconds`, `hold_seconds`, `lead_seconds`, `tail_seconds` and
+`with_ambience` with the same meaning. A `scene` or a `params` table written on it is ignored.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `render_command` | list of strings | required | The program and its arguments, run once from the project root when `record` draws the section. Each placeholder in a word is replaced before it runs. |
+
+| Placeholder | What it becomes |
+|---|---|
+| `{motion}` | The section's motion document, `build/recordings/render/NN/motion.json`, which holds the frame rate, the size, the length, every spoken word and every cue's second on the section clock. |
+| `{out}` | The video the program writes, which is the section's recording. |
+| `{landings}` | `build/recordings/render/NN/landings.json`, where the program may write the lanes it drew for verify to mask and measure. |
+| `{python}` | The Python DeckTalk is running on. |
+| `{ffmpeg}` | The ffmpeg DeckTalk encodes with. |
+
+```toml decktalk.toml
+[[section]]
+number = 3
+chapter = "A picture from elsewhere"
+render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landings}", "{ffmpeg}"]
+hold_seconds = 1.0
+```
+
+The program runs with the scrubbed environment every tool DeckTalk starts gets, so a credential in
+the shell never reaches it. A machine whose `record.page_policy` is `untrusted` runs no program a
+project names, so `record` refuses a render section there. A section whose program writes no
+landings is drawn and played, and verify measures none of its cues.
+[A render section](/guides/motion#a-render-section) shows the whole contract.
 
 ### A clip section
 
@@ -439,7 +476,7 @@ its hazard by `decktalk schema setting` and documented in full on
 | [`[voices.NAME]`](/reference/configuration#voices) | One table per voice: its provider, its id, its speed and any of its provider's voice settings. |
 | [`[elevenlabs]`](/reference/configuration#elevenlabs) | ElevenLabs's own keys: the fields its speech takes, its default model, what your plan charges and its API. |
 | [`[dtsp]`](/reference/configuration#dtsp) | The local voice's own keys: its model and where its server listens. |
-| [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds the start of the section clock and judges a stalled or short recording. |
+| [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, steps each section frame by frame and judges a short recording. |
 | [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the video encoding of every recording and of the final mp4. |
 | [`[audio]`](/reference/configuration#audio) | The final audio: its bitrate, its sample rate, its channels, and the loudness, the true peak and the range it is mastered to. |
 | [`[mix]`](/reference/configuration#mix) | The ramps of the music duck, the ambience bed and each marker. |

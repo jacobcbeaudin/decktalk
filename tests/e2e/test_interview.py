@@ -22,9 +22,10 @@ from typing import Any
 
 import pytest
 
+from decktalk.errors import Exit
 from decktalk.findings import Code
 from support.commands import HOSTILE_DIRECTORY, clean_environ, codes, flat
-from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, assert_build_finished, budget
+from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS))]
 
@@ -63,7 +64,7 @@ def answer(built: Built, *args: str) -> dict[str, Any]:
 
 
 @pytest.fixture(scope="module")
-def built(tmp_path_factory: pytest.TempPathFactory, pytestconfig: pytest.Config) -> Built:
+def built(tmp_path_factory: pytest.TempPathFactory) -> Built:
     """`init --example interview`, then `build --no-spend`, once for every test in this file."""
     home = tmp_path_factory.mktemp("interview") / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
@@ -73,7 +74,7 @@ def built(tmp_path_factory: pytest.TempPathFactory, pytestconfig: pytest.Config)
     assert flat(made.stdout)["voices"] == ["narrator", "guest"]
     ran = decktalk("--project", str(root), "build", "--no-spend", "--json", cwd=home)
     report = flat(ran.stdout)
-    assert_build_finished(ran.returncode, codes(report), ran.stderr, pytestconfig)
+    assert ran.returncode == Exit.FOUND_NOTHING, ran.stderr
     return Built(root=root, home=home, report=report)
 
 

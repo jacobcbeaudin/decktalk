@@ -1,7 +1,7 @@
 """The `decktalk.toml` document: the frozen tables that say what this presentation is.
 
     [project]                name, script, cues, build, language
-    [[section]]              number, chapter, then either page and scene, or clip
+    [[section]]              number, chapter, then page and scene, render_command, or clip
     [transition]             dips, dip_seconds, page_fades_in
     [mix]                    music, ambience, music_markers, effects and their levels
     [score]                  the prompts `decktalk score` generates from
@@ -69,6 +69,10 @@ class PageSection:
     `seamless` says the page opens on the previous section's last picture, so the cut
     into it should not show. verify compares the two frames.
 
+    `render_command`, when it is given, is the command that draws the section's picture instead of a
+    page: the section is narrated exactly as a page section is, and `record` hands the command the
+    section's words and cue seconds and takes the video it writes. Such a section has no page.
+
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
     section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
     after its last. Both are placed when the takes are joined and never sent to the voice, so
@@ -87,6 +91,7 @@ class PageSection:
     seamless: bool = False
     lead_seconds: float | None = None  # None uses [narration] lead_seconds.
     tail_seconds: float | None = None  # None uses [narration] tail_seconds.
+    render_command: tuple[str, ...] = ()
 
     @property
     def key(self) -> str:
@@ -95,6 +100,11 @@ class PageSection:
     @property
     def is_clip(self) -> bool:
         return False
+
+    @property
+    def rendered(self) -> bool:
+        """Whether a command draws this section's picture rather than a page."""
+        return bool(self.render_command)
 
     @property
     def freeze_params(self) -> dict[str, str]:
@@ -241,6 +251,11 @@ class Document:
         return [s for s in self.sections if isinstance(s, PageSection)]
 
     @property
+    def drawn_sections(self) -> list[PageSection]:
+        """Every section a page draws, which is every narrated section a command does not render."""
+        return [s for s in self.page_sections if not s.rendered]
+
+    @property
     def clip_sections(self) -> list[ClipSection]:
         return [s for s in self.sections if isinstance(s, ClipSection)]
 
@@ -267,7 +282,7 @@ class Document:
     @property
     def page_files(self) -> list[str]:
         """Each page file once, in section order."""
-        return list(dict.fromkeys(s.page for s in self.page_sections))
+        return list(dict.fromkeys(s.page for s in self.drawn_sections))
 
 
 def tuning_keys(table: str) -> set[str]:
@@ -319,6 +334,8 @@ def parse_section(raw: dict[str, Any], index: int, notes: list[str]) -> Section:
     t.where = f"{PROJECT_FILE}: [[section]] number={number}"
     if "clip" in raw and "page" in raw:
         raise InputError(f"{t.where}: give either 'clip' or 'page', not both")
+    if "render_command" in raw:
+        return render_section(raw, t, number, notes)
     if "clip" in raw:
         notes += section_key_notes(t, clip=True)
         return fill(t, ClipSection, number=number)
@@ -343,6 +360,19 @@ def parse_section(raw: dict[str, Any], index: int, notes: list[str]) -> Section:
             raise InputError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
     params = {str(k): str(v) for k, v in params_raw.items()}
     return fill(t, PageSection, number=number, page=page, scene=str(scene), params=params)
+
+
+def render_section(raw: dict[str, Any], t: Table, number: int, notes: list[str]) -> PageSection:
+    """A narrated section whose picture a command draws, which names no page and no scene."""
+    if "page" in raw or "clip" in raw:
+        raise InputError(f"{t.where}: give one of 'page', 'clip' or 'render_command', not two")
+    command = raw["render_command"]
+    if not isinstance(command, list) or not command or not all(isinstance(word, str) and word for word in command):
+        raise InputError(
+            f'{t.where}: \'render_command\' must be a list of words, such as ["{{python}}", "render/bars.py"]'
+        )
+    notes += section_key_notes(t, clip=False)
+    return fill(t, PageSection, number=number, page="", scene="", params={}, render_command=tuple(command))
 
 
 def parse_sections(doc: dict[str, Any], notes: list[str]) -> list[Section]:

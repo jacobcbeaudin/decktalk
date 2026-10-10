@@ -1,20 +1,21 @@
 /*! The recorder's instrumentation, injected into a page before it loads.
  *
  * Every DeckTalk command that opens a page drives a headless Chromium, and what that command needs
- * from the page is not what a reader needs: a cover over the first paint so the recording starts on
- * a known frame, a helper that says when the page has settled, a measured catalog that says where
- * every reveal sits, a freeze that stops at one cue, and a record of how the page behaved while it
- * was captured. None of that belongs to a deck, so none of it is in the runtime a deck loads.
+ * from the page is not what a reader needs: a step that moves the section clock to one recorded
+ * frame, a helper that says when the page has settled, a measured catalog that says where every
+ * reveal sits, a freeze that stops at one cue, and a record of what the page did while it was
+ * recorded. None of that belongs to a deck, so none of it is in the runtime a deck loads.
  *
  * Playwright adds this file with `add_init_script`, so it runs before the page's own scripts and no
  * page ever references it. A page opened without it plays, previews, freezes and lists its scenes
  * the same, and keeps nothing.
  *
  * What the recorder calls
- *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
- *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
- *                                    frame, whose stamp is the recording's t=0 on the section clock, and
- *                                    resolving to performance.now() read in that frame
+ *   window.__decktalkProbe.step(t, s) move the section clock to second t and answer the next due second,
+ *                                    whether the picture may have changed and the earliest second it next
+ *                                    can, once the page has drawn it, or refuse once s seconds pass without that
+ *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
+ *                                    refuse once s seconds pass without that
  *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
  *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
  *
@@ -28,19 +29,9 @@
  * runtime owns.
  */
 
-import { ATTRS, type Attr, cueId, MOMENT_SELECTOR, type Q, type ReportField } from "../contract.ts";
+import { ATTRS, type Attr, cueId, MILLISECONDS, MOMENT_SELECTOR, type Q, type ReportField } from "../contract.ts";
 import type * as Seam from "../telemetry.ts";
-
-/** The cover over the first paint, and the square that keeps the compositor painting under it. */
-const COVER_ID = "dt-cover";
-const KEEPALIVE_ID = "dt-keepalive";
-
-/** A gap between two animation frames longer than this many milliseconds was long enough to move a cue. */
-const GAP_MS = 100;
-
-/** The two query keys only the probe reads, typed against the contract so a misspelling will not compile. */
-const AFTER: Q = "after";
-const BEFORE: Q = "before";
+import type { Step } from "../telemetry.ts";
 
 /** The most rows of any one kind the probe keeps, so a long recording cannot grow without a bound. */
 const KEEP = 5000;
@@ -48,65 +39,226 @@ const KEEP = 5000;
 /** The longest text a measured row carries, which is enough to find the element in the script. */
 const TEXT_MAX = 80;
 
-// ---- the cover ---------------------------------------------------------------------------------
+/** The two query keys only the probe reads, typed against the contract so a misspelling will not compile. */
+const AFTER: Q = "after";
+const BEFORE: Q = "before";
+
+// ---- the stepped clock ---------------------------------------------------------------------------
 
 /**
- * Cover the page in magenta from its first paint until the section clock starts.
+ * The browser's own animation frame and timer, taken before Playwright's clock replaces them.
  *
- * The first clean frame in the recording is then t=0, no matter when the recorder began capturing.
- * The cover comes with a keep-alive, a two pixel square in the corner that turns for the whole
- * recording, because Chromium's screencast emits a frame only when the compositor paints one and a
- * static cover paints once. The keep-alive outlives the cover on purpose. Playwright stamps each
- * frame by when it was swapped, rounded down to the capture grid, and a busy compositor swaps later
- * in the frame than an idle one, so if the motion stopped with the cover then the cover-off frame
- * would be stamped busy and every later reveal on a still page stamped idle, one or two frames
- * earlier, and reveals would record ahead of their words. It is mid-gray at three percent opacity,
- * so it moves a pixel's luma by four steps at most, which is under every diff level verify reads.
+ * The recorder adds this file before it installs the clock, so these are the browser's. The clock
+ * holds the page's timers and animation frames still between steps, and a step has to see the
+ * page's real rendering run, so it waits on these and on nothing the page itself can hold.
  */
-export function cover(): void {
-  const add = () => {
-    if (document.getElementById(COVER_ID)) return;
-    const parent = document.body || document.documentElement;
-    const sheet = document.createElement("div");
-    sheet.id = COVER_ID;
-    sheet.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-    parent.appendChild(sheet);
-    const alive = document.createElement("div");
-    alive.id = KEEPALIVE_ID;
-    alive.setAttribute("aria-hidden", "true");
-    alive.style.cssText =
-      "position:fixed;right:1px;bottom:1px;width:2px;height:2px;background:#808080;opacity:.03;" +
-      `z-index:2147483647;pointer-events:none;animation:${KEEPALIVE_ID} .5s linear infinite`;
-    const style = document.createElement("style");
-    style.textContent = `@keyframes ${KEEPALIVE_ID}{to{transform:rotate(360deg)}}`;
-    alive.appendChild(style);
-    parent.appendChild(alive);
+const nativeFrame = window.requestAnimationFrame.bind(window);
+const nativeTimer = window.setTimeout.bind(window);
+const nativeCancel = window.clearTimeout.bind(window);
+
+/** Every image a step has already seen decoded, so each is waited on once and not on every frame. */
+const decoded = new WeakSet<HTMLImageElement>();
+
+/**
+ * What draws on its own, out of the DOM's sight, so a page that holds one is never reported still.
+ *
+ * A canvas is drawn by script without a mutation, a video plays at its own rate, and a framed
+ * document, an embed or an object changes inside a document this page's observer cannot see.
+ */
+const SELF_DRAWN = "canvas, video, iframe, embed, object";
+
+/**
+ * Whether anything changed the DOM or scrolled since the last step answered, which starts true for the first.
+ *
+ * The observer's own callback runs at a microtask checkpoint and empties the record queue, so it
+ * sets this flag rather than leaving records for the step to take. A page timer that the recorder's
+ * clock fires between two steps, or an image's load handler, changes the page with nothing the
+ * runtime ran, and this is how the step hears of it.
+ */
+let touched = true;
+
+const touch = () => {
+  touched = true;
+};
+
+const watcher = new MutationObserver(touch);
+watcher.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+document.addEventListener("scroll", touch, { capture: true, passive: true });
+
+/**
+ * Where Playwright's clock keeps every timer and animation frame the page has set, read off the page's global object.
+ *
+ * Truth: the recorder installs Playwright's clock, which holds each timer with the tick it is due at
+ * and answers the earliest through `_firstTimer`, on its own ticks, which `performanceNow` reads.
+ * Both are the clock's own and not a promise Playwright makes, so a clock without them makes every
+ * step answer its own second, which steps every frame and skips nothing it should not.
+ */
+const PAGE_CLOCK = "__pwClock";
+
+/** The part of Playwright's clock the probe reads, each member optional because none of it is promised. */
+type PageClock = {
+  readonly controller?: {
+    _firstTimer?(): { readonly callAt: number } | null;
+    performanceNow?(): number;
   };
-  if (document.documentElement) add();
-  else document.addEventListener("DOMContentLoaded", add, { once: true });
+};
+
+/**
+ * The second on the section clock the page's own next timer runs at, measured from the step at `seconds`.
+ *
+ * A timer the page set itself, a plain `setTimeout` in a deck's script, changes the page with nothing
+ * the runtime ran, so a still stretch ends where the next one is due. It is null when no timer is
+ * set, and `seconds` itself when the clock cannot be read.
+ */
+function nextTimer(seconds: number): number | null {
+  const clock = (window as unknown as Record<string, PageClock | undefined>)[PAGE_CLOCK]?.controller;
+  if (typeof clock?._firstTimer !== "function" || typeof clock.performanceNow !== "function") return seconds;
+  const timer = clock._firstTimer();
+  if (!timer) return null;
+  return seconds + Math.max(0, timer.callAt - clock.performanceNow()) / MILLISECONDS;
 }
 
-/** The section clock's origin in `performance.now()` milliseconds, or null while the clock has not started. */
-let origin: number | null = null;
+/** The earlier of two seconds, where null is a second that never comes. */
+function sooner(one: number | null, other: number | null): number | null {
+  if (one === null) return other;
+  if (other === null) return one;
+  return Math.min(one, other);
+}
 
-/** The second on the section clock a `performance.now()` millisecond stands for, rounded to a millisecond. */
-function clockAt(ms: number): number | null {
-  return origin === null ? null : Number(((ms - origin) / 1000).toFixed(3));
+/** Whether the DOM changed or scrolled since the last call, counting the records not yet handed to the observer. */
+function mutated(): boolean {
+  const seen = touched || watcher.takeRecords().length > 0;
+  touched = false;
+  return seen;
 }
 
 /**
- * Remove the cover and start the page clock.
+ * Resolve once the page has run one whole rendering update that began after this call.
  *
- * The frame that shows the cover gone is composited on the next animation frame, and that frame is
- * the recording's t=0, so the clock starts there rather than at the moment of this call.
+ * An animation frame callback runs at the start of an update, before its style, layout, paint and
+ * commit, and a message posted from it is a task of its own, which runs once that update has
+ * finished. So when this resolves, the compositor holds everything the page drew before it was called.
  */
-export function lift(): Promise<number> {
-  return new Promise((resolve) => {
-    document.getElementById(COVER_ID)?.remove();
-    requestAnimationFrame((at) => {
-      origin = at;
-      window.DeckTalk?.startClock?.();
-      resolve(performance.now());
+function rendered(): Promise<void> {
+  return new Promise((done) => {
+    nativeFrame(() => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => done();
+      channel.port2.postMessage(null);
+    });
+  });
+}
+
+/**
+ * What the page is still fetching or decoding for the picture it has just laid out, as one promise each.
+ *
+ * A font starts loading when the first text set in it is laid out, and an image is decoded off the
+ * main thread, so both can finish after a rendering update and change the picture in a later one.
+ */
+function outstanding(): Promise<unknown>[] {
+  const waits: Promise<unknown>[] = [];
+  if (document.fonts && document.fonts.status !== "loaded") waits.push(document.fonts.ready);
+  for (const image of Array.from(document.images)) {
+    if (decoded.has(image)) continue;
+    waits.push(
+      image
+        .decode()
+        .catch(() => undefined)
+        .then(() => decoded.add(image)),
+    );
+  }
+  return waits;
+}
+
+/**
+ * Resolve once the page has drawn everything it shows now: every font and image it needs is in, and
+ * a whole rendering update has run since the last of them arrived. It resolves true when it waited for
+ * a font or an image, which changes the picture once it arrives.
+ *
+ * Each pass renders first, because rendering is what starts a font loading, and then waits for what
+ * that rendering asked for, until a rendering update asks for nothing more.
+ */
+async function drawn(): Promise<boolean> {
+  let waited = false;
+  for (;;) {
+    await rendered();
+    const waits = outstanding();
+    if (!waits.length) return waited;
+    waited = true;
+    await Promise.all(waits);
+  }
+}
+
+/**
+ * Move the page to one second on the section clock, which is everything one recorded frame is, and
+ * answer once the page has drawn it.
+ *
+ * The runtime owns the clock and the timeline, so this hands the second over. The recorder calls it
+ * once a frame, after it has moved the page's timers on by one frame, and captures what the page
+ * shows once it answers. The answer carries the second the next task is due, which the recorder steps
+ * to on its own before it moves the timers past it, and whether the picture may have changed since the
+ * step before. The runtime says what it knows: a task ran, a hook drew, an animation or a declared
+ * motion moved. This adds what only the browser knows: the DOM changed or scrolled, a font or an image
+ * arrived, or the page holds something that draws on its own. A page with no runtime always changed.
+ *
+ * The answer also carries the earliest second the picture can next change, which is the runtime's
+ * own unless one of the page's timers is due sooner. It is the step's own second when the page holds
+ * something that draws on its own, has no runtime, or heard of anything while it drew: a font, an
+ * image, or a change to the DOM made after the runtime had answered, by an event or an observer the
+ * runtime never ran, which may have started something the runtime has not seen.
+ *
+ * A capture taken the moment the runtime returns would race the page's own rendering: the style,
+ * layout and paint of the step, the compositor's copy of every animation the step sought, a font the
+ * step's text has only just asked for and an image still decoding. So the answer waits for all of
+ * them, and a page that has not drawn the step within `waitSeconds` is refused rather than captured.
+ */
+export function step(seconds: number, waitSeconds: number): Promise<Step> {
+  const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
+  const touchedBefore = mutated();
+  return new Promise((answer, refuse) => {
+    const late = nativeTimer(
+      () => refuse(new Error(`the page had not drawn second ${seconds} within ${waitSeconds} seconds`)),
+      waitSeconds * MILLISECONDS,
+    );
+    drawn().then((waited) => {
+      nativeCancel(late);
+      const touchedWhileDrawn = mutated();
+      const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+      const heard = waited || touchedWhileDrawn || selfDrawn;
+      answer({
+        due: stepped.due,
+        changed: stepped.changed || touchedBefore || heard,
+        stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+      });
+    });
+  });
+}
+
+/**
+ * Answer once no animation on the page is still waiting for the browser to start it, which is when the
+ * recorder may hold the clock.
+ *
+ * A loop the first slide starts plays from the mount, before the recorder's first step, and the
+ * browser starts it in a rendering update of its own, often on the compositor. Paused and sought to
+ * the section's second zero while it is still waiting to start, it keeps whatever the compositor had
+ * begun, so frame 0 showed it a frame further on from some pages and not from others. Started, it
+ * pauses where it is sought. Each pass waits for what is pending now, until nothing is.
+ */
+export function started(waitSeconds: number): Promise<boolean> {
+  const pending = () => document.getAnimations().filter((animation) => animation.pending);
+  const settle = async (): Promise<void> => {
+    for (let waiting = pending(); waiting.length; waiting = pending()) {
+      await Promise.all(waiting.map((animation) => animation.ready.catch(() => undefined)));
+    }
+  };
+  return new Promise((answer, refuse) => {
+    const late = nativeTimer(
+      () => refuse(new Error(`the page's animations had not started within ${waitSeconds} seconds`)),
+      waitSeconds * MILLISECONDS,
+    );
+    settle().then(() => {
+      nativeCancel(late);
+      answer(true);
     });
   });
 }
@@ -127,69 +279,18 @@ export function ready(): Promise<boolean> {
 
 // ---- the telemetry the recorder keeps -----------------------------------------------------------
 
-const cues: (Seam.CueEvent & { next: number | null; after: number | null })[] = [];
+const cues: Seam.CueEvent[] = [];
 const words: Seam.WordEvent[] = [];
-const frameGaps: { at: number | null; ms: number }[] = [];
-const longFrames: { start: number | null; ms: number; render: number | null; presented: number | null }[] = [];
 
-/**
- * The sink the runtime picks up at startup, which is the only thing a recorded page does extra.
- *
- * A cue row grows two more stamps after it is recorded, the frame after the one that ran the cue and
- * the one after that, because a cue that ran on time but whose next frame began late was held up by
- * the frame that drew it rather than before it.
- */
+/** The sink the runtime picks up at startup, which is the only thing a recorded page does extra. */
 export const recorder: Seam.Recorder = {
   cue(event: Seam.CueEvent): void {
-    if (cues.length >= KEEP) return;
-    const row = { ...event, next: null as number | null, after: null as number | null };
-    cues.push(row);
-    requestAnimationFrame((next) => {
-      row.next = clockAt(next);
-      requestAnimationFrame((after) => {
-        row.after = clockAt(after);
-      });
-    });
+    if (cues.length < KEEP) cues.push(event);
   },
   words(event: Seam.WordEvent): void {
     if (words.length < KEEP) words.push(event);
   },
 };
-
-/**
- * Watch how well the compositor kept up, which needs no DOM and nothing the runtime knows.
- *
- * A recording is only as good as the frames the compositor produced. A gap between two animation
- * frames longer than a few captured frames means a reveal was captured late, and a long animation
- * frame says which work held it up, so both are recorded for the recorder to judge.
- */
-function watchFrames(): void {
-  let last: number | null = null;
-  const tick = (at: number) => {
-    if (last !== null && at - last > GAP_MS && frameGaps.length < KEEP) {
-      frameGaps.push({ at: clockAt(at), ms: Math.round(at - last) });
-    }
-    last = at;
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-  const kinds = window.PerformanceObserver ? PerformanceObserver.supportedEntryTypes || [] : [];
-  if (!kinds.includes("long-animation-frame")) return;
-  new PerformanceObserver((list) => {
-    for (const entry of list.getEntries() as (PerformanceEntry & {
-      renderStart?: number;
-      presentationTime?: number;
-    })[]) {
-      if (origin === null || entry.startTime < origin || longFrames.length >= KEEP) continue;
-      longFrames.push({
-        start: clockAt(entry.startTime),
-        ms: Math.round(entry.duration),
-        render: entry.renderStart === undefined ? null : clockAt(entry.renderStart),
-        presented: entry.presentationTime === undefined ? null : clockAt(entry.presentationTime),
-      });
-    }
-  }).observe({ type: "long-animation-frame" } as PerformanceObserverInit);
-}
 
 /** Everything the recorder reads back off the page, in the one call the contract names. */
 export function report(): Record<ReportField, unknown> {
@@ -203,8 +304,7 @@ export function report(): Record<ReportField, unknown> {
     catalog: view?.catalog ?? [],
     cues,
     words,
-    frameGaps,
-    longFrames,
+    motions: view?.motions ?? [],
   };
 }
 
@@ -320,7 +420,5 @@ export function measure(catalog: Seam.CatalogEntry[], canvas: Seam.CanvasLoan): 
   return catalog;
 }
 
-watchFrames();
-
-const probe: Seam.Probe = { cover, lift, ready, report, recorder, freezeCues, measure };
+const probe: Seam.Probe = { step, started, ready, report, recorder, freezeCues, measure };
 window.__decktalkProbe = probe;

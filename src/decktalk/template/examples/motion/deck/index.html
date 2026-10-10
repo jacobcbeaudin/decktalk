@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+
+<!-- DeckTalk serves its runtime from /__decktalk/ on the origin it opens the page at, so the page
+     loads nothing from the network. -->
+<script src="/__decktalk/decktalk-runtime.js"></script>
+
+<style>
+  :root {
+    --ground: #ffffff;
+    --ink: #0f0f12;
+    --mute: #71717a;
+    --accent: #2c1fea;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  body { width: 100vw; height: 100vh; overflow: hidden; }
+  #dt-canvas { background: var(--ground); }
+
+  .eyebrow, .title, .lane, .packet, .ring, .card, .label, .track { position: absolute; margin: 0; box-sizing: border-box; }
+  .eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
+  .title { left: 120px; top: 140px; width: 1680px; font: 700 88px/1.06 var(--sans); letter-spacing: -.03em; }
+
+  /* Scene 1. The packet travels along its lane from the word "go" and stops on the word "now". It
+     moves through its own @keyframes, and the two cues decide how long it takes, so a re-voiced
+     line re-times it. Its ease is firm: it keeps a little speed to its last frame, which stops on a
+     frame edge that verify measures exactly. */
+  .lane { left: 120px; top: 420px; width: 1680px; height: 4px; background: #e4e4e7; }
+  .packet { left: 120px; top: 352px; width: 140px; height: 140px; border-radius: 20px; background: var(--ink); }
+  @keyframes travel { from { transform: translateX(0px) } to { transform: translateX(1540px) } }
+
+  /* A ring that turns for as long as the slide is on screen. It is declared as a loop, so verify
+     masks it out of every reveal rather than reading its turning as a change. */
+  .ring { left: 1700px; top: 80px; width: 96px; height: 96px; border: 10px solid var(--accent); border-right-color: transparent; border-radius: 50%; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+
+  /* A card that springs in on "spring" and comes to rest on "rest". A spring eases to rest, which
+     has no edge to measure, so its arrival cue says "verify": false in cues.json. */
+  .card { left: 120px; top: 600px; width: 900px; height: 220px; padding: 40px 48px; border-radius: 24px; background: var(--accent); color: #fff; font: 600 56px/1.1 var(--sans); }
+  @keyframes slide-in { from { transform: translateY(420px) } to { transform: translateY(0px) } }
+
+  .label { left: 1180px; top: 640px; width: 620px; height: 140px; padding: 36px 40px; border-radius: 20px; background: var(--ink); color: #fff; font: 600 52px/1 var(--sans); }
+
+  /* Scene 2. A bar fills from the first word to the last one, drawn in script by DeckTalk.motion,
+     which declares the bar as the region it draws in. */
+  .track { left: 120px; top: 520px; width: 1680px; height: 120px; border-radius: 60px; background: #e4e4e7; overflow: hidden; }
+  .track i { display: block; height: 100%; width: 0%; background: var(--ink); }
+</style>
+</head>
+
+<body>
+
+<!-- data-motion names the @keyframes an element moves through, data-motion-from and data-motion-to
+     the two cues it departs and arrives on, and data-motion-ease how it moves between them. -->
+
+<div data-scene="1" data-name="A thing that travels">
+  <template data-slide="1.1" data-preview-seconds="10" data-describe="a packet crossing the frame, a turning ring and a card on a spring">
+    <p class="eyebrow">Motion</p>
+    <div class="title" data-in="title" data-describe="the title, This is a packet">This is a packet.</div>
+    <div class="ring" data-loop="spin" data-loop-seconds="6" data-describe=""></div>
+    <div class="lane"></div>
+    <div class="packet" data-motion="travel" data-motion-from="go" data-motion-to="now" data-motion-ease="firm"
+         data-describe=""></div>
+    <div class="label" data-in="now" data-describe="a label that says it stopped on its word">on its word</div>
+    <div class="card" data-motion="slide-in" data-motion-from="spring" data-motion-to="rest" data-motion-ease="spring"
+         data-describe="">A card on a spring</div>
+  </template>
+</div>
+
+<div data-scene="2" data-name="A clock you can see">
+  <template data-slide="2.1" data-preview-seconds="8" data-owns="fill finish" data-describe="a bar that fills between two words">
+    <p class="eyebrow">Motion</p>
+    <div class="title" data-in="title" data-describe="the title, Every frame is one second">Every frame is one second.</div>
+    <div class="track"><i></i></div>
+    <div class="label" style="left: 120px; top: 760px" data-in="talk" data-describe="a label, the voice talks over it">the voice talks over it</div>
+  </template>
+</div>
+
+<script>
+  // The bar fills from "fill" to "finish". DeckTalk.motion hands draw() the eased progress every
+  // frame between the two cues, and names the bar as the region it draws in, so verify masks it.
+  DeckTalk.on("2.1:fill", (slide) => {
+    const bar = slide.querySelector(".track i");
+    DeckTalk.motion(bar, { from: "2.1:fill", to: "2.1:finish", ease: "glide", draw: (p) => { bar.style.width = `${p * 100}%`; } });
+  });
+</script>
+
+</body>
+</html>

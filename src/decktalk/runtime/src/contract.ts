@@ -40,15 +40,20 @@ export const SECOND_DIGITS = 3;
 
 // ---- what the recording can see ---------------------------------------------------------------
 
-/** The rate the recorder captures at, which is the rate Chromium's screencast paints a deck at. */
-export const CAPTURE_FPS = 25;
+/**
+ * The slowest rate a film is recorded at, which is the lowest `video.fps` admits.
+ *
+ * The recorder steps the section clock at `video.fps`, so a frame is never longer than one at this
+ * rate, and every range below is written in frames of it so that it holds at every rate a film may use.
+ */
+export const SLOWEST_FPS = 25;
 
 /**
- * One captured frame in milliseconds, which is the finest interval any range on this page may name.
+ * One frame at the slowest rate in milliseconds, which is the finest interval any range on this page may name.
  *
  * It is written out rather than divided, because every range below is written in whole frames and a
  * reader should be able to see the step the ranges are built on. A test holds it equal to
- * `1000 / CAPTURE_FPS`, so the two can never drift.
+ * `1000 / SLOWEST_FPS`, so the two can never drift.
  */
 export const FRAME_STEP_MS = 40;
 
@@ -129,6 +134,33 @@ export const ATTENTION = {
   front: { seconds: 0.2 },
 } as const;
 
+/**
+ * How a declared motion moves between its two cues, and whether its arrival is an edge verify can find.
+ *
+ * An arrival that keeps a little speed into its last frame stops on a frame edge, which is where
+ * verify reads it, so `firm` is the default. `glide` keeps its whole speed to the end. `settle` and
+ * `spring` ease to rest, which looks soft and has no edge, so an arrival on either is allowed only on a
+ * cue `cues.json` marks `"verify": false`. A `curve` is a cubic Bezier's two control points, and the
+ * spring has none because it is a critically damped spring stretched to the motion's length.
+ */
+export const MOTION_EASES = {
+  firm: { curve: [0.25, 0.8, 0.5, 0.95], arrival: "edge" },
+  glide: { curve: [0, 0, 1, 1], arrival: "edge" },
+  settle: { curve: [0.16, 1, 0.3, 1], arrival: "rest" },
+  spring: { curve: null, arrival: "rest" },
+} as const;
+
+/**
+ * How far a spring runs, in its own radians, over the length of its motion.
+ *
+ * Truth: a critically damped spring has covered `1 - (1 + x) e^-x` of its way after `x` radians, which
+ * passes all but a thousandth of it here, so a spring stretched to that length is within a thousandth
+ * of rest on the motion's last frame and settles there without a bounce.
+ */
+export const SPRING_SETTLE_RADIANS = 9.23;
+
+export type Ease = keyof typeof MOTION_EASES;
+
 export type Entrance = keyof typeof ENTRANCES;
 export type Exit = keyof typeof EXITS;
 export type SlideEntrance = keyof typeof SLIDE_ENTRANCES;
@@ -170,6 +202,13 @@ export const CODES = {
   PAGE_SLIDE_HANDLER_THREW:
     "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
   PAGE_HANDLER_THREW: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
+  PAGE_MOTION_UNDECLARED:
+    "{value} keeps moving past the half second a cue may still move and declares no motion, loop or region, so verify cannot mask it.",
+  PAGE_MOTION_CUE_UNKNOWN:
+    "The motion names the cue {cue}, which no slide declares, so it never starts or never lands.",
+  PAGE_REALTIME_MEDIA:
+    "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so use a clip section.",
+  PAGE_FRAME_THREW: "A frame hook the deck registered threw {value}, so it stopped drawing from that frame on.",
   PAGE_WAIT_REJECTED: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
   PAGE_WAIT_UNSETTLED: "A promise the page waited for never settled, so the page was drawn without it.",
   PAGE_CLASS_UNDESCRIBED:
@@ -194,8 +233,6 @@ export const CODES = {
   PAGE_SWAP_APART:
     "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
   PAGE_CDN_ASSET: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-  RECORD_STALLED:
-    "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
   RECORD_BLACK: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
   RECORD_TRUNCATED: "The recording ends {value} s before the narration does, so the last cues are not in it.",
 } as const satisfies Record<string, string>;
@@ -217,7 +254,18 @@ export type PageWarning = {
 export type Subject = "element" | "container" | "scene" | "slide";
 
 /** What kind of value an attribute takes, which is what a reader parses it as. */
-export type Kind = "moment" | "word" | "flag" | "seconds" | "description" | "pairs" | "id" | "names" | "tex";
+export type Kind =
+  | "moment"
+  | "cue"
+  | "keyframes"
+  | "word"
+  | "flag"
+  | "seconds"
+  | "description"
+  | "pairs"
+  | "id"
+  | "names"
+  | "tex";
 
 /** What turning an attribute changes, published so an agent can tell a control from a label. */
 export type Affects = "cue-order" | "motion" | "transcript" | "catalog" | "preview" | "style";
@@ -258,6 +306,9 @@ const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.44, step: 0.04, unit: "secon
 
 /** How far apart a container's children arrive, which is one to five captured frames. */
 const STAGGER_RANGE: Range = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
+
+/** How long one turn of a declared loop takes, which is anything from a fifth of a second to a minute. */
+const LOOP_SECONDS_RANGE: Range = { min: 0.2, max: 60, step: 0.04, unit: "seconds" };
 
 /** How long a slide rests in the preview, which no recording reads and no check measures. */
 const PREVIEW_SECONDS_RANGE: Range = { min: 1, max: 60, step: 1, unit: "seconds" };
@@ -486,6 +537,80 @@ export const ATTRS = {
     affects: ["transcript"],
     summary: "Overrides the departure sentence when leaving means something of its own.",
   },
+  "data-motion": {
+    name: "data-motion",
+    on: ["element"],
+    kind: "keyframes",
+    values: [],
+    default: null,
+    range: null,
+    code: "PAGE_MOTION_UNDECLARED",
+    span: 0,
+    affects: ["motion", "catalog"],
+    summary:
+      "The element moves through these @keyframes from one cue to another, masked from every reveal check and landing on its cues.",
+  },
+  "data-motion-from": {
+    name: "data-motion-from",
+    on: ["element"],
+    kind: "cue",
+    values: [],
+    default: null,
+    range: null,
+    code: "PAGE_MOTION_CUE_UNKNOWN",
+    span: 0,
+    affects: ["cue-order", "motion", "catalog"],
+    summary: "The motion departs at this cue.",
+  },
+  "data-motion-to": {
+    name: "data-motion-to",
+    on: ["element"],
+    kind: "cue",
+    values: [],
+    default: null,
+    range: null,
+    code: "PAGE_MOTION_CUE_UNKNOWN",
+    span: 0,
+    affects: ["cue-order", "motion", "catalog"],
+    summary: "The motion arrives at this cue, so its length is the two cues' seconds apart.",
+  },
+  "data-motion-ease": {
+    name: "data-motion-ease",
+    on: ["element"],
+    kind: "word",
+    values: ["firm", "glide", "settle", "spring"],
+    default: "firm",
+    range: null,
+    code: "PAGE_BAD_VALUE",
+    span: 0,
+    affects: ["motion", "style"],
+    summary: "How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify.",
+  },
+  "data-loop": {
+    name: "data-loop",
+    on: ["element"],
+    kind: "keyframes",
+    values: [],
+    default: null,
+    range: null,
+    code: "PAGE_MOTION_UNDECLARED",
+    span: 0,
+    affects: ["motion", "catalog"],
+    summary:
+      "The element turns through these @keyframes for as long as its slide is on screen, masked and never a landing.",
+  },
+  "data-loop-seconds": {
+    name: "data-loop-seconds",
+    on: ["element"],
+    kind: "seconds",
+    values: [],
+    default: "1",
+    range: LOOP_SECONDS_RANGE,
+    code: "PAGE_BAD_VALUE",
+    span: 0,
+    affects: ["motion"],
+    summary: "How long one turn of the loop takes.",
+  },
   "data-scene": {
     name: "data-scene",
     on: ["scene"],
@@ -586,7 +711,7 @@ export const QUERY = {
   freeze: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
   cues: "The cue times to fire at, as id@seconds pairs separated by a comma.",
   words: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
-  t0: "The second on the section clock the page starts at, or the word signal when the recorder starts the clock.",
+  t0: "The second on the section clock the page starts at, or the word signal when the recorder steps the clock.",
   speed: "Multiply the preview clock, so a long section is reviewed quickly.",
   hud: "Draw the on-page clock and cue list, which is for an author and never for a recording.",
   after: "Freeze after this cue, so the cues up to and including it fire and later ones stay hidden.",
@@ -605,10 +730,9 @@ export const REPORT = {
   slide: "The slide on screen, or null when none is mounted.",
   warnings: "Every distinct warning the page reported, as code, message, slide, cue and attr.",
   catalog: "One entry per scene, with its slides, its cues and the measured box of every element.",
-  cues: "When each cue was due, when it ran, and when the frames around it began.",
+  cues: "When each cue was due, when it ran, and the second of the frame that showed it.",
   words: "Each synced line, when its cue ran, when the voice reaches it and when its first word showed.",
-  frameGaps: "Every gap between two animation frames longer than the recorder can absorb.",
-  longFrames: "Every animation frame that took longer than a captured frame, with when it was presented.",
+  motions: "Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on.",
 } as const;
 
 export type ReportField = keyof typeof REPORT;
@@ -765,7 +889,7 @@ export function scaled(span: number, scale: number): number {
  */
 export const CONTRACT = {
   secondDigits: SECOND_DIGITS,
-  captureFps: CAPTURE_FPS,
+  slowestFps: SLOWEST_FPS,
   pairSeparator: PAIR_SEPARATOR,
   pairMark: PAIR_MARK,
   cueMark: CUE_MARK,
@@ -789,6 +913,8 @@ export const CONTRACT = {
   wordStyles: WORD_STYLES,
   counts: COUNTS,
   attention: ATTENTION,
+  motionEases: MOTION_EASES,
+  springSettleRadians: SPRING_SETTLE_RADIANS,
   attrs: ATTRS,
   exempt: EXEMPT,
   codes: CODES,

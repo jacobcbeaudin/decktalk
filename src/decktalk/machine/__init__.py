@@ -28,7 +28,6 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -484,9 +483,7 @@ class Machine:
             tools = (browser, *_encoder_rows(self.toolchain.fetch(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
-    def doctor(
-        self, *, measure: bool = False, threshold: Threshold = ERRORS_FAIL, cancel: Cancel | None = None
-    ) -> DoctorResult:
+    def doctor(self, *, threshold: Threshold = ERRORS_FAIL, cancel: Cancel | None = None) -> DoctorResult:
         """Report what this machine holds and what a run on it would use, fetching nothing.
 
         The encoder row looks for executables already on disk, because asking for them would
@@ -505,7 +502,6 @@ class Machine:
                 python=f"{sys.version.split()[0]} ({sys.executable})",
                 platform=f"{platform.platform()} ({sys.platform})",
                 api_keys=self.api_keys,
-                bias_ms=self._bias(measure=measure),
             )
 
     def apply(self, findings: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
@@ -550,19 +546,6 @@ class Machine:
         if missing:
             return InstalledTool(tool=KATEX)
         return InstalledTool(tool=KATEX, version=assets.KATEX_VERSION, path=assets.katex_dir())
-
-    @staticmethod
-    def _bias(*, measure: bool) -> float | None:
-        """This host's presentation bias, measured only when asked, because measuring drives a browser.
-
-        It is reported and never kept, because no stage reads it: an author reads what `verify` measures
-        against it, to tell a machine that presents late from a deck that cues late.
-        """
-        if not measure:
-            return None
-        # Measuring drives a browser, so the layer that owns the browser owns the measurement, and
-        # the module is loaded by the one caller that asks for it rather than by every report.
-        return float(import_module("decktalk.media.bias").measure_presentation_bias())
 
 
 def _encoder_rows(toolchain: Toolchain, *, fetched: bool = False) -> tuple[InstalledTool, ...]:

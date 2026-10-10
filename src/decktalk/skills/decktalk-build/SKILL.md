@@ -41,8 +41,8 @@ craft of a build is knowing which half you are in.
    section's own scene, the rest of its page and the files the page loads are unchanged. So a page
    edit outside any scene stales every section of that page, and a section that reads the previous
    section's words goes stale with it.
-8. **Follow a long run rather than restarting it.** Recording happens in real time, so a long film
-   takes longer than one command usually may. Watch the run's own events.
+8. **Follow a long run rather than restarting it.** Recording steps every frame of every section, so a
+   long film takes longer than one command usually may. Watch the run's own events.
 9. **Verify, and show the evidence.** A build that exits zero has not proved the cues land. Verify
    measures the finished film against what the project said it would be. Show the author the frames
    and the verify summary before calling the work done.
