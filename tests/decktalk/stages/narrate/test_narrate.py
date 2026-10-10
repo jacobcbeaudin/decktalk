@@ -6,7 +6,7 @@ import json
 import shutil
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
@@ -14,11 +14,14 @@ from typing import IO, Any
 import pytest
 from filelock import FileLock
 
+from decktalk import machine as machine_module
 from decktalk.artifacts import (
     PLACEHOLDER_PREFIX,
     PLACEHOLDER_SUFFIX,
     ProviderWords,
+    Take,
     Takes,
+    TurnKey,
     file_digest,
     is_placeholder,
     stored,
@@ -39,7 +42,7 @@ from decktalk.errors import (
 from decktalk.events import CostPriced, RunLog, SectionDone, SectionStart, StageProgress, TakeCharged, Unit
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs, take_places
-from decktalk.media import audio
+from decktalk.media import audio, ffmpeg
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
@@ -47,6 +50,7 @@ from decktalk.speech import Piece, Speech, SpeechContext, SpeechFactory, SpeechP
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.cost import charge_of
+from decktalk.stages.kept import assemble_digest
 from decktalk.stages.narrate import narrate, take_states
 from decktalk.stages.narrate.plan import id_variable, no_voice_note
 from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, NARRATOR_ID, FakeVoice
@@ -57,7 +61,7 @@ from support.projects import load_project
 from support.runs import Watched, a_voiced_run
 from support.takes import TAKE_SUFFIX, damage_take
 
-from .conftest import DIALOGUE, ENVIRON, FREE_TOML, NARRATOR_TABLE, SCRIPT, TOML, VOICE_ID, WITH_A_GUEST
+from .conftest import DIALOGUE, ENVIRON, FREE_TOML, NARRATOR_TABLE, SCRIPT, SOUND_END, TOML, VOICE_ID, WITH_A_GUEST
 
 LEAVE_GAP_SECONDS = 0.3
 """Calibration: how long after the first Ctrl-C the second is pressed, long enough for the first to be answered."""
@@ -485,6 +489,64 @@ def test_a_take_from_a_voice_that_bills_nothing_puts_no_charge_on_the_stream(
         assert fresh.of(TakeCharged) == []
 
 
+@pytest.mark.usefixtures("counted")
+def test_a_take_index_checkpoint_never_reads_a_take_another_worker_is_replacing(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker's checkpoint carries the rows of turns still in flight as their index had them, never their files.
+
+    The thread order is forced: section 2's checkpoint starts to look at section 1's take on disk, section
+    1's worker sets that take aside as rejected, and the look goes on before the take voiced again lands,
+    which is the window a loaded machine opens by chance.
+    """
+    inputs = make_inputs(toml=FREE_TOML)
+    narrate(inputs, make_run(inputs).run)
+    index = Takes.read(inputs.workspace.takes_path)
+    assert index is not None
+    first = next(row.digest for row in index.sections if row.section == 1)
+    looking, set_aside, looked = threading.Event(), threading.Event(), threading.Event()
+    checkpoint = threading.local()
+    real_placed, real_fault, real_reject = narrate_stage._placed, take_places._pair_fault, take_places._reject
+
+    def placed(
+        project: Inputs, rows: Mapping[TurnKey, Take], touched: Collection[TurnKey], planned: Mapping[TurnKey, Any]
+    ) -> dict[TurnKey, Take]:
+        checkpoint.on = True
+        try:
+            return real_placed(project, rows, touched, planned)
+        finally:
+            checkpoint.on = False
+            looking.set()
+            looked.set()
+
+    def fault(audio: Path, words: Path, **kwargs: Any) -> str | None:
+        if not (getattr(checkpoint, "on", False) and audio.name.startswith(first)):
+            return real_fault(audio, words, **kwargs)
+        looking.set()
+        assert set_aside.wait(timeout=10), "section 1's worker never set its take aside"
+        try:
+            return real_fault(audio, words, **kwargs)
+        finally:
+            looked.set()
+
+    def reject(copy: take_places._Copy, into: Path, digest: str) -> list[tuple[Path, Path]]:
+        if digest != first:
+            return real_reject(copy, into, digest)
+        assert looking.wait(timeout=10), "no checkpoint ran while section 1 was in flight"
+        try:
+            return real_reject(copy, into, digest)
+        finally:
+            set_aside.set()
+            assert looked.wait(timeout=10), "the checkpoint never finished its look"
+
+    monkeypatch.setattr(narrate_stage, "_placed", placed)
+    monkeypatch.setattr(take_places, "_pair_fault", fault)
+    monkeypatch.setattr(take_places, "_reject", reject)
+    result = narrate(inputs, make_run(inputs).run, replace_voiced=True)
+    assert {row.outcome for row in result.sections} == {TakeOutcome.VOICED}
+    assert set_aside.is_set() and looked.is_set()
+
+
 def test_a_run_that_may_not_spend_sends_nothing_to_a_voice_that_bills(
     inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
 ) -> None:
@@ -862,6 +924,46 @@ def test_the_index_is_checkpointed_after_every_take(
     assert 2 not in indexed
     # Every take that was bought is on the stream, even though the run failed after it.
     assert sorted(line.section for line in watched.of(TakeCharged)) == indexed
+
+
+class WaitsForAnother:
+    """A voice that holds one section's request until another section is done, which fixes the workers' order."""
+
+    name = FAKE_VOICE_NAME
+
+    def __init__(self, held: tuple[Piece, ...]) -> None:
+        self.held = held
+        self.other_done = threading.Event()
+
+    def speak(self, request: SpeechRequest) -> Speech:
+        if request.pieces == self.held:
+            assert self.other_done.wait(timeout=10), "the other section never finished"
+        return Speech(b"take", (Word(word="A", start=0.0, end=0.4),))
+
+
+def test_each_section_reads_in_order_on_the_stream_whichever_worker_finishes_first(
+    inputs: Inputs, make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    """Sections made at once interleave on the stream, and each one's own lines still run from its start to its done.
+
+    The order is forced: section 1's request waits until section 2 is done, so section 1 ends after a
+    section that started with it, and the count of takes still goes up one at a time.
+    """
+    (first,) = [section for section in inputs.spoken() if section.number == 1]
+    voice = WaitsForAnother(first.pieces)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
+    watched = make_run(inputs, spend=True)
+    watched.run.machine.events.subscribe(
+        lambda line: voice.other_done.set() if isinstance(line, SectionDone) and line.section == 2 else None
+    )
+    narrate(inputs, watched.run)
+    ends = [line.section for line in watched.of(SectionDone)]
+    assert ends.index(2) < ends.index(1)
+    for number in (1, 2, 3):
+        own = [line for line in watched.lines if getattr(line, "section", None) == number]
+        assert isinstance(own[0], SectionStart) and isinstance(own[-1], SectionDone)
+        assert [line for line in own if isinstance(line, (SectionStart, SectionDone))] == [own[0], own[-1]]
+    assert [line.done for line in watched.of(StageProgress)] == [1, 2, 3]
 
 
 class Overlapping:
@@ -2245,6 +2347,42 @@ def in_order(make_inputs: Callable[..., Inputs], toml: str, script: str) -> Inpu
     return Inputs.load(project.root, environ=ENVIRON, machine={"narration": {"concurrency": 1}})
 
 
+EVERY_TURN = [(1, 1), (2, 1), (2, 2), (2, 3), (3, 1)]
+"""Every turn of the dialogue script, which the index of a project that has bought them all holds."""
+
+
+@pytest.mark.parametrize(
+    ("refused", "retaken"),
+    [("Every picture", [(2, 2), (3, 1)]), ("And it rolls", [(2, 2)])],
+    ids=["a-later-turn-refused", "the-turn-itself-refused"],
+)
+def test_a_stopped_retake_keeps_every_held_turn_of_its_section_in_the_take_index(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    voices: dict[str, SpeechFactory],
+    refused: str,
+    retaken: list[tuple[int, int]],
+) -> None:
+    """Retake turns one at a time and have the voice refuse one of them, after 2.2 is bought or on 2.2 itself.
+
+    The index on disk is the last checkpoint, which once cut section 2 at its first turn this run had not made,
+    the KEPT 2.1, indexed only after the pool, so the stopped run left no row for section 2 at all.
+    """
+    project = in_order(make_inputs, BOTH_PAID, DIALOGUE)
+    voices[FAKE_VOICE_NAME] = lambda _context: FakeVoice()
+    narrate(project, make_run(project, spend=True).run)
+    before = Takes.read(project.workspace.takes_path)
+    assert before is not None and [(r.section, r.turn) for r in before.sections] == EVERY_TURN
+
+    voice = FailsOn(refused, ProviderError("the voice refused the request.", reached=True))
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
+    with pytest.raises(ProviderError):
+        narrate(project, make_run(project, spend=True).run, turns=retaken)
+    after = Takes.read(project.workspace.takes_path)
+    assert after is not None and [(r.section, r.turn) for r in after.sections] == EVERY_TURN
+    assert all(project.take_places.find(row.digest).held for row in after.sections)
+
+
 def test_a_reply_that_breaks_after_sending_counts_its_turn_toward_the_ceiling_alone(
     make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
@@ -2292,3 +2430,305 @@ def test_each_turn_opens_and_closes_its_own_section_line(
     assert sorted((line.section, line.turn) for line in watched.of(SectionStart)) == keys
     assert sorted((line.section, line.turn) for line in watched.of(SectionDone)) == keys
     assert len(fake_voice.requests) == len(keys)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_word_its_voice_placed_after_the_take_sound_ends_is_a_finding_and_plays_with_no_length(
+    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    """The join cuts each take at its sound end, so a word placed past it is never heard, and the run says so."""
+    fake_voice.words = [Word(word="hello", start=0.0, end=0.5), Word(word="there", start=SOUND_END, end=1.0)]
+    result = narrate(inputs, make_run(inputs, spend=True).run, only=[1])
+    (cut,) = [found for found in result.findings if found.code is Code.TAKE_WORD_CUT]
+    assert cut.severity is Severity.WARNING and cut.location.section == 1
+    assert '"there" after its sound ends at 0.8 s' in cut.message
+    assert "decktalk narrate --section 1" in cut.message
+    heard = inputs.words(1).words
+    lead = inputs.lead_seconds(1)
+    assert heard[-1] == Word(word="there", start=round(lead + SOUND_END, 3), end=round(lead + SOUND_END, 3))
+    assert inputs.takes(required=True).sections[0].speech_end_seconds == SOUND_END
+
+
+# ---- buying one turn again ------------------------------------------------------------------------
+
+
+def on_the_command_line(
+    project: Inputs, voice: FakeVoice, monkeypatch: pytest.MonkeyPatch
+) -> Callable[..., dict[str, Any]]:
+    """`decktalk --json narrate ARGS` on this project, answering its JSON, on a machine whose paid voice is `voice`."""
+    for name, value in {**ENVIRON, MACHINE_FILE_VARIABLE: str(project.root / "machine.toml")}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(machine_module, "PROVIDERS", {**machine_module.PROVIDERS, FAKE_VOICE_NAME: lambda _c: voice})
+
+    def narrate_with(*args: str, capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
+        main(["-p", str(project.root), "--json", "narrate", *args])
+        return json.loads(capsys.readouterr().out)
+
+    return narrate_with
+
+
+def turn_digests(project: Inputs) -> dict[tuple[int, int], str]:
+    """Each turn of the take index against the take it plays."""
+    index = Takes.read(project.workspace.takes_path)
+    assert index is not None
+    return {(row.section, row.turn): row.digest for row in index.sections}
+
+
+@pytest.mark.parametrize("named_by", ["turn", "take"])
+def test_one_turn_named_on_the_command_line_is_bought_again_and_its_old_take_is_set_aside(
+    make_inputs: Callable[..., Inputs],
+    fake_voice: FakeVoice,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    named_by: str,
+) -> None:
+    """A turn whose take is held is bought again when it is named, alone, and the take it played is kept aside."""
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate_with = on_the_command_line(project, fake_voice, monkeypatch)
+    assert narrate_with("--spend", capsys=capsys)["ok"] is True
+    before = turn_digests(project)
+    bought = len(fake_voice.requests)
+    digest = before[(2, 2)]
+    fake_voice.audio = b"take again"
+    named = ["--turn", "2.2"] if named_by == "turn" else ["--take", digest[:8]]
+    answer = narrate_with(*named, "--spend", capsys=capsys)
+    assert answer["ok"] is True, answer
+    [request] = fake_voice.requests[bought:]
+    assert [piece.text for piece in request.pieces] == ["And it rolls."]
+    assert answer["cost"]["characters"] == len("And it rolls.")
+    assert [
+        (row["section"], row["turn"]) for row in answer["sections"] if row["outcome"] == TakeOutcome.VOICED.value
+    ] == [(2, 2)]
+    assert turn_digests(project) == before, "every turn plays the take it played, under the name it had"
+    assert (project.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"take again"
+    rejected = project.workspace.takes / "rejected"
+    assert (rejected / take_file(f"{digest}.1", TAKE_SUFFIX)).read_bytes() == b"take"
+    assert (rejected / words_file(f"{digest}.1")).is_file()
+
+
+def test_a_turn_bought_again_twice_keeps_both_takes_it_set_aside(
+    make_inputs: Callable[..., Inputs],
+    fake_voice: FakeVoice,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate_with = on_the_command_line(project, fake_voice, monkeypatch)
+    narrate_with("--spend", capsys=capsys)
+    digest = turn_digests(project)[(2, 2)]
+    for answer in (b"second", b"third"):
+        fake_voice.audio = answer
+        assert narrate_with("--turn", "2.2", "--spend", capsys=capsys)["ok"] is True
+    rejected = project.workspace.takes / "rejected"
+    assert (rejected / take_file(f"{digest}.1", TAKE_SUFFIX)).read_bytes() == b"take"
+    assert (rejected / take_file(f"{digest}.2", TAKE_SUFFIX)).read_bytes() == b"second"
+    assert (project.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"third"
+
+
+def test_a_turn_named_without_spend_is_refused_with_the_price_of_that_turn_alone(
+    make_inputs: Callable[..., Inputs],
+    fake_voice: FakeVoice,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """With nobody to ask, the refusal prices what the named turn would buy and names the run that approves it."""
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate_with = on_the_command_line(project, fake_voice, monkeypatch)
+    narrate_with("--spend", capsys=capsys)
+    bought = len(fake_voice.requests)
+    refused = narrate_with("--turn", "2.2", capsys=capsys)
+    assert refused["error"]["code"] == ErrorCode.APPROVAL.value
+    assert f"{len('And it rolls.')} characters" in refused["error"]["message"]
+    assert "decktalk narrate --turn 2.2 --spend" in refused["error"]["hint"]
+    assert len(fake_voice.requests) == bought
+
+
+def test_a_ceiling_holds_the_price_of_the_named_turn_and_not_of_its_section(
+    make_inputs: Callable[..., Inputs],
+    fake_voice: FakeVoice,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The section reads 41 characters and the turn 13, so a ceiling between the two passes the turn alone."""
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate_with = on_the_command_line(project, fake_voice, monkeypatch)
+    narrate_with("--spend", capsys=capsys)
+    one_turn = narrate_stage.price(project, turns=[(2, 2)])
+    whole = narrate_stage.price(project, only=[2], replace_voiced=True)
+    assert one_turn.characters == len("And it rolls.")
+    assert one_turn.ceiling_dollars < whole.ceiling_dollars
+    ceiling = f"{whole.ceiling_dollars - 0.001:.3f}"
+    assert narrate_with("--turn", "2.2", "--spend", "--max-cost", ceiling, capsys=capsys)["ok"] is True
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_naming_a_turn_buys_no_other_turn_its_section_is_missing(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched]
+) -> None:
+    """A turn named to be voiced again is the whole of what the run buys, so a missing neighbour plays a placeholder."""
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate(project, make_run(project, spend=True).run, only=[2])
+    (project.workspace.takes / words_file(turn_digests(project)[(2, 3)])).unlink()
+    result = narrate(project, make_run(project, spend=True).run, turns=[(2, 1)])
+    outcomes = {(row.section, row.turn): row.outcome for row in result.sections}
+    assert outcomes == {(2, 1): TakeOutcome.VOICED, (2, 2): TakeOutcome.KEPT, (2, 3): TakeOutcome.PLACEHOLDER}
+    assert result.cost.sections == (2,)
+    assert result.cost.characters == len("It steps down the bowl.")
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_a_section_one_voice_reads_is_its_one_turn(inputs: Inputs, make_run: Callable[..., Watched]) -> None:
+    narrate(inputs, make_run(inputs, spend=True).run)
+    result = narrate(inputs, make_run(inputs, spend=True).run, turns=[(3, 1)])
+    assert [(row.section, row.outcome) for row in result.sections] == [(3, TakeOutcome.VOICED)]
+    assert len(list(inputs.workspace.rejected_dir.glob(f"*{TAKE_SUFFIX}"))) == 1
+
+
+@pytest.mark.parametrize(
+    ("options", "said"),
+    [
+        ({"turns": [(2, 4)]}, "the script has no spoken turn 2.4"),
+        ({"turns": [(9, 1)]}, "the script has no spoken turn 9.1"),
+        ({"takes": ["ffff"]}, "'ffff' names no take a spoken turn plays"),
+        ({"takes": [""]}, "names 5 takes"),
+        ({"turns": [(2, 2)], "only": [2]}, "so --section beside them would name a second set"),
+        ({"turns": [(2, 2)], "replace_voiced": True}, "so --replace-voiced beside them would name a second set"),
+    ],
+    ids=["no-such-turn", "no-such-section", "no-such-take", "every-take", "beside-a-section", "beside-replace"],
+)
+def test_a_turn_that_cannot_be_named_is_refused_before_anything_is_bought(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    fake_voice: FakeVoice,
+    options: dict[str, Any],
+    said: str,
+) -> None:
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate(project, make_run(project, spend=True).run)
+    bought = len(fake_voice.requests)
+    with pytest.raises(InputError, match=said):
+        narrate(project, make_run(project, spend=True).run, **options)
+    with pytest.raises(InputError, match=said):
+        narrate_stage.price(project, **options)
+    assert len(fake_voice.requests) == bought
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_a_take_two_turns_share_is_voiced_again_once_for_both(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    """Two turns with the same words and voice play one take, so naming that take names both, and it is bought once."""
+    doubled = make_inputs(script=SCRIPT.replace("It steps down the bowl.", "Every picture waited for its word."))
+    narrate(doubled, make_run(doubled, spend=True).run)
+    shared = turn_digests(doubled)[(3, 1)]
+    bought = len(fake_voice.requests)
+    result = narrate(doubled, make_run(doubled, spend=True).run, takes=[shared[:6]])
+    assert len(fake_voice.requests) == bought + 1
+    assert [(row.section, row.outcome) for row in result.sections] == [
+        (2, TakeOutcome.VOICED),
+        (3, TakeOutcome.KEPT),
+    ]
+    assert turn_digests(doubled)[(2, 1)] == turn_digests(doubled)[(3, 1)] == shared
+
+
+def test_a_later_turn_named_in_a_section_whose_earlier_turn_shares_its_take_is_the_one_that_sends(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    """The first turn of a shared take sends it, unless only a later one voices, which then sends for both."""
+    echoed = DIALOGUE.replace("Then it stops.", "It steps down the bowl.")
+    project = make_inputs(toml=BOTH_PAID, script=echoed)
+    narrate(project, make_run(project, spend=True).run)
+    bought = len(fake_voice.requests)
+    result = narrate(project, make_run(project, spend=True).run, turns=[(2, 3)])
+    assert len(fake_voice.requests) == bought + 1
+    outcomes = {(row.section, row.turn): (row.outcome, row.digest) for row in result.sections}
+    assert outcomes[(2, 3)][0] is TakeOutcome.VOICED
+    assert outcomes[(2, 1)] == (TakeOutcome.KEPT, outcomes[(2, 3)][1])
+
+
+@dataclass
+class Joined:
+    """Every narration join a run made, each as the bytes and the played seconds of every take in it."""
+
+    joins: list[list[tuple[bytes, float | None]]] = field(default_factory=list)
+
+    @property
+    def last(self) -> list[tuple[bytes, float | None]]:
+        return self.joins[-1]
+
+
+@pytest.fixture
+def measured_by_bytes(monkeypatch: pytest.MonkeyPatch) -> Joined:
+    """Takes whose length is read off their bytes, and every join kept, so a new take's length shows downstream."""
+    lengths = {b"take": (1.0, 0.8), b"a longer take": (3.0, 2.5)}
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: lengths[Path(path).read_bytes()][0])
+    monkeypatch.setattr(audio, "sound_end", lambda path, **_levels: lengths[Path(path).read_bytes()][1])
+    joined = Joined()
+    real = audio.concat_audio
+
+    def concat(parts: list[audio.Placement], out: Path, **options: Any) -> None:
+        joined.joins.append([(part.path.read_bytes(), part.play) for part in parts])
+        real(parts, out, **options)
+
+    monkeypatch.setattr(audio, "concat_audio", concat)
+    return joined
+
+
+def test_a_turn_bought_again_is_what_the_narration_plays_and_every_later_stage_measures(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    fake_voice: FakeVoice,
+    measured_by_bytes: Joined,
+) -> None:
+    """The new take keeps its digest, so everything downstream must read its bytes rather than trust the name.
+
+    The join reads the file, the row is measured afresh, the section's span moves (which is the length
+    `record` keys a recording on), the planned words are the new take's (which the page URL carries),
+    and the digest `build` keeps assemble by moves, so nothing plays the rejected take.
+    """
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate(project, make_run(project, spend=True).run)
+    before = Takes.read(project.workspace.takes_path)
+    assert before is not None
+    kept_by = assemble_digest(project, {})
+    fake_voice.audio = b"a longer take"
+    fake_voice.words = [Word(word="and", start=0.0, end=1.0), Word(word="rolls", start=1.0, end=2.4)]
+    fresh = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate(fresh, make_run(fresh, spend=True).run, turns=[(2, 2)])
+    after = Takes.read(fresh.workspace.takes_path)
+    assert after is not None
+    assert measured_by_bytes.last[2] == (b"a longer take", 2.5)
+    assert [row for row in measured_by_bytes.last if row[0] == b"take"] == [(b"take", 0.8)] * 4
+    turn = {row.turn_key: row for row in after.sections}[TurnKey(2, 2)]
+    assert (turn.duration_seconds, turn.sound_end_seconds, turn.speech_end_seconds) == (3.0, 2.5, 2.4)
+    assert after.span_seconds(2) == pytest.approx(before.span_seconds(2) + 1.7)
+    planned = take_states(make_inputs(toml=BOTH_PAID, script=DIALOGUE)).planned_words(2)
+    assert [word.word for word in planned.words][2:4] == ["and", "rolls"]
+    assert assemble_digest(fresh, {}) != kept_by
+
+
+def test_a_rejected_take_moved_back_is_what_the_narration_plays_again_whichever_sections_the_next_run_names(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    fake_voice: FakeVoice,
+    measured_by_bytes: Joined,
+) -> None:
+    """Undoing a re-buy is a move of two files, so a row measured on the other take must not survive it."""
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate(project, make_run(project, spend=True).run)
+    fake_voice.audio = b"a longer take"
+    narrate(make_inputs(toml=BOTH_PAID, script=DIALOGUE), make_run(project, spend=True).run, turns=[(2, 2)])
+    digest = turn_digests(project)[(2, 2)]
+    takes, rejected = project.workspace.takes, project.workspace.rejected_dir
+    for name in (take_file(digest, TAKE_SUFFIX), words_file(digest)):
+        (takes / name).unlink()
+    (rejected / take_file(f"{digest}.1", TAKE_SUFFIX)).rename(takes / take_file(digest, TAKE_SUFFIX))
+    (rejected / words_file(f"{digest}.1")).rename(takes / words_file(digest))
+    again = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    narrate(again, make_run(again).run, only=[1])
+    assert measured_by_bytes.last[2] == (b"take", 0.8)
+    index = Takes.read(again.workspace.takes_path)
+    assert index is not None
+    turn = {row.turn_key: row for row in index.sections}[TurnKey(2, 2)]
+    assert (turn.duration_seconds, turn.sound_end_seconds) == (1.0, 0.8)
+    assert turn.speech_end_seconds == 0.8, "the moved-back take's words are cut at its own sound end, not the other's"

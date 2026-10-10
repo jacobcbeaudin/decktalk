@@ -124,7 +124,7 @@ def measured(inputs: Inputs) -> None:
 def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """After a build that verified, there is nothing to do, and saying verify again would be false."""
     # The recording here has no log beside it, so the recorder's own rule is told it still stands.
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: None)
     inputs = a_project(tmp_path)
     built_up_to(inputs, 4)
     measured(inputs)
@@ -224,14 +224,14 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     inputs = a_project(tmp_path)
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.recording("01").write_bytes(b"")
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: "section 1: its page changed")
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: "section 1: the markup of its scene changed")
     run = a_run(tmp_path)
     said: list[RunLog] = []
     run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
     result = status(inputs, run)
     assert result.sections[0].recording_stale is True
     # A reading a reader may act on is a warning, because it is not what the author asked for.
-    assert any("its page changed" in line.message and line.level is Level.WARNING for line in said)
+    assert any("the markup of its scene changed" in line.message and line.level is Level.WARNING for line in said)
 
 
 @pytest.mark.parametrize(
@@ -524,7 +524,7 @@ def finished(inputs: Inputs, *rows: Take) -> None:
 @pytest.fixture
 def recordings_stand(monkeypatch: pytest.MonkeyPatch) -> None:
     """The recording here has no log beside it, so the recorder's own rule is told it still stands."""
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: None)
 
 
 @pytest.mark.usefixtures("recordings_stand")

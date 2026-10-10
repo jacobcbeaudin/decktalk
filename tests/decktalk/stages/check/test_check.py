@@ -11,8 +11,9 @@ from decktalk.errors import Cancelled
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.machine.fixes import apply_fix
-from decktalk.results import CheckResult, CostState, Scope
+from decktalk.results import CheckResult, CostState, Scope, up_to_the_cent
 from decktalk.settings import BY_ID
+from decktalk.speech import canonical_text
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
 from support.pages import SCRIPT, TOML, a_project, catalog
 from support.runs import a_run, notes
@@ -108,6 +109,21 @@ def test_with_no_voice_named_an_edited_section_is_priced_as_certain(tmp_path: Pa
     result = check(edited, a_run(tmp_path), pages=False)
     assert result.cost.sections == (1, 2)
     assert result.cost.dollars > 0
+
+
+def test_a_check_given_a_turn_prices_voicing_that_turn_again_and_nothing_else(tmp_path: Path) -> None:
+    """Only the named turn is in the price, where a check of the whole project prices every section.
+
+    No voice is named here, so no take on disk can be matched and each turn is priced into the ceiling
+    alone, at its own characters.
+    """
+    inputs = voiced_once(tmp_path)
+    assert check(inputs, a_run(tmp_path), pages=False).cost.sections == (1, 2)
+    result = check(inputs, a_run(tmp_path), pages=False, turns=[(2, 1)])
+    [turn] = inputs.spoken()[1].turns
+    assert result.cost.sections == (2,)
+    dollars_per_character = 0.30 / 1000
+    assert result.cost.ceiling_dollars == up_to_the_cent([len(canonical_text(turn.pieces)) * dollars_per_character])
 
 
 def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_path: Path) -> None:

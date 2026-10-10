@@ -37,7 +37,10 @@ exactly as one take always has.
 
 Each row also says who timed its take's words, `timed_by`: the provider, an aligner, whose kept words
 the row names by `alignment`, or DeckTalk, on a placeholder or on a take no aligner could time. It
-keeps the model the voice served the take with, when the voice named one.
+keeps the model the voice served the take with, when the voice named one, and the BLAKE3 of the audio
+its numbers were measured on, as the take's words file records it. A take bought again on request
+keeps its digest, so that print is what tells a row measured on the take before it from one measured
+on the take that plays.
 """
 
 from __future__ import annotations
@@ -251,6 +254,11 @@ class Take(Model):
     )
     model_digest: str | None = Field(
         description="The digest of the model the voice served this take with, when it named one."
+    )
+    audio_blake3: str | None = Field(
+        None,
+        description="The BLAKE3 of the audio this row was measured on, as the take's words file records it, or null "
+        "on a placeholder or a take whose words file records none.",
     )
 
     @model_validator(mode="after")

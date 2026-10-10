@@ -9,7 +9,7 @@ section again rather than assembling a picture nobody judged.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -21,17 +21,21 @@ from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Event, Level, RunLog, SectionDone, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg, frames, stepping
+from decktalk.media import audio, browser, ffmpeg, frames, stepping
 from decktalk.media.pagereport import PageReport, Recording
 from decktalk.media.stepping import RecordingSink
+from decktalk.page import Q
 from decktalk.pipeline import Outcome
 from decktalk.results import Word
 from decktalk.settings import Settings
+from decktalk.stages.cue import cue
+from decktalk.stages.narrate import narrate
 from decktalk.stages.record import plan, pool, record, stale_recording
+from decktalk.stages.status import status
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
 from support.projects import load_project
-from support.runs import a_run
+from support.runs import Watched, a_run, notes
 from support.takes import a_take, narrated, write_takes
 
 TOML = """
@@ -441,3 +445,232 @@ def test_a_dialogue_section_is_recorded_for_its_whole_span(tmp_path: Path) -> No
     jobs = plan(loaded, a_run(tmp_path), None)
     margin = loaded.document.page_sections[0].record_margin_seconds
     assert [job.seconds for job in jobs] == [round(2 * SPAN_SECONDS + 1.0, 3) + margin, SPAN_SECONDS + margin]
+
+
+# ---- one turn edited in a two-section deck that shares one page ---------------------------------
+
+SHARED_TOML = """
+[project]
+name = "larkbill"
+
+[voices.narrator]
+provider = "elevenlabs"
+
+[voices.guest]
+provider = "elevenlabs"
+
+[voices.host]
+provider = "elevenlabs"
+
+[elevenlabs]
+dollars_per_1000_characters = 0.30
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+
+[[section]]
+number = 2
+page = "deck/index.html"
+scene = "2"
+"""
+"""Two sections that play two scenes of one page, as the Larkbill deck does."""
+
+SHARED_SCRIPT = """## 1. Open
+
+Open any invoice, and check the total.
+
+## 2. Deliver
+
+[voice narrator]
+
+Click Share, and your client has it.
+
+[voice guest]
+
+Before you close the tab.
+"""
+"""Section two is a dialogue of two turns, so the edited turn has to be named and not just its section."""
+
+SHARED_PAGE = """<!doctype html><html><head><style>.go { color: green; }</style></head><body>
+<div data-scene="1"><template data-slide="1.1"><p data-in="invoice">INV-1042</p></template></div>
+<div data-scene="2"><template data-slide="2.1"><p class="go" data-in="click">Share</p></template></div>
+</body></html>
+"""
+"""The page both sections play: one head every scene shares, and the Share button in scene two alone."""
+
+SHARED_CUES = {"1": {"cues": [{"id": "1.1:invoice", "phrase": "any invoice"}]},
+               "2": {"cues": [{"id": "2.1:click", "phrase": "Click Share"}]}}  # fmt: skip
+
+SHARED_ENVIRON = {
+    "ELEVENLABS_API_KEY": "key-under-test",
+    "DECKTALK_VOICES_NARRATOR_ID": "narrator-under-test",
+    "DECKTALK_VOICES_GUEST_ID": "guest-under-test",
+    "DECKTALK_VOICES_HOST_ID": "host-under-test",
+}
+"""What the machine hands the project: a stand-in credential the fake voice never reads, and each voice's id."""
+
+
+@pytest.fixture
+def shared_deck(
+    tmp_path: Path,
+    driven: Driven,
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    make_run: Callable[..., Watched],
+) -> Callable[[], list[str]]:
+    """Build the two-section deck with the fake voice, and hand back a function that builds it again."""
+    request.getfixturevalue("fake_voice")
+    request.getfixturevalue("fake_ffmpeg")
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    # The fake encoder's probe answers for the recorder too: a recording runs the frames it was asked
+    # for, and anything else the fake encoder wrote runs the span every section is asked for.
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: driven.lengths.get(path, SPAN_SECONDS))
+    load_project(tmp_path, SHARED_TOML, page=SHARED_PAGE, script=SHARED_SCRIPT, cues=SHARED_CUES,
+                 environ=SHARED_ENVIRON)  # fmt: skip
+
+    def build() -> list[str]:
+        inputs = Inputs.load(tmp_path, environ=SHARED_ENVIRON)
+        narrate(inputs, make_run(inputs, spend=True).run)
+        cue(inputs, make_run(inputs).run)
+        driven.urls.clear()
+        record(inputs, make_run(inputs).run)
+        return driven.urls
+
+    build()
+    return build
+
+
+def edit(tmp_path: Path, name: str, old: str, new: str) -> None:
+    path = tmp_path / name
+    path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+
+
+def stale_report(tmp_path: Path, make_run: Callable[..., Watched]) -> tuple[list[bool], list[str]]:
+    """What `status` says of each section's recording: the Stale column, and the lines that say why."""
+    inputs = Inputs.load(tmp_path, environ=SHARED_ENVIRON)
+    run = make_run(inputs).run
+    said = notes(run)
+    rows = status(inputs, run).sections
+    return [row.recording_stale for row in rows], [line for line in said if "recorded again" in line]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_a_fresh_build_leaves_no_section_stale(tmp_path: Path, make_run: Callable[..., Watched]) -> None:
+    assert stale_report(tmp_path, make_run) == ([False, False], [])
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_one_word_changed_in_one_turn_marks_that_section_alone_and_names_the_turn(
+    tmp_path: Path, make_run: Callable[..., Watched]
+) -> None:
+    """The follows film changed Share to Send in turn 2.1, and status called both sections stale for every reason."""
+    edit(tmp_path, "script.md", "Click Share", "Click Send")
+    stale, why = stale_report(tmp_path, make_run)
+    assert stale == [False, True]
+    assert why == ["Section 2: the words of turn 2.1 changed since it was recorded, so it would be recorded again."]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_one_word_changed_in_one_scene_marks_the_section_that_plays_it_and_says_so(
+    tmp_path: Path, make_run: Callable[..., Watched]
+) -> None:
+    edit(tmp_path, "deck/index.html", ">Share<", ">Send<")
+    stale, why = stale_report(tmp_path, make_run)
+    assert stale == [False, True]
+    assert why == ["Section 2: the markup of its scene changed since it was recorded, so it would be recorded again."]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_a_change_to_the_part_every_scene_shares_marks_every_section(
+    tmp_path: Path, make_run: Callable[..., Watched]
+) -> None:
+    edit(tmp_path, "deck/index.html", "color: green", "color: teal")
+    stale, why = stale_report(tmp_path, make_run)
+    assert stale == [True, True]
+    assert why == [
+        f"Section {number}: the part of deck/index.html every scene shares changed since it was recorded, "
+        "so it would be recorded again."
+        for number in (1, 2)
+    ]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_the_film_s_edit_names_the_turn_and_the_scene_it_touched(
+    tmp_path: Path, make_run: Callable[..., Watched]
+) -> None:
+    """One word across the script, the slide and the cue: the cue file moves no time, so it is not named."""
+    edit(tmp_path, "script.md", "Click Share", "Click Send")
+    edit(tmp_path, "deck/index.html", ">Share<", ">Send<")
+    edit(tmp_path, "cues.json", "Click Share", "Click Send")
+    assert stale_report(tmp_path, make_run)[1] == [
+        "Section 2: the words of turn 2.1 and the markup of its scene changed since it was recorded, "
+        "so it would be recorded again."
+    ]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_a_turn_handed_to_another_voice_is_named_by_its_voice(tmp_path: Path, make_run: Callable[..., Watched]) -> None:
+    edit(tmp_path, "script.md", "[voice guest]", "[voice host]")
+    assert stale_report(tmp_path, make_run)[1] == [
+        "Section 2: the voice of turn 2.2 changed since it was recorded, so it would be recorded again."
+    ]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+@pytest.mark.usefixtures("shared_deck")
+def test_a_record_run_before_narrate_keeps_the_take_it_plays(
+    tmp_path: Path, make_run: Callable[..., Watched], driven: Driven
+) -> None:
+    """`record` plays the takes on disk, so an edit narrate has not voiced yet records nothing new."""
+    edit(tmp_path, "script.md", "Click Share", "Click Send")
+    inputs = Inputs.load(tmp_path, environ=SHARED_ENVIRON)
+    driven.urls.clear()
+    again = record(inputs, make_run(inputs).run)
+    assert [row.kept for row in again.sections] == [True, True]
+    assert stale_report(tmp_path, make_run)[0] == [False, True]
+
+
+@pytest.mark.parametrize("run_environ", [SHARED_ENVIRON])
+def test_the_rebuild_after_a_one_word_edit_records_only_the_section_it_touched(
+    tmp_path: Path, shared_deck: Callable[[], list[str]], make_run: Callable[..., Watched]
+) -> None:
+    """The edit the follows film makes: one word in the script, the slide and the cue, all in section two."""
+    edit(tmp_path, "script.md", "Click Share", "Click Send")
+    edit(tmp_path, "deck/index.html", ">Share<", ">Send<")
+    edit(tmp_path, "cues.json", "Click Share", "Click Send")
+    urls = shared_deck()
+    assert [Q.SCENE.value + "=2" in url for url in urls] == [True]
+    assert stale_report(tmp_path, make_run) == ([False, False], [])
+
+
+RENDERED_TOML = """
+[project]
+name = "demo"
+
+[[section]]
+number = 1
+render_command = ["{python}", "-c", "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(b'video')", "{out}"]
+"""
+"""One section whose picture a command draws, which writes its video and nothing else."""
+
+
+def test_a_rendered_section_nothing_moved_under_is_kept(tmp_path: Path, driven: Driven) -> None:
+    """The log of a drawn section is keyed as the plan keys it, or every run would draw it again."""
+    load_project(tmp_path, RENDERED_TOML)
+    inputs = Inputs.load(tmp_path, environ={})
+    write_takes(inputs, a_take(1, seconds=SPAN_SECONDS, voiced=False))
+    # The command draws every frame of its span, as a renderer handed the frame count does.
+    [job] = plan(Inputs.load(tmp_path, environ={}), a_run(inputs.root), None)
+    driven.lengths[job.out] = stepping.frame_count(job.seconds, FPS) / FPS
+    record(inputs, a_run(inputs.root))
+    again = record(inputs, a_run(inputs.root))
+    assert [row.kept for row in again.sections] == [True]
+    assert stale_recording(inputs, inputs.document.page_sections[0]) is None

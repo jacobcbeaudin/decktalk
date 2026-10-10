@@ -137,15 +137,28 @@ def _touched(project: Project, changed: Iterable[Path]) -> tuple[int, ...] | Non
 
 
 def _stale(session: sessions.Session, project: Project) -> None:
-    """Say which sections hold a stale voiced take, with the clause that says what moved."""
+    """Say which sections hold a stale voiced take, with the clause that says what moved.
+
+    A section of several turns of which exactly one is stale names that turn, and the command that
+    voices it alone, so the hint buys the one take the save left behind.
+    """
     reported = project.status()
     for row in reported.sections:
-        if row.take_state is TakeState.STALE:
-            number = row.section
+        if row.take_state is not TakeState.STALE:
+            continue
+        number = row.section
+        stale = [one for one in row.turns if one.take_state is TakeState.STALE]
+        if len(row.turns) > 1 and len(stale) == 1:
+            [one] = stale
             session.say(
-                f"Section {number} has a stale voiced take, because {row.take_reason}. "
-                f"Run decktalk narrate --section {number} --spend to voice it again."
+                f"Turn {one.turn} of section {number}, which {one.voice} reads, has a stale voiced take, because "
+                f"{one.take_reason}. Run decktalk narrate --turn {number}.{one.turn} --spend to voice it again."
             )
+            continue
+        session.say(
+            f"Section {number} has a stale voiced take, because {row.take_reason}. "
+            f"Run decktalk narrate --section {number} --spend to voice it again."
+        )
 
 
 def _stamps(project: Project) -> dict[Path, float]:

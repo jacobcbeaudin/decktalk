@@ -46,9 +46,17 @@ from decktalk.stages.narrate.state import (
 )
 from support.fakes import NARRATOR_ID
 from support.projects import load_project
-from support.takes import TAKE_SUFFIX, a_take, damage_take, hold_take, write_takes
+from support.takes import (
+    TAIL_TAKE_SOUND_END,
+    TAKE_SUFFIX,
+    a_take,
+    damage_take,
+    hold_take,
+    tail_take_words,
+    write_takes,
+)
 
-from .conftest import DIALOGUE, ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID, WITH_A_GUEST
+from .conftest import DIALOGUE, ENVIRON, FREE_TOML, SCRIPT, SOUND_END, TOML, VOICE_ID, WITH_A_GUEST
 
 MOVED = re.compile(r"the takes directory \S+ holds none of the (\d+) takes? this project played before")
 """The moved clause, which names the folder and a count, so it is matched rather than compared."""
@@ -589,6 +597,15 @@ def test_planned_words_of_a_voiced_take_are_its_provider_words_from_the_section_
     assert words.words == tuple(replace_start(word, lead) for word in SAID)
 
 
+def test_planned_words_of_a_held_take_end_where_its_sound_ends(inputs: Inputs) -> None:
+    """The real take's provider ran its last word into the trailing silence, which the join never plays."""
+    digest = digest_of(inputs, 1)
+    hold_take(inputs, digest, words=tail_take_words().words)
+    write_takes(inputs, row(inputs, 1, digest).model_copy(update={"sound_end_seconds": TAIL_TAKE_SOUND_END}))
+    words = take_states(inputs).planned_words(1)
+    assert words.words[-1].end == round(inputs.lead_seconds(1) + TAIL_TAKE_SOUND_END, 3)
+
+
 def replace_start(word: Word, lead: float) -> Word:
     return Word(word=word.word, start=round(word.start + lead, 3), end=round(word.end + lead, 3))
 
@@ -649,7 +666,8 @@ def test_planned_words_of_a_take_with_no_words_are_its_kept_alignment_with_no_ta
         audio=said.audio.blake3, words=spoken_words(section_of(inputs, 1).spoken), aligner="a", revision="1",
         model_digest="m",
     )  # fmt: skip
-    aligned = AlignedWords(words=tuple(estimated_words(section_of(inputs, 1).spoken, 2.0)), inputs=keyed, generation=1)
+    spoken = section_of(inputs, 1).spoken
+    aligned = AlignedWords(words=tuple(estimated_words(spoken, SOUND_END)), inputs=keyed, generation=1)
     inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
     aligned.write(inputs.workspace.aligned_words(keyed.key))
     words = take_states(inputs).planned_words(1)

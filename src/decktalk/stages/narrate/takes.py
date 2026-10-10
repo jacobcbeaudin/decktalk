@@ -22,6 +22,8 @@ on a moment of silence, so its sound ends where its words do and it is placed ex
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Collection
 from pathlib import Path
 
 from decktalk.artifacts import (
@@ -32,16 +34,19 @@ from decktalk.artifacts import (
     Take,
     Takes,
     TimedBy,
+    TurnKey,
     Words,
     is_placeholder,
     take_file,
     words_file,
 )
 from decktalk.events import TakeCharged
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection, Turn
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
+from decktalk.pipeline import Stage
 from decktalk.speech import canonical_text
 from decktalk.stages.cost import Buy, charge_of
 
@@ -67,12 +72,16 @@ def place(inputs: Inputs, row: Take, *, gap: float | None) -> Take:
     turn takes the section's lead and any other none. `gap` is the silence after a turn that is not its
     section's last, and None for the last, which takes the section's tail. The sound end is measured
     once, and a row that carries it already keeps it, because the file its digest names holds the same
-    bytes it was measured on.
+    bytes it was measured on: narrate reads a section again, rather than placing its rows, when a row's
+    audio print is not the take's on disk. A row that carries its sound end is placed without looking
+    on disk at all, so the index narrate writes after each take never reads a take another of its
+    workers is still making or setting aside.
     """
     end = row.sound_end_seconds
-    path = inputs.take_places.find(row.digest).audio
-    if end is None and path.exists():
-        end = sound_end_of(inputs, path)
+    if end is None:
+        path = inputs.take_places.find(row.digest).audio
+        if path.exists():
+            end = sound_end_of(inputs, path)
     return row.model_copy(
         update={
             "sound_end_seconds": end,
@@ -106,9 +115,10 @@ def take_row(
 ) -> Take:
     """The take index row for one turn, placed, with the fields every kind of take shares.
 
-    `words` are the words the take plays, which say who timed it and where its last word ends, and
-    `said` is the take's own words file, which names the model its voice served, or None for a
-    placeholder. The row names the voice that reads the turn, as a label.
+    `words` are the words the take plays, which say who timed it and, cut at its sound end, where its
+    last word ends, and `said` is the take's own words file, which names the model its voice served and
+    the BLAKE3 of the audio it came with, or None for a placeholder. The row names the voice that reads
+    the turn, as a label.
     """
     timed_by, alignment = _timing(words)
     row = Take(
@@ -122,20 +132,59 @@ def take_row(
         characters=len(canonical_text(turn.pieces)),
         estimated_seconds=turn.estimated_seconds(inputs.settings.narration),
         duration_seconds=ffmpeg.probe_duration(inputs.take_places.find(digest).audio),
-        speech_end_seconds=words.end,
         spoken=turn.spoken,
         voice=inputs.voice_of(turn).name,
         timed_by=timed_by,
         alignment=alignment,
         model_digest=said.model_digest if said is not None else None,
+        audio_blake3=said.audio.blake3 if said is not None and said.audio is not None else None,
     )
-    return place(inputs, row, gap=gap_after(inputs, section, turn))
+    return retimed(place(inputs, row, gap=gap_after(inputs, section, turn)), words)
 
 
 def retimed(row: Take, words: Words) -> Take:
-    """The row playing `words` in place of what it played, which moves who timed it and where its last word ends."""
+    """The placed row playing `words` in place of what it played, which moves who timed it and where its last word
+    ends.
+
+    The last word ends where the words, cut at the row's sound end, say it does, so a word its voice gave
+    to the take's trailing silence ends where the join cuts the take.
+    """
     timed_by, alignment = _timing(words)
-    return row.model_copy(update={"timed_by": timed_by, "alignment": alignment, "speech_end_seconds": words.end})
+    end = words.cut_at(row.sound_seconds).end
+    return row.model_copy(update={"timed_by": timed_by, "alignment": alignment, "speech_end_seconds": end})
+
+
+def cut_words(inputs: Inputs, index: Takes, made: Collection[TurnKey]) -> list[Finding]:
+    """A `TAKE_WORD_CUT` finding for every turn this run made whose take places a word after its sound ends.
+
+    The join cuts each take at its sound end, so a word its provider or its aligner placed there is
+    never heard, and its words play it with no length at the sound end. Such a word says the sound end
+    was measured early, on speech quieter than `[narration] sound_end_noise_dbfs`. Words DeckTalk
+    estimated are spread over the take's sound, so a take that plays them is never judged.
+    """
+    several = Counter(row.section for row in index.sections)
+    found: list[Finding] = []
+    for row in index.sections:
+        if row.turn_key not in made or not row.voiced or row.timed_by is TimedBy.ESTIMATED:
+            continue
+        end = row.sound_seconds
+        lost = [word.word for word in inputs.take_words_of(row).words if word.start >= end]
+        if not lost:
+            continue
+        number = row.section
+        take = f"Section {number}'s take of turn {row.turn}" if several[number] > 1 else f"Section {number}'s take"
+        said = ", ".join(f'"{word}"' for word in lost)
+        found.append(
+            judge(
+                Code.TAKE_WORD_CUT,
+                f"{take} places {said} after its sound ends at {end:g} s, where the narration cuts the take, so "
+                f"{'it is' if len(lost) == 1 else 'they are'} never heard. Lower [narration] sound_end_noise_dbfs, "
+                f"then run decktalk narrate --section {number}.",
+                Location(where=f"section {number}", file=inputs.relative(inputs.script_path), section=number),
+                stage=Stage.NARRATE,
+            )
+        )
+    return found
 
 
 def write_placeholder_take(
@@ -222,6 +271,7 @@ def join_takes(inputs: Inputs, takes: Takes) -> Path:
 __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "charge_take",
+    "cut_words",
     "gap_after",
     "join_takes",
     "place",

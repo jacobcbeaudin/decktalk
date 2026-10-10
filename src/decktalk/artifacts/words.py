@@ -28,6 +28,9 @@ record. A clip's
 words file is the author's own input once a `[[section]] words` key names it, so `Inputs.clip_words`
 refuses one that does not read as `INPUT`, naming that key, and never asks for it to be deleted.
 
+A take plays to its sound end and is cut there, so every reader of the words a take plays reads
+them `cut_at` that sound end: a word given to the take's trailing silence ends where the sound does.
+
 Aligned words are a cache kept under a key, `<match>-<identity>`. The match is taken over the take's
 audio print and the words it should hold, and the identity over the aligner, its revision and the
 digest of its model, so every alignment of one take shares a prefix and a new aligner keeps the old
@@ -41,7 +44,7 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
-from typing import ClassVar
+from typing import ClassVar, Self
 
 from pydantic import Field, model_validator
 
@@ -68,6 +71,23 @@ class Words(Stored):
     def end(self) -> float | None:
         """Where the last word ends, or None when the take says nothing."""
         return self.words[-1].end if self.words else None
+
+    def cut_at(self, sound_end: float) -> Self:
+        """These words as a take cut at `sound_end` plays them, which is how the join plays every take.
+
+        A word whose end runs past the take's sound end ends there, because a provider or an aligner
+        can give its last word to the take's trailing silence, which never plays. A word that starts at
+        or past the sound end is not heard at all, so it keeps its place in the order with no length, at
+        the sound end. Every other word is as it was. The copy is a reading, which no writer puts on
+        disk, so the record its voice sent is never rewritten.
+        """
+        cut = tuple(
+            word if word.end <= sound_end else Word(word=word.word, start=min(word.start, sound_end), end=sound_end)
+            for word in self.words
+        )
+        heard = self.model_copy(update={"words": cut})
+        heard._view = True
+        return heard
 
     def shifted(self, by: float) -> tuple[Word, ...]:
         """These words moved `by` seconds later, which is how a take's words join a longer clock."""

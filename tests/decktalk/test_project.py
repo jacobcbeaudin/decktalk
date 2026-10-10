@@ -35,7 +35,7 @@ from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
-from decktalk.project import Origin, Project, section_numbers
+from decktalk.project import Origin, Project, section_numbers, turn_numbers
 from decktalk.results import (
     BillingBasis,
     BuildResult,
@@ -269,6 +269,22 @@ def test_a_run_written_backwards_is_refused_rather_than_selecting_nothing() -> N
     with pytest.raises(InputError, match="runs backwards") as refused:
         section_numbers("3,9-7")
     assert refused.value.hint == "Write the lower number first, as in 7-9."
+
+
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [("4.2", ((4, 2),)), ("1.2,4.2", ((1, 2), (4, 2))), ("4.2, 4.2", ((4, 2),)), ("10.12", ((10, 12),))],
+)
+def test_a_turn_selection_is_parsed_once_at_the_edge(written: str, expected: tuple[tuple[int, int], ...]) -> None:
+    assert turn_numbers(written) == expected
+
+
+@pytest.mark.parametrize("written", ["4", "4.", ".2", "4.2.1", "4-5.1", "four.two"])
+def test_a_turn_selection_that_names_no_turn_is_refused_with_what_one_looks_like(written: str) -> None:
+    with pytest.raises(InputError, match="does not name a turn") as refused:
+        turn_numbers(written)
+    assert refused.value.hint is not None
+    assert "such as 4.2" in refused.value.hint
 
 
 SELECTING: dict[str, Callable[[Project, tuple[int, ...]], object]] = {

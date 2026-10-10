@@ -124,6 +124,7 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED) | warning | The project declares a voice no turn of the script is read by. |
 | [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
 | [`TAKE_UNALIGNED`](/reference/findings/TAKE_UNALIGNED) | warning | A take came with no word times and no aligner timed them, so its section plays estimated words. Only narrate raises it. |
+| [`TAKE_WORD_CUT`](/reference/findings/TAKE_WORD_CUT) | warning | A take's words place a word after the take's sound ends, where the narration cuts the take, so the word is never heard. Only narrate raises it. |
 | [`CUT_SPEECH`](/reference/findings/CUT_SPEECH) | error | Speech is still sounding at a section cut, so the film slices a word in two. |
 | [`CUT_POP`](/reference/findings/CUT_POP) | error | The picture steps at a section cut, so the film pops on the seam. |
 | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | warning | The mixed film misses the loudness it was mastered to. |
@@ -209,6 +210,8 @@ It answers with the `check` result: `decktalk schema check`.
 | `--pages`, `--no-pages` | Open the pages in a browser, or judge the written files alone and say what was not reached. |
 | `--frames`, `--no-frames` | Freeze and compare the slides, or keep the browser and drop that. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
+| `--turn` `N.T` | Price voicing this turn again, such as 4.2, and judge its section. Repeats. |
+| `--take` `DIGEST` | Price voicing again the turn that plays this take, by its digest or its start. Repeats. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -368,6 +371,8 @@ It answers with the `narrate` result: `decktalk schema narrate`.
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--force` | Build every placeholder again, keep every voiced take, and ask the aligner again for every take whose voice sent no word times. |
 | `--replace-voiced` | Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend. |
+| `--turn` `N.T` | Voice this turn again as a new take and nothing else, such as 4.2 for section 4's second turn. Repeats. |
+| `--take` `DIGEST` | Voice again the turn that plays this take, named by its digest or enough of its start. Repeats. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |

@@ -522,14 +522,13 @@ appends the same lines to `build/events/<run>.jsonl`, named by the run id the re
 with no project behind it, such as `decktalk doctor` outside one, reports `events_file` as null and
 appends nothing.
 
-{/* sample: build-events, decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson */}
+{/* sample: build-events, decktalk build --no-spend --events --json, the first five lines of stderr, on a fresh decktalk init my-lesson */}
 ```jsonl
 {"event":"run.start","time":"2026-10-07T17:54:44.592871Z","seq":0,"run":"95e2d89e6edb","events_file":"build/events/95e2d89e6edb.jsonl"}
 {"event":"run.log","time":"2026-10-07T17:54:44.593855Z","seq":1,"run":"95e2d89e6edb","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":80006,"lock":".lock"}}
 {"event":"stage.start","time":"2026-10-07T17:54:44.594020Z","seq":2,"run":"95e2d89e6edb","stage":"narrate","index":1,"count":6}
 {"event":"run.log","time":"2026-10-07T17:54:44.595263Z","seq":3,"run":"95e2d89e6edb","level":"debug","message":"3 takes are made on 2 workers.","source":"stages.narrate","stage":"narrate","section":null,"data":{"workers":2,"jobs":3,"requested":2}}
 {"event":"section.start","time":"2026-10-07T17:54:44.595492Z","seq":4,"run":"95e2d89e6edb","stage":"narrate","section":1,"turn":1}
-{"event":"section.start","time":"2026-10-07T17:54:44.595629Z","seq":5,"run":"95e2d89e6edb","stage":"narrate","section":2,"turn":1}
 ```
 
 Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise
@@ -539,7 +538,12 @@ the events are appended to. A refusal is written as one line holding the whole e
 line alone.
 
 The discriminator key is `event`, and every line carries `event`, `time`, `seq` and `run`. `seq`
-counts from zero inside its run, so a reader can order lines that arrived out of order.
+counts from zero inside its run, so a reader can order lines that arrived out of order. Sections
+that run at once, such as the takes `narrate` makes on its workers, write their lines in whatever
+order the workers reach them, so the line after one section's start may be another section's. Each
+section's own lines still read in order, from its `section.start` to its `section.done`, and
+`stage.progress` counts up one at a time, so a reader follows one section by its `section` field
+rather than by the lines around it.
 
 | `event` | What it says | Its own fields |
 |---|---|---|

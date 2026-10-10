@@ -40,7 +40,7 @@ voice = "dtsp"
 run = [["narrate", "--no-spend"]]
 file = "build/narrate/takes.json"
 keep = { sections = 1 }
-varies = ["duration_seconds", "sound_end_seconds"]
+varies = ["duration_seconds", "sound_end_seconds", "audio_blake3"]
 
 [words-json]
 page = "docs/reference/artifacts.mdx"
@@ -405,12 +405,13 @@ grep = "^The loudness pass"
 
 [build-events]
 page = "docs/agents/json.mdx"
-what = "decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson"
+what = "decktalk build --no-spend --events --json, the first five lines of stderr, on a fresh decktalk init my-lesson"
 run = [["build", "--no-spend", "--events", "--json"]]
 stream = "stderr"
 fence = "jsonl"
-head = 6
-# Two narrate workers start at once, so the run decides which section's start comes first.
+# Two narrate workers start at once, so the run decides which section's start comes first, and the line
+# after it is the other worker's start or the first worker's own next line. The block stops at that start.
+head = 5
 varies = ["time", "run", "events_file", "pid", "elapsed_seconds", "section"]
 
 [status-built]
@@ -477,7 +478,7 @@ what = "build/recordings/01.json after decktalk build --no-spend on a fresh deck
 run = [["build", "--no-spend"]]
 file = "build/recordings/01.json"
 keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0 }
-varies = ["digest", "load_seconds", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
+varies = ["engine", "load_seconds", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
 
 [section-json]
 page = "docs/reference/artifacts.mdx"

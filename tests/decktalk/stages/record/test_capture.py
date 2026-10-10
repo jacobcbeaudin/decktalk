@@ -1,9 +1,9 @@
-"""The URL a section is opened at, and what its recording is keyed on.
+"""The URL a section is opened at, and what its recording is made from, part by part.
 
 Two rules are held here. Every query key is a member of the contract's own vocabulary, so a page URL
-cannot be built by hand and a param naming a key no page reads is refused. And the key a skip is
-decided by moves with the scene, the assets and the motion, and stays still when another scene of
-the same page is edited.
+cannot be built by hand and a param naming a key no page reads is refused. And the parts a skip is
+decided by move with the scene, the shared page, the assets and the motion, stay still when another
+scene of the same page is edited, and name what moved rather than everything that could have.
 """
 
 from __future__ import annotations
@@ -12,19 +12,23 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, RecordingLog
+from decktalk.artifacts import CueTimes, RecordingLog, stored
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.page import Q
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.record.capture import (
+    Part,
     as_query,
+    moved,
+    page_made_from,
     page_parts,
     page_source,
+    part_key,
     plan_job,
+    said,
     scene_params,
     scene_url,
-    section_digest,
     words_param,
 )
 from support.pages import TWO_SCENE_PAGE, a_recording
@@ -135,37 +139,39 @@ def test_a_page_whose_scene_never_closes_is_shared_whole() -> None:
     assert "data-scene" in parts.shared
 
 
+def made_from(inputs: Inputs, number: int, assets: tuple[str, ...] = ()) -> dict[str, str]:
+    """What section `number` would be recorded from, with no cues and a ten-second length."""
+    return page_made_from(inputs, section_of(inputs, number), None, 10.0, assets)
+
+
 def test_editing_one_scene_moves_only_the_sections_that_play_it(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    one, two = section_of(inputs, 1), section_of(inputs, 2)
-    before = (
-        section_digest(inputs, one, "url", 10.0, ()),
-        section_digest(inputs, two, "url", 10.0, ()),
-    )
+    before = made_from(inputs, 1), made_from(inputs, 2)
     edited = a_project(tmp_path, page=TWO_SCENE_PAGE.replace("two</p>", "two and a half</p>"))
-    after = (
-        section_digest(edited, one, "url", 10.0, ()),
-        section_digest(edited, two, "url", 10.0, ()),
-    )
-    assert before[0] == after[0]
-    assert before[1] != after[1]
+    assert moved(before[0], made_from(edited, 1)) == ()
+    assert moved(before[1], made_from(edited, 2)) == (part_key(Part.SCENE),)
+
+
+def test_editing_the_part_every_scene_shares_moves_every_section_of_the_page(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path)
+    before = made_from(inputs, 1), made_from(inputs, 2)
+    edited = a_project(tmp_path, page=TWO_SCENE_PAGE.replace("<body>", "<body><style>p{}</style>"))
+    shared = (part_key(Part.PAGE, "deck/index.html"),)
+    assert (moved(before[0], made_from(edited, 1)), moved(before[1], made_from(edited, 2))) == (shared, shared)
+    assert said(shared) == "the part of deck/index.html every scene shares"
 
 
 def test_the_motion_a_render_asks_for_joins_the_key(tmp_path: Path) -> None:
     plain = a_project(tmp_path)
     reduced = a_project(tmp_path / "other", TOML + "\n[motion]\nreduce = true\n")
-    assert section_digest(plain, section_of(plain, 1), "url", 10.0, ()) != section_digest(
-        reduced, section_of(reduced, 1), "url", 10.0, ()
-    )
+    assert moved(made_from(plain, 1), made_from(reduced, 1)) == (part_key(Part.MOTION),)
 
 
 def test_the_page_policy_a_render_runs_under_joins_the_key(tmp_path: Path) -> None:
     """A recording made trusted is never kept for an untrusted run, whose page may draw without its other origins."""
     trusted = a_project(tmp_path)
     sealed = Inputs.load(tmp_path, environ={}, machine={"record": {"page_policy": "untrusted"}})
-    assert section_digest(trusted, section_of(trusted, 1), "url", 10.0, ()) != section_digest(
-        sealed, section_of(sealed, 1), "url", 10.0, ()
-    )
+    assert moved(made_from(trusted, 1), made_from(sealed, 1)) == (part_key(Part.POLICY),)
 
 
 def test_the_capture_switches_stay_out_of_the_key(tmp_path: Path) -> None:
@@ -173,18 +179,46 @@ def test_the_capture_switches_stay_out_of_the_key(tmp_path: Path) -> None:
     switched = a_project(tmp_path)
     plain = Inputs.load(tmp_path, environ={}, machine={"record": {"capture_switches": []}})
     assert switched.settings.record.capture_switches != plain.settings.record.capture_switches
-    assert section_digest(switched, section_of(switched, 1), "url", 10.0, ()) == section_digest(
-        plain, section_of(plain, 1), "url", 10.0, ()
-    )
+    assert moved(made_from(switched, 1), made_from(plain, 1)) == ()
 
 
 def test_a_swapped_asset_moves_the_key_although_no_markup_changed(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     picture = tmp_path / "deck" / "one.png"
     picture.write_bytes(b"first")
-    before = section_digest(inputs, section_of(inputs, 1), "url", 10.0, ("deck/one.png",))
+    before = made_from(inputs, 1, ("deck/one.png",))
     picture.write_bytes(b"second")
-    assert section_digest(inputs, section_of(inputs, 1), "url", 10.0, ("deck/one.png",)) != before
+    assert said(moved(before, made_from(inputs, 1, ("deck/one.png",)))) == "the file deck/one.png"
+
+
+def test_the_order_a_page_asked_for_its_files_in_is_not_part_of_the_key(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path)
+    for name in ("a.png", "b.png"):
+        (tmp_path / "deck" / name).write_bytes(name.encode())
+    assert made_from(inputs, 1, ("deck/a.png", "deck/b.png")) == made_from(inputs, 1, ("deck/b.png", "deck/a.png"))
+
+
+def test_a_newer_engine_records_again_what_an_older_one_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recording carries the recorder, the probe and the contract that made it, so an upgrade moves the key."""
+    inputs = a_project(tmp_path)
+    before = made_from(inputs, 1)
+    monkeypatch.setattr(stored, "ENGINE_VERSION", "999.0.0")
+    assert moved(before, made_from(inputs, 1)) == (part_key(Part.ENGINE),)
+
+
+def test_a_line_names_what_a_change_caused_and_not_what_followed_from_it() -> None:
+    """New words are timed again, so their times, the cues and the length move too, and only the words are named."""
+    before = {"text:2.1": "a", "words:2.1": "a", "cues": "a", "length": "a", "scene": "a"}
+    after = {"text:2.1": "b", "words:2.1": "b", "cues": "b", "length": "b", "scene": "a"}
+    assert said(moved(before, after)) == "the words of turn 2.1"
+    retimed = {**before, "words:2.1": "b", "cues": "b"}
+    assert said(moved(before, retimed)) == "the word times of turn 2.1 and its cue times"
+
+
+def test_a_turn_added_to_a_section_is_named_as_moved() -> None:
+    assert said(moved({"text:2.1": "a"}, {"text:2.1": "a", "text:2.2": "b"})) == "the words of turn 2.2"
 
 
 def test_a_job_with_no_recording_on_disk_has_not_been_made(tmp_path: Path) -> None:
@@ -199,7 +233,7 @@ def test_a_log_with_no_checks_in_it_is_a_recording_that_never_finished(tmp_path:
     job = plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0)
     job.out.parent.mkdir(parents=True, exist_ok=True)
     job.out.write_bytes(b"mp4")
-    RecordingLog(section=1, digest=job.digest, recording=a_recording(requested_seconds=10.0)).write(job.log_path)
+    RecordingLog(section=1, made_from=job.made_from, recording=a_recording(requested_seconds=10.0)).write(job.log_path)
     assert not plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0).unchanged
 
 

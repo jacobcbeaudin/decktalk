@@ -28,8 +28,11 @@ from decktalk.cli.options import (
     ReplaceVoiced,
     Sections,
     Skip,
+    Takes,
+    Turns,
     one_section,
     sections_of,
+    turns_of,
 )
 from decktalk.pipeline import Stage
 from decktalk.project import Project
@@ -121,6 +124,8 @@ def narrate(
     section: Sections = None,
     force: Force = False,
     replace_voiced: ReplaceVoiced = False,
+    turn: Turns = None,
+    take: Takes = None,
     set_: Overrides = None,
 ) -> NarrateResult:
     """Voice each section of script.md and time every word.
@@ -132,7 +137,10 @@ def narrate(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spending = session.spends(project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced)
+    turns, takes = turns_of(turn), tuple(take or ())
+    spending = session.spends(
+        project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced, turns=turns, takes=takes
+    )
     with session.watching(project.events):
         return project.narrate(
             only=only,
@@ -140,6 +148,8 @@ def narrate(
             max_cost=session.max_cost,
             force=force,
             replace_voiced=spending.replace_voiced,
+            turns=turns,
+            takes=takes,
             cancel=session.cancel,
         )
 

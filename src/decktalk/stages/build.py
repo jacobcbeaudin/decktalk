@@ -114,6 +114,9 @@ def build(
             "only": only,
             "force": force,
             "replace_voiced": replace_voiced,
+            # A build voices what its sections need, so it never names a turn to voice again.
+            "turns": (),
+            "takes": (),
             "replace_score": replace_score,
             "score": score,
             "loudness": loudness,
@@ -466,18 +469,21 @@ def price(
     only: Sequence[int] | None = None,
     replace_voiced: bool = False,
     replace_score: bool = False,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
 ) -> Cost:
     """What a run of these stages that may spend would buy, or the price of nothing at the voice's rate when none
     of them buys.
 
     Each stage that buys is priced from its plan the way it prices itself, sending nothing, and the
     prices are added by `total`. So the price a caller asks about before a run, the ceiling the run
-    is held to and the cost its result reports are one sum of the same stages.
+    is held to and the cost its result reports are one sum of the same stages. `turns` and `takes`
+    are the turns a `narrate` run makes again, which only that stage reads.
     """
     spends: list[Cost] = []
     spoken = _share(inputs, Stage.NARRATE, only)
     if Stage.NARRATE in stages and (spoken is None or spoken):
-        spends.append(narrate.price(inputs, only=spoken, replace_voiced=replace_voiced))
+        spends.append(narrate.price(inputs, only=spoken, replace_voiced=replace_voiced, turns=turns, takes=takes))
     if Stage.SCORE in stages:
         spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
     return total(spends) if spends else cost_of(inputs)

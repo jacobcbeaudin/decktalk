@@ -197,16 +197,18 @@ is bought.
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--no-spend`, `--spend`, `--max-cost N` |
+| `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--turn N.T`, `--take DIGEST`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk cue` | Turn each cue phrase into a second on its section clock. | `--section N` |
 | `decktalk record` | Record each page section in headless Chromium. | `--section N`, `--force` |
 | `decktalk score` | Generate the music, the ambience bed and the effects. | `--section N`, `--replace-score`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk assemble` | Cut, mix and encode the sections into one mp4. | `--section N`, `--skip STAGE` |
 | `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
 
-`--replace-voiced` and `--replace-score` are the two flags here that buy what you already own. With
-`--spend`, `--replace-voiced` voices each named section again and `--replace-score` buys each bought
-sound again. With `--no-spend`, `--replace-voiced` plays a placeholder in place of the voiced take
+`--replace-voiced` and `--replace-score` are the two flags here that buy what you already own, and
+`--turn` and `--take` buy one turn's take again. With `--spend`, `--replace-voiced` voices each named
+section again, `--turn 4.2` voices section 4's second turn again and nothing else, and
+`--replace-score` buys each bought sound again. A voiced take bought again is set aside in
+`takes/rejected/`, never deleted. With `--no-spend`, `--replace-voiced` plays a placeholder in place of the voiced take
 and `--replace-score` keeps every bought sound. `--force` builds again from nothing and never spends, so it keeps every voiced take and every bought sound. A build that finds nothing
 moved keeps `assemble` and `verify` and reports them as `kept`, and `--force` measures again.
 

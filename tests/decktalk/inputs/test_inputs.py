@@ -15,6 +15,7 @@ from decktalk.artifacts import (
     CueTimes,
     EstimatedWords,
     ProviderWords,
+    Take,
     Takes,
     TimedBy,
     Words,
@@ -30,7 +31,15 @@ from decktalk.results import BillingBasis, CueTime, SectionCues, Word
 from decktalk.speech import VoiceInForce
 from support.paths import SRC
 from support.projects import MINIMAL_TOML, write_project
-from support.takes import a_take, narrated, write_takes
+from support.takes import (
+    TAIL_TAKE_DURATION,
+    TAIL_TAKE_SOUND_END,
+    TAIL_TAKE_SPOKEN,
+    a_take,
+    narrated,
+    tail_take_words,
+    write_takes,
+)
 
 TITLED_CLIP_TOML = """
 [project]
@@ -864,7 +873,7 @@ def an_alignment(inputs: Inputs, *, audio: str = "0123456789abcdef") -> AlignedW
 def test_a_section_timed_by_an_aligner_reads_the_aligned_words_its_row_names(tmp_path):
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
     aligned = an_alignment(inputs)
-    write_takes(inputs, a_take(1, spoken=SPOKEN, timed_by=TimedBy.ALIGNED, alignment=aligned.inputs.key))
+    write_takes(inputs, a_take(1, seconds=2.0, spoken=SPOKEN, timed_by=TimedBy.ALIGNED, alignment=aligned.inputs.key))
     heard = inputs.words(1)
     assert type(heard) is AlignedWords and heard.estimated is False
     assert heard.words == aligned.shifted(0.5)
@@ -907,6 +916,55 @@ def test_an_index_whose_row_names_an_alignment_and_is_not_timed_by_one_is_a_cach
     inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_path.write_text(json.dumps(index), encoding="utf-8")
     assert Takes.previous(inputs.workspace.takes_path) is None
+
+
+def a_tail_take(**fields: object) -> Take:
+    """The row of the real take whose provider ran its last word on into the take's trailing silence."""
+    return a_take(
+        1,
+        seconds=TAIL_TAKE_DURATION,
+        sound_end_seconds=TAIL_TAKE_SOUND_END,
+        spoken=TAIL_TAKE_SPOKEN,
+        **fields,
+    )
+
+
+def test_a_provider_take_last_word_ends_where_its_sound_ends(tmp_path):
+    """The provider gave "was" to the end of the file, 0.565 s past the take's sound, which the join cuts away."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    said = tail_take_words()
+    narrated(inputs, a_tail_take(), words={1: said.words})
+    heard = inputs.words(1)
+    assert type(heard) is ProviderWords
+    assert heard.words[-1] == Word(word="was", start=round(4.063 + 0.5, 3), end=round(TAIL_TAKE_SOUND_END + 0.5, 3))
+    assert heard.words[:-1] == said.shifted(0.5)[:-1]
+    (turn,) = inputs.turn_words(1)
+    assert turn.words.words == heard.words
+
+
+def test_an_aligned_take_last_word_ends_where_its_sound_ends(tmp_path):
+    """An aligner's words are held to the same sound end, because the join cuts every take there."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    said = tail_take_words()
+    keyed = AlignmentInputs(
+        audio="a" * 16, words=spoken_words(TAIL_TAKE_SPOKEN), aligner="a", revision="1", model_digest="m"
+    )
+    aligned = AlignedWords(words=said.words, inputs=keyed, generation=1)
+    inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
+    aligned.write(inputs.workspace.aligned_words(keyed.key))
+    write_takes(inputs, a_tail_take(timed_by=TimedBy.ALIGNED, alignment=keyed.key))
+    heard = inputs.words(1)
+    assert type(heard) is AlignedWords
+    assert heard.words[-1].end == round(TAIL_TAKE_SOUND_END + 0.5, 3)
+
+
+def test_a_word_that_starts_past_the_sound_end_is_heard_as_none_at_the_sound_end(tmp_path):
+    """A word the join cuts away entirely keeps its place in the order and no length."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    words = (Word(word="hello", start=0.0, end=0.4), Word(word="there", start=0.9, end=1.0))
+    narrated(inputs, a_take(1, seconds=1.0, sound_end_seconds=0.6), words={1: words})
+    heard = inputs.words(1)
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9), Word(word="there", start=1.1, end=1.1))
 
 
 TAKE_WORDS_READERS = {

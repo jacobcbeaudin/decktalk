@@ -110,7 +110,7 @@ def write_log(
     """The log one section's recording left, carrying what its page said and what the recorder judged."""
     RecordingLog(
         section=section,
-        digest="abc",
+        made_from={},
         recording=a_recording(requested_seconds=requested_seconds, report=report or PageReport()),
         findings=tuple(findings),
     ).write(inputs.workspace.recording_log(f"{section:02d}"))

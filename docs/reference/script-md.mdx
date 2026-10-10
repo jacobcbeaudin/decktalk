@@ -207,7 +207,8 @@ ffmpeg places both when it joins the takes into one narration track. The speech 
 receives them and no take file holds them, which is what lets one take serve whatever section number
 it ends up under. `narrate` measures where the sound of a take ends from the take's own bytes, puts
 the lead before it, cuts it at that sound end and places exactly the tail after it, so a breath or a
-pause the voice left after its last word never plays.
+pause the voice left after its last word never plays. The take's words are cut at the same place, so a
+last word its voice ran on into that silence ends where the sound does.
 
 Because placement reads the take and that section's own two keys and nothing else, a section lands
 the same way whether this run voiced its take or found it cached, and an edit to one section never

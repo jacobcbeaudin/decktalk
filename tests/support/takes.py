@@ -20,9 +20,31 @@ from decktalk.artifacts import (
 from decktalk.artifacts.takes import PLACEHOLDER_DIGITS, PLACEHOLDER_PREFIX
 from decktalk.inputs import Inputs
 from decktalk.results import Word
+from support.paths import DATA
 
 TAKE_SUFFIX = ".mp3"
 """The suffix ElevenLabs's default format, mp3_44100_128, names a take with, which every take here is under."""
+
+
+TAIL_TAKE_SOUND_END = 4.404
+"""Where the sound of the take `TAIL_TAKE_WORDS` came with ends, as narrate measured it from the take's own bytes."""
+
+TAIL_TAKE_DURATION = 4.969
+"""How long the audio file of that take runs, which is where its provider ended its last word."""
+
+TAIL_TAKE_SPOKEN = "Only the line that changed gets voiced again. Everything else is kept as it was."
+"""The turn that take reads."""
+
+
+def tail_take_words() -> ProviderWords:
+    """The words a real provider sent back with one take, whose last word runs on into the take's trailing silence.
+
+    They are the follows film's section 5, turn 4, as ElevenLabs timed it: "was" starts at 4.063 s and is
+    given to the end of the file, 4.969 s, while the take's sound ends at 4.404 s.
+    """
+    found = ProviderWords.read(DATA / "words_past_sound_end.json")
+    assert found is not None
+    return found
 
 
 def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: object) -> Take:

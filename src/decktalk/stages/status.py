@@ -68,8 +68,8 @@ from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Stage
 from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, TurnStatus, UnplayedTakes, VoiceStatus
 from decktalk.stages.kept import BUILT, assembled, read_kept, verify_digest
-from decktalk.stages.narrate import TakeStates, take_states
-from decktalk.stages.record import stale_recording
+from decktalk.stages.narrate import SectionTakeState, TakeStates, take_states
+from decktalk.stages.record import TurnText, stale_recording
 
 log = logging.getLogger(__name__)
 
@@ -189,14 +189,21 @@ def section_rows(
                 voices=tuple(dict.fromkeys(one.voice.name for one in state.turns)) if state is not None else (),
                 recorded=recorded,
                 assembled=inputs.workspace.section_video(section.key).is_file(),
-                recording_stale=_stale(inputs, run, section, recorded=recorded, said=section.number in refused),
+                recording_stale=_stale(inputs, run, section, state, recorded=recorded, said=section.number in refused),
             )
         )
     return tuple(rows)
 
 
-def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: bool = False) -> bool:
-    """Whether this section's recording no longer matches the project, with the reason as a line.
+def _stale(
+    inputs: Inputs, run: Run, section: Section, state: SectionTakeState | None, *, recorded: bool, said: bool = False
+) -> bool:
+    """Whether the next build records this section again, with the parts that moved as one line.
+
+    The turns are judged as the script has them, which is what `state` read, because the build
+    narrates before it records: a turn whose words were edited since its take was made is named now,
+    and not only after narrate has made its new take. A section with no take state is judged against
+    its takes.
 
     A section whose words do not read, the provider's or the ones DeckTalk estimated for a placeholder,
     cannot be judged, so the refusal is one error line, with its own sentence and hint, and the row
@@ -205,8 +212,13 @@ def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: 
     """
     if not recorded or not isinstance(section, PageSection):
         return False
+    script = (
+        [TurnText(one.turn.number, one.turn.spoken, one.voice.name) for one in state.turns]
+        if state is not None
+        else None
+    )
     try:
-        why = stale_recording(inputs, section)
+        why = stale_recording(inputs, section, script)
     except (UnreadablePaidRecord, UnreadableCache) as unread:
         if not said:
             hint = f" {unread.hint}" if unread.hint else ""

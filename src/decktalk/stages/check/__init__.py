@@ -32,6 +32,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page
 
+from decktalk.artifacts import TurnKey
 from decktalk.errors import InputError
 from decktalk.files import current_text
 from decktalk.findings import Code, Finding, Location, ProjectPath, Severity, judge
@@ -58,7 +59,7 @@ from decktalk.stages.check.script import pause_findings, script_findings, unused
 from decktalk.stages.cost import Buy, cost_of
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
-from decktalk.stages.narrate import TakeStates, take_states
+from decktalk.stages.narrate import TakeStates, take_states, turns_to_retake
 from decktalk.stages.narrate.plan import dropped_pauses, no_voice_note
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, section_voices, write_page
 from decktalk.stages.verify import opted_out
@@ -101,8 +102,17 @@ def check(
     only: Sequence[int] | None = None,
     pages: bool = True,
     frames: bool = True,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
 ) -> CheckResult:
-    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy."""
+    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy.
+
+    `turns` and `takes` name turns to make again, as `narrate` reads them: the check then judges their
+    sections and prices those turns alone, which is what that `narrate` would buy.
+    """
+    retake = turns_to_retake(inputs, only, replace_voiced=False, turns=turns, takes=takes)
+    if retake:
+        only = sorted({key.section for key in retake})
     wanted = selects(only)
     script = inputs.relative(inputs.script_path)
     parsed = _script_sections(inputs, run)
@@ -116,7 +126,7 @@ def check(
     if any(found.severity is Severity.ERROR for found in voiced):
         run.note(UNREAD_VOICES)
         spoken = []
-    states = _states(inputs, run, spoken)
+    states = _states(inputs, run, spoken, retake)
     cost = states.plan(spend=True).cost
     resolved, times = _resolve(inputs, run, states, wanted)
     sections = [one for one in inputs.document.drawn_sections if wanted(one.number)]
@@ -180,8 +190,11 @@ def _voice_findings(inputs: Inputs, markdown: str, sections: Sequence[ScriptSect
     return found + unused_voices(sections, written, inputs.default_voice, script=script, project=project, text=text)
 
 
-def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> TakeStates:
-    """The take state of each spoken section, every timed pause a voice would drop, and each voice with no id."""
+def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection], retake: Sequence[TurnKey]) -> TakeStates:
+    """The take state of each spoken section, every timed pause a voice would drop, and each voice with no id.
+
+    `retake` is the turns the priced run makes again, which its plan voices alone.
+    """
     if spoken:
         script = inputs.relative(inputs.script_path)
         for found in pause_findings(dropped_pauses(inputs, list(spoken)), script=script):
@@ -195,7 +208,7 @@ def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> TakeSt
             run.note(_reads(inputs, voice, turns))
             if not voice.named:
                 run.note(no_voice_note(voice))
-    return take_states(inputs, spoken)
+    return take_states(inputs, spoken, retake=retake)
 
 
 def _reads(inputs: Inputs, voice: VoiceInForce, turns: Sequence[Turn]) -> str:

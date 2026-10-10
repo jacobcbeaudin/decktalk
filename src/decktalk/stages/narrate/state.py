@@ -19,9 +19,20 @@ from __future__ import annotations
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from decktalk.artifacts import EstimatedWords, ProviderWords, Take, TurnKey, Words, on_section_clock
+from decktalk.artifacts import (
+    EstimatedWords,
+    ProviderWords,
+    Take,
+    Takes,
+    TurnKey,
+    UnreadableCache,
+    UnreadablePaidRecord,
+    Words,
+    on_section_clock,
+)
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
+from decktalk.inputs.paths import at
 from decktalk.inputs.script import ScriptSection, Turn, estimated_words, spoken_words
 from decktalk.inputs.take_places import TakeFiles
 from decktalk.results import Cost, CostState, TakeOutcome, TakeState, counted
@@ -68,7 +79,7 @@ def without_a_voice(voice: VoiceInForce) -> str:
 
 
 REPLACED = "this run was told to replace its voiced take"
-"""Why a section's voiced take is made again or stood in for, held or damaged."""
+"""Why a turn's voiced take is made again or stood in for, held or damaged."""
 
 
 WORST_FIRST = (TakeState.MISSING, TakeState.PLACEHOLDER, TakeState.STALE, TakeState.UNCHECKED, TakeState.VOICED)
@@ -143,8 +154,8 @@ class TakePlan:
     """The take this turn plays after the run: the voiced digest, the matched row's digest for a kept
     UNCHECKED turn, the placeholder's, or None for a turn a voiced run would send with no voice id."""
     reason: str
-    """`SHARED` on a turn kept for a take an earlier turn's VOICED plan sends, `REPLACED` on a held voiced
-    take under `replace_voiced`, else the take state's reason."""
+    """`SHARED` on a turn kept for a take another turn's VOICED plan sends, `REPLACED` on a held voiced
+    take under `replace_voiced` or a voiced turn named to be made again, else the take state's reason."""
     request: SpeechRequest | None
     """What a voiced run sends, carrying the selected turns either side for prosody, and None unless VOICED."""
     buy: Buy | None = None
@@ -179,10 +190,21 @@ class _Reading:
     """One read of the take index, the script and the settings, with `TakePlaces.find` asked once per digest."""
 
     def __init__(
-        self, inputs: Inputs, *, spoken: Sequence[ScriptSection], rows: Mapping[TurnKey, Take], replace_voiced: bool
+        self,
+        inputs: Inputs,
+        *,
+        spoken: Sequence[ScriptSection],
+        rows: Mapping[TurnKey, Take],
+        replace_voiced: bool,
+        retake: Collection[TurnKey] = (),
+        reread: Collection[int] = (),
     ) -> None:
         self.inputs = inputs
         self.replace_voiced = replace_voiced
+        self.retake = frozenset(retake)
+        """The turns this run was told to make again, whatever the other turns of their sections hold."""
+        self.reread = frozenset(reread)
+        """The sections this run reads again without being told to, which it never voices or replaces."""
         self.spoken = tuple(spoken)
         self.rows = dict(rows)
         self.matched: dict[TurnKey, str] = {}
@@ -197,11 +219,19 @@ class _Reading:
         """How many of the index's voiced takes no place holds, when the takes directory holds none of them."""
 
     @classmethod
-    def of(cls, inputs: Inputs, *, replace_voiced: bool) -> _Reading:
+    def of(
+        cls, inputs: Inputs, *, replace_voiced: bool, retake: Collection[TurnKey] = (), reread: Collection[int] = ()
+    ) -> _Reading:
         """The script's spoken sections and the take index, each read once."""
         index = inputs.takes()
         rows = {row.turn_key: row for row in index.sections} if index is not None else {}
-        return cls(inputs, spoken=inputs.spoken(), rows=rows, replace_voiced=replace_voiced)
+        return cls(
+            inputs, spoken=inputs.spoken(), rows=rows, replace_voiced=replace_voiced, retake=retake, reread=reread
+        )
+
+    def replaces(self, key: TurnKey) -> bool:
+        """Whether this run was told to replace this turn's voiced take, by its section or by its own name."""
+        return key.section not in self.reread and (self.replace_voiced or key in self.retake)
 
     def files(self, digest: str) -> TakeFiles:
         """Where this take's files are, found once per reading."""
@@ -259,7 +289,7 @@ class _Reading:
             return TakeState.VOICED, HELD if here is not None and here.digest == digest else UNINDEXED
         refused = self.files(digest).refusal(key.section)
         if refused is not None:
-            if self.replace_voiced:
+            if self.replaces(key):
                 return TakeState.MISSING, REPLACED
             raise refused
         older = [
@@ -289,7 +319,7 @@ class _Reading:
             return TakeState.UNCHECKED, without_a_voice(voice)
         for row in same:
             refused = self.files(row.digest).refusal(key.section)
-            if refused is not None and self.replace_voiced:
+            if refused is not None and self.replaces(key):
                 return TakeState.MISSING, REPLACED
             if refused is not None:
                 raise _unnamed_refusal(refused, voice)
@@ -384,13 +414,14 @@ class TakeStates(Mapping[int, SectionTakeState]):
         return on_section_clock(kind(words=tuple(joined)), 0.0)
 
     def _turn_words(self, number: int, one: TurnTakeState) -> Words:
-        """One turn's planned words on its take's own clock."""
+        """One turn's planned words on its take's own clock, a held take's cut at its sound end as the join cuts it."""
         key = TurnKey(number, one.turn.number)
         digest = one.digest if one.state is TakeState.VOICED else self._reading.matched.get(key)
         if digest is not None:
             found = self._inputs.take_words(digest)
             if isinstance(found, ProviderWords):
-                return found if found.timed else self._untimed_words(key, digest, found, one.turn.spoken)
+                said = found if found.timed else self._untimed_words(key, digest, found, one.turn.spoken)
+                return said.cut_at(self._sound_end(key, digest))
         length = one.turn.placeholder_seconds(self._inputs.settings.narration)
         return EstimatedWords(words=tuple(one.turn.estimated_words(length)))
 
@@ -412,11 +443,14 @@ class TakeStates(Mapping[int, SectionTakeState]):
             aligned = kept_alignment(self._inputs, said.audio.blake3, spoken_words(heard), prefer=prefer)
             if aligned is not None:
                 return aligned
-        if named is not None and named.sound_end_seconds is not None:
-            end = named.sound_end_seconds
-        else:
-            end = sound_end_of(self._inputs, self._inputs.take_places.find(digest).audio)
-        return EstimatedWords(words=tuple(estimated_words(heard, end)))
+        return EstimatedWords(words=tuple(estimated_words(heard, self._sound_end(key, digest))))
+
+    def _sound_end(self, key: TurnKey, digest: str) -> float:
+        """Where a held take's sound ends: as its row says when the row names the take, else measured from its bytes."""
+        row = self._reading.rows.get(key)
+        if row is not None and row.digest == digest and row.sound_end_seconds is not None:
+            return row.sound_end_seconds
+        return sound_end_of(self._inputs, self._inputs.take_places.find(digest).audio)
 
     def plan(self, *, spend: bool, force: bool = False) -> NarratePlan:
         """What one narrate run does with each turn of each selected section, sending nothing and writing nothing.
@@ -426,52 +460,64 @@ class TakeStates(Mapping[int, SectionTakeState]):
         and plays a placeholder otherwise. Under `replace_voiced` it plays a placeholder with `REPLACED`
         for every selected voiced take, held or damaged. Two turns share a take when their digest is
         equal, or, with no id on their voice, when their voice and their canonical text are, and the
-        second is kept for the first, so it is bought and priced once. After the selected sections come
-        the turns of unselected ones whose index row names a take this run voices, each KEPT with
-        `SHARED`, so their rows are placed on the new take. `force` makes placeholders again, never
-        touches a voiced take, and is ignored for a turn its voice voices. Whether a turn voices is read
-        from `spend` and its own voice's bill: a free named voice always voices, and a paid one only when
-        the run may spend.
+        second is kept for the first, so it is bought and priced once, and when only the second voices it
+        is the one that sends. After the selected sections come the turns of unselected ones whose index
+        row names a take this run voices, each KEPT with `SHARED`, so their rows are placed on the new
+        take. `force` makes placeholders again, never touches a voiced take, and is ignored for a turn its
+        voice voices. Whether a turn voices is read from `spend` and its own voice's bill: a free named
+        voice always voices, and a paid one only when the run may spend. A run told to make named turns
+        again voices those turns alone, held or not, and every other turn of their sections plays what it
+        holds as a run that voices nothing would. A section read again without being selected is planned
+        as a run that voices nothing would plan it.
         """
         inputs = self._inputs
+        retake, reread = self._reading.retake, self._reading.reread
         selected = [(state.section, one) for state in self._states.values() for one in state.turns]
         voicing = {
-            TurnKey(section.number, one.turn.number)
+            key
             for section, one in selected
-            if spend or (one.voice.free and one.voice.named)
+            if ((key := TurnKey(section.number, one.turn.number)) in retake or not retake)
+            and section.number not in reread
+            and (spend or (one.voice.free and one.voice.named))
         }
         requests = self._requests(selected, voicing)
-        plans: list[TakePlan] = []
+        made = [
+            self._voicing(section, one, requests)
+            if TurnKey(section.number, one.turn.number) in voicing
+            else self._standing_in(section, one, force=force)
+            for section, one in selected
+        ]
+        sameness = [
+            plan.digest or (one.voice.name, canonical_text(one.turn.pieces))
+            for (_section, one), plan in zip(selected, made, strict=True)
+        ]
         first: dict[object, TakePlan] = {}
-        for section, one in selected:
-            key = TurnKey(section.number, one.turn.number)
-            made = (
-                self._voicing(section, one, requests)
-                if key in voicing
-                else self._standing_in(section, one, force=force)
-            )
-            same: object = made.digest or (one.voice.name, canonical_text(one.turn.pieces))
+        for same, plan in zip(sameness, made, strict=True):
             earlier = first.get(same)
-            if earlier is not None:
-                why = SHARED if earlier.outcome is TakeOutcome.VOICED else one.reason
-                plans.append(TakePlan(section, one.turn, one.voice, TakeOutcome.KEPT, earlier.digest, why, None))
+            if earlier is None or (plan.outcome is TakeOutcome.VOICED and earlier.outcome is not TakeOutcome.VOICED):
+                first[same] = plan
+        plans: list[TakePlan] = []
+        for (section, one), same, plan in zip(selected, sameness, made, strict=True):
+            sender = first[same]
+            if sender is plan:
+                plans.append(plan)
                 continue
-            first[same] = made
-            plans.append(made)
+            why = SHARED if sender.outcome is TakeOutcome.VOICED else one.reason
+            plans.append(TakePlan(section, one.turn, one.voice, TakeOutcome.KEPT, sender.digest, why, None))
         plans += self._replaced(plans)
         return NarratePlan(takes=tuple(plans), voiced=bool(voicing), cost=cost_of(inputs, self._buys(plans)))
 
-    def _replacing(self, one: TurnTakeState) -> bool:
+    def _replacing(self, section: ScriptSection, one: TurnTakeState) -> bool:
         """Whether this run was told to replace this turn's held voiced take."""
-        return self._reading.replace_voiced and one.state is TakeState.VOICED
+        return self._reading.replaces(TurnKey(section.number, one.turn.number)) and one.state is TakeState.VOICED
 
     def _voicing(
         self, section: ScriptSection, one: TurnTakeState, requests: Mapping[TurnKey, SpeechRequest]
     ) -> TakePlan:
         """One turn's plan when its voice is called: kept when its voiced take is held, else sent."""
-        if one.state is TakeState.VOICED and not self._replacing(one):
+        if one.state is TakeState.VOICED and not self._replacing(section, one):
             return TakePlan(section, one.turn, one.voice, TakeOutcome.KEPT, one.digest, one.reason, None)
-        reason = REPLACED if self._replacing(one) else one.reason
+        reason = REPLACED if self._replacing(section, one) else one.reason
         key = TurnKey(section.number, one.turn.number)
         buy = Buy(
             characters=len(canonical_text(one.turn.pieces)),
@@ -483,16 +529,20 @@ class TakeStates(Mapping[int, SectionTakeState]):
         return TakePlan(section, one.turn, one.voice, TakeOutcome.VOICED, one.digest, reason, requests[key], buy)
 
     def _standing_in(self, section: ScriptSection, one: TurnTakeState, *, force: bool) -> TakePlan:
-        """One turn's plan when its voice is not called: its held voiced take, else a placeholder."""
+        """One turn's plan when its voice is not called: its held voiced take, else a placeholder.
+
+        A turn named to be made again is replaced only by a run that voices it, so here it keeps its take.
+        """
         key = TurnKey(section.number, one.turn.number)
         matched = self._reading.matched.get(key)
-        if one.state is TakeState.VOICED and not self._replacing(one):
+        replacing = self._reading.replaces(key) and key not in self._reading.retake and one.state is TakeState.VOICED
+        if one.state is TakeState.VOICED and not replacing:
             return TakePlan(section, one.turn, one.voice, TakeOutcome.KEPT, one.digest, one.reason, None)
         if one.state is TakeState.UNCHECKED and matched is not None:
             return TakePlan(section, one.turn, one.voice, TakeOutcome.KEPT, matched, one.reason, None)
         stand_in = self._reading.stand_ins[key]
         kept = self._reading.held(stand_in) and not force
-        reason = REPLACED if self._replacing(one) else one.reason
+        reason = REPLACED if replacing else one.reason
         outcome = TakeOutcome.KEPT if kept else TakeOutcome.PLACEHOLDER
         return TakePlan(section, one.turn, one.voice, outcome, stand_in, reason, None)
 
@@ -555,21 +605,115 @@ class TakeStates(Mapping[int, SectionTakeState]):
 
 
 def take_states(
-    inputs: Inputs, sections: Sequence[ScriptSection] | None = None, *, replace_voiced: bool = False
+    inputs: Inputs,
+    sections: Sequence[ScriptSection] | None = None,
+    *,
+    replace_voiced: bool = False,
+    retake: Collection[TurnKey] = (),
+    reread: Collection[int] = (),
 ) -> TakeStates:
     """The take state of each of these spoken sections, or of every spoken section when None.
 
     An empty selection reads nothing: no script, no index and no take. The voices, their models and
     their providers are read from the settings. A selected voiced take whose every copy is damaged is
-    refused with `TakeFiles.refusal`, unless `replace_voiced`, under which it reads MISSING with the
-    reason `REPLACED`: a run that voices buys it again, and one that does not plays a placeholder.
+    refused with `TakeFiles.refusal`, unless `replace_voiced` or `retake` names its turn, under which it
+    reads MISSING with the reason `REPLACED`: a run that voices buys it again, and one that does not
+    plays a placeholder. `retake` is the turns a run was told to make again, which `retake_turns` reads
+    off the names a caller gave, and a plan of it voices those turns alone. `reread` is the sections
+    among these that a run reads again without having been told to, which it never voices or replaces.
     """
     if sections is not None and not sections:
         return TakeStates(inputs, (), _Reading(inputs, spoken=(), rows={}, replace_voiced=replace_voiced))
-    reading = _Reading.of(inputs, replace_voiced=replace_voiced)
+    reading = _Reading.of(inputs, replace_voiced=replace_voiced, retake=retake, reread=reread)
     wanted = {section.number for section in sections} if sections is not None else None
     chosen = [section for section in reading.spoken if wanted is None or section.number in wanted]
     return TakeStates(inputs, [reading.judge(section) for section in chosen], reading)
+
+
+def retake_turns(inputs: Inputs, turns: Sequence[tuple[int, int]], takes: Sequence[str]) -> tuple[TurnKey, ...]:
+    """The turns a run is told to make again, named by number in `turns` and by the take they play in `takes`.
+
+    A turn is a section's number and the turn's number in that section, counted from one, so a section
+    one voice reads is the one turn `N.1`. A take is named by its digest or by a prefix of it that names
+    exactly one take, which is the take the take index or the current text and voice in force give the
+    turn. Every turn playing that take is named, because turns that share a take share its voicing
+    again. A turn the script does not have, a name no take answers to and a prefix that names several
+    takes are each refused before anything is read further. The turns come back in script order, once
+    each.
+    """
+    spoken = {section.number: section for section in inputs.spoken()}
+    every = [TurnKey(number, turn.number) for number, section in spoken.items() for turn in section.turns]
+    found: list[TurnKey] = []
+    for section, turn in turns:
+        key = TurnKey(section, turn)
+        if key not in every:
+            raise InputError(
+                f"the script has no spoken turn {section}.{turn}, so there is nothing to voice again.",
+                hint=f"The spoken turns are {', '.join(f'{one.section}.{one.turn}' for one in every)}.",
+                location=at(inputs.script_path, inputs.root),
+            )
+        found.append(key)
+    if takes:
+        plays = _plays(inputs, spoken)
+        for name in takes:
+            wanted = name.strip().lower()
+            digests = sorted({digest for named in plays.values() for digest in named if digest.startswith(wanted)})
+            if len(digests) != 1:
+                what = "no take" if not digests else f"{len(digests)} takes ({', '.join(digests)})"
+                raise InputError(
+                    f"{name!r} names {what} a spoken turn plays, so there is nothing to voice again.",
+                    hint="Name one take by its digest, or enough of its start to tell it from the rest, as "
+                    f"{inputs.relative(inputs.workspace.takes_path).as_posix()} names each turn's take, or name the "
+                    "turn with --turn.",
+                    location=at(inputs.script_path, inputs.root),
+                )
+            found += [key for key, named in plays.items() if digests[0] in named]
+    return tuple(sorted(set(found)))
+
+
+def sections_off_their_audio(
+    inputs: Inputs, previous: Takes | None, targets: Sequence[ScriptSection]
+) -> list[ScriptSection]:
+    """The spoken sections this run did not select that hold a voiced take other than the audio their row was
+    measured on.
+
+    A take's digest names its inputs, and a take bought again on request keeps it, so the row's audio
+    print is what says whether its length, its sound end and its words are this take's. A take whose
+    words file does not read is left to the run that keeps it, which refuses it naming its section.
+    """
+    if previous is None:
+        return []
+    spoken = {section.number: section for section in inputs.spoken()}
+    selected = {section.number for section in targets}
+    moved: set[int] = set()
+    for row in previous.sections:
+        if not row.voiced or row.section in selected | moved or row.section not in spoken:
+            continue
+        if not inputs.take_places.find(row.digest).held:
+            continue
+        try:
+            said = inputs.take_words(row.digest)
+        except (UnreadablePaidRecord, UnreadableCache):  # silent: keeping the take refuses it, naming its section
+            continue
+        heard = said.audio.blake3 if isinstance(said, ProviderWords) and said.audio is not None else None
+        if heard != row.audio_blake3:
+            moved.add(row.section)
+    return [spoken[number] for number in sorted(moved)]
+
+
+def _plays(inputs: Inputs, spoken: Mapping[int, ScriptSection]) -> dict[TurnKey, set[str]]:
+    """Every take each spoken turn could be named by: its row's in the take index, and its current voiced one."""
+    index = inputs.takes()
+    plays: dict[TurnKey, set[str]] = {}
+    for row in index.sections if index is not None else ():
+        if row.section in spoken and row.turn <= len(spoken[row.section].turns):
+            plays.setdefault(row.turn_key, set()).add(row.digest)
+    for number, section in spoken.items():
+        for turn in section.turns:
+            voice = inputs.voice_of(turn)
+            if voice.named:
+                plays.setdefault(TurnKey(number, turn.number), set()).add(take_inputs(turn, voice).digest)
+    return plays
 
 
 __all__ = [
@@ -586,6 +730,8 @@ __all__ = [
     "TakePlan",
     "TakeStates",
     "TurnTakeState",
+    "retake_turns",
+    "sections_off_their_audio",
     "take_states",
     "without_a_voice",
 ]

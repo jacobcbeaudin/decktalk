@@ -127,25 +127,44 @@ sentence, so `decktalk check` is the call that prices an edit before you run it.
 
 ## What makes a recording stale
 
-A recording is one page section stepped through Chromium frame by frame, and its key is written into
-its log beside the mp4 as `digest`. It holds everything that decides what those pixels look like:
+A recording is one page section stepped through Chromium frame by frame, and its log beside the mp4
+keeps what it was made from as `made_from`: a list of named parts, each with the digest of what it
+held. Together they are everything that decides what those pixels look like:
 
-- the page URL the recorder opens, which already carries the scene, every cue resolved to its second
-  and every spoken word with its start
-- how long the section runs, which is the take's span plus the section's `record_margin_seconds`
-- the frame width, the frame height and the output frame rate
-- `[record] color_scheme`
-- `motion.reduce` and `motion.scale`, so a reduced render never reuses a full-motion recording
-- the markup of the one scene the section plays
-- the rest of the page file, which every scene of that page shares
+- each turn's words and the name of the voice that reads it, as `text:N.T` and `voice:N.T`
+- each turn's words with their start times, which the page is handed, as `words:N.T`
+- the markup of the one scene the section plays, as `scene`
+- the rest of the page file, which every scene of that page shares, as `page:` and the page
 - the content of every project file the page loaded when it was last recorded, which its log lists
-  under `assets`
+  under `assets`, each as `file:` and its path
+- the scene and the section's own `params`, every cue resolved to its second, and how long the
+  section runs, which is the take's span plus the section's `record_margin_seconds`
+- the frame width, the frame height and the output frame rate, `[record] color_scheme`, the page
+  policy, and `motion.reduce` and `motion.scale`, so a reduced render never reuses a full-motion
+  recording
+- the DeckTalk version, so an upgrade records again what an older engine recorded
 
-The page joins the key in two pieces rather than as one file, and that is what makes the loop cheap
-on a real deck. A page holds every scene of a film, so a digest of the whole file would call all nine
-sections of a nine-scene page stale for one slide's edit. Editing a slide moves the scene piece and
-therefore the sections that play that scene. Editing the head, a style, a script or anything else
-outside a scene moves the shared piece and therefore every section of that page.
+A section none of whose parts moved is kept. A section whose parts moved is recorded again, and
+`status` and `record --section` say which parts moved, in one line per section:
+
+```text
+Section 2: the words of turn 2.1 changed since it was recorded, so it would be recorded again.
+```
+
+A turn is named by its section and its number within the section, so `2.1` is the first turn of
+section 2. The line names what you edited and not what followed from it: new words are timed again,
+so their times, the section's cue times and its length move with them, and those are named only when
+nothing they follow from moved. `status` reads each turn's words and voice from the script, because a
+build narrates before it records, so a sentence you edited is named before narrate has made its new
+take. `record` reads them from the take it plays, so a `record` run before narrate keeps the
+recording, which would come out the same.
+
+The page joins in two pieces rather than as one file, and that is what makes the loop cheap on a real
+deck. A page holds every scene of a film, so a digest of the whole file would call all nine sections
+of a nine-scene page stale for one slide's edit. Editing a slide moves the scene piece and therefore
+the sections that play that scene. Editing the head, a style, a script or anything else outside a
+scene moves the shared piece and therefore every section of that page. A word that appears on the
+slides of two scenes, such as a button both screens show, is an edit to both scenes.
 
 The scene is cut out of the page source as you wrote it and never out of a browser, so `status` and
 `record` can both answer whether a recording still stands without opening Chromium. A page that
@@ -167,7 +186,7 @@ refused over them.
 
 | You changed | Voiced again | Recorded again |
 |---|---|---|
-| A sentence of section N in `script.md` | section N | section N, because its words are in the page URL |
+| A sentence of section N in `script.md` | section N | section N, named by the turn the sentence is in |
 | The heading of section N | nothing | nothing |
 | A cue phrase of section N in `cues.json` | nothing | section N, because the resolved cues are in the page URL |
 | A slide inside the scene section N plays | nothing | every section that plays that scene |
@@ -306,7 +325,7 @@ section again and keeps the others.
 ## Ask for work you were not offered
 
 Three flags redo work. `--force` costs nothing, and the two replace flags buy again what you already
-own.
+own. On `narrate`, `--turn` and `--take` buy one turn again, which is the next section.
 
 `--force` builds again from nothing and never spends. It keeps every voiced take and every sound the
 score bought, and makes again everything that costs nothing. `narrate` remakes the placeholders,
@@ -346,6 +365,44 @@ on purpose. The safe default, in every other case, is to keep every take and eve
 `--max-cost N` refuses before the first call when the most a run can cost is over N dollars, and
 `--spend` approves the price without asking. Neither of them is a way to redo work: they only decide
 what a run is allowed to buy.
+
+## Voice one turn again
+
+A take that reads a word with the wrong stress, or stretches a pause, is bought again one turn at a
+time. `--turn N.T` names turn T of section N, counted from one. A section one voice reads is one turn,
+so its whole text is `N.1`, and a [dialogue](/guides/dialogue) has one turn per voice direction, the
+same numbers `decktalk status` shows in its `turns` rows.
+
+```console
+decktalk narrate --turn 4.2 --spend
+decktalk narrate --turn 1.2 --turn 4.2 --spend
+decktalk narrate --take 3f9a1c --spend
+```
+
+`--take` names a turn by the take it plays: its digest, as
+[`build/narrate/takes.json`](/reference/artifacts) and a `narrate --json` result name it, or as much of
+its start as no other take shares. Both flags repeat. A turn that shares its take with another turn,
+because the two say the same words in the same voice, shares the new take too, and it is bought once.
+
+The run voices exactly the turns it names, even though a take of their text is on disk, and nothing
+else. Every other turn, of those sections and of the rest of the film, keeps the take it plays, and a
+turn of the same section that has no take yet plays a placeholder rather than being bought, so the
+price `--max-cost` holds, the bill a terminal is shown and the price an approval refusal carries
+cover the named turns alone. `decktalk check --turn 4.2` prices the same run without running it.
+`--section` and `--replace-voiced` are refused beside them, because the turns already name their
+sections.
+
+The new take plays under the take's own name, so the take index, `status` and every later stage read
+it as they read the old one. The take it replaces is a paid record, so it is never deleted: it is set
+aside in the takes directory's `rejected/` folder as `<digest>.1.mp3` with its words file
+`<digest>.1.words.json`, then `.2` for the next, and the run says where it went. To play a rejected
+take again, move its pair back over the take as `<digest>.mp3` and `<digest>.words.json`, after
+setting that pair aside the same way if you want to keep it, and run `decktalk narrate`. The take
+store keeps the take it first held, because another project may play it, so it holds the first take
+of that turn and not the new one: commit the takes directory once you keep a new take, because a
+takes directory that lost it is filled from the store with the first.
+
+`--replace-voiced` sets aside every voiced take it replaces the same way.
 
 ## Write with the build running
 

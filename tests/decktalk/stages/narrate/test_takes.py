@@ -42,7 +42,13 @@ from decktalk.stages.narrate.takes import (
 )
 from support.fakes import FakeFfmpeg, FakeVoice
 from support.runs import Watched
-from support.takes import TAKE_SUFFIX, a_take
+from support.takes import (
+    TAIL_TAKE_DURATION,
+    TAIL_TAKE_SOUND_END,
+    TAKE_SUFFIX,
+    a_take,
+    tail_take_words,
+)
 
 from .conftest import DIALOGUE, WITH_A_GUEST, a_paid_take
 
@@ -159,6 +165,25 @@ def test_a_row_says_who_timed_its_words_and_the_model_that_spoke(inputs: Inputs)
     placeholder = placeholder_inputs(inputs, section).digest
     row = take_row(inputs, section, section.turns[0], "Open", placeholder, EstimatedWords(words=SAID), said=None)
     assert (row.voiced, row.timed_by, row.model_digest) == (False, TimedBy.ESTIMATED, None)
+
+
+def test_a_row_ends_its_speech_where_the_take_sound_ends_when_its_last_word_runs_on(
+    inputs: Inputs, fake_ffmpeg: FakeFfmpeg, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real take's provider gave its last word to the end of the file, past the sound the join plays."""
+    fake_ffmpeg.duration_seconds = TAIL_TAKE_DURATION
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: TAIL_TAKE_SOUND_END)
+    said = tail_take_words()
+    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.takes / take_file(VOICED, TAKE_SUFFIX)).write_bytes(b"take")
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    row = take_row(inputs, section, section.turns[0], "Open", VOICED, said, said=said)
+    assert (row.sound_end_seconds, row.speech_end_seconds) == (TAIL_TAKE_SOUND_END, TAIL_TAKE_SOUND_END)
+    keyed = AlignmentInputs(
+        audio="a" * 16, words=tuple(w.word for w in said.words), aligner="x", revision="1", model_digest="m"
+    )
+    moved = retimed(row, AlignedWords(words=said.words, inputs=keyed, generation=1))
+    assert moved.speech_end_seconds == TAIL_TAKE_SOUND_END
 
 
 def test_a_take_with_no_word_times_keeps_the_model_its_voice_served_on_its_row(

@@ -476,6 +476,14 @@ class Code(Enum):
         (Stage.NARRATE.value,),
         Severity.WARNING,
     )
+    TAKE_WORD_CUT = (
+        "TAKE_WORD_CUT",
+        "A take's words place a word after the take's sound ends, where the narration cuts the take, so the word is "
+        "never heard. Only narrate raises it.",
+        RaisedBy.PYTHON,
+        (Stage.NARRATE.value,),
+        Severity.WARNING,
+    )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",

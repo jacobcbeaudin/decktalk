@@ -126,3 +126,14 @@ def test_aligned_words_are_kept_in_the_takes_directory_under_their_key() -> None
     )
     assert workspace.aligned_dir == Path("p/takes/aligned")
     assert workspace.aligned_words("ab-cd") == Path("p/takes/aligned/ab-cd.words.json")
+
+
+def test_rejected_takes_are_kept_in_the_takes_directory() -> None:
+    workspace = Workspace(
+        root=Path("p"),
+        build=Path("p/build"),
+        name="demo",
+        takes=Path("p/takes"),
+        score_dir=Path("p/score"),
+    )
+    assert workspace.rejected_dir == Path("p/takes/rejected")

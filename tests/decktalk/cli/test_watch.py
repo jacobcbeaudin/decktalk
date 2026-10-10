@@ -9,7 +9,16 @@ import pytest
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import Cancelled, ErrorCode, InputError
-from decktalk.results import UNPRICED, BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
+from decktalk.results import (
+    UNPRICED,
+    BuildResult,
+    SectionKind,
+    SectionStatus,
+    ServeResult,
+    StatusResult,
+    TakeState,
+    TurnStatus,
+)
 from decktalk.stages.narrate.state import CHANGED, HELD
 from support.costs import a_cost
 
@@ -130,6 +139,30 @@ def test_a_voice_change_is_announced_with_the_row_s_reason(capsys, tmp_path) -> 
     assert f"because {CHANGED}." in said
 
 
+def test_one_stale_turn_of_a_dialogue_is_named_with_the_command_that_voices_it_alone(capsys, tmp_path) -> None:
+    """A save that moved one turn of a dialogue leaves one take behind, so the hint buys that turn and nothing else."""
+    turns = (
+        TurnStatus(turn=1, voice="narrator", take_state=TakeState.VOICED, take_reason=HELD),
+        TurnStatus(turn=2, voice="guest", take_state=TakeState.STALE, take_reason=CHANGED),
+    )
+    project = Fake(status=_status(stale=True, turns=turns))
+    project.root = tmp_path
+    watch._stale(Session(Globals(), command="build"), project.project())
+    said = capsys.readouterr().err
+    assert f"Turn 2 of section 2, which guest reads, has a stale voiced take, because {CHANGED}." in said
+    assert "decktalk narrate --turn 2.2 --spend" in said
+
+
+def test_two_stale_turns_of_a_dialogue_are_named_by_their_section(capsys, tmp_path) -> None:
+    turns = tuple(
+        TurnStatus(turn=number, voice="narrator", take_state=TakeState.STALE, take_reason=CHANGED) for number in (1, 2)
+    )
+    project = Fake(status=_status(stale=True, turns=turns))
+    project.root = tmp_path
+    watch._stale(Session(Globals(), command="build"), project.project())
+    assert "decktalk narrate --section 2 --spend" in capsys.readouterr().err
+
+
 def test_a_current_take_is_not_announced(capsys, tmp_path) -> None:
     project = Fake(status=_status(stale=False))
     project.root = tmp_path
@@ -142,7 +175,7 @@ def _stop(_seconds: float) -> None:
     raise KeyboardInterrupt
 
 
-def _status(*, stale: bool = False) -> StatusResult:
+def _status(*, stale: bool = False, turns: tuple[TurnStatus, ...] = ()) -> StatusResult:
     """What `status` answers with, with one section whose take is stale when a test asks for one."""
     return StatusResult(
         ok=True,
@@ -158,7 +191,7 @@ def _status(*, stale: bool = False) -> StatusResult:
                 source="deck/index.html",
                 take_state=TakeState.STALE if stale else TakeState.VOICED,
                 take_reason=CHANGED if stale else HELD,
-                turns=(),
+                turns=turns,
                 voices=("narrator",),
                 recorded=True,
                 assembled=True,

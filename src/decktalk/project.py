@@ -84,6 +84,9 @@ NOT_AUTHORED = frozenset({"build", ".git", ".venv", "node_modules", "__pycache__
 SECTION_RANGE = re.compile(r"^(\d+)(?:-(\d+))?$")
 """One item of a section selection, which is a number or two numbers with a dash between them."""
 
+TURN_NAME = re.compile(r"^(\d+)\.(\d+)$")
+"""One turn as a command line names it: its section's number, a dot, and its number in that section."""
+
 
 def open(
     path: str | Path | None = None,
@@ -135,6 +138,25 @@ def section_numbers(selection: str) -> tuple[int, ...]:
                 hint=f"Write the lower number first, as in {last}-{first}.",
             )
         found.extend(range(first, last + 1))
+    return tuple(dict.fromkeys(found))
+
+
+def turn_numbers(selection: str) -> tuple[tuple[int, int], ...]:
+    """The turns a selection such as `4.2` or `1.2,4.2` names, each as its section and its turn, in order and
+    without repeats.
+
+    It sits beside `section_numbers` for the same reason: the library takes pairs of numbers, and the
+    text a command line writes is parsed once, here.
+    """
+    found: list[tuple[int, int]] = []
+    for item in selection.replace(" ", "").split(","):
+        match = TURN_NAME.fullmatch(item)
+        if not match:
+            raise InputError(
+                f"{item!r} does not name a turn.",
+                hint="Write a section number, a dot and the turn's number in that section, such as 4.2.",
+            )
+        found.append((int(match.group(1)), int(match.group(2))))
     return tuple(dict.fromkeys(found))
 
 
@@ -311,6 +333,8 @@ class Project:
         max_cost: float | None = None,
         force: bool = False,
         replace_voiced: bool = False,
+        turns: Sequence[tuple[int, int]] = (),
+        takes: Sequence[str] = (),
         cancel: Cancel | None = None,
     ) -> NarrateResult:
         """Speak each section of the script and time every word in it.
@@ -324,9 +348,13 @@ class Project:
         that says to start it. `max_cost` is a ceiling in US dollars, checked before the first paid
         request. `force` makes each placeholder again and never buys: every voiced take on disk is kept,
         and every take whose voice sent no word times is checked against the aligner again.
-        `replace_voiced` is the one way a voiced take is made again. A run that may call the voice makes
-        each targeted take again, and one that may not plays a placeholder in its place and keeps the
-        voiced take on disk.
+        `replace_voiced` makes every turn of the targeted sections again. A run that may call the voice
+        makes each targeted take again, and one that may not plays a placeholder in its place and keeps
+        the voiced take on disk. `turns` makes exactly the named turns again, each a section and a turn
+        number such as `(4, 2)`, and `takes` names a turn by the take it plays, by its digest or a prefix
+        of it that names one take. A run given either voices those turns and nothing else, keeps every
+        other turn's take, and takes the place of `only`. Each voiced take a run makes again is set
+        aside in the takes directory's `rejected/` folder, never deleted.
 
         Raises `ApprovalRequired` when the run would spend over `max_cost`, and `ProviderError` when
         a provider that bills fails, or when a free provider answers and fails. Raises `Cancelled`
@@ -334,7 +362,8 @@ class Project:
         `NarrateResult` of the takes made so far, and what they cost, as its `result`.
         """
         return self._stage(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
-                          only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
+                          only=only, force=force, replace_voiced=replace_voiced, turns=tuple(turns),
+                          takes=tuple(takes))  # fmt: skip
 
     def cue(
         self,
@@ -447,12 +476,14 @@ class Project:
         only: Sequence[int] | None = None,
         replace_voiced: bool = False,
         replace_score: bool = False,
+        turns: Sequence[tuple[int, int]] = (),
+        takes: Sequence[str] = (),
     ) -> Cost:
         """What a run of these stages that may spend would buy, or, when none of them buys, the price of nothing at
         the voice's rate, so a reader always finds a rate.
 
         `stages` defaults to the whole pipeline, and an empty `stages` prices nothing. The options mean
-        what they mean to `build`. It is
+        what they mean to `build`, and `turns` and `takes` what they mean to `narrate`. It is
         the sum `build` holds `max_cost` against and reports, worked out from each stage's plan alone:
         no run is opened, no lock is taken, no voice is built and nothing is sent, so a caller prices a
         run before it asks anybody to approve it. Raises `InputError` when a stage that buys cannot be
@@ -462,7 +493,8 @@ class Project:
 
         only = self.select(only)
         return build.price(self._inputs, tuple(stages if stages is not None else Stage), only=only,
-                           replace_voiced=replace_voiced, replace_score=replace_score)  # fmt: skip
+                           replace_voiced=replace_voiced, replace_score=replace_score, turns=tuple(turns),
+                           takes=tuple(takes))  # fmt: skip
 
     # ---- the five that report or cut, and apply ---------------------------------------------
 
@@ -478,6 +510,8 @@ class Project:
         only: Sequence[int] | None = None,
         pages: bool = True,
         frames: bool = True,
+        turns: Sequence[tuple[int, int]] = (),
+        takes: Sequence[str] = (),
         cancel: Cancel | None = None,
     ) -> CheckResult:
         """Judge the script, the cue file and the pages before a build, and price the narration it would buy.
@@ -485,7 +519,8 @@ class Project:
         `pages` set to false judges the written files with no browser at all and says which
         judgements it could not reach, so a new deck gets its first cue rows without a download and
         a hook that has no browser can still run. `frames` set to false keeps the browser and drops
-        the freeze comparison.
+        the freeze comparison. `turns` and `takes` price the narration as `narrate` given them would buy
+        it, which is those turns alone, and judge their sections.
 
         A check that opens pages freezes frames into the build directory and draws the storyboard
         over them, so it holds the build lock for as long as a stage that produces would. A check
@@ -494,7 +529,7 @@ class Project:
         from decktalk.stages.check import check  # noqa: PLC0415
 
         return self._call(check, CheckResult, cancel=cancel, writes=pages, paths=tuple(paths), only=only,
-                          pages=pages, frames=frames)  # fmt: skip
+                          pages=pages, frames=frames, turns=tuple(turns), takes=tuple(takes))  # fmt: skip
 
     def words(self, *, only: Sequence[int] | None = None, cancel: Cancel | None = None) -> WordsResult:
         """Every spoken word with its start and its end, which is how a cue phrase is written."""
@@ -712,4 +747,4 @@ def _read_owner(note: Path) -> tuple[int, str] | None:
         return None
 
 
-__all__ = ["Origin", "Project", "open", "section_numbers"]
+__all__ = ["Origin", "Project", "open", "section_numbers", "turn_numbers"]

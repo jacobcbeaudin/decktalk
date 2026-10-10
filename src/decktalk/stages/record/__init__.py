@@ -7,7 +7,7 @@ time, judges the frames and what the page reported, and writes all of that to
 second zero of its section, so there is no start to find. The measurement belongs to the recording
 beside it, and a long run can be read while it runs.
 
-    capture.py   the page URL, what a recording is keyed on, and the page cut into its scenes
+    capture.py   the page URL, what a recording is made from, and the page cut into its scenes
     render.py    a section whose picture a command draws, which is the second source of a picture
     checks.py    the frames, the page's own codes and the origins it reached for
     pool.py      how many sections record at once, on the pool in `decktalk.stages.pool`
@@ -17,10 +17,12 @@ recording is one browser and one encode and the sections of a film share nothing
 The rows, the progress lines and the result come back in section order whatever order the workers
 finish in.
 
-A section whose scene, the page around it, its loaded assets, its words, its cues, its length, the
-frame, the colour scheme, the page policy and the motion it renders with have not moved is kept rather
-than recorded again, because the run would produce the same pixels. The key is cut per scene, so an edit
-to one slide records the sections that play that scene and leaves the rest of the page's sections alone.
+A section none of whose parts has moved is kept rather than recorded again, because the run would
+produce the same pixels. The parts are its turns' text, voice and word times, the markup of its own
+scene, the part of the page every scene shares, its loaded assets, its cues, its length, the frame,
+the colour scheme, the page policy, the motion it renders with and the engine. They are cut per scene
+and per turn, so an edit to one slide or one turn records the sections it touches, leaves the rest of
+the page's sections alone, and is named by the parts that moved.
 A section named by `--section` is always recorded, which is how an author asks for another take of a
 page that has not changed.
 
@@ -36,7 +38,6 @@ import logging
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
-from pathlib import Path
 
 from decktalk.artifacts import RecordingChecks, RecordingLog, UnreadableCache, UnreadablePaidRecord
 from decktalk.errors import InputError
@@ -56,8 +57,9 @@ from decktalk.stages.pool import Halt, Pool
 from decktalk.stages.record import render
 from decktalk.stages.record.capture import (
     Job,
+    TurnText,
     plan_job,
-    section_digest,
+    said,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import automatic
@@ -77,18 +79,15 @@ class LogSink:
     """
 
     inputs: Inputs
-    section: PageSection
-    url: str
-    seconds: float
-    path: Path
+    job: Job
 
     def clear(self) -> None:
         """Delete the log of the recording that is about to be replaced, before anything is captured."""
-        self.path.unlink(missing_ok=True)
+        self.job.log_path.unlink(missing_ok=True)
 
     def write(self, recording: Recording) -> None:
         """Write what the recorder knows about the video now on disk, before anything measures it."""
-        self.log(recording).write(self.path)
+        self.log(recording).write(self.job.log_path)
 
     def log(
         self,
@@ -99,42 +98,44 @@ class LogSink:
     ) -> RecordingLog:
         """The log of one recording, with whatever the stage has measured of it so far.
 
-        The digest is taken again over what the page really loaded, because the page may have asked
-        for a file the last run never saw and a key that did not count it would call the section
-        unchanged on the next run.
+        The parts are taken again over what the page really loaded, which the plan's parts may not
+        count, and are the parts the plan took for a section a command draws.
         """
         return RecordingLog(
-            section=self.section.number,
-            digest=section_digest(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
+            section=self.job.section.number,
+            made_from=self.job.made_from_now(self.inputs, list(recording.assets)),
             recording=recording,
             findings=findings,
             checks=checks,
         )
 
 
-def stale_recording(inputs: Inputs, section: PageSection) -> str | None:
+def stale_recording(inputs: Inputs, section: PageSection, script: Sequence[TurnText] | None = None) -> str | None:
     """Why the recording on disk for this section no longer matches the project, or None when it does.
 
     This is the one rule that decides whether a recording still stands, so what `record` skips and
     what `status` calls stale are the same question answered once, and neither compares file times.
+    The reason names the parts that moved, such as the words of one turn or the markup of the
+    section's own scene, and never a list of everything that could have. `script` gives the turns'
+    text and voice as the script has them, which `status` passes so a turn edited since its take was
+    made is named before narrate has run. Without it the turns are their takes, which is what a
+    `record` run plays.
     """
     takes = inputs.takes()
     span = takes.span_seconds(section.number) if takes is not None else 0.0
     if not span:
         return f"section {section.number} has no narration span yet"
     cue_times = inputs.cue_times()
-    job = plan_job(inputs, section, cue_times, span + section.record_margin_seconds)
+    job = plan_job(inputs, section, cue_times, span + section.record_margin_seconds, script)
     if job.unchanged:
         return None
     if not job.out.exists():
         return f"section {section.number} has no recording"
-    if job.previous is None or not job.previous.digest:
-        return f"section {section.number} was recorded before this project could tell what it was recorded from"
-    return (
-        f"section {section.number}: its scene, the page around it, its assets, its words, its cues, its length, "
-        "the frame size, the colour scheme, the page policy or the motion it renders with changed since it was "
-        "recorded"
-    )
+    if job.previous is None:
+        return f"section {section.number} has no log of what it was recorded from"
+    if job.previous.checks is None:
+        return f"section {section.number} was stopped before its recording was measured"
+    return f"section {section.number}: {said(job.moved)} changed since it was recorded"
 
 
 def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
@@ -281,7 +282,7 @@ def recorded(
 
     `check` raises when the section should stop, which the recorder asks before every frame.
     """
-    sink = LogSink(inputs, job.section, job.url, job.seconds, job.log_path)
+    sink = LogSink(inputs, job)
     recording = capture(inputs, run, opened, job, sink, check)
     checks = check_recording(job.out, recording)
     page = job.url if job.section.rendered else inputs.relative(inputs.path(job.section.page)).as_posix()
@@ -384,6 +385,7 @@ def record(
 
 __all__ = [
     "LogSink",
+    "TurnText",
     "record",
     "stale_recording",
 ]

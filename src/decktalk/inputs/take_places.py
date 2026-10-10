@@ -24,11 +24,14 @@ left, and it is refused when the wait runs out. Before the voice is asked, each 
 be written is made and proved writable, so a place that cannot hold it is refused before anything is
 paid.
 
-Nothing damaged is ever deleted. A damaged copy is moved aside as `<name>.unreadable`, or as
+Nothing is ever deleted. A damaged copy is moved aside as `<name>.unreadable`, or as
 `<name>.<n>.unreadable` with the first number free for both files, in the same step that a good copy
-replaces it, and it is put back when that write fails. When no place holds a good copy and one holds
-a damaged copy, the take is refused with the sentence a paid record is refused with, because the next
-step would voice it again.
+replaces it, and it is put back when that write fails. A good copy in the takes directory that a run
+was told to replace is a rejected take: it is moved into the takes directory's `rejected/` folder as
+`<digest>.<n>`, with the first number from 1 free for both files, in the same step that the take
+voiced again replaces it, so moving the pair back under its digest plays it again. When no place holds
+a good copy and one holds a damaged copy, the take is refused with the sentence a paid record is
+refused with, because the next step would voice it again.
 """
 
 from __future__ import annotations
@@ -203,11 +206,12 @@ class TakePlaces:
         """Voice this take once on this machine, and write it to every place, or keep the copy another run left.
 
         Under the store's lock, a whole good copy in either place is kept unless `replacing`, which is
-        whether this section's plan was told to replace its voiced take. Otherwise each place is proved
+        whether this turn's plan was told to replace its voiced take. Otherwise each place is proved
         writable, `speak` is asked, `charge` is called, and the pair is written to the store, unless it
-        holds a good copy, then to the takes directory. A charge that raises still leaves the pair, and
-        is raised after it. The audio is written under `suffix`, which the voice that speaks it declares
-        for what it returns, and its words file records it.
+        holds a good copy, then to the takes directory, where a good copy it replaces is set aside as a
+        rejected take first. A charge that raises still leaves the pair, and is raised after it. The
+        audio is written under `suffix`, which the voice that speaks it declares for what it returns, and
+        its words file records it.
         """
         if is_placeholder(digest):
             raise ValueError(
@@ -224,6 +228,8 @@ class TakePlaces:
             writes = store if store is not None and not store.good else None
             try:
                 self._preflight(workspace.takes, digest)
+                if replacing and takes.good:
+                    self._preflight(workspace.rejected_dir, digest)
             except OSError as failed:
                 raise self._takes_unwritable(digest, failed) from failed
             if writes is not None:
@@ -426,8 +432,10 @@ class TakePlaces:
     ) -> None:
         """Write the voiced pair to the store when `store` is given, then to the takes directory, then say so.
 
-        The words file records whether the voice sent word times and the model it served, so a take that
-        came with none is whole, fingerprinted, and timed by the aligner.
+        A good copy in the takes directory is there only when `replacing`, and it is set aside as a rejected
+        take before the new pair is written, and put back when that write fails. The words file records
+        whether the voice sent word times and the model it served, so a take that came with none is whole,
+        fingerprinted, and timed by the aligner.
         """
         workspace = self._workspace
         audio, audio_name, words_name = speech.audio, take_file(digest, suffix), words_file(digest)
@@ -451,10 +459,8 @@ class TakePlaces:
                 stored = True
             except OSError as failed:
                 unstored = failed
-        aside = () if takes.good else _aside_names(takes, audio_name)
-        replaced = (takes.audio,) if takes.good and takes.audio.name != audio_name else ()
         try:
-            in_takes = _replace_pair(pair(workspace.takes), aside, replaced=replaced)
+            in_takes, rejected = _into_takes(pair(workspace.takes), takes, workspace.rejected_dir, digest)
         except OSError as failed:
             raise self._landed(digest, failed, section=section, replacing=replacing, stored=stored, takes=takes) from (
                 failed
@@ -471,6 +477,13 @@ class TakePlaces:
                     f"{_names(moved)} before the take voiced again was written.",
                     level=Level.WARNING,
                 )
+        if rejected:
+            witness.note(
+                f"The take {digest} section {section} played was set aside in "
+                f"{relative(workspace.rejected_dir, workspace.root).as_posix()} as {_names(rejected)}, and the "
+                f"take voiced again plays in its place. Move that pair back as {takes.audio.name} and "
+                f"{takes.words.name} to play it again."
+            )
         if unstored is not None:
             witness.note(
                 f"Take {digest} could not be copied into the take store at {workspace.store} ({_reason(unstored)}). "
@@ -618,14 +631,11 @@ def _aside_names(copy: _Copy, audio_name: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys((copy.audio.name, audio_name, copy.words.name)))
 
 
-def _replace_pair(
-    pair: dict[Path, str | bytes], aside: tuple[str, ...], *, replaced: tuple[Path, ...] = ()
-) -> list[tuple[Path, Path]]:
+def _replace_pair(pair: dict[Path, str | bytes], aside: tuple[str, ...]) -> list[tuple[Path, Path]]:
     """Move `aside` out of the way, write `pair` with its words last, and give back what was moved where.
 
     A write that fails puts every moved file back under its own name and is raised, so a copy is set
-    aside only when a good copy replaced it. `replaced` is a good copy's audio under another suffix,
-    which the new pair replaces on request and which goes once the write is done.
+    aside only when a good copy replaced it.
     """
     place = next(iter(pair)).parent
     moved = _set_aside(place, aside) if aside else []
@@ -634,9 +644,44 @@ def _replace_pair(
     except OSError:
         _put_back(moved)
         raise
-    for gone in replaced:
-        gone.unlink(missing_ok=True)
     return moved
+
+
+def _into_takes(
+    pair: dict[Path, str | bytes], takes: _Copy, rejected_dir: Path, digest: str
+) -> tuple[list[tuple[Path, Path]], list[tuple[Path, Path]]]:
+    """Write a voiced pair into the takes directory over what `takes` holds there, and give back what moved where.
+
+    A good copy is there only when it is being replaced, and it is set aside as a rejected take, and a damaged
+    one is moved aside as `.unreadable`. A write that fails puts the rejected take back and is raised.
+    The first list is what was moved aside as damaged, the second what was set aside as rejected.
+    """
+    audio_name = next(iter(pair)).name
+    rejected = _reject(takes, rejected_dir, digest) if takes.good else []
+    try:
+        moved = _replace_pair(pair, () if takes.good else _aside_names(takes, audio_name))
+    except OSError:
+        _put_back(rejected)
+        raise
+    return moved, rejected
+
+
+def _reject(copy: _Copy, into: Path, digest: str) -> list[tuple[Path, Path]]:
+    """Move one good pair into `into` as `<digest>.<n>`, for the first `n` from 1 free for both files.
+
+    It never overwrites a file, and a move that fails puts back what it moved and is raised. It gives
+    back each file moved with where it went, audio first.
+    """
+    into.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while True:
+        stem = f"{digest}.{number}"
+        moves = [(copy.audio, into / f"{stem}{copy.audio.suffix}"), (copy.words, into / words_file(stem))]
+        if not any(os.path.lexists(target) for _source, target in moves):
+            moved = _moved_to(moves)
+            if moved is not None:
+                return moved
+        number += 1
 
 
 def _set_aside(place: Path, names: tuple[str, ...]) -> list[tuple[Path, Path]]:
@@ -660,9 +705,17 @@ def _set_aside(place: Path, names: tuple[str, ...]) -> list[tuple[Path, Path]]:
 
 def _moved_under(present: list[Path], tag: str) -> list[tuple[Path, Path]] | None:
     """Move each file onto its name with `tag` added, or None when another file took one of those names first."""
+    return _moved_to([(source, source.with_name(source.name + tag)) for source in present])
+
+
+def _moved_to(moves: list[tuple[Path, Path]]) -> list[tuple[Path, Path]] | None:
+    """Move each file onto its target, or None when another file took one of the targets first.
+
+    Each target is reserved before its file moves onto it, so a file this call did not create is never
+    replaced.
+    """
     moved: list[tuple[Path, Path]] = []
-    for source in present:
-        aside = source.with_name(source.name + tag)
+    for source, aside in moves:
         try:
             os.close(os.open(aside, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
         except FileExistsError:  # silent: that number is taken, so the next one is tried

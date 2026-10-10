@@ -1,35 +1,38 @@
-"""The URL a page section is opened at, and what its recording is keyed on.
+"""The URL a page section is opened at, and what its recording is made from, part by part.
 
 The page is opened on the local origin with the section's scene, the cues `cue` resolved and the
 section's words, and its clock is stepped through its span in the narration plus its record margin,
 one frame at a time.
 
-A section is keyed on that URL, which already carries the scene, the resolved cues and the spoken
-words with their times, on the frame geometry, the colour scheme and the motion the render asks for,
-and on what the page puts on screen for this one section: the markup of the scene it plays, the rest
-of the page file, which every scene shares, and the content of every project file the page loaded
-when it was last recorded. A run that would open the same page with the same everything would record
-the same pixels, so `record` keeps the recording it has.
+A recording is kept as a list of parts, each with the digest of what it held: every turn's text and
+voice as the script has them and the word times its take plays, the markup of the scene the section
+plays, the rest of the page file, which every scene shares, each project file the page loaded when
+it was last recorded, the scene and the section's own query, its resolved cues, its length, the frame
+geometry, the colour scheme, the page policy, the motion the render asks for and the engine. A run
+that would open the same page with the same parts would record the same pixels, so `record` keeps
+the recording it has, and when a part moved the parts that moved are what `status` names.
 
-The key is cut that way because a page holds every scene of a film. A digest of the whole file would
-call all nine sections of a nine-scene page stale for one slide's edit, which on the one-page project
-`decktalk init` writes is every section there is. The scene slice is taken from the page source and
-never from the browser, because `status` and `record --section` ask whether a recording still stands and
-neither may open Chromium to find out. The asset list is what keeps the key honest in the other
-direction: a page that swaps one picture for another changes no line of HTML, so the markup alone
-would say nothing had moved.
+The parts are cut that way because a page holds every scene of a film. A digest of the whole file
+would call all nine sections of a nine-scene page stale for one slide's edit, which on the one-page
+project `decktalk init` writes is every section there is, and one digest over everything could only
+say that something moved. The scene slice is taken from the page source and never from the browser,
+because `status` and `record --section` ask whether a recording still stands and neither may open
+Chromium to find out. The asset list is what keeps the parts honest in the other direction: a page
+that swaps one picture for another changes no line of HTML, so the markup alone would say nothing had
+moved.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 from html.parser import HTMLParser
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_digest
+from decktalk.artifacts import CueTimes, RecordingLog, content_digest, file_digest, stored
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
@@ -218,35 +221,182 @@ def page_source(path: Path) -> str:
         return ""
 
 
-def section_digest(inputs: Inputs, section: PageSection, url: str, seconds: float, assets: Sequence[str | Path]) -> str:
-    """The digest of everything that decides what this section's recording looks like.
+# ---- what a recording is made from, part by part -----------------------------------------------
 
-    The page joins the key in two pieces rather than as one file, so an edit to one scene moves the
-    key of the sections that play it and of no others, while an edit to the head, a style, a script
-    or another shared part of the file moves every section of that page. The motion the render asks
-    for joins the key too, or a reduced build would reuse the full-motion recordings it made before,
-    and so does the page policy, because an untrusted page whose other origins are refused may draw
-    a different picture from the same page trusted.
-    `assets` is every project file the page loaded, which the last run's log names, and the page file
-    itself is left out of them because its two pieces are already here.
+
+class Part(StrEnum):
+    """One kind of thing a recording is made from, which its log keeps a digest of and a stale line names.
+
+    A part that belongs to one turn or one file is kept under its kind and that turn or file, as
+    `text:2.1` or `file:deck/chart.png`, so the line can say which one moved.
+    """
+
+    TEXT = "text"
+    VOICE = "voice"
+    SCENE = "scene"
+    PAGE = "page"
+    FILE = "file"
+    COMMAND = "command"
+    ADDRESS = "address"
+    WORDS = "words"
+    CUES = "cues"
+    DOCUMENT = "document"
+    LENGTH = "length"
+    FRAME = "frame"
+    COLOUR = "colour"
+    POLICY = "policy"
+    MOTION = "motion"
+    ENGINE = "engine"
+
+
+PHRASES: dict[Part, str] = {
+    Part.TEXT: "the words of turn {}",
+    Part.VOICE: "the voice of turn {}",
+    Part.SCENE: "the markup of its scene",
+    Part.PAGE: "the part of {} every scene shares",
+    Part.FILE: "the file {}",
+    Part.COMMAND: "its render command",
+    Part.ADDRESS: "its scene or its own query parameters",
+    Part.WORDS: "the word times of turn {}",
+    Part.CUES: "its cue times",
+    Part.DOCUMENT: "the motion document its command reads",
+    Part.LENGTH: "its length",
+    Part.FRAME: "the frame size",
+    Part.COLOUR: "the colour scheme",
+    Part.POLICY: "the page policy",
+    Part.MOTION: "the motion it renders with",
+    Part.ENGINE: "the DeckTalk version",
+}
+"""How a stale line names each part, with the turn or the file it belongs to in place of `{}`."""
+
+FOLLOWS = frozenset({Part.WORDS, Part.CUES, Part.LENGTH, Part.DOCUMENT})
+"""The parts that move because a take moved, which a stale line names only when nothing they follow from moved.
+
+A turn's new words are timed again, so its word times, its section's cue times and its length move
+with them, and a line naming all four would bury the one edit the author made.
+"""
+
+
+def part_key(part: Part, of: str = "") -> str:
+    """The name a part is kept under: its kind, and the turn or the file it belongs to when it has one."""
+    return f"{part}:{of}" if of else str(part)
+
+
+def phrase(key: str) -> str:
+    """How a stale line names the part kept under `key`."""
+    kind, _, of = key.partition(":")
+    return PHRASES[Part(kind)].format(of)
+
+
+def _digest(text: str) -> str:
+    return content_digest(text.encode("utf-8"))
+
+
+@dataclass(frozen=True)
+class TurnText:
+    """What one turn says and which voice says it, as a take or the script has it."""
+
+    turn: int
+    spoken: str
+    voice: str
+
+
+def turn_parts(inputs: Inputs, section: PageSection, script: Sequence[TurnText] | None = None) -> dict[str, str]:
+    """Each turn a section speaks: its text, its voice's name and the word times its take plays.
+
+    The text and the voice are the take's, which is what the page is handed, unless `script` gives
+    them as the script has them now. That is how `status` asks the question a build answers: the take
+    follows the script on the next narrate, so a turn whose words were edited is named before narrate
+    has run rather than after.
+    """
+    played = inputs.turn_words(section.number)
+    says = script if script is not None else [TurnText(one.turn, one.spoken, one.voice) for one in played]
+    parts: dict[str, str] = {}
+    for turn in says:
+        label = f"{section.number}.{turn.turn}"
+        parts[part_key(Part.TEXT, label)] = _digest(turn.spoken)
+        parts[part_key(Part.VOICE, label)] = _digest(turn.voice)
+    for one in played:
+        parts[part_key(Part.WORDS, f"{section.number}.{one.turn}")] = _digest(words_param(one.words.words) or "")
+    return parts
+
+
+def page_made_from(
+    inputs: Inputs,
+    section: PageSection,
+    cue_times: CueTimes | None,
+    seconds: float,
+    assets: Sequence[str | Path],
+    script: Sequence[TurnText] | None = None,
+) -> dict[str, str]:
+    """Every part of what a page section's recording looks like, each kept apart so a stale line can name it.
+
+    The page joins in two pieces rather than as one file, so an edit to one scene moves the parts of
+    the sections that play it and of no others, while an edit to the head, a style, a script or
+    another shared part of the file moves every section of that page. The motion the render asks for
+    is a part too, or a reduced build would reuse the full-motion recordings it made before, and so is
+    the page policy, because an untrusted page whose other origins are refused may draw a different
+    picture from the same page trusted. `assets` is every project file the page loaded, which the
+    last run's log names, and the page file itself is left out of them because its two pieces are
+    already here. `script` is what `turn_parts` reads the turns' text from in place of their takes.
     """
     settings = inputs.settings
     video, record, motion = settings.video, settings.record, settings.motion
     page = inputs.path(section.page)
-    parts = page_parts(page_source(page), section.scene)
-    lines = [
-        url,
-        f"{seconds:.{SECOND_DIGITS}f}",
-        f"{video.width}x{video.height}@{video.fps}",
-        record.color_scheme,
-        f"policy:{record.page_policy}",
-        f"motion:{motion.reduce}:{motion.scale:g}",
-        f"scene:{content_digest(parts.scene.encode('utf-8'))}",
-        f"page:{content_digest(parts.shared.encode('utf-8'))}",
-    ]
-    named = [Path(rel).as_posix() for rel in assets]
-    files = {rel: found for rel in named if (found := inputs.path(rel)) != page}
-    return input_digest(lines, files)
+    pieces = page_parts(page_source(page), section.scene)
+    own = as_query(dict(section.params))
+    cues = cue_times.query(section.number) if cue_times is not None and Q.CUES not in own else None
+    named = sorted({Path(rel).as_posix() for rel in assets})
+    return {
+        **turn_parts(inputs, section, script),
+        part_key(Part.SCENE): _digest(pieces.scene),
+        part_key(Part.PAGE, Path(section.page).as_posix()): _digest(pieces.shared),
+        **{part_key(Part.FILE, rel): file_digest(found) for rel in named if (found := inputs.path(rel)) != page},
+        part_key(Part.ADDRESS): _digest(page_url(section.page, {Q.SCENE: section.scene, **own})),
+        part_key(Part.CUES): _digest(cues or ""),
+        part_key(Part.LENGTH): _digest(f"{seconds:.{SECOND_DIGITS}f}"),
+        part_key(Part.FRAME): _digest(f"{video.width}x{video.height}@{video.fps}"),
+        part_key(Part.COLOUR): _digest(record.color_scheme),
+        part_key(Part.POLICY): _digest(record.page_policy),
+        part_key(Part.MOTION): _digest(f"{motion.reduce}:{motion.scale:g}"),
+        part_key(Part.ENGINE): _digest(stored.ENGINE_VERSION),
+    }
+
+
+def rendered_made_from(
+    inputs: Inputs, section: PageSection, document: dict[str, object], script: Sequence[TurnText] | None = None
+) -> dict[str, str]:
+    """Every part a rendered section's video is drawn from: its turns, its command, its files and its document.
+
+    Every word of the command that names a project file is a part by its content, so editing the
+    script the command runs records the section again, as editing a page does.
+    """
+    named = {word: inputs.path(word) for word in section.render_command if not word.startswith("{")}
+    return {
+        **turn_parts(inputs, section, script),
+        part_key(Part.COMMAND): _digest(json.dumps(section.render_command)),
+        **{part_key(Part.FILE, word): file_digest(path) for word, path in sorted(named.items()) if path.is_file()},
+        part_key(Part.DOCUMENT): _digest(json.dumps(document, sort_keys=True)),
+        part_key(Part.ENGINE): _digest(stored.ENGINE_VERSION),
+    }
+
+
+def moved(before: Mapping[str, str], now: Mapping[str, str]) -> tuple[str, ...]:
+    """The parts that changed between two recordings, in the order they are made from, naming causes over their effects.
+
+    A part on one side alone has moved too, which is how a turn added to a section or a file the
+    page stopped loading is named. The parts that only follow a take are named when nothing they
+    follow from moved.
+    """
+    changed = [key for key in dict.fromkeys([*now, *before]) if before.get(key) != now.get(key)]
+    causes = [key for key in changed if Part(key.partition(":")[0]) not in FOLLOWS]
+    return tuple(causes or changed)
+
+
+def said(keys: Sequence[str]) -> str:
+    """The parts kept under `keys` as one phrase, joined as a sentence joins a list."""
+    phrases = [phrase(key) for key in keys]
+    return phrases[0] if len(phrases) == 1 else f"{', '.join(phrases[:-1])} and {phrases[-1]}"
 
 
 @dataclass(frozen=True)
@@ -258,15 +408,34 @@ class Job:
     seconds: float
     out: Path
     log_path: Path
-    digest: str
+    cue_times: CueTimes | None
+    """The resolved cues the section is opened with, which the part list is taken over again once it has run."""
+    made_from: dict[str, str]
+    """Every part of what the section would be recorded from now, by the name a stale line reads it under."""
     previous: RecordingLog | None
     """The log of the recording already on disk, when there is one."""
     document: dict[str, object] | None = None
     """What a rendered section's command reads, or None for a section a page draws."""
 
+    def made_from_now(self, inputs: Inputs, assets: Sequence[str | Path]) -> dict[str, str]:
+        """The parts taken again over the files the page really loaded, which the log of this recording keeps.
+
+        The page may have asked for a file the last run never saw, and a key that did not count it
+        would call the section unchanged on the next run.
+        """
+        if self.document is not None:
+            return self.made_from
+        return page_made_from(inputs, self.section, self.cue_times, self.seconds, assets)
+
+    @property
+    def moved(self) -> tuple[str, ...]:
+        """The parts that changed since the recording on disk was made, or none when nothing did."""
+        before = self.previous.made_from if self.previous is not None else {}
+        return moved(before, self.made_from)
+
     @property
     def unchanged(self) -> bool:
-        """Whether the recording on disk was made from these exact inputs, and is finished.
+        """Whether the recording on disk was made from these exact parts, and is finished.
 
         A log with no checks in it belongs to a run that was stopped between placing the video
         and measuring it, so the section is recorded again rather than assembled from a picture
@@ -274,8 +443,7 @@ class Job:
         """
         return (
             self.previous is not None
-            and bool(self.previous.digest)
-            and self.previous.digest == self.digest
+            and self.previous.made_from == self.made_from
             and self.previous.checks is not None
             and self.out.exists()
         )
@@ -294,61 +462,72 @@ def motion_of(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, 
     )
 
 
-def rendered_digest(inputs: Inputs, section: PageSection, document: dict[str, object]) -> str:
-    """The digest of everything a rendered section's video is drawn from: its command, its document and its files.
-
-    Every word of the command that names a project file joins the key by content, so editing the
-    script the command runs records the section again, as editing a page does.
-    """
-    named = {word: inputs.path(word) for word in section.render_command if not word.startswith("{")}
-    files = {word: path for word, path in named.items() if path.is_file()}
-    lines = [RENDERED_MARK, *section.render_command, json.dumps(document, sort_keys=True)]
-    return input_digest(lines, files)
-
-
 RENDERED_MARK = "render"
-"""What a rendered section's key opens with, so it can never equal the key of a page's recording."""
+"""What a rendered section's URL opens with, so it can never be taken for a page's."""
 
 
-def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, seconds: float) -> Job:
-    """What recording one section would open and write, and whether the recording on disk still stands."""
+def plan_job(
+    inputs: Inputs,
+    section: PageSection,
+    cue_times: CueTimes | None,
+    seconds: float,
+    script: Sequence[TurnText] | None = None,
+) -> Job:
+    """What recording one section would open and write, and whether the recording on disk still stands.
+
+    `script` gives the turns' text as the script has it, for a caller asking what the next build
+    records rather than what this run would.
+    """
     workspace = inputs.workspace
     previous = RecordingLog.previous(workspace.recording_log(section.key))
+    out, log_path = workspace.recording(section.key), workspace.recording_log(section.key)
     if section.rendered:
         document = motion_of(inputs, section, cue_times, seconds)
         return Job(
             section=section,
             url=f"{RENDERED_MARK}:{' '.join(section.render_command)}",
             seconds=seconds,
-            out=workspace.recording(section.key),
-            log_path=workspace.recording_log(section.key),
-            digest=rendered_digest(inputs, section, document),
+            out=out,
+            log_path=log_path,
+            cue_times=cue_times,
+            made_from=rendered_made_from(inputs, section, document, script),
             previous=previous,
             document=document,
         )
-    url = scene_url(inputs, section, scene_params(section, cue_times))
+    assets = previous.recording.assets if previous is not None else ()
     return Job(
         section=section,
-        url=url,
+        url=scene_url(inputs, section, scene_params(section, cue_times)),
         seconds=seconds,
-        out=workspace.recording(section.key),
-        log_path=workspace.recording_log(section.key),
-        digest=section_digest(inputs, section, url, seconds, previous.recording.assets if previous else ()),
+        out=out,
+        log_path=log_path,
+        cue_times=cue_times,
+        made_from=page_made_from(inputs, section, cue_times, seconds, assets, script),
         previous=previous,
     )
 
 
 __all__ = [
+    "FOLLOWS",
+    "PHRASES",
     "Job",
     "PageParts",
+    "Part",
     "SceneSpans",
+    "TurnText",
     "as_query",
+    "moved",
+    "page_made_from",
     "page_parts",
     "page_source",
+    "part_key",
+    "phrase",
     "plan_job",
+    "rendered_made_from",
+    "said",
     "scene_params",
     "scene_url",
-    "section_digest",
+    "turn_parts",
     "words_param",
     "words_query",
 ]

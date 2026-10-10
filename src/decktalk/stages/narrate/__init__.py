@@ -34,12 +34,24 @@ that has paid for eight sections therefore builds its film with no key, and rehe
 nothing. A free voice that nothing answers is a server that is not running, so its sections play
 placeholders too, and their findings say to start it rather than to buy anything.
 
+A run told to voice named turns again, by number or by the take they play, voices those turns and
+nothing else, even though a take of their text is held. The new take is written under the same
+digest, because the digest names what the take was made from and that has not changed, and the take
+it replaces is set aside in the takes directory's `rejected/` folder rather than deleted, so the take
+index, `status` and every later stage read the new take as they read the old one. Each row of the
+take index records the BLAKE3 of the audio it was measured on, so a section whose take on disk is not
+that audio, such as a rejected take moved back under its digest, is read again by the next run that
+does not select it, for nothing, rather than placed on numbers measured on other audio.
+
 A take its voice sent no word times with is timed by the aligner, `[dtsp] base_url`'s server, after
 every take is made, and its words are kept in `takes/aligned/`. A take whose aligned words are kept
 plays them without asking the server, and `--force` asks again. A take with none kept and no aligner
 answering plays estimated words with a `TAKE_UNALIGNED` finding.
 
-`TAKE_MISSING` and `TAKE_UNALIGNED` are the two judgements this stage makes. What a script says badly
+A take whose voice or aligner placed a word after the take's sound ends, where the join cuts it,
+plays that word with no length, with a `TAKE_WORD_CUT` finding.
+
+`TAKE_MISSING`, `TAKE_UNALIGNED` and `TAKE_WORD_CUT` are the three judgements this stage makes. What a script says badly
 is `check`'s to report, because a judgement belongs where an author can act on it before anything is
 bought, and what the voice must not receive at all is refused here before a single request is sent.
 """
@@ -87,10 +99,14 @@ from decktalk.stages.narrate.state import (
     SectionTakeState,
     TakePlan,
     TakeStates,
+    retake_turns,
+    sections_off_their_audio,
     take_states,
 )
 from decktalk.stages.narrate.takes import (
     charge_take,
+    cut_words,
+    gap_after,
     join_takes,
     place,
     take_row,
@@ -111,6 +127,8 @@ def narrate(
     only: Sequence[int] | None = None,
     force: bool = False,
     replace_voiced: bool = False,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
 ) -> NarrateResult:
     """Speak every turn of every targeted section of the script, and time every word in it.
 
@@ -119,20 +137,32 @@ def narrate(
     whose named voice bills nothing, gets each missing take, and nothing is sent until `run.approve` has
     seen the price. A turn whose voice bills while the run may not buy plays its take on disk, or a
     placeholder with a `TAKE_MISSING` finding. `force` makes each placeholder again and never buys a
-    take, and `replace_voiced` is the one way a voiced take on disk is made again. A provider is built
-    only once a take of it must be made, and the index is written again after every take, so a run that
-    is stopped keeps everything it has already paid for.
+    take. `replace_voiced` makes every turn of the targeted sections again, and `turns` and `takes`
+    name the turns to make again, by number and by the take they play, as `retake_turns` reads them:
+    the run then targets those turns' sections, voices those turns alone and keeps every other take. A
+    voiced take made again is set aside as a rejected take, never deleted. A provider is built only once
+    a take of it must be made, and the index is written again after every take, so a run that is stopped
+    keeps everything it has already paid for.
 
     A run stopped or refused once its takes are under way carries what it made as the refusal's
     `result`: every take finished so far, and the cost of those it voiced. An interrupt becomes
     `Cancelled` for that, so a caller meets a stopped narrate as it meets a cancelled one.
     """
-    targets = _targets(inputs, only)
+    retake = turns_to_retake(inputs, only, replace_voiced=replace_voiced, turns=turns, takes=takes)
+    targets = _targets(inputs, sorted({key.section for key in retake}) if retake else only)
+    previous = inputs.takes()
+    moved = sections_off_their_audio(inputs, previous, targets)
+    targets = sorted([*targets, *moved], key=lambda section: section.number)
     # A take is made again only when the run was told to replace it. `force` never feeds this, because
     # it rebuilds what DeckTalk makes itself, and a voice's take is not.
-    states = take_states(inputs, targets, replace_voiced=replace_voiced)
+    states = take_states(
+        inputs,
+        targets,
+        replace_voiced=replace_voiced,
+        retake=retake,
+        reread=[section.number for section in moved],
+    )
     plan = states.plan(spend=run.spend, force=force)
-    previous = inputs.takes()
     _refuse_or_note_unnamed(inputs, run, plan, previous)
     missing = [
         _take_missing(inputs, take, take.reason, takes_dir_gone=_gone(states, take))
@@ -146,6 +176,7 @@ def narrate(
         rows, made, unreached = _write_takes(inputs, run, plan.takes, providers, progress)
         rows, unaligned = time_takes(inputs, run, rows, previous, made=set(progress.made), force=force)
         index = _index(inputs, rows)
+        cut = cut_words(inputs, index, set(progress.made))
         run.wrote(index.write(inputs.workspace.takes_path))
         run.wrote(join_takes(inputs, index))
     except HALTS as failure:
@@ -170,7 +201,7 @@ def narrate(
     _note_what_is_missing(inputs, run, index)
     _note_unreached(inputs, run, unreached)
     missing += [_take_missing(inputs, take, UNREACHED, unreached=True) for take in unreached]
-    missing += unaligned
+    missing += unaligned + cut
     for found in sorted(missing, key=lambda found: found.location.section or 0):
         run.found(found)
     return run.result(
@@ -245,13 +276,49 @@ def _spent(
     return states.charged(plan, charged, possibly) if plan.voiced else plan.cost
 
 
-def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: bool = False) -> Cost:
+def price(
+    inputs: Inputs,
+    *,
+    only: Sequence[int] | None = None,
+    replace_voiced: bool = False,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
+) -> Cost:
     """What a run of this stage that may spend would buy, planned the way `narrate` plans it and sending nothing.
 
     No run is opened and no voice is built, so a build prices its takes before it buys anything. A
-    run told to replace its voiced takes is priced at every take it targets.
+    run told to replace its voiced takes is priced at every take it targets, and one told to make
+    named turns again at those turns alone.
     """
-    return take_states(inputs, _targets(inputs, only), replace_voiced=replace_voiced).plan(spend=True).cost
+    retake = turns_to_retake(inputs, only, replace_voiced=replace_voiced, turns=turns, takes=takes)
+    targets = _targets(inputs, sorted({key.section for key in retake}) if retake else only)
+    return take_states(inputs, targets, replace_voiced=replace_voiced, retake=retake).plan(spend=True).cost
+
+
+def turns_to_retake(
+    inputs: Inputs,
+    only: Sequence[int] | None,
+    *,
+    replace_voiced: bool,
+    turns: Sequence[tuple[int, int]],
+    takes: Sequence[str],
+) -> tuple[TurnKey, ...]:
+    """The turns this run was told to make again, refused beside a selection of sections or `replace_voiced`.
+
+    Naming a turn names its section, so a section selection beside it would be a second answer to one
+    question, and `replace_voiced` would make every other turn of those sections again as well.
+    """
+    if not turns and not takes:
+        return ()
+    if only is not None or replace_voiced:
+        given = "--section" if only is not None else "--replace-voiced"
+        raise InputError(
+            f"--turn and --take name the turns to voice again and their sections, so {given} beside them would "
+            "name a second set, and nothing was voiced.",
+            hint=f"Leave out {given}, or name every turn to voice again with --turn.",
+            location=at(inputs.script_path, inputs.root),
+        )
+    return retake_turns(inputs, turns, takes)
 
 
 def _take_missing(
@@ -338,6 +405,7 @@ def _write_takes(
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
     chapters = inputs.chapters()
+    planned = {plan.key: plan for plan in plans}
 
     def one(plan: TakePlan) -> None:
         number = plan.section.number
@@ -370,7 +438,9 @@ def _write_takes(
             with progress.lock:
                 progress.rows[plan.key] = row
                 progress.made[plan.key] = made
-                _index(inputs, _placed(inputs, progress.rows, set(progress.made))).write(inputs.workspace.takes_path)
+                _index(inputs, _placed(inputs, progress.rows, set(progress.made), planned)).write(
+                    inputs.workspace.takes_path
+                )
                 progress.done += 1
                 run.progress(
                     Stage.NARRATE,
@@ -411,7 +481,7 @@ def _write_takes(
         for plan in plans
         if plan.outcome is not TakeOutcome.PLACEHOLDER and progress.made[plan.key].outcome is TakeOutcome.PLACEHOLDER
     ]
-    return _placed(inputs, progress.rows, set(progress.made)), made, unreached
+    return _placed(inputs, progress.rows, set(progress.made), planned), made, unreached
 
 
 def _possibly_charged(inputs: Inputs, run: Run, plan: TakePlan) -> None:
@@ -574,13 +644,18 @@ def _keep_unselected(inputs: Inputs, run: Run, previous: Takes | None, targets: 
             inputs.take_places.keep(row.digest, run, section=row.section)
 
 
-def _placed(inputs: Inputs, rows: Mapping[TurnKey, Take], touched: Collection[TurnKey]) -> dict[TurnKey, Take]:
+def _placed(
+    inputs: Inputs, rows: Mapping[TurnKey, Take], touched: Collection[TurnKey], planned: Mapping[TurnKey, TakePlan]
+) -> dict[TurnKey, Take]:
     """Every row of the index this run can stand behind, each placed by the one rule.
 
-    A section this run made a take of keeps the turns it made, up to the first it has not made yet, so
-    the index never names a turn the script no longer has or skips one. A section none of whose turns
-    this run made keeps the rows it had, its first taking the section's lead, its last the section's
-    tail and every other the gap it already held. A section the script no longer speaks keeps none.
+    A section this run made a take of keeps, in turn order up to the first it cannot stand behind, each
+    turn it made and each turn whose row from the index it started from plays the take `planned` for
+    that turn, placed on its turn of the script. So the index never names a turn the script no longer
+    has or skips one, and a run stopped while it remakes one turn keeps every other turn it holds. A
+    section none of whose turns this run made keeps the rows it had, its first taking the section's
+    lead, its last the section's tail and every other the gap it already held. A section the script no
+    longer speaks keeps none.
     """
     spoken = {section.number for section in inputs.spoken()}
     making = {key.section for key in touched}
@@ -589,8 +664,12 @@ def _placed(inputs: Inputs, rows: Mapping[TurnKey, Take], touched: Collection[Tu
         held = sorted((row for key, row in rows.items() if key.section == number), key=lambda row: row.turn)
         if number in making:
             for row in held:
-                if row.turn_key not in touched or (row.turn > 1 and TurnKey(number, row.turn - 1) not in out):
+                plan = planned.get(row.turn_key)
+                standing = row.turn_key in touched or (plan is not None and plan.digest == row.digest)
+                if not standing or (row.turn > 1 and TurnKey(number, row.turn - 1) not in out):
                     break
+                if row.turn_key not in touched and plan is not None:
+                    row = place(inputs, row, gap=gap_after(inputs, plan.section, plan.turn))
                 out[row.turn_key] = row
             continue
         for place_at, row in enumerate(held):
@@ -632,8 +711,10 @@ __all__ = [
     "narrate",
     "place",
     "price",
+    "retake_turns",
     "script_refusals",
     "shown",
     "symbol_tokens",
     "take_states",
+    "turns_to_retake",
 ]

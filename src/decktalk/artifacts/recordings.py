@@ -8,11 +8,12 @@ each synced line did, and the frames it measured. One
 command writes all of it, so a measurement always belongs to the recording beside it and a reader of
 a long run sees each section's log as soon as that section is done.
 
-`input_digest` is taken over what the section was recorded from, and a skip is keyed on it: the page
-URL with its cues and its words, the seconds asked for, the frame geometry, the colour scheme, the
-page policy, the motion setting, the markup of the one scene the section plays, the rest of its
-page, which every scene shares, and the content of every file the page loaded. A section whose
-digest is unchanged would be recorded again for nothing.
+`made_from` keeps what the section was recorded from as named parts, each with the digest of what it
+held, and a skip is keyed on all of them: every turn's text, voice and word times, the markup of the
+one scene the section plays, the rest of its page, which every scene shares, the content of every
+file the page loaded, its cues, the seconds asked for, the frame geometry, the colour scheme, the page
+policy, the motion setting and the engine. A section whose parts are unchanged would be recorded
+again for nothing, and one whose parts moved is named by the parts that moved.
 
 Every judgement the recorder makes is a `Finding`, so the page's own warnings, the exceptions it
 threw and the checks over the frames are one list a reader dispatches on by code, rather than three
@@ -23,28 +24,14 @@ read it is the layer that decides what it looks like.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import Field
 
-from decktalk.artifacts.stored import DIGEST_DIGITS, Stored, engine_digest, file_digest
+from decktalk.artifacts.stored import Stored
 from decktalk.findings import Finding, Model
 from decktalk.media.pagereport import Recording
 from decktalk.results import SectionNumber
-
-
-def input_digest(parts: Sequence[str], files: Mapping[str, Path]) -> str:
-    """The digest of what a section is recorded from: these strings, the content of these files, and the engine.
-
-    `files` maps each project-relative name to the file on disk, so a page that swaps one picture for
-    another moves the digest although no line of markup changed. The names are sorted, so the order
-    the page happened to ask for them in is not part of the key. The engine's version is part of it
-    too, because a recording carries the recorder, the probe and the runtime contract that made it,
-    and a newer engine keeping an older engine's recording would measure a film it did not make.
-    """
-    return engine_digest(*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files)))[:DIGEST_DIGITS]
 
 
 class Luma(Model):
@@ -70,7 +57,10 @@ class RecordingLog(Stored):
     label: ClassVar[str] = "the log of one section's recording"
 
     section: SectionNumber
-    digest: str = Field(description="The digest of what this section was recorded from, which keys a skip.")
+    made_from: dict[str, str] = Field(
+        description="What this section was recorded from, part by part: each part's name and the digest of what it "
+        "held, which keys a skip and names what moved."
+    )
     recording: Recording = Field(description="What the recorder knew: the page, its files, its timings and its report.")
     findings: tuple[Finding, ...] = Field((), description="Every judgement the page and the frames made.")
     checks: RecordingChecks | None = Field(None, description="What the frames measured, or null when none were.")
@@ -80,5 +70,4 @@ __all__ = [
     "Luma",
     "RecordingChecks",
     "RecordingLog",
-    "input_digest",
 ]

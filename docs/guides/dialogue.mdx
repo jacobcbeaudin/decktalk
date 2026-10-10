@@ -67,6 +67,11 @@ guest's last sentence voices that turn alone. Where the voice changes, the turns
 `[narration] turn_gap_seconds`, `0.3` seconds by default, and a `[pause N]` written there wins, as the
 one second above does. The next section starts with the default voice again.
 
+Turns are counted from one within their section, so the guest's last turn above is turn 4 of
+section 2. A take you do not like is bought again on its own with `decktalk narrate --turn 2.4 --spend`,
+which keeps every other turn's take and sets the one it replaces aside, as
+[Voice one turn again](/guides/rebuild-one-section#voice-one-turn-again) describes.
+
 A cue phrase in `cues.json` may sit in any turn of its section, because a section's words run on one
 clock. The transcript names the voice before each turn of a section spoken in more than one voice,
 so a reader who cannot hear the film knows who says each line. The captions carry the words alone

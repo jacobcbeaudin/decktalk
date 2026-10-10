@@ -25,7 +25,6 @@ from decktalk.artifacts.recordings import (
     Luma,
     RecordingChecks,
     RecordingLog,
-    input_digest,
 )
 from decktalk.artifacts.stored import (
     Stored,
@@ -99,7 +98,6 @@ __all__ = [
     "alignment_match",
     "content_digest",
     "file_digest",
-    "input_digest",
     "is_placeholder",
     "on_section_clock",
     "take_file",

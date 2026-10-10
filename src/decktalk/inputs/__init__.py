@@ -414,7 +414,9 @@ class Inputs:
         digest names, so a placeholder still says its times are estimates. A row an aligner timed answers
         the aligned words its `alignment` names, when that file reads under its own key. A voiced row no
         aligner timed, or whose aligned words are gone, answers the row's spoken words estimated over the
-        take's sound. A section of several turns answers every turn's words in turn order on one clock,
+        take's sound. Every turn's words are cut at its take's sound end, where the join cuts the take, so
+        a word its voice gave to the take's trailing silence ends where the sound does. A section of
+        several turns answers every turn's words in turn order on one clock,
         each turn moved by the section's lead and every earlier turn's span, as `EstimatedWords` when any
         turn's are estimated and as plain `Words` otherwise. A clip section answers the words file its
         `words` key names, which already runs on the clip's own clock, and one that does not read is
@@ -449,13 +451,22 @@ class Inputs:
         for row in rows:
             # A section of one turn is moved by the lead its settings name today, as it always has been.
             offset = self.lead_seconds(number) if len(rows) == 1 else round(at + row.lead_seconds, 3)
-            said = on_section_clock(self._take_words_of(row), offset)
+            said = on_section_clock(self.take_words_of(row), offset)
             out.append(TurnWords(turn=row.turn, voice=row.voice, spoken=row.spoken, words=said))
             at += row.span_seconds
         return tuple(out)
 
-    def _take_words_of(self, take: Take) -> Words:
-        """One row's words on its take's own clock, as the kind that timed them."""
+    def take_words_of(self, take: Take) -> Words:
+        """One row's words on its take's own clock, as the kind that timed them, cut at the take's sound end.
+
+        The join plays each take to its sound end, so a word its provider or its aligner gave to the
+        take's trailing silence ends where the sound does, as `Words.cut_at` says, and every reader of a
+        take's words hears where its words really end.
+        """
+        return self._timed_words_of(take).cut_at(take.sound_seconds)
+
+    def _timed_words_of(self, take: Take) -> Words:
+        """One row's words on its take's own clock, as the kind that timed them sent them."""
         aligned = self._aligned(take.alignment) if take.alignment is not None else None
         if aligned is not None:
             return aligned

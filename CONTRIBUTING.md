@@ -204,7 +204,7 @@ src/decktalk/
         state.py         The take state: what the disk holds for each turn of each spoken section, and what one narrate run does about it.
         takes.py         Writing a placeholder take, charging a voiced one, placing each, and joining every take into one narration track.
       record/            Stage 3: record each page section in a headless browser, one frame at a time, and judge the result.
-        capture.py       The URL a page section is opened at, and what its recording is keyed on.
+        capture.py       The URL a page section is opened at, and what its recording is made from, part by part.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
         pool.py          How many page sections record at once, which is the size of the pool `record` hands them to.
         render.py        A narrated section whose picture an external command draws, which is the second source of a section's picture.

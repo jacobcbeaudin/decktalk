@@ -119,7 +119,8 @@ Every one of these opens a run, takes `cancel`, and returns the frozen result na
 
 ```python
 project.narrate(*, only=None, spend=False, max_cost=None,
-                force=False, replace_voiced=False, cancel=None) -> NarrateResult
+                force=False, replace_voiced=False, turns=(), takes=(),
+                cancel=None) -> NarrateResult
 project.cue(*, only=None, cancel=None) -> CueResult
 project.record(*, only=None, force=False, cancel=None) -> RecordResult
 project.score(*, only=None, spend=False, max_cost=None,
@@ -131,7 +132,8 @@ project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
               force=False, replace_voiced=False, replace_score=False, loudness=True,
               strict=False, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
-project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
+project.check(*paths, only=None, pages=True, frames=True, turns=(), takes=(),
+              cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
 project.storyboard(*, only=None, slides=None, after=None, before=None, times=None,
                    cancel=None) -> StoryboardResult
@@ -167,7 +169,8 @@ Every call in the table also appends its own events file, `build/events/<run>.js
 | `max_cost` | `narrate`, `score`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
 | `only` | every call but `status` and `clip`, and `price` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. `None`, the default, is every section. A number no section carries, or an empty sequence, raises `InputError` naming the sections there are, before any run opens. `Project.select(only)` makes that same judgement alone and returns the numbers. A `build` hands each stage the selected sections it can act on, the spoken ones to `narrate` and the page ones to `record`, and skips a stage with none, so a selection of a clip alone rebuilds that clip. |
 | `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every voiced take, and `build` keeps every voiced take and every item of the score. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
-| `replace_voiced` | `narrate`, `build` | Sets aside the voiced take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the voiced take stays on disk. Without it, a run that does not spend plays every voiced take on disk. It never buys a sound. |
+| `replace_voiced` | `narrate`, `build` | Sets aside the voiced take a section holds, in the takes directory's `rejected/` folder. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the voiced take stays on disk. Without it, a run that does not spend plays every voiced take on disk. It never buys a sound. |
+| `turns`, `takes` | `narrate`, `check`, and `price` | The turns to voice again as new takes, and nothing else. `turns` names each as a section and a turn counted from one, such as `(4, 2)`, so a section one voice reads is the turn `(N, 1)`. `takes` names each by the take it plays, its digest or as much of its start as no other take shares, and a take two turns share names both. A run given either voices exactly those turns, keeps every other take, and sets each take it replaces aside in the takes directory's `rejected/` folder. `check` prices that run. A turn the script does not have, a name no take answers to, and `only` or `replace_voiced` beside them raise `InputError` before anything is bought. |
 | `replace_score` | `score`, `build` | Buys every bought sound the run selects again, each music part included. A run that does not spend ignores it and keeps every bought sound on disk. It never buys a take. |
 | `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SCORE` also leaves the score's audio out of the mix. |
 | `score` | `assemble` | False leaves the score's audio out of the mix. |

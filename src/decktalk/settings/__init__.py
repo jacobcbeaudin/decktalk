@@ -288,7 +288,7 @@ class NarrationConfig:
         "Level under which the tail of a take counts as silence, which is where the take's sound ends.",
         unit="dBFS",
         bounds=Bounds(ge=-60, le=-25),
-        decides=(Code.CUT_SPEECH,),
+        decides=(Code.CUT_SPEECH, Code.TAKE_WORD_CUT),
         hazard=(
             "Above about -25 dBFS the scan calls quiet speech silence, so the take is placed early and the "
             "cut that follows it lands on a word."
@@ -300,7 +300,7 @@ class NarrationConfig:
         "Shortest run under the noise level that counts as the end of a take's sound.",
         unit="seconds",
         bounds=Bounds(ge=0.02, le=0.5),
-        decides=(Code.CUT_SPEECH,),
+        decides=(Code.CUT_SPEECH, Code.TAKE_WORD_CUT),
         see_also=("narration.sound_end_noise_dbfs",),
     )
 

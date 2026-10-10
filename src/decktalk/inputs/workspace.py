@@ -100,6 +100,15 @@ class Workspace:
         """
         return self.takes / "aligned"
 
+    @property
+    def rejected_dir(self) -> Path:
+        """The folder inside the takes directory that a voiced take bought again on request is set aside in.
+
+        Each rejected take keeps its words file beside it, both named `<digest>.<n>`, so moving the pair
+        back under `<digest>` plays it again.
+        """
+        return self.takes / "rejected"
+
     def aligned_words(self, key: str) -> Path:
         """Where the aligned words kept under `key` are, which names the take they time and the aligner that did."""
         return self.aligned_dir / f"{key}{WORDS_SUFFIX}"

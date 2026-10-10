@@ -6,6 +6,7 @@ in the e2e row, and these tests cover what it does around a run.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -228,6 +229,18 @@ def test_which_worker_starts_first_is_held_by_its_place_in_the_events_sample() -
     assert raced != page
     masks = {one.id: (one.varies, one.masks) for one in build_samples.rows() if one.page == row.page}
     assert build_samples.why_differs(page, raced, masks) is None
+
+
+def test_the_events_sample_stops_at_the_first_line_a_narrate_worker_writes() -> None:
+    """Two narrate workers start at once, so the line after the first start is whichever worker writes next.
+
+    That is the other worker's start or the first worker's own next line, and only `seq` and `section` say
+    which. The block shows the lines the run writes before its workers and the first start, and none after.
+    """
+    row = next(row for row in build_samples.rows() if row.id == "build-events")
+    events = [json.loads(line)["event"] for line in committed_block(row).splitlines()[1:-1]]
+    assert events.count("section.start") == 1
+    assert events[-1] == "section.start"
 
 
 def test_a_stale_line_is_named_with_what_the_page_says_and_what_a_run_wrote() -> None:

@@ -361,7 +361,8 @@
             "verify.cut_max_dbfs"
           ],
           "x-decides": [
-            "CUT_SPEECH"
+            "CUT_SPEECH",
+            "TAKE_WORD_CUT"
           ],
           "x-environment": "DECKTALK_NARRATION_SOUND_END_NOISE_DBFS"
         },
@@ -380,7 +381,8 @@
             "narration.sound_end_noise_dbfs"
           ],
           "x-decides": [
-            "CUT_SPEECH"
+            "CUT_SPEECH",
+            "TAKE_WORD_CUT"
           ],
           "x-environment": "DECKTALK_NARRATION_SOUND_END_MIN_RUN_SECONDS"
         }

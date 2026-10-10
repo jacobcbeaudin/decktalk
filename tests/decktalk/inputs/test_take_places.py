@@ -535,13 +535,30 @@ def test_voice_while_replacing_speaks_over_a_good_copy_and_moves_a_damaged_one_a
 def test_voice_while_replacing_a_good_copy_under_another_suffix_leaves_the_new_take_alone(
     no_store: Workspace,
 ) -> None:
-    """A good copy replaced on request is replaced whole, so its audio under the old suffix goes with its words."""
+    """A good copy replaced on request is set aside whole, so its audio under the old suffix goes with its words."""
     _pair(no_store.takes, DIGEST, b"FIRST", suffix=".wav")
     assert voice(places(no_store), Voice(audio=b"SECOND"), Witnessed(), replacing=True) is TakeOutcome.VOICED
-    assert sorted(path.name for path in no_store.takes.iterdir()) == sorted(
-        [take_file(DIGEST, TAKE_SUFFIX), words_file(DIGEST)]
-    )
+    files = sorted(path.name for path in no_store.takes.iterdir() if path.is_file())
+    assert files == sorted([take_file(DIGEST, TAKE_SUFFIX), words_file(DIGEST)])
     assert places(no_store).find(DIGEST).audio == no_store.takes / take_file(DIGEST, TAKE_SUFFIX)
+    assert (no_store.rejected_dir / f"{DIGEST}.1.wav").read_bytes() == b"FIRST"
+
+
+def test_voice_while_replacing_sets_the_good_copy_aside_as_a_rejected_take_under_the_first_free_number(
+    no_store: Workspace,
+) -> None:
+    """A rejected take is a paid record, so it is moved rather than overwritten, and never onto another."""
+    _pair(no_store.takes, DIGEST, b"FIRST")
+    words = (no_store.takes / words_file(DIGEST)).read_text(encoding="utf-8")
+    no_store.rejected_dir.mkdir(parents=True)
+    (no_store.rejected_dir / take_file(f"{DIGEST}.1", TAKE_SUFFIX)).write_bytes(b"OLDER")
+    witness = Witnessed()
+    assert voice(places(no_store), Voice(audio=b"SECOND"), witness, replacing=True) is TakeOutcome.VOICED
+    assert (no_store.rejected_dir / take_file(f"{DIGEST}.1", TAKE_SUFFIX)).read_bytes() == b"OLDER"
+    assert (no_store.rejected_dir / take_file(f"{DIGEST}.2", TAKE_SUFFIX)).read_bytes() == b"FIRST"
+    assert (no_store.rejected_dir / words_file(f"{DIGEST}.2")).read_text(encoding="utf-8") == words
+    assert (no_store.takes / take_file(DIGEST, TAKE_SUFFIX)).read_bytes() == b"SECOND"
+    assert f"was set aside in takes/rejected as {DIGEST}.2.mp3, {DIGEST}.2.words.json" in witness.said()
 
 
 def test_voice_replaces_a_store_copy_damaged_under_the_whole_hash_and_moves_it_aside(workspace: Workspace) -> None:

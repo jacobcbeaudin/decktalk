@@ -102,6 +102,10 @@ def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
     return build
 
 
+SOUND_END = 0.8
+"""Where every take written here sounds till, as `quiet_sound_end` answers for its bytes."""
+
+
 @pytest.fixture(autouse=True)
 def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
     """Where a take's sound ends is read from real bytes, which no take written here has.
@@ -109,7 +113,7 @@ def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
     The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
     through, and every placement test measures the arithmetic rather than ffmpeg.
     """
-    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: SOUND_END)
 
 
 @pytest.fixture

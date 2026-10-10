@@ -448,7 +448,7 @@ def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stag
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A stage handed a flag it does not read would accept a switch that changes nothing."""
     build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False)
-    assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
+    assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False, "turns": (), "takes": ()}
     assert calls.options("cue") == {"only": [1]}
     assert calls.options("record") == {"only": [1], "force": True}
     assert calls.options("score") == {"only": [1], "replace_score": False}, "force reached the stage that buys sound"
