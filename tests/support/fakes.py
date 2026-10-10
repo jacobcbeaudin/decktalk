@@ -1,8 +1,8 @@
 """The tools a stage reaches for, faked at the seam the stage imports.
 
 A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a provider that bills,
-so ffmpeg is replaced at the one module attribute the stage reads and the voice is registered in the
-table the test's runs are opened with, each fixture handing back the record of what the stage asked
+so ffmpeg is replaced at the one module attribute the stage reads and a fake voice stands in behind
+the shipped adapter's `for_context`, each fixture handing back the record of what the stage asked
 for, and `FakePage` is the page a browser seam hands a stage.
 `FakeChromium` stands one level lower, as the Playwright a launch is handed.
 Faking the seam rather than the stage is what keeps these tests about the stage: an argument list, a
@@ -17,13 +17,14 @@ from __future__ import annotations
 import io
 import os
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
+import pytest
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Playwright
 
@@ -32,27 +33,31 @@ from decktalk.media import pages
 from decktalk.results import Word
 from decktalk.speech import (
     ALIGNERS,
-    DECLARED,
+    PROVIDERS,
     Aligner,
     AlignerContext,
     AlignerIdentity,
     AlignmentRequest,
     Speech,
-    SpeechContext,
     SpeechFactory,
-    SpeechProvider,
     SpeechRequest,
 )
+from decktalk.speech.dtsp import Dtsp
+from decktalk.speech.elevenlabs import ElevenLabs
+from decktalk.speech.sound import SOUNDS, SoundFactory
+from decktalk.speech.sound.elevenlabs import ElevenLabsSound
 from decktalk.tomlmap import variable
 
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
 
 FAKE_VOICE_NAME = "elevenlabs"
-"""The provider a project under test reads its voice with, which `fake_voice` answers for in place of the shipped one.
+"""The provider a project under test reads its voice with, which `fake_voice` stands in for.
 
-A fake stands in under the shipped name, so the project reads the shipped voice's own table, its
-default model and its stated rate, and the fake is registered only on the machine of the test's runs.
+A fake stands in behind the shipped name, so the project reads the shipped voice's own table, its
+default model and its stated rate. The machine is handed the shipped factory under that name, which
+is the only factory a name DeckTalk ships may carry, and the fake answers when that factory builds
+its adapter, for the length of the test alone.
 """
 
 FREE_VOICE_NAME = "dtsp"
@@ -61,21 +66,72 @@ FREE_VOICE_NAME = "dtsp"
 NARRATOR_ID = variable("voices.narrator.id")
 """The variable that names the voice id of `narrator`, the default voice every project under test is read in."""
 
+ADAPTERS: dict[str, type[ElevenLabs | Dtsp]] = {"elevenlabs": ElevenLabs, "dtsp": Dtsp}
+"""The adapter class each shipped voice factory builds through its `for_context`, which is where a fake stands in."""
 
-def refusing_voices() -> dict[str, SpeechFactory]:
-    """A voice table naming every voice DeckTalk ships, each refusing to be built, for a test to put its fakes in.
+SOUND_ADAPTERS: dict[str, type[ElevenLabsSound]] = {"elevenlabs": ElevenLabsSound}
+"""The adapter class each shipped sound factory builds through its `for_context`, which is where a fake stands in."""
 
-    A run on this table answers a fake registered under a name in place of the refusal, so a test that
-    forgot its fake fails at the build and never reaches a real adapter or a voice served on this machine.
+
+class StandIns[F](dict[str, F]):
+    """The fakes a test stands in for the providers DeckTalk ships, by name, beside any provider of a host's own.
+
+    A name DeckTalk ships holds the fake its adapter answers with, and registering the shipped factory
+    there reaches the real adapter. Any other name is a host's own provider, handed to the machine as it is.
     """
-    return {name: _refused(name) for name in DECLARED}
+
+    def __init__(self, shipped: Mapping[str, F], fakes: Mapping[str, F]) -> None:
+        super().__init__(fakes)
+        self.shipped = shipped
+
+    @property
+    def table(self) -> dict[str, F]:
+        """The table a machine is handed: the shipped factory under each shipped name, else the test's own."""
+        return {name: self.shipped.get(name, factory) for name, factory in self.items()}
 
 
-def _refused(name: str) -> SpeechFactory:
-    """A factory that refuses to build the shipped voice `name`."""
+def stand_in(monkeypatch: pytest.MonkeyPatch) -> StandIns[SpeechFactory]:
+    """Every shipped voice adapter answering with the fake a test registers under its name, refusing till then.
 
-    def build(_context: SpeechContext) -> SpeechProvider:
-        raise AssertionError(f"the test built the shipped voice {name!r}, which it never faked")
+    A run that forgot its fake fails at the build and never reaches a real adapter or a voice served on
+    this machine. The adapters are back as they were when the test ends.
+    """
+    return _standing_in(monkeypatch, PROVIDERS, ADAPTERS)
+
+
+def stand_in_sounds(monkeypatch: pytest.MonkeyPatch) -> StandIns[SoundFactory]:
+    """Every shipped sound adapter answering with the fake a test registers under its name, refusing till then."""
+    return _standing_in(monkeypatch, SOUNDS, SOUND_ADAPTERS)
+
+
+def _standing_in[F](
+    monkeypatch: pytest.MonkeyPatch,
+    shipped: Mapping[str, F],
+    adapters: Mapping[str, type[ElevenLabs | Dtsp | ElevenLabsSound]],
+) -> StandIns[F]:
+    """Each adapter in `adapters` built by the fake under its name in the stand-ins, or by itself when asked."""
+    assert sorted(adapters) == sorted(shipped), "a shipped provider has no adapter here for a fake to stand in for"
+    fakes: StandIns[F] = StandIns(shipped, {name: cast("F", _refused(name)) for name in shipped})
+    for name, adapter in adapters.items():
+        monkeypatch.setattr(adapter, "for_context", _built_by(fakes, name, adapter.for_context))
+    return fakes
+
+
+def _built_by[F](fakes: StandIns[F], name: str, real: Callable[[Any], object]) -> Callable[[Any], object]:
+    """How the shipped adapter `name` is built while a test stands in for it: its fake, or itself when asked."""
+
+    def build(context: object) -> object:
+        factory = fakes[name]
+        return real(context) if factory is fakes.shipped[name] else cast("Callable[[Any], object]", factory)(context)
+
+    return build
+
+
+def _refused(name: str) -> Callable[[object], object]:
+    """A factory that refuses to build the shipped provider `name`."""
+
+    def build(_context: object) -> object:
+        raise AssertionError(f"the test built the shipped provider {name!r}, which it never faked")
 
     return build
 

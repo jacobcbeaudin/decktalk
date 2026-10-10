@@ -235,7 +235,8 @@ class Machine:
     `Machine.of` resolves it from the table a host handed in, or the closed set DeckTalk ships, at the
     retries this machine's own layers name. A host's table is code the host wrote and imported itself,
     and it replaces the shipped one rather than sitting over it, so a machine built with a fake voice
-    can reach no real one by a name the host left out.
+    can reach no real one by a name the host left out. A name DeckTalk ships holds only its shipped
+    adapter, because a voice is billed by its name, so a host's own factory under one is refused.
     """
     sound_providers: SoundProviders = field(
         default_factory=lambda: _sounds(None, None, NarrationConfig().retries), repr=False, compare=False
@@ -300,8 +301,9 @@ class Machine:
         Nothing here reads the process. `environ` is every variable a run on this machine may see,
         which for a render job is none and for a voice job is the key and the voice id. The machine
         file at `machine_file` is read when it is there and is where a machine-scope fix lands.
-        `speech_providers` replaces the shipped voices by name, `sound_providers` the shipped sound
-        providers, and `aligners` the shipped aligner. A project's `.env` is left unread unless `dotenv`
+        `speech_providers` replaces the shipped voices by name, and raises `ValueError` for a host's own
+        factory under a name DeckTalk ships, `sound_providers` replaces the shipped sound providers, and
+        `aligners` the shipped aligner. A project's `.env` is left unread unless `dotenv`
         says otherwise, because it is what a tenant's upload would reach for, and every base URL a
         request goes to is a machine-scoped key, so no project can send the key or the script anywhere
         this machine did not name.

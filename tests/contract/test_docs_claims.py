@@ -31,7 +31,7 @@ from decktalk.explain import explain
 from decktalk.results import Layer
 from decktalk.settings import BY_ID, KEYS, Scope
 from decktalk.speech import Speech, SpeechRequest
-from support.fakes import FAKE_VOICE_NAME, FakeVoice
+from support.fakes import FAKE_VOICE_NAME, FakeVoice, stand_in
 from support.installer import fake_path
 from support.links import link
 from support.paths import REPO
@@ -255,7 +255,9 @@ class ClosedVoice(FakeVoice):
         raise ProviderError("the voice under test sells nothing")
 
 
-def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp_path: Path) -> None:
+def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The requirements page says `--max-cost` refuses a run whose most is over the ceiling, and the
     refusal's hint names the ceiling to raise it to. That ceiling has to let the run through to the
     voice, and one cent under it has to refuse the run before the voice hears a word."""
@@ -264,12 +266,14 @@ def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<html></html>", encoding="utf-8")
     voice = ClosedVoice()
+    voices = stand_in(monkeypatch)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     machine = decktalk.Machine.of(
         environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
         machine_file=tmp_path / "machine.toml",
         cwd=tmp_path,
         cache_dir=tmp_path / "cache",
-        speech_providers={FAKE_VOICE_NAME: lambda _context: voice},
+        speech_providers=voices.table,
     )
     project = decktalk.open(tmp_path, machine=machine)
     with pytest.raises(ApprovalRequired) as refused:

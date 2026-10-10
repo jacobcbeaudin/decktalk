@@ -14,8 +14,9 @@ package, each declared once in `DECLARED`:
 
 There are no entry points and no plugin loading. A project file names an adapter by its key and can
 never name code. A host that embeds the library may hand `Machine.of` its own table of factories,
-which is code the host wrote and imported itself, and it is how a test runs the real `narrate`
-against a voice that spends nothing. The protocol types a host builds against are public here:
+which is code the host wrote and imported itself, under names of its own: a voice is billed by its
+name, so a name in `DECLARED` holds only the adapter shipped under it, and `SpeechProviders` refuses
+a host's factory under one when it is registered. The protocol types a host builds against are public here:
 `SpeechProvider`, the `SpeechRequest` it receives and its `Piece`s, the `SpeechFactory` that builds
 one from a `SpeechContext`, and the `Secrets` it reads its credential from.
 
@@ -42,6 +43,7 @@ the way a model name names which model does, and it travels in the request and i
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
@@ -306,10 +308,10 @@ DECLARED: Mapping[str, Declared] = MappingProxyType(
 )
 """The closed set: every speech adapter DeckTalk ships, and what each declares about itself, in one place.
 
-A provider a host registered itself is not here. It owns no table, needs no key DeckTalk knows of,
-is handed the pieces and renders their pauses its own way, is asked for `HOST_OUTPUT`, and its takes are named
-by its voice's speed alone among the settings. Its bill is undeclared, so DeckTalk prices it at nothing
-anybody stated and `--max-cost` refuses to guard it.
+A provider a host registered itself is not here, and never under a name that is. It owns no table,
+needs no key DeckTalk knows of, is handed the pieces and renders their pauses its own way, is asked for
+`HOST_OUTPUT`, and its takes are named by its voice's speed alone among the settings. Its bill is
+undeclared, so DeckTalk prices it at nothing anybody stated and `--max-cost` refuses to guard it.
 """
 
 
@@ -484,12 +486,46 @@ sent no word times is timed by it. Like `PROVIDERS`, it cannot be changed in pla
 """
 
 
+def registered[F](factories: Mapping[str, F], shipped: Mapping[str, F], *, what: str, key: str) -> Mapping[str, F]:
+    """A table a host registered, copied as it passed, once no factory of its own sits under a shipped name.
+
+    A provider is billed by the name it is registered under, so a name DeckTalk ships, in whatever case,
+    width or surrounding space, answers with the adapter shipped under it and nothing else. `shipped`
+    is that closed set, `what` names the kind of provider and `key` the setting that names one. A table
+    that breaks the rule raises `ValueError`, because the fault is in the host's code.
+    """
+    for name, factory in factories.items():
+        spelled = unicodedata.normalize("NFKC", name).strip().casefold()
+        found = next((own for own in shipped if own.casefold() == spelled), None)
+        if found is None or (name == found and factory is shipped[found]):
+            continue
+        another = "" if name == found else f", {found!r}, spelled another way"
+        raise ValueError(
+            f"{name!r} is the name of {what} DeckTalk ships{another}, and {what} is billed by its name, so a "
+            f"factory a host wrote cannot be registered under it. Register it under another name, such as "
+            f"'house', and name that in {key}."
+        )
+    return MappingProxyType(dict(factories))
+
+
 @dataclass(frozen=True)
 class SpeechProviders:
-    """The voices one machine answers with, and how often each asks again."""
+    """The voices one machine answers with, and how often each asks again.
+
+    Every voice is billed by the name it is registered under, so a name DeckTalk ships answers with the
+    adapter DeckTalk ships and nothing else. A table that puts a host's own factory under one of those
+    names, or under a spelling of one, is refused when it is registered, so no code a host wrote is
+    priced at a bill a shipped adapter declared. The table is copied as it passed, so a later change
+    to the mapping the host handed in changes no voice.
+    """
 
     factories: Mapping[str, SpeechFactory]
     retries: int = 0
+
+    def __post_init__(self) -> None:
+        """Refuse a host's factory under a shipped voice's name, and keep the table as it was when it passed."""
+        table = registered(self.factories, PROVIDERS, what="a voice", key="[voices.NAME] provider")
+        object.__setattr__(self, "factories", table)
 
     def provider(self, name: str, context: SpeechContext, *, voice: str) -> SpeechProvider:
         """The provider these voices register under `name`, built for this context, for the voice called `voice`.

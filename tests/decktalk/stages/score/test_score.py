@@ -32,7 +32,7 @@ from decktalk.stages import score as stage
 from decktalk.stages.score import ledger as ledger_module
 from decktalk.stages.score import score
 from decktalk.stages.score.ledger import Ledger
-from support.fakes import FakeVoice
+from support.fakes import FakeVoice, stand_in_sounds
 from support.git import committed_clone, git
 from support.projects import write_project
 from support.runs import a_run, a_sounding_run, a_voiced_run
@@ -227,7 +227,7 @@ def test_a_cap_over_a_rate_nobody_stated_names_that_rates_key(tmp_path: Path) ->
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
-def test_sound_is_asked_for_in_its_own_format(tmp_path: Path) -> None:
+def test_sound_is_asked_for_in_its_own_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The format is the score's own key, so a take's format moving never changes what a sound is sent."""
     formats: list[str] = []
 
@@ -240,7 +240,9 @@ def test_sound_is_asked_for_in_its_own_format(tmp_path: Path) -> None:
     toml = EFFECT.replace("[score.effects]\n", '[score]\noutput_format = "mp3_22050_32"\n\n[score.effects]\n')
     toml = toml.replace("[project]", '[elevenlabs]\noutput_format = "mp3_44100_192"\n\n[project]', 1)
     fake = Formats()
-    score(an_inputs(tmp_path, toml), a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True))
+    sounds = stand_in_sounds(monkeypatch)
+    sounds["elevenlabs"] = lambda _context: fake
+    score(an_inputs(tmp_path, toml), a_sounding_run(tmp_path, sounds.table, spend=True))
     assert formats == ["mp3_22050_32"]
 
 
@@ -731,7 +733,7 @@ def test_a_ledger_that_does_not_read_is_refused_with_a_sentence_and_left_on_disk
 # ---- the service a run buys from ----------------------------------------------------------------
 
 
-def test_the_sound_provider_is_the_one_the_runs_machine_holds(tmp_path: Path) -> None:
+def test_the_sound_provider_is_the_one_the_runs_machine_holds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The provider is looked up by name in the run's own sound table, so a host's table is the one billed."""
     made: list[tuple[FakeService, SoundContext]] = []
 
@@ -739,7 +741,9 @@ def test_the_sound_provider_is_the_one_the_runs_machine_holds(tmp_path: Path) ->
         made.append((FakeService(), context))
         return made[-1][0]
 
-    run = a_sounding_run(tmp_path, {"elevenlabs": house}, spend=True)
+    sounds = stand_in_sounds(monkeypatch)
+    sounds["elevenlabs"] = house
+    run = a_sounding_run(tmp_path, sounds.table, spend=True)
     client = stage.client_for(run, an_inputs(tmp_path))
     ((built, context),) = made
     assert client is built
@@ -748,10 +752,14 @@ def test_the_sound_provider_is_the_one_the_runs_machine_holds(tmp_path: Path) ->
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
-def test_a_paid_run_buys_through_the_sound_provider_its_machine_holds(tmp_path: Path) -> None:
+def test_a_paid_run_buys_through_the_sound_provider_its_machine_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """No class is checked: whatever the table answers with is asked for the effects and the music."""
     fake = FakeService()
-    run = a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True)
+    sounds = stand_in_sounds(monkeypatch)
+    sounds["elevenlabs"] = lambda _context: fake
+    run = a_sounding_run(tmp_path, sounds.table, spend=True)
     result = score(an_inputs(tmp_path), run)
     assert {item.outcome for item in result.items} == {SoundOutcome.GENERATED}
     assert [body["text"] for body in fake.sounds] == ["a quiet room", "a bright chime"]
@@ -767,7 +775,7 @@ def test_the_sound_provider_is_the_one_the_score_table_names(tmp_path: Path) -> 
 
 def test_a_machine_whose_host_named_its_voices_and_no_sounds_has_no_sound_provider(tmp_path: Path) -> None:
     """A host that handed its machine a voice table reaches no shipped sound provider by a name it left out."""
-    run = a_voiced_run(tmp_path, {"elevenlabs": lambda _context: FakeVoice()}, spend=True)
+    run = a_voiced_run(tmp_path, {"house": lambda _context: FakeVoice()}, spend=True)
     with pytest.raises(InputError, match="not a sound provider this machine answers for"):
         stage.client_for(run, an_inputs(tmp_path))
 

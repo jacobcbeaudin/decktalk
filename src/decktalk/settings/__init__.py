@@ -256,7 +256,8 @@ class NarrationConfig:
     )
     context_characters: int = tune(
         1500,
-        "Characters of each neighbour section sent with a request, for continuous prosody.",
+        "Characters of each neighbour section sent with a request, for continuous prosody: the end of the turn "
+        "before and the start of the turn after. 0 sends no neighbouring text, so each turn is sent on its own.",
         unit="characters",
         bounds=Bounds(ge=0, le=5000),
     )

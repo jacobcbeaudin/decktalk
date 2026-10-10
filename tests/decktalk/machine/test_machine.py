@@ -27,10 +27,10 @@ from decktalk.media import ffmpeg as ffmpeg_module
 from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.project import open as open_project
-from decktalk.results import ApiKeyState, ClipResult, CueResult
+from decktalk.results import ApiKeyState, BillingBasis, ClipResult, CueResult
 from decktalk.settings import BY_ID, ToolsConfig
-from decktalk.speech import ALIGNER, ALIGNERS, AlignerContext, SpeechContext
-from decktalk.speech.sound import SOUNDS, SoundContext
+from decktalk.speech import ALIGNER, ALIGNERS, DECLARED, AlignerContext, SpeechContext
+from decktalk.speech.sound import SOUND_DECLARED, SOUNDS, SoundContext
 from decktalk.stages.narrate.plan import speech_provider
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announce
@@ -354,6 +354,13 @@ def test_a_project_opened_on_a_host_machine_keeps_the_hosts_overrides(tmp_path: 
     assert project.settings.video.crf == 20
 
 
+def read_by(root: Path, provider: str) -> None:
+    """Have the starter's narrator read by `provider`, which is the voice a project names in its own file."""
+    toml = root / "decktalk.toml"
+    text = toml.read_text(encoding="utf-8").replace('provider = "elevenlabs"', f'provider = "{provider}"')
+    toml.write_text(text, encoding="utf-8")
+
+
 @pytest.mark.usefixtures("no_network", "fake_ffmpeg")
 def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> None:
     """A host that hands its machine a fake voice must never have a request reach the real one."""
@@ -364,13 +371,64 @@ def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> N
         contexts.append(context)
         return voice
 
-    here = a_host(tmp_path, speech_providers={"elevenlabs": build})
-    project = open_project(a_starter(tmp_path, here), machine=here)
-    result = project.narrate(spend=True)
+    here = a_host(tmp_path, speech_providers={"house": build})
+    root = a_starter(tmp_path, here)
+    read_by(root, "house")
+    result = open_project(root, machine=here).narrate(spend=True)
     assert result.ok
     assert voice.requests, "the host's voice was never asked for a take"
     assert {request.voice_id for request in voice.requests} == {"house-voice"}
-    assert {context.base_url for context in contexts} == {BY_ID["elevenlabs.base_url"].default}
+    assert {context.base_url for context in contexts} == {""}, "a host's voice owns no table to name a host in"
+
+
+@pytest.mark.parametrize("name", sorted(DECLARED))
+def test_a_host_voice_under_a_shipped_name_is_refused_when_the_machine_is_built(tmp_path: Path, name: str) -> None:
+    """The bill is read off the name, so a host's code under a shipped name would be billed as the shipped voice."""
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a voice DeckTalk ships.*Register it under another"):
+        a_host(tmp_path, speech_providers={name: lambda _context: FakeVoice(name="house")})
+
+
+@pytest.mark.parametrize("name", sorted(SOUND_DECLARED))
+def test_a_host_sound_provider_under_a_shipped_name_is_refused_when_the_machine_is_built(
+    tmp_path: Path, name: str
+) -> None:
+    """A sound is priced at the rate its provider's name declares, so a host's code under it would be billed so."""
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a sound provider DeckTalk ships"):
+        a_host(tmp_path, sound_providers={name: lambda _context: object()})
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_a_host_voice_under_a_shipped_free_name_never_buys_without_approval(tmp_path: Path) -> None:
+    """`dtsp` declares itself free, so a host's voice standing under that name would be bought with no `spend`."""
+    voice = FakeVoice(name="house")
+    free = next(name for name, declared in DECLARED.items() if declared.billing.by is BillingBasis.FREE)
+    with pytest.raises(ValueError, match="DeckTalk ships"):
+        here = a_host(tmp_path, speech_providers={free: lambda _context: voice})
+        root = a_starter(tmp_path, here)
+        read_by(root, free)
+        result = open_project(root, machine=here).narrate()
+        pytest.fail(
+            f"a host's voice under {free!r} was asked for {len(voice.requests)} takes by a run that may not spend, "
+            f"priced as {result.cost.billing.value}"
+        )
+    assert voice.requests == []
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_a_host_voice_under_its_own_name_is_billed_as_undeclared_and_bought_only_with_approval(
+    tmp_path: Path,
+) -> None:
+    voice = FakeVoice(name="house")
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: voice})
+    root = a_starter(tmp_path, here)
+    read_by(root, "house")
+    project = open_project(root, machine=here)
+    assert project.price().billing is BillingBasis.UNDECLARED
+    unapproved = project.narrate()
+    assert voice.requests == [], "a run that may not spend bought from a voice that declares no bill"
+    assert unapproved.ok
+    assert project.narrate(spend=True).ok
+    assert voice.requests, "a run that may spend never reached the host's own voice"
 
 
 @pytest.mark.usefixtures("no_network")
@@ -382,19 +440,21 @@ def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> No
 
 def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
     first, second = FakeVoice(name="first"), FakeVoice(name="second")
-    one = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: first})
-    two = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: second})
+    one = a_host(tmp_path, speech_providers={"house": lambda _context: first})
+    two = a_host(tmp_path, speech_providers={"house": lambda _context: second})
     with one._run() as outer:
         with two._run() as inner:
-            assert inner.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator") is second
-        assert outer.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator") is first
+            assert inner.machine.speech_providers.provider("house", a_context(), voice="narrator") is second
+        assert outer.machine.speech_providers.provider("house", a_context(), voice="narrator") is first
 
 
 def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices(tmp_path: Path) -> None:
     """A worker pool that never copied the context still asks its run, so it cannot reach the shipped voice."""
     house = FakeVoice(name="house")
-    here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: house})
-    project = open_project(a_starter(tmp_path, here), machine=here)
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: house})
+    root = a_starter(tmp_path, here)
+    read_by(root, "house")
+    project = open_project(root, machine=here)
     answered: list[object] = []
     with here._run() as run:
         inputs = project._inputs
@@ -408,9 +468,9 @@ def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices
 def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
     """A busy voice is asked again as often as the machine says, which no project may change."""
     seen: list[SpeechContext] = []
-    here = a_host(tmp_path, speech_providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
+    here = a_host(tmp_path, speech_providers={"house": seen.append}, overrides=("narration.retries=5",))
     with here._run() as run:
-        run.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator")
+        run.machine.speech_providers.provider("house", a_context(), voice="narrator")
     assert seen[0].retries == 5
 
 
@@ -420,7 +480,7 @@ def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_sound_provi
 
 def test_a_host_that_gave_its_voices_and_no_sounds_reaches_no_shipped_sound_provider(tmp_path: Path) -> None:
     """A machine built with a fake voice must not reach the real sound service by a table its host left out."""
-    here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: FakeVoice()})
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
     assert dict(here.sound_providers.factories) == {}
 
 
@@ -438,7 +498,7 @@ def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_aligner(tmp
 
 def test_a_host_that_gave_its_voices_and_no_aligners_reaches_no_shipped_aligner(tmp_path: Path) -> None:
     """A machine built with a fake voice must not reach a local server by a table its host left out."""
-    here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: FakeVoice()})
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
     assert dict(here.aligners) == {}
 
 
@@ -471,8 +531,9 @@ def named_in_the_file(root: Path, voice_id: str) -> None:
 @pytest.mark.usefixtures("no_network")
 def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -> None:
     """An upload could carry a `.env`, and the key it names would then pay for the tenant's take."""
-    here = a_host(tmp_path, environ={}, speech_providers={"elevenlabs": keyed(FakeVoice())})
+    here = a_host(tmp_path, environ={}, speech_providers={"house": keyed(FakeVoice())})
     root = a_starter(tmp_path, here)
+    read_by(root, "house")
     named_in_the_file(root, "tenant-voice")
     (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\n", encoding="utf-8")
     project = open_project(root, machine=here)
@@ -483,8 +544,9 @@ def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -
 @pytest.mark.usefixtures("no_network", "fake_ffmpeg")
 def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_path: Path) -> None:
     voice = FakeVoice()
-    here = a_host(tmp_path, environ={}, speech_providers={"elevenlabs": keyed(voice)}, dotenv=True)
+    here = a_host(tmp_path, environ={}, speech_providers={"house": keyed(voice)}, dotenv=True)
     root = a_starter(tmp_path, here)
+    read_by(root, "house")
     named_in_the_file(root, "author-voice")
     (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\n", encoding="utf-8")
     assert open_project(root, machine=here).narrate(spend=True).ok

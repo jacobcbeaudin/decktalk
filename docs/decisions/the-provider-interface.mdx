@@ -24,8 +24,16 @@ The engine ships two speech adapters and names each one in `PROVIDERS` in
 
 There are no entry points and no plugin loading. A project file names an adapter by its key in
 `PROVIDERS` and can never name code. A host that embeds the library may hand `Machine.of` its own
-table, which is how a test runs the real `narrate` against a voice that spends nothing, and that
-table is code the host wrote and imported itself.
+table, which is how a service runs the real `narrate` against a voice of its own, and that table is
+code the host wrote and imported itself.
+
+A voice is billed by its name, which is how the spend gate reads the bill its adapter declares. So
+a name in `PROVIDERS` holds only the adapter shipped under it, and a table that puts a host's own
+factory under one, in any case, width or spacing, is refused with `ValueError` when it is
+registered. A host's voice goes under a name of its own, where its bill is undeclared and a run that
+may not spend never buys from it. A test that wants a shipped voice's table and bill with a fake
+behind it replaces the adapter's `for_context` for the length of the test, which is a seam the
+product does not have.
 
 The Python protocol types are public, in the `decktalk.speech` module: the provider protocol, the
 request it receives and the speech it returns, and the factory. A host and a contributor therefore
@@ -120,7 +128,9 @@ only to the vendor that issued it.
 
 The sound stage (`score`) buys music, ambience and effects through a `SoundProvider`, a second
 protocol with its own table of adapters beside `PROVIDERS`. It never borrows the speech registry and
-never checks which class a voice is. Sound is billed by the second of audio, because that is how
+never checks which class a voice is. Its table follows the same registration rule, because a sound is
+priced at the rate its provider's name declares: a host's own sound factory under a name DeckTalk
+ships, in any spelling, is refused with `ValueError` when it is registered. Sound is billed by the second of audio, because that is how
 sound is billed, at a rate in US dollars per minute in the sound adapter's own table. A sound's
 ledger digest is taken over the endpoint as the service publishes it and the request body, without the configured `base_url`, so
 moving to another host of the same service or to a local mock buys nothing again.

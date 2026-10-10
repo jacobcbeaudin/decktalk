@@ -14,7 +14,6 @@ from typing import IO, Any
 import pytest
 from filelock import FileLock
 
-from decktalk import machine as machine_module
 from decktalk.artifacts import (
     PLACEHOLDER_PREFIX,
     PLACEHOLDER_SUFFIX,
@@ -53,7 +52,7 @@ from decktalk.stages.cost import charge_of
 from decktalk.stages.kept import assemble_digest
 from decktalk.stages.narrate import narrate, take_states
 from decktalk.stages.narrate.plan import id_variable, no_voice_note
-from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, NARRATOR_ID, FakeVoice
+from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, NARRATOR_ID, FakeVoice, stand_in
 from support.git import committed_clone, git, tracked_copy
 from support.interrupts import aimed_signals, interrupts_raise, press_ctrl_c
 from support.logs import data_of, decisions
@@ -1840,8 +1839,8 @@ def test_a_paid_run_buys_through_the_voices_its_machine_holds_and_never_the_ship
     """A run opened outside `Machine._run` still answers with its machine's table, so no host is billed elsewhere."""
     the_shipped_voice_is_never_built(monkeypatch)
     house = CountedVoice()
-    project = make_inputs()
-    run = a_voiced_run(project.root, {"elevenlabs": house}, spend=True)
+    project = make_inputs(toml=TOML.replace('provider = "elevenlabs"', 'provider = "house"'))
+    run = a_voiced_run(project.root, {"house": house}, spend=True)
     result = narrate(project, run)
     assert result.ok
     assert house.built == 1
@@ -2455,10 +2454,10 @@ def test_a_word_its_voice_placed_after_the_take_sound_ends_is_a_finding_and_play
 def on_the_command_line(
     project: Inputs, voice: FakeVoice, monkeypatch: pytest.MonkeyPatch
 ) -> Callable[..., dict[str, Any]]:
-    """`decktalk --json narrate ARGS` on this project, answering its JSON, on a machine whose paid voice is `voice`."""
+    """`decktalk --json narrate ARGS` on this project, answering its JSON, with `voice` standing in for the paid one."""
     for name, value in {**ENVIRON, MACHINE_FILE_VARIABLE: str(project.root / "machine.toml")}.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.setattr(machine_module, "PROVIDERS", {**machine_module.PROVIDERS, FAKE_VOICE_NAME: lambda _c: voice})
+    stand_in(monkeypatch)[FAKE_VOICE_NAME] = lambda _context: voice
 
     def narrate_with(*args: str, capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
         main(["-p", str(project.root), "--json", "narrate", *args])

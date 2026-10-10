@@ -31,10 +31,13 @@ from decktalk.speech import (
     AlignerContext,
     Output,
     Speech,
+    SpeechFactory,
+    SpeechProviders,
     VoiceInForce,
     canonical_text,
 )
 from decktalk.speech.dtsp import DtspAligner
+from support.fakes import FakeVoice
 from support.paths import DATA, REPO, SRC, TESTS
 from support.voice_server import VoiceServer
 
@@ -296,3 +299,50 @@ def test_speech_with_no_words_says_none_and_never_an_empty_list() -> None:
     assert Speech(b"take", None).model_digest is None
     with pytest.raises(ValueError, match="None"):
         Speech(b"take", ())
+
+
+def house(_context: object) -> FakeVoice:
+    """A voice a host wrote itself, which bills nobody DeckTalk knows of."""
+    return FakeVoice(name="house")
+
+
+def spellings(name: str) -> list[str]:
+    """Ways of writing a shipped name that a reader takes for the shipped voice itself."""
+    return [name.upper(), name.title(), f" {name}", f"{name}\n", "".join(chr(ord(c) + 0xFEE0) for c in name)]
+
+
+@pytest.mark.parametrize("name", sorted(DECLARED))
+def test_a_host_factory_under_a_shipped_name_is_refused(name: str) -> None:
+    """The spend gate trusts the bill of the name, so only the shipped code may answer under a shipped name."""
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a voice DeckTalk ships.*Register it under another"):
+        SpeechProviders(factories={**PROVIDERS, name: house})
+
+
+@pytest.mark.parametrize(
+    ("name", "spelled"), [(name, spelled) for name in sorted(DECLARED) for spelled in spellings(name)]
+)
+def test_a_spelling_of_a_shipped_name_is_refused_too(name: str, spelled: str) -> None:
+    with pytest.raises(ValueError, match=re.escape(f"{spelled!r} is the name of a voice DeckTalk ships, {name!r}")):
+        SpeechProviders(factories={spelled: house})
+
+
+def test_a_spelling_of_a_shipped_name_in_a_project_is_billed_as_a_host_voice() -> None:
+    """A project names a provider by its exact key, so no other spelling is read as a shipped voice's bill."""
+    for name in DECLARED:
+        for spelled in spellings(name):
+            voice = voice_of({"voices": {"narrator": {"provider": spelled}}})
+            assert voice.billing is BillingBasis.UNDECLARED, spelled
+
+
+def test_the_shipped_voices_register_under_their_own_names_beside_a_hosts() -> None:
+    assert dict(SpeechProviders(factories=PROVIDERS).factories) == dict(PROVIDERS)
+    both = SpeechProviders(factories={**PROVIDERS, "house": house})
+    assert sorted(both.factories) == sorted([*PROVIDERS, "house"])
+
+
+def test_a_hosts_table_changed_after_it_registered_changes_no_voice() -> None:
+    """The check is made once, so the table it passed is the one the machine answers with."""
+    table: dict[str, SpeechFactory] = {"house": house}
+    registered = SpeechProviders(factories=table)
+    table[next(iter(DECLARED))] = house
+    assert list(registered.factories) == ["house"]

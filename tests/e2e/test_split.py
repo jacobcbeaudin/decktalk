@@ -8,11 +8,11 @@ directory included, handed from one to the other. The render job's build does no
 every take the voice job bought and never builds a voice. This drives exactly that split through the
 public SDK, each job a real subprocess with an environment the test chose.
 
-The voice job's provider is a stand-in that asks the machine for the key, checks it is the sentinel,
-and answers with a real tone from the pinned ffmpeg, so no request leaves the machine and nothing is
-spent. The render job records every environment a Chromium launch is handed and reports it, because
-that environment, and the job's own, are the two places a key could reach a page. The key here is
-an obvious sentinel and never a credential.
+The voice job's provider is the host's own, registered as `house`, which asks the machine for the
+key, checks it is the sentinel, and answers with a real tone from the pinned ffmpeg, so no request
+leaves the machine and nothing is spent. The render job records every environment a Chromium launch
+is handed and reports it, because that environment, and the job's own, are the two places a key
+could reach a page. The key here is an obvious sentinel and never a credential.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ here = Machine.of(
     machine_file=out.parent / "voice-machine.toml",
     cwd=root,
     cache_dir=cache,
-    speech_providers={"elevenlabs": Tone},
+    speech_providers={"house": Tone},
 )
 result = decktalk.open(root, machine=here).narrate(spend=True)
 voiced = [take.section for take in result.sections if take.outcome is TakeOutcome.VOICED]
@@ -124,7 +124,7 @@ def refuse(_context):
 
 browser.child_environment = watched
 base = Machine.from_environment()
-here = replace(base, speech_providers=replace(base.speech_providers, factories={"elevenlabs": refuse}))
+here = replace(base, speech_providers=replace(base.speech_providers, factories={"house": refuse}))
 built = decktalk.open(root, machine=here, threshold=decktalk.Threshold(stop_on=None)).build()
 takes = Takes.read(root / "build" / "narrate" / "takes.json")
 out.write_text(
@@ -167,6 +167,11 @@ def test_the_api_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> N
     voice_root = tmp_path / "voice" / "starter"
     voice_root.parent.mkdir()
     init(voice_root, machine=here, skills=False)
+    # The stand-in is the host's own voice, so the project names it by the host's name for it.
+    toml = voice_root / "decktalk.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('provider = "elevenlabs"', 'provider = "house"'), encoding="utf-8"
+    )
 
     voiced = tmp_path / "voice" / "result.json"
     voice_env = carried(**{KEY: SENTINEL, "DECKTALK_VOICES_NARRATOR_ID": "house-voice"})

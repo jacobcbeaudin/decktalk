@@ -133,8 +133,8 @@ class ElevenLabs:
         """One section read aloud, as the mp3 bytes and a start and an end time per word.
 
         The neighbouring sections travel with the request so the voice carries its prosody across a
-        cut, trimmed to the characters the tuning allows, and the alignment that comes back is what
-        every later stage measures against.
+        cut, trimmed to the characters the tuning allows and left out when it allows none, and the
+        alignment that comes back is what every later stage measures against.
         """
         if not renders_pauses(request.model) and any(piece.timed for piece in request.pieces):
             # A pause this model would drop is refused before anything is sent, so nothing is bought.
@@ -149,10 +149,12 @@ class ElevenLabs:
             "model_id": request.model,
             "voice_settings": request.voice_settings,
         }
-        if request.previous_text:
-            payload["previous_text"] = request.previous_text[-self.context.context_characters :]
-        if request.next_text:
-            payload["next_text"] = request.next_text[: self.context.context_characters]
+        kept = self.context.context_characters
+        # At zero no neighbour travels at all: `text[-0:]` is the whole text, so zero is never a slice bound.
+        if kept and request.previous_text:
+            payload["previous_text"] = request.previous_text[-kept:]
+        if kept and request.next_text:
+            payload["next_text"] = request.next_text[:kept]
         reply = post_json(
             f"{url}?output_format={request.output_format}" if request.output_format else url,
             payload,

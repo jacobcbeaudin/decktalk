@@ -52,7 +52,7 @@ from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders
 from decktalk.speech.sound import SoundProviders
 from decktalk.stages.table import CALLS
 from support.costs import a_cost
-from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
+from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice, stand_in, stand_in_sounds
 from support.links import link
 from support.projects import MINIMAL_TOML, load_project, write_project
 from support.runs import a_machine
@@ -415,14 +415,18 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
     """
     load_project(tmp_path, PAYING_TOML, script="## 1. Open\n\nA bowl.\n")
     bought = Bought()
+    voices = stand_in(monkeypatch)
+    voices[FAKE_VOICE_NAME] = lambda _context: bought.voice
+    sounds = stand_in_sounds(monkeypatch)
+    sounds["elevenlabs"] = lambda _context: bought
     machine = Machine(
         environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
         tables={},
         machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-        speech_providers=SpeechProviders(factories={FAKE_VOICE_NAME: lambda _context: bought.voice}),
-        sound_providers=SoundProviders(factories={"elevenlabs": lambda _context: bought}),
+        speech_providers=SpeechProviders(factories=voices.table),
+        sound_providers=SoundProviders(factories=sounds.table),
     )
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
     project = decktalk.open(tmp_path, machine=machine, threshold=Threshold(stop_on=None))

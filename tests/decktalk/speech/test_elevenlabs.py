@@ -149,6 +149,26 @@ def test_one_section_read_aloud_comes_back_as_audio_and_a_time_for_every_word(mo
     assert sent["timeout"] == 180
 
 
+@pytest.mark.parametrize(
+    ("characters", "previous", "following"),
+    [
+        (0, None, None),
+        (4, "fore", "afte"),
+        (100, "before" * 5, "after" * 5),
+    ],
+)
+def test_the_neighbours_travel_trimmed_to_context_characters_and_not_at_all_at_zero(
+    monkeypatch, characters, previous, following
+):
+    """Zero keeps the neighbouring turns on the machine, and a positive value sends at most that many characters
+    from the end of the turn before and the start of the turn after."""
+    asked = answers(monkeypatch, REPLY)
+    provider(context_characters=characters).speak(request(previous_text="before" * 5, next_text="after" * 5))
+    body = asked[0]["body"]
+    assert body.get("previous_text") == previous
+    assert body.get("next_text") == following
+
+
 @pytest.mark.parametrize("model", ["eleven_v3", "eleven_v4", "eleven_v4_turbo", "a_model_nobody_checked"])
 def test_a_timed_pause_is_refused_on_a_model_that_reads_no_break_tag_before_anything_is_sent(monkeypatch, model):
     """v3 and v4 read no `<break>`, so the pause would be dropped after the take was bought."""

@@ -631,6 +631,10 @@ One that lands anywhere else, including `cue`, `record`, `assemble` or `verify` 
 `KeyboardInterrupt`. A loop that should end on Ctrl-C catches `Cancelled` and `KeyboardInterrupt` before it catches
 `DeckTalkError`.
 
+A host that misuses the library itself gets a `ValueError` rather than a `DeckTalkError`, because the
+fault is in the host's code and not in the environment. Registering its own voice or sound provider
+under a name DeckTalk ships is one, which [Speech providers](#speech-providers) describes.
+
 Each one carries `hint`, which is a whole command with its flags rather than a topic, and
 `location`, which is the place the reader should open. Either is `None` when nothing knows it.
 
@@ -731,8 +735,8 @@ see is one the host chose.
 | `cwd` | The directory a relative project path is read from. |
 | `cache_dir` | Where the fetched Chromium and ffmpeg live. |
 | `store_dir` | The take store a project on this machine keeps a second copy of every voiced take in, when `[narration] store_dir` names none. The default is none, so a host that runs other people's projects shares no takes across them unless it passes one. |
-| `speech_providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. [Speech providers](#speech-providers) shows one. |
-| `sound_providers` | The sound providers it answers with by name. A machine given `speech_providers` and no sound table answers with none. |
+| `speech_providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. A name DeckTalk ships holds only the shipped adapter, and a host's own factory under one raises `ValueError`. [Speech providers](#speech-providers) shows one. |
+| `sound_providers` | The sound providers it answers with by name. A machine given `speech_providers` and no sound table answers with none. A name DeckTalk ships holds only the shipped adapter, and a host's own factory under one raises `ValueError`, as for a voice. |
 | `aligners` | The aligners it answers with by name, which time a take whose voice sent no word times. A machine given `speech_providers` and no aligner table answers with none, and one given neither answers with the local server `[dtsp] base_url` names. |
 | `overrides` | `key=value` strings, spelled as `--set` spells them, that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
 | `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
@@ -908,6 +912,16 @@ machine = decktalk.Machine.of(environ={}, machine_file=Path("machine.toml"), cwd
 A project opened on that machine with `provider = "silent"` voices through it, and can name no voice
 the table leaves out. A host's provider declares no bill, so a run that buys from it is priced at
 nothing anybody stated, and `max_cost` refuses to guard it.
+
+A voice is billed by the name it is registered under, so a name DeckTalk ships holds only the adapter
+DeckTalk ships. A table that puts a host's own factory under `elevenlabs` or `dtsp`, or under any
+spelling of one in another case, width or with space around it, raises `ValueError` when the machine
+is built, naming the shipped voice and saying to register the factory under another name. Without
+that, a host's code under `dtsp` would be billed as the free local voice and bought by a run that may
+not spend. The sound table a host hands `Machine.of` follows the same rule, because a sound is priced
+at the rate its provider's name declares: a host's own sound factory under `elevenlabs` raises
+`ValueError` naming `[score] provider`. Each table is copied when the machine is built, so changing the
+mapping afterwards changes no provider.
 
 ## Settings
 

@@ -26,11 +26,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from ...errors import InputError
 from ...results import SoundKind
-from .. import DECLARED, Secrets
+from .. import DECLARED, Secrets, registered
 
 
 @dataclass(frozen=True)
@@ -87,19 +88,21 @@ def _elevenlabs(context: SoundContext) -> SoundProvider:
     return ElevenLabsSound.for_context(context)
 
 
-SOUND_DECLARED: dict[str, SoundDeclared] = {
-    "elevenlabs": SoundDeclared(
-        # The voice and the sound are bought on one account, so the sound reads the voice's key variable.
-        key_variable=DECLARED["elevenlabs"].key_variable,
-        table="elevenlabs",
-        endpoint=_elevenlabs_endpoint,
-        factory=_elevenlabs,
-    )
-}
+SOUND_DECLARED: Mapping[str, SoundDeclared] = MappingProxyType(
+    {
+        "elevenlabs": SoundDeclared(
+            # The voice and the sound are bought on one account, so the sound reads the voice's key variable.
+            key_variable=DECLARED["elevenlabs"].key_variable,
+            table="elevenlabs",
+            endpoint=_elevenlabs_endpoint,
+            factory=_elevenlabs,
+        )
+    }
+)
 """For each sound adapter DeckTalk ships, what it declares about itself, in one place.
 
-A sound provider a host registered itself is not here. It owns no table and needs no key DeckTalk
-knows of, and its requests are named by its own name and the kind.
+A sound provider a host registered itself is not here, and never under a name that is. It owns no
+table and needs no key DeckTalk knows of, and its requests are named by its own name and the kind.
 """
 
 
@@ -109,16 +112,31 @@ def endpoint(provider: str, kind: SoundKind) -> str:
     return declared.endpoint(kind) if declared is not None else f"{provider}:{kind.value}"
 
 
-SOUNDS: dict[str, SoundFactory] = {name: declared.factory for name, declared in SOUND_DECLARED.items()}
-"""The factories of the sound adapters DeckTalk ships, the table a machine answers with unless its host gave one."""
+SOUNDS: Mapping[str, SoundFactory] = MappingProxyType(
+    {name: declared.factory for name, declared in SOUND_DECLARED.items()}
+)
+"""The factories of the sound adapters DeckTalk ships, the table a machine answers with unless its host gave one.
+
+Like `SOUND_DECLARED`, it cannot be changed in place.
+"""
 
 
 @dataclass(frozen=True)
 class SoundProviders:
-    """The sound providers one machine answers with, and how often each asks again."""
+    """The sound providers one machine answers with, and how often each asks again.
+
+    A sound is priced at the rate its provider's name declares, so a name DeckTalk ships answers with
+    the adapter shipped under it and nothing else, and a host's own factory under one, or under a
+    spelling of one, is refused when it is registered. The table is copied as it passed.
+    """
 
     factories: Mapping[str, SoundFactory]
     retries: int = 0
+
+    def __post_init__(self) -> None:
+        """Refuse a host's factory under a shipped sound provider's name, and keep the table as it passed."""
+        table = registered(self.factories, SOUNDS, what="a sound provider", key="[score] provider")
+        object.__setattr__(self, "factories", table)
 
     def provider(self, name: str, context: SoundContext) -> SoundProvider:
         """The provider this table registers under `name`, built for this context.
