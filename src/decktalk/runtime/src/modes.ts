@@ -75,7 +75,7 @@ const CAPTION: Q = "caption";
 /** What `?hud=` says when a page is asked to draw its own clock, which a recording never is. */
 const ON = "1";
 
-/** The slowest a preview may be played, which is slow enough to read a cue and fast enough to end. */
+/** Calibration: the slowest a preview may be played, which is slow enough to read a cue and fast enough to end. */
 const SLOWEST = 0.05;
 
 /** How long a preview without cue times rests before its first cue, and between two of them. */

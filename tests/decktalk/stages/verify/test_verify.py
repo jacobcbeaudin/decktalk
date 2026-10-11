@@ -15,7 +15,7 @@ from decktalk.inputs import Inputs
 from decktalk.media.clipframes import landings_of
 from decktalk.media.pagereport import Box, Landing, MotionLane, PageReport, Recording, Size
 from decktalk.pipeline import Stage
-from decktalk.results import CueTime, SectionCues, VerifyResult
+from decktalk.results import CueTime, SectionCues, Substitute, VerifyResult
 from decktalk.stages import played_clips
 from decktalk.stages.verify import measure as measure_module
 from decktalk.stages.verify import verify
@@ -159,9 +159,32 @@ def test_each_section_s_pane_clips_are_read_once_however_many_cues_it_has(
     assert len(asked) == 2, "one read for each of the two sections"
 
 
-def test_a_section_with_no_recording_log_repeats_nothing(assembled: Callable[..., Inputs]) -> None:
+def test_a_section_whose_recording_judged_nothing_repeats_nothing(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES)
     assert [row.code for row in measure(inputs).findings if row.stage is Stage.RECORD] == []
+
+
+def test_a_film_handed_over_without_its_recording_logs_is_refused(assembled: Callable[..., Inputs]) -> None:
+    """With no logs verify repeats no recording's findings and measures no motion, which is not a pass."""
+    inputs = assembled(CUES)
+    inputs.workspace.recording_log("02").unlink()
+    with pytest.raises(NotBuiltError) as refused:
+        measure(inputs)
+    assert "section 2" in str(refused.value) and "build/recordings/02.json" in str(refused.value)
+    assert refused.value.hint is not None and "decktalk record" in refused.value.hint
+
+
+def test_a_section_that_played_black_needs_no_recording_log(assembled: Callable[..., Inputs]) -> None:
+    """Nothing was recorded for a section the film filled with black, so there is nothing of it to repeat."""
+    inputs = assembled(CUES)
+    inputs.workspace.recording_log("02").unlink()
+    placed = inputs.placements()
+    assert placed is not None
+    rows = tuple(
+        row.model_copy(update={"substitute": Substitute.BLACK}) if row.section == 2 else row for row in placed.sections
+    )
+    placed.model_copy(update={"sections": rows}).write(inputs.workspace.placements_path)
+    measure(inputs)
 
 
 # ---- the cues the film never played ----------------------------------------------------------------

@@ -61,7 +61,7 @@ def _leaves(table: Mapping[str, Any], prefix: str = "") -> list[str]:
 
 
 NAMED_PART_MIN = 3
-"""How long the last part of a mistyped key must be before a key whose own last part holds it is offered.
+"""Calibration: how long the last part of a mistyped key must be before a key whose own last part holds it is offered.
 
 A shorter part, such as `db` or `a`, sits inside too many names to say which one was meant.
 """

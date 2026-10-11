@@ -27,17 +27,19 @@ import {
   type WordStyle,
 } from "./contract.ts";
 
-/** The canvas every deck is laid out on, which is the frame a recording captures. */
+/** Truth: the width of the canvas every deck is laid out on, which is the frame a recording captures. */
 const CANVAS_WIDTH = 1920;
+
+/** Truth: the height of that canvas, which with the width is a full HD frame. */
 const CANVAS_HEIGHT = 1080;
 
 /** The one easing every entrance shares, which draws a quarter of the element inside the first frame. */
 const EASE = "cubic-bezier(.2,.7,.2,1)";
 
-/** How small `pop` starts, which reads as a pop without ever being too small to recognise. */
+/** Calibration: how small `pop` starts, which reads as a pop without ever being too small to recognise. */
 const POP_ENTRY_SCALE = 0.7;
 
-/** The share of `pop` spent growing to its overshoot, the rest being the settle back to its own size. */
+/** Calibration: the share of `pop` spent growing to its overshoot, the rest being the settle back to its own size. */
 const POP_OVERSHOOT_AT = 60;
 
 /** How far `fall` travels as it leaves, which is the short distance `rise` already arrives across. */
@@ -131,6 +133,8 @@ function rule(family: string, word: string, seconds: number, body: string, extra
  * recording holds neither of them. Every length here is therefore typography that no check reads
  * and no finding names, which is why the block is one binding rather than a number a reader has to
  * weigh one at a time.
+ *
+ * Calibration: each length was set by eye at the canvas size, and none of them moves a verdict.
  */
 const CHROME_CSS = [
   ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;" +
@@ -150,6 +154,8 @@ const CHROME_CSS = [
  * reads, sized as broadcast captions are, so they are one binding rather than numbers weighed one at
  * a time. The clearing rules carry `!important`, because a page's own background and picture must
  * not reach a frame that is laid over the film, which is the one other thing a page may not argue.
+ *
+ * Calibration: the lengths are broadcast caption sizes at the canvas size, and none of them moves a verdict.
  */
 const CAPTION_CSS = [
   `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 160px 72px;pointer-events:none}\n`,

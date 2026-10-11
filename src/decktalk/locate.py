@@ -25,25 +25,30 @@ def _path(written: str) -> tuple[str, ...]:
     return tuple(part.strip().strip('"') for part in written.split("."))
 
 
-def locate(text: str, key: str) -> int | None:
+def locate(text: str, key: str, *, item: int | None = None) -> int | None:
     """The one-based line `key` is written on in this text, or null when the text does not set it.
 
     The key is dotted from the top of the file, such as `verify.cue_offset_max_ms`, which is the
     same string a diagnostic prints and `config set` takes. A key written inside its table and a
     key written dotted at the top of the file are the same key and both are found. A name that is a
-    table, such as `voices.guest`, is found on its header.
+    table, such as `voices.guest`, is found on its header. `item` counts the tables of an array of
+    tables from one, such as the third `[[section]]`, because every one of them writes the same keys
+    and a refusal of one has to open that one.
     """
     wanted = _path(key)
     here: tuple[str, ...] = ()
+    seen = 0
     for number, line in enumerate(text.splitlines(), start=1):
         header = TABLE.match(line)
         if header:
             here = _path(header.group(1))
             if here == wanted:
                 return number
+            if here == wanted[:-1]:
+                seen += 1
             continue
         assignment = ASSIGNMENT.match(line)
-        if assignment and here + _path(assignment.group(1)) == wanted:
+        if assignment and here + _path(assignment.group(1)) == wanted and item in (None, seen):
             return number
     return None
 

@@ -7,7 +7,6 @@ The key is a `Secret` that only `_headers` reveals, and the base URL is the mach
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -15,7 +14,7 @@ from ...results import SoundKind
 from ...secret import Secret
 from ..elevenlabs import NAME
 from ..http import send
-from . import SOUND_DECLARED, SoundContext
+from . import SOUND_DECLARED, SoundContext, SoundRequest
 
 PUBLISHED_BASE = "https://api.elevenlabs.io/v1"
 """Truth: the base the service publishes its API under, which names a sound's endpoint in its ledger digest.
@@ -41,6 +40,38 @@ def sound_endpoint(kind: SoundKind) -> str:
     return PUBLISHED_BASE + sound_path(kind)
 
 
+MILLISECONDS = 1000
+"""Truth: milliseconds in a second, which is the unit the music endpoint reads a length in."""
+
+
+def sound_body(request: SoundRequest) -> dict[str, Any]:
+    """The JSON the service reads for one request, which is what a ledger digest is taken over.
+
+    Music is asked for by its length in whole milliseconds, and a part of a longer piece is told
+    which part it is, which is what keeps the key and the tempo. An effect or a bed is asked for by
+    its seconds, and a bed that loops says so.
+    """
+    if request.kind is SoundKind.MUSIC:
+        prompt = request.prompt
+        if request.parts > 1:
+            prompt += f" (part {request.part} of {request.parts}, same key and tempo, seamless mood)"
+        return {
+            "prompt": prompt,
+            "force_instrumental": request.instrumental,
+            "model_id": request.model,
+            "music_length_ms": int(request.seconds * MILLISECONDS),
+        }
+    body: dict[str, Any] = {
+        "text": request.prompt,
+        "duration_seconds": request.seconds,
+        "prompt_influence": request.influence,
+        "model_id": request.model,
+    }
+    if request.loop:
+        body["loop"] = True
+    return body
+
+
 @dataclass
 class ElevenLabsSound:
     """Sound effects and music from ElevenLabs, built from a `SoundContext` and never from a voice."""
@@ -59,18 +90,18 @@ class ElevenLabsSound:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
         return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
-    def effect(self, body: Mapping[str, Any], *, output_format: str) -> bytes:
+    def effect(self, request: SoundRequest, *, output_format: str) -> bytes:
         """One sound effect or ambience bed, bought from `SOUND_PATH`."""
-        return self._buy(SOUND_PATH, body, output_format)
+        return self._buy(SOUND_PATH, request, output_format)
 
-    def music(self, body: Mapping[str, Any], *, output_format: str) -> bytes:
+    def music(self, request: SoundRequest, *, output_format: str) -> bytes:
         """One piece of music, or one part of a longer one, bought from `MUSIC_PATH`."""
-        return self._buy(MUSIC_PATH, body, output_format)
+        return self._buy(MUSIC_PATH, request, output_format)
 
-    def _buy(self, path: str, body: Mapping[str, Any], output_format: str) -> bytes:
+    def _buy(self, path: str, request: SoundRequest, output_format: str) -> bytes:
         return send(
             f"{self.context.base_url.rstrip('/')}{path}?output_format={output_format}",
-            dict(body),
+            sound_body(request),
             self._headers(),
             parse=bytes,
             secrets=(self.api_key,),

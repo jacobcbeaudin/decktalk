@@ -27,7 +27,7 @@ from pathlib import Path
 from pydantic_core import to_json
 
 DRAFT_TOKEN_BYTES = 8
-"""The random bytes in a draft's name, which is enough that no file already in the project carries it."""
+"""Calibration: the random bytes in a draft's name, which is enough that no file already in the project carries it."""
 
 
 def replace_all(texts: Mapping[Path, str | bytes]) -> None:

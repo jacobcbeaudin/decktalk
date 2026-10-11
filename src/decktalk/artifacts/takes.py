@@ -60,7 +60,8 @@ from decktalk.results import SectionKey, SectionNumber
 from decktalk.settings import VOICE_NAME
 
 TAKE_DIGITS = 16
-"""How much of the sha256 names a take, which is far more than enough that two never collide."""
+"""Truth: how much of the sha256 names a take, which every stored take is filed under, and which is far more
+than enough that two never collide."""
 
 PLACEHOLDER_PREFIX = "placeholder-"
 """What marks the digest of a placeholder, so a placeholder and a voiced take never share a file name."""
@@ -76,7 +77,7 @@ FIELD_SEPARATOR = "\n"
 """What joins the fields of a digest's payload, which no field but the last may hold."""
 
 PLACEHOLDER_DIGITS = 10
-"""How much of the sha256 names a placeholder take, which is regenerated rather than bought."""
+"""Truth: how much of the sha256 names a placeholder take, which is regenerated rather than bought."""
 
 TAKE_DIGEST = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PLACEHOLDER_DIGITS}}})$"
 """Every digest a take may be named by, which is the head of a sha256 in hex and nothing else.

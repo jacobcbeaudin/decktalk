@@ -359,6 +359,20 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
         },
+        "fix_timeout_seconds": {
+          "description": "Longest one DeckTalk command a fix runs, such as the fetch of a browser and an encoder, may run before it is stopped.",
+          "type": "number",
+          "default": 1800.0,
+          "minimum": 60,
+          "maximum": 7200,
+          "x-range": "must be between 60 and 7200",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A fix that fetches a browser and an encoder downloads a few hundred megabytes, so under a minute a slow link stops it part way every time.",
+          "x-environment": "DECKTALK_TOOLS_FIX_TIMEOUT_SECONDS"
+        },
         "cache_dir": {
           "description": "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache.",
           "type": "string",

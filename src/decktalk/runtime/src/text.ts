@@ -68,7 +68,7 @@ export function parseWords(raw: string, turnsRaw: string | null): Spoken[] {
     .filter((word) => word.key);
 }
 
-/** The opening of a line, which is enough to find it again in the script without carrying the whole of it. */
+/** Calibration: the opening of a line, which is enough to find it again in the script without carrying the whole of it. */
 const TEXT_MAX = 24;
 
 /**
@@ -77,6 +77,8 @@ const TEXT_MAX = 24;
  * A line whose words the narration says more than once matches every run of them, and the run the
  * author meant is the one about to be spoken, so the search keeps going until it reaches one that
  * has not already gone by.
+ *
+ * Calibration: a second and a half is a few words of speech, which is as early as a line is ever cued.
  */
 const NEAR_THE_CUE_SECONDS = 1.5;
 
@@ -105,7 +107,7 @@ const FIRST_NUMBER = /(\d[\d,]*(?:\.\d+)?)/;
  */
 const EASE_POWER = 3;
 
-/** Every group of digits a thousands separator goes in front of, which is how the author wrote it. */
+/** Truth: every group of three digits a thousands separator goes in front of, which is how the author wrote it. */
 const THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
 
 /** The share of the count already run after a given share of its length, which is a cubic ease out. */

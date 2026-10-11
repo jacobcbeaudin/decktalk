@@ -82,9 +82,12 @@ def test_project_loads_sections_in_order(tmp_path):
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n", "duplicate"),
         (
             "[[section]]\nnumber = 1\npage = 'deck/a.html'\nlead_seconds = -1\n",
-            "'lead_seconds' must be 0 or more, got -1",
+            "'lead_seconds' must be between 0 and 5, got -1.0",
         ),
-        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
+        (
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = -0.5\n",
+            "'hold_seconds' must be between 0 and 60",
+        ),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = 'lots'\n", "must be"),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[bogus]\nx = 1\n", "unknown table"),

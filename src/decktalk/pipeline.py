@@ -119,8 +119,10 @@ class Artifact(Enum):
 class StageSpec:
     """One row of the pipeline: a stage, what it reads and writes, the trust it needs and why it sits there.
 
-    `holds_api_key` is true on a stage that may buy, and so reaches for the provider's key. `opens_pages`
-    is true on a stage that launches a browser and runs a page's script.
+    `reads` is every artifact the stage cannot run without. `optional_reads` is one it reads when it
+    is there and runs without when it is not, which neither orders the stages nor has to be on disk
+    before a run starts. `holds_api_key` is true on a stage that may buy, and so reaches for the
+    provider's key. `opens_pages` is true on a stage that launches a browser and runs a page's script.
     """
 
     stage: Stage
@@ -129,6 +131,7 @@ class StageSpec:
     holds_api_key: bool
     opens_pages: bool
     why: str
+    optional_reads: tuple[Artifact, ...] = ()
 
 
 PIPELINE: tuple[StageSpec, ...] = (
@@ -148,6 +151,9 @@ PIPELINE: tuple[StageSpec, ...] = (
         opens_pages=True,
         why="Each cue phrase becomes a second on its section clock, which the recorder plays to, and is read "
         "against the moments the page declares, opening the page when it changed since it was recorded.",
+        # A section's recording log holds its page's catalog, read while that recording stands, and a
+        # section nothing has recorded is left unjudged, so the first cue runs before any record.
+        optional_reads=(Artifact.RECORDINGS,),
     ),
     StageSpec(
         stage=Stage.RECORD,
@@ -168,7 +174,7 @@ PIPELINE: tuple[StageSpec, ...] = (
     ),
     StageSpec(
         stage=Stage.ASSEMBLE,
-        reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SCORE),
+        reads=(Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.SCORE),
         writes=(Artifact.FINAL,),
         holds_api_key=False,
         opens_pages=True,
@@ -176,7 +182,7 @@ PIPELINE: tuple[StageSpec, ...] = (
     ),
     StageSpec(
         stage=Stage.VERIFY,
-        reads=(Artifact.CUE_TIMES, Artifact.FINAL),
+        reads=(Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.FINAL),
         writes=(),
         holds_api_key=False,
         opens_pages=False,
@@ -196,7 +202,8 @@ NEEDS: dict[Stage, frozenset[Stage]] = {
 """Each stage against the stages whose artifacts it reads, which is the table above read as a graph.
 
 The declared order is one the graph admits and not the only one, because `score` reads nothing
-another stage writes and runs after `record` only so the unpaid draft loop stops there.
+another stage writes and runs after `record` only so the unpaid draft loop stops there. An optional
+read is not an edge, because the stage runs whether or not the artifact is there yet.
 """
 
 

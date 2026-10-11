@@ -1,7 +1,7 @@
 """`script.md` parsed into the sections the voice reads.
 
-The script is markdown with "## N. Title" headings and an optional "- 0:40 to 1:10" budget after
-the title, after a hyphen or a dash. Bracketed directions such as [Deck. The curve draws.] or [beat] are not spoken and
+The script is markdown with "## N. Title" headings, whose whole text after the number is the title.
+Bracketed directions such as [Deck. The curve draws.] or [beat] are not spoken and
 become a beat, a [pause N] direction or a `<break time="Ns" />` tag becomes a pause of N seconds,
 markdown formatting is stripped, and ALL-CAPS unfinished text like [NUMBER] stays in the text, which
 `check` reports as `SCRIPT_UNFINISHED`.
@@ -30,12 +30,12 @@ from decktalk.results import Word, section_key
 from decktalk.settings import NarrationConfig
 from decktalk.speech import BEAT, PUNCT, Piece
 
+SECONDS_PER_MINUTE = 60
+"""Truth: a minute is sixty seconds, which a words-per-minute rate and an `m:ss` budget are both written in."""
+
 DIRECTION_MARK = "\x00DIR\x00"
-# "## 3. The demo - 1:40 to 3:40"  (the dash and time range are optional, and a hyphen, an en dash or an
-# em dash all read)
-SECTION_RE = re.compile(
-    r"^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)(?:\s+[—–-]+\s+(?P<start>\d+:\d{2})\s+to\s+(?P<end>\d+:\d{2}))?\s*$"
-)
+# "## 3. The demo": a number, a full stop and a space, then the title.
+SECTION_RE = re.compile(r"^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)\s*$")
 DIRECTION_RE = re.compile(r"\[(?![A-Z][A-Z0-9_]*\])[^\]]*\]")
 # "[pause 3]" or "[pause 2.5]": a timed pause, in seconds, in place of the default direction pause.
 PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
@@ -115,7 +115,7 @@ class Reading:
         return estimated_words(self.spoken, seconds)
 
     def estimated_seconds(self, cfg: NarrationConfig) -> float:
-        return round(self.word_count / cfg.words_per_minute * 60, 1)
+        return round(self.word_count / cfg.words_per_minute * SECONDS_PER_MINUTE, 1)
 
     def placeholder_seconds(self, cfg: NarrationConfig) -> float:
         """How long a placeholder take of these pieces runs, which is speech and pauses and no silence around them.
@@ -127,7 +127,10 @@ class Reading:
         timed = sum(piece.pause for piece in self.pieces if piece.pause is not None and piece.timed)
         beats = sum(piece.pause == BEAT for piece in self.pieces) + sum(piece.text.count(" —") for piece in self.pieces)
         return round(
-            self.word_count / cfg.placeholder_words_per_minute * 60 + timed + beats * cfg.placeholder_beat_seconds, 3
+            self.word_count / cfg.placeholder_words_per_minute * SECONDS_PER_MINUTE
+            + timed
+            + beats * cfg.placeholder_beat_seconds,
+            3,
         )
 
 
@@ -155,8 +158,6 @@ class ScriptSection(Reading):
     title: str
     slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its digest.
     turns: tuple[Turn, ...]  # the stretches each voice reads, in script order, at least one
-    start: str | None = None
-    end: str | None = None
 
     @property
     def key(self) -> str:
@@ -166,17 +167,6 @@ class ScriptSection(Reading):
     def pieces(self) -> tuple[Piece, ...]:
         """Every turn's paragraphs in order, which for a section with no voice direction is its one turn's."""
         return tuple(piece for turn in self.turns for piece in turn.pieces)
-
-    @property
-    def target_seconds(self) -> float | None:
-        if self.start and self.end:
-            return _mmss(self.end) - _mmss(self.start)
-        return None
-
-
-def _mmss(value: str) -> int:
-    minutes, seconds = value.split(":")
-    return int(minutes) * 60 + int(seconds)
 
 
 def slugify(title: str) -> str:
@@ -302,8 +292,6 @@ def parse_script(markdown: str) -> list[ScriptSection]:
                 title=current["title"].strip(),
                 slug=slugify(current["title"]),
                 turns=_turns(body, heading),
-                start=current["start"],
-                end=current["end"],
             )
         )
 

@@ -47,12 +47,17 @@ import { warn, warnings } from "./warn.ts";
 /**
  * The version this page carries, which is the one version literal in the whole runtime.
  *
- * The bundle's first line names the engine version from the project file, and release-please writes
+ * Truth: the bundle's first line names the engine version from the project file, and release-please writes
  * both, so the version a page reports and the version its file names are the same.
  */
 const VERSION = "0.5.0"; // x-release-please-version
 
-/** How long the page waits for a promise its author handed it before it is drawn without it. */
+/**
+ * How long the page waits for a promise its author handed it before it is drawn without it.
+ *
+ * Calibration: long enough for a font or an image the local origin serves, and well under the default
+ * `record.page_deadline_seconds`, so a promise that never settles costs the page its wait and not the section.
+ */
 const GATE_SECONDS = 5;
 
 /** Every promise the page asked the runtime to wait for before it calls itself ready. */

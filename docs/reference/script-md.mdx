@@ -34,8 +34,7 @@ A numbered heading opens a section, and the next heading of any kind closes it.
 
 | Line | Effect |
 |---|---|
-| `## N. Title` | This opens section `N`. `N` is one or more digits followed by a full stop and a space. |
-| `## N. Title - 0:40 to 1:10` | This opens section `N` and records a time budget. The separator is one or more hyphens, en dashes or em dashes with a space on each side, and each time is written `M:SS`. |
+| `## N. Title` | This opens section `N`. `N` is one or more digits followed by a full stop and a space, and everything after it on the line is the title. |
 | `## Title` with no number | This closes the open section. The text under it is never spoken. |
 | `# Title` | This closes the open section. |
 | `---` alone on a line | This closes the open section. |
@@ -43,10 +42,6 @@ A numbered heading opens a section, and the next heading of any kind closes it.
 Text before the first numbered heading is never spoken, which is where the starter keeps its notes
 above a `---` line. A `###` heading inside a section does not close it: `narrate` removes the heading
 marks and the voice reads the heading text as prose.
-
-The budget is read into the section and no command prints it. The library exposes it as
-`ScriptSection.start`, `ScriptSection.end` and `ScriptSection.target_seconds`, so a caller that wants to hold a
-section to its budget compares those against `estimated_seconds` in `build/narrate/takes.json`.
 
 ### What the script and the project file must agree on
 

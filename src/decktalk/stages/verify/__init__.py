@@ -73,6 +73,7 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
         run.note("The film has no placements file, so verify read where each section starts from the section files.")
     wanted = selects(only)
     kept = {number: at for number, at in starts.items() if wanted(number)}
+    _require_recording_logs(inputs, kept)
     _repeat_recorded(inputs, run, wanted)
     _unmeasured_renders(inputs, run, wanted)
     spans = section_spans(starts, total)
@@ -98,6 +99,34 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
         seams=seam_checks(inputs, run, film, seams, decoded),
         cues=cue_checks(inputs, run, film, cues, decoded),
         motions=landing_checks(inputs, run, film, lanes, decoded),
+    )
+
+
+def _require_recording_logs(inputs: Inputs, kept: dict[int, float]) -> None:
+    """Refuse a film whose recorded sections came without their recording logs.
+
+    A log holds what the recorder judged, the motion the page declared and the clips its panes
+    played, so a verify without it repeats no finding and measures no motion, which would read as a
+    pass. A section the film filled with black was never recorded and needs none.
+    """
+    placed = inputs.placements()
+    filled = {row.section for row in placed.sections if row.substitute is not None} if placed is not None else set()
+    missing = [
+        section
+        for section in inputs.document.page_sections
+        if section.number in kept
+        and section.number not in filled
+        and not inputs.workspace.recording_log(section.key).is_file()
+    ]
+    if not missing:
+        return
+    named = ", ".join(str(section.number) for section in missing)
+    logs = ", ".join(inputs.relative(inputs.workspace.recording_log(section.key)).as_posix() for section in missing)
+    raise NotBuiltError(
+        f"the film plays section {named} as recorded, and {logs} is not there, so verify would repeat none of "
+        "its recording's findings and measure none of its motion.",
+        hint=f"Keep {inputs.relative(inputs.workspace.recordings_dir).as_posix()}/ beside the film it was "
+        f"recorded for. {Artifact.RECORDINGS.next_step}",
     )
 
 

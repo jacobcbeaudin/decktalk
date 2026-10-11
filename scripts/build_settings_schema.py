@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, get_args
 
 import generated
+from decktalk.inputs.document import content_keys
 from decktalk.results import Scope
 from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, VOICE_NAME, VOICES_TABLE, Settings, VoiceConfig
 from decktalk.settings.layers import json_value
@@ -118,12 +119,45 @@ def property_of(key: Key) -> dict[str, Any]:
     return out
 
 
+def content_property(key: Key) -> dict[str, Any]:
+    """One number of the project's own content, which publishes its type, default, range and hazard.
+
+    No layer above the project file sets it, so it carries no scope and no variable, and `x-kind`
+    says so to a reader that walks the settings by `x-scope`.
+    """
+    (kind,) = [arg for arg in get_args(key.annotation) or (key.annotation,) if arg is not type(None)]
+    own = {} if key.default is None else {"default": json_value(key.default)}
+    out: dict[str, Any] = {"description": key.description, "type": TYPES[kind], **own, "x-kind": "content"}
+    if key.bounds is not None:
+        out |= key.bounds.json_schema()
+    out["x-range"] = key.range
+    if key.unit is not None:
+        out["x-unit"] = key.unit
+    if key.hazard is not None:
+        out["x-hazard"] = key.hazard
+    if key.see_also:
+        out["x-see-also"] = list(key.see_also)
+    return out
+
+
+def content_of(table: str) -> dict[str, Any]:
+    """The content numbers of one table, and of each array of tables inside it, as schema properties."""
+    keys = content_keys()
+    properties: dict[str, Any] = {key.name: content_property(key) for key in keys if key.table == table}
+    for inner in dict.fromkeys(key.table for key in keys if key.table.startswith(f"{table}.")):
+        items = {"type": "object", "properties": content_of(inner), "additionalProperties": True}
+        properties[inner.rsplit(".", 1)[-1]] = {"type": "array", "items": items}
+    return properties
+
+
 def table_of(name: str, keys: list[Key]) -> dict[str, Any]:
     """One tuning table as the schema publishes it, closed unless the document owns keys in it too."""
     properties: dict[str, Any] = {key.name: property_of(key) for key in keys if key.table == name}
     for inner in sorted({key.table for key in keys if key.table.startswith(f"{name}.")}):
         properties[inner.rsplit(".", 1)[-1]] = table_of(inner, [key for key in keys if key.table == inner])
     shared = name in SHARED_TABLES
+    if shared:
+        properties |= content_of(name)
     return {
         "type": "object",
         "description": sentence_of(name),
@@ -162,14 +196,15 @@ def sentence_of(name: str) -> str:
 def document_table(name: str) -> dict[str, Any]:
     """One table that is project content, declared so the top level can be closed without owning its keys.
 
-    The document parser owns what is inside, so the schema names the table and leaves it open. The
-    closure that matters is at the top level, where an editor bound to the schema flags an unknown
-    table that the loader would refuse.
+    The document parser owns what is inside, so the schema names the table and leaves it open, with
+    the range of every number it holds. The closure that matters is at the top level, where an editor
+    bound to the schema flags an unknown table that the loader would refuse.
     """
     body: dict[str, Any] = {
         "type": "object",
         "description": DOCUMENT_SENTENCES[name],
         "x-kind": "document",
+        **({"properties": held} if (held := content_of(name)) else {}),
         "additionalProperties": True,
     }
     if name not in ("section", "clip"):

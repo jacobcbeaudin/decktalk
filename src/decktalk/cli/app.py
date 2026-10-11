@@ -75,8 +75,12 @@ PURPOSE = (
     "into one narrated mp4."
 )
 
+SUMMARY_MARGIN = 6
+"""Calibration: how much narrower than the help a command's one-line summary is cut, which leaves the indent and
+the gap before the summary on the same line."""
+
 EPILOG_WIDTH = 78
-"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
+"""Truth: how wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
 
 EPILOG = "\n".join(
     (
@@ -169,7 +173,9 @@ class DeckTalkGroup(Quiet, TyperGroup):
             if command is None or command.hidden:
                 continue
             panel = getattr(command, "rich_help_panel", None) or "Commands"
-            rows.setdefault(panel, []).append((written(command), name, command.get_short_help_str(formatter.width - 6)))
+            rows.setdefault(panel, []).append(
+                (written(command), name, command.get_short_help_str(formatter.width - SUMMARY_MARGIN))
+            )
         column = max((len(name) for group in rows.values() for _, name, _ in group), default=0)
         for group in (*(member.value for member in Group), "Commands"):
             if rows.get(group):
@@ -445,7 +451,7 @@ def _refused(session: Session, refused: DeckTalkError) -> int:
 
 
 SUGGESTION_CUTOFF = 0.75
-"""How alike an unknown flag and a real one must be before the refusal names the real one.
+"""Calibration: how alike an unknown flag and a real one must be before the refusal names the real one.
 
 At this cutoff a one-letter slip of a real flag is named, and an unrelated word such as `--bogus`
 is not taken for `--verbose`.

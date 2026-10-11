@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,7 +15,9 @@ from decktalk.speech.sound import (
     SoundContext,
     SoundProvider,
     SoundProviders,
+    SoundRequest,
     endpoint,
+    request_body,
 )
 from support.speech import NoSecrets
 
@@ -27,10 +28,10 @@ class Quiet:
 
     name: str = "house"
 
-    def effect(self, body: Mapping[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
+    def effect(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
         return b""
 
-    def music(self, body: Mapping[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
+    def music(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
         return b""
 
 
@@ -72,6 +73,16 @@ def test_the_shipped_sound_table_is_one_adapter_and_declares_its_key() -> None:
 def test_a_sound_provider_a_host_registered_names_its_requests_by_its_own_name() -> None:
     assert endpoint("house", SoundKind.MUSIC) == "house:music"
     assert endpoint("house", SoundKind.EFFECT) == "house:effect"
+
+
+def test_a_host_provider_s_request_is_digested_as_its_own_fields_in_decktalk_s_words() -> None:
+    """A host's provider renders its own body from the request, so the ledger keys it on the request itself."""
+    asked = SoundRequest(SoundKind.MUSIC, "strings", 20.0, "m1", instrumental=True, part=2, parts=3)
+    assert request_body("house", asked) == {
+        "kind": "music", "prompt": "strings", "seconds": 20.0, "model": "m1", "loop": False, "influence": None,
+        "instrumental": True, "part": 2, "parts": 3,
+    }  # fmt: skip
+    assert request_body("elevenlabs", asked)["music_length_ms"] == 20000
 
 
 def house(_context: SoundContext) -> SoundProvider:

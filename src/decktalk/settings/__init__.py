@@ -1138,6 +1138,17 @@ class ToolsConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
     )
+    fix_timeout_seconds: float = tune(
+        1800.0,
+        "Longest one DeckTalk command a fix runs, such as the fetch of a browser and an encoder, may run before it "
+        "is stopped.",
+        unit="seconds",
+        bounds=Bounds(ge=60, le=7200),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A fix that fetches a browser and an encoder downloads a few hundred megabytes, so under a minute a "
+        "slow link stops it part way every time.",
+    )
     cache_dir: str = tune(
         "",
         "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. "

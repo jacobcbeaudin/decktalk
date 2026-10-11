@@ -49,7 +49,7 @@ from decktalk.results import (
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
 from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders
-from decktalk.speech.sound import SoundProviders
+from decktalk.speech.sound import SoundProviders, SoundRequest
 from decktalk.stages.table import CALLS
 from support.costs import a_cost
 from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice, stand_in, stand_in_sounds
@@ -388,14 +388,14 @@ class Bought:
 
     name: str = "house"
     voice: FakeVoice = field(default_factory=FakeVoice)
-    sounds: list[dict[str, object]] = field(default_factory=list)
+    sounds: list[SoundRequest] = field(default_factory=list)
 
-    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def effect(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"sound"
 
-    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def music(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"music"
 
     @property

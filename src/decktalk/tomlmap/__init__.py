@@ -266,3 +266,18 @@ def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]
             continue
         out.append(Key(id=".".join((*prefix, f.name)), default=f.default, annotation=annotation, **f.metadata))
     return tuple(out)
+
+
+def declared(cls: type[Any], table: str) -> tuple[Key, ...]:
+    """Every field of one table's class that `tune()` declared, as the key a project file writes it under.
+
+    A table of project content mixes keys with a range, which `tune()` declares, with keys that need
+    no record, such as a section's number or a clip's file, so this walk keeps the first and passes
+    the second by where `registry` would require a record of every field.
+    """
+    hints = get_type_hints(cls)
+    return tuple(
+        Key(id=f"{table}.{f.name}", default=f.default, annotation=hints.get(f.name, f.type), **f.metadata)
+        for f in fields(cast("Any", cls))
+        if "description" in f.metadata
+    )

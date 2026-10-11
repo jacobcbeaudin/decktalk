@@ -15,8 +15,11 @@ fails on day one is suppressed on day two. A file that is not on the baseline ma
 literal at all, and a file that is on it may never hold more than the count beside it. The baseline
 is a to-do list that only ever shrinks, and `--write` can lower a count but never raise one.
 
-The runtime's TypeScript is walked too. A frame-gap limit is capped dead by a literal in the bundle
-that no walk of Python can see, which is exactly the class of number this rule exists to find.
+The rule holds over every module of the package, and the runtime's TypeScript is walked too. A
+frame-gap limit is capped dead by a literal in the bundle that no walk of Python can see, which is
+exactly the class of number this rule exists to find. A TypeScript constant goes through the third
+door the way a Python one does: its doc comment holds a paragraph opening with truth, derived or
+calibration.
 """
 
 from __future__ import annotations
@@ -32,17 +35,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.settings import KEYS
+from decktalk.settings.numbers import NUMBERS
 from support import ratchet
 from support.paths import REPO, SRC
 
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
 """The committed per-file count of literals still waiting for a door, which only ever shrinks."""
 
-WALKED = ("stages", "media", "captions", "speech", "pagescan.py", "inputs/take_places.py")
-"""Where the rule holds today, which is every module that measures a film or decides about one."""
-
 RUNTIME = Path("src") / "decktalk" / "runtime" / "src"
 """The TypeScript the recorder loads, walked for the same rule by a scan of its text."""
+
+WRITTEN_FROM_THE_RUNTIME = SRC / "page.py"
+"""The one module `scripts/build_runtime.py` writes from `contract.ts`, whose numbers are judged once, in the
+TypeScript where they are written and where each binding carries its reason."""
 
 FREE = (0, 1, 2, 100, 1000)
 """Truth: the literals that carry no judgement, which are an empty count, a single thing, a pair and the
@@ -51,11 +56,17 @@ two unit conversions, a percentage and a thousand (milliseconds in a second, cha
 COUNTING = ("range", "enumerate")
 """The two calls whose arguments are a count and never a measurement."""
 
+DECLARING = ("tune", "Bounds")
+"""The two calls that declare a key, whose numbers are its default and its range and so the first door itself."""
+
 NUMBER = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)")
 """One numeric literal in TypeScript, with a leading name or dot excluded so a member is not one."""
 
 DECLARED = re.compile(r"^\s*(?:export\s+)?const\s+[A-Z][A-Z0-9_]*\s*(?::[^=]+)?=")
 """A module-level upper-case binding in TypeScript, which is the third door spelled in that language."""
+
+REASON = re.compile(r"^\s*(?:/\*\*|\*)?\s*(truth|derived|calibration):", re.IGNORECASE)
+"""A line of a doc comment that opens a paragraph with one of the three reasons, which completes the door."""
 
 SETTINGS_DEFAULTS = {key.name: key.default for key in KEYS}
 """Every settings key by its own name, so a default argument that repeats one can be caught."""
@@ -76,12 +87,8 @@ def _name(path: Path) -> str:
 
 
 def walked() -> list[Path]:
-    """Every Python file the rule holds over, in a stable order."""
-    out: list[Path] = []
-    for name in WALKED:
-        here = SRC / name
-        out += sorted(here.rglob("*.py")) if here.is_dir() else [here]
-    return out
+    """Every Python file the rule holds over, which is every module of the package, in a stable order."""
+    return sorted(path for path in SRC.rglob("*.py") if path != WRITTEN_FROM_THE_RUNTIME)
 
 
 def bare_python(path: Path) -> list[Bare]:
@@ -144,11 +151,14 @@ def _admitted(tree: ast.Module) -> Iterator[ast.Constant]:
 
 
 def _from_call(node: ast.Call) -> Iterator[ast.Constant]:
-    """The arguments of the three calls whose numbers are a count or a precision rather than a measurement."""
+    """The arguments of the calls whose numbers are a count, a precision, or a key's own declaration."""
     if not isinstance(node.func, ast.Name):
         return
     if node.func.id in COUNTING:
         for argument in node.args:
+            yield from _literals(argument)
+    elif node.func.id in DECLARING:
+        for argument in [*node.args, *(keyword.value for keyword in node.keywords)]:
             yield from _literals(argument)
     elif node.func.id == "round" and len(node.args) > 1:
         yield from _literals(node.args[1])
@@ -169,12 +179,24 @@ def _door(node: ast.stmt, following: ast.stmt | None) -> ast.expr | None:
         return None
     if value is None or not all(_named(target) for target in targets):
         return None
+    if all(isinstance(target, ast.Name) and target.id in PUBLISHED for target in targets):
+        return value
     sentence = _sentence(following) if following is not None else None
-    return value if sentence is not None and sentence.split(":")[0].strip().lower() in OPENERS else None
+    return value if sentence is not None and _reasoned(sentence) else None
 
 
 OPENERS = ("truth", "derived", "calibration")
 """The three words a constant's sentence opens with, which are the three reasons a number is fixed."""
+
+
+def _reasoned(sentence: str) -> bool:
+    """Whether a sentence opens with one of the three reasons, which is what completes the third door."""
+    return sentence.split(":")[0].strip().lower() in OPENERS
+
+
+PUBLISHED = frozenset(number.id for number in NUMBERS if not number.reads and _reasoned(number.sentence))
+"""The constants `settings.numbers.NUMBERS` publishes with their reason, whose sentence is written once, there, where
+the schema and the settings reference read it."""
 
 
 def _named(target: ast.expr) -> bool:
@@ -200,18 +222,42 @@ def bare_typescript(path: Path) -> list[Bare]:
     out: list[Bare] = []
     depth = 0
     binding = False
+    reasoned = False
+    comment: list[str] = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         code = line.split("//")[0]
         if not binding and DECLARED.match(code):
             binding = True
+            reasoned = any(REASON.match(said) for said in comment)
         if binding:
             # A binding's whole initialiser is the one door, so a registry written as an object
-            # literal goes through it once rather than once per number inside it.
+            # literal goes through it once rather than once per number inside it. A binding whose
+            # comment gives no reason is half a door, and its numbers are counted as bare.
             depth += code.count("{") + code.count("[") - code.count("}") - code.count("]")
             binding = depth > 0
+            if not reasoned:
+                out += _bare_typescript(name, number, code)
+            comment = []
             continue
-        out += [Bare(name, number, found) for found in NUMBER.findall(code) if float(found) not in FREE or "." in found]
+        comment = _comment(comment, line)
+        out += _bare_typescript(name, number, code)
     return out
+
+
+def _comment(held: list[str], line: str) -> list[str]:
+    """The doc comment that ends on this line or is still open, which is what a binding below it is read with."""
+    stripped = line.strip()
+    if stripped.startswith("/**"):
+        return [stripped]
+    if held and not held[-1].endswith("*/"):
+        return [*held, stripped]
+    # A comment that has closed belongs only to the line straight after it.
+    return []
+
+
+def _bare_typescript(name: str, number: int, code: str) -> list[Bare]:
+    """The literals of one line of TypeScript that carry a judgement."""
+    return [Bare(name, number, found) for found in NUMBER.findall(code) if float(found) not in FREE or "." in found]
 
 
 def measured() -> dict[str, int]:
@@ -260,23 +306,32 @@ def test_each_door_admits_its_own_number_and_nothing_else(tmp_path: Path) -> Non
 
 
 TYPESCRIPT = """
+/**
+ * How long each span plays.
+ *
+ * Calibration: the shortest span a viewer reads as motion, and the longest a cue can carry.
+ */
 export const SPANS: Record<string, number> = {
   quick: 0.12,
   slow: 0.48,
 };
 
+/** How long the gate waits, which says nothing about why. */
+const GATE_SECONDS = 5;
+
 export function late(ms: number): boolean {
   return ms > 250;
 }
 """
-"""One TypeScript module whose registry goes through the binding door and whose cap does not."""
+"""One TypeScript module whose registry goes through the binding door, whose gate is half a door and whose cap
+goes through none."""
 
 
 def test_the_typescript_scan_finds_the_cap_a_python_walk_cannot_see(tmp_path: Path) -> None:
     """The limit capped dead inside the bundle is the number this half of the rule exists for."""
     path = tmp_path / "sample.ts"
     path.write_text(TYPESCRIPT, encoding="utf-8")
-    assert [bare.value for bare in bare_typescript(path)] == ["250"]
+    assert [bare.value for bare in bare_typescript(path)] == ["5", "250"]
 
 
 def test_the_baseline_only_shrinks() -> None:

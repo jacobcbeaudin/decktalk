@@ -36,10 +36,10 @@ import { ATTRS, type Attr, cueId, MILLISECONDS, MOMENT_SELECTOR, type Q, type Re
 import type * as Seam from "../telemetry.ts";
 import type { Stepped } from "../telemetry.ts";
 
-/** The most rows of any one kind the probe keeps, so a long recording cannot grow without a bound. */
+/** Calibration: the most rows of any one kind the probe keeps, so a long recording cannot grow without a bound. */
 const KEEP = 5000;
 
-/** The longest text a measured row carries, which is enough to find the element in the script. */
+/** Calibration: the longest text a measured row carries, which is enough to find the element in the script. */
 const TEXT_MAX = 80;
 
 /** The two query keys only the probe reads, typed against the contract so a misspelling will not compile. */

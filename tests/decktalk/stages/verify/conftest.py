@@ -21,6 +21,7 @@ from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.results import SectionCues
+from support.pages import write_log
 from support.projects import load_project
 from support.runs import a_machine
 from support.takes import a_take, write_takes
@@ -98,7 +99,7 @@ def opened(root: Path) -> Iterator[Run]:
 
 
 def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> None:
-    """The take index, the placements, the cue times and the narration a finished film leaves behind."""
+    """The take index, the recording logs, the placements, the cue times and the narration a finished film leaves."""
     workspace = inputs.workspace
     workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     workspace.final_dir.mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,8 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
     workspace.narration_path.write_bytes(b"narration")
     for section in inputs.document.sections:
         workspace.section_video(section.key).write_bytes(b"cut")
+    for section in inputs.document.page_sections:
+        write_log(inputs, section.number, requested_seconds=SECTION_SECONDS)
 
 
 @pytest.fixture(autouse=True)

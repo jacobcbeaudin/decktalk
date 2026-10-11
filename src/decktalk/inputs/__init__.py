@@ -142,7 +142,9 @@ class Inputs:
                 location=at(root / PROJECT_FILE, root),
             )
         toml = read_project_toml(root)
-        document = Document.from_toml(toml, default_name=root.name)
+        document = Document.from_toml(
+            toml, default_name=root.name, text=(root / PROJECT_FILE).read_text(encoding="utf-8")
+        )
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
         voices = MappingProxyType({name: VoiceInForce.of(voice) for name, voice in loaded.settings.voices.items()})
         default_voice = loaded.settings.narration.voice

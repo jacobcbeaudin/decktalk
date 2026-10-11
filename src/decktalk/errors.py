@@ -17,6 +17,7 @@ than a table beside the list that a new code can miss.
 
 from __future__ import annotations
 
+import signal
 import threading
 from enum import Enum, IntEnum
 from typing import Any, ClassVar
@@ -25,6 +26,12 @@ from pydantic import Field, model_validator
 
 from decktalk.findings import DOCS, Location, Model
 from decktalk.secret import redact, redacted
+
+SIGNALLED_BASE = 128
+"""Truth: a shell reports a process a signal stopped as this plus the signal's number."""
+
+BROKEN_CODE = 3
+"""Truth: the first code past the three a finished or refused run takes, which every other failure shares."""
 
 
 class Exit(IntEnum):
@@ -56,8 +63,8 @@ class Exit(IntEnum):
         "found something at it",
     )
     REFUSED = 2, "The command line was refused, which is USAGE or APPROVAL.", "refused the command line"
-    BROKEN = 3, "The command could not run, which is every other error code.", "could not run"
-    INTERRUPTED = 130, "The caller stopped the run.", "interrupted"
+    BROKEN = BROKEN_CODE, "The command could not run, which is every other error code.", "could not run"
+    INTERRUPTED = SIGNALLED_BASE + signal.SIGINT, "The caller stopped the run.", "interrupted"
 
 
 class ErrorCode(Enum):

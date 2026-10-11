@@ -130,10 +130,14 @@ The sound stage (`score`) buys music, ambience and effects through a `SoundProvi
 protocol with its own table of adapters beside `PROVIDERS`. It never borrows the speech registry and
 never checks which class a voice is. Its table follows the same registration rule, because a sound is
 priced at the rate its provider's name declares: a host's own sound factory under a name DeckTalk
-ships, in any spelling, is refused with `ValueError` when it is registered. Sound is billed by the second of audio, because that is how
+ships, in any spelling, is refused with `ValueError` when it is registered. The score asks for every
+sound as a `SoundRequest` in DeckTalk's own words (its kind, its prompt, its seconds, its model, and
+for music which part of how many), and the adapter renders that into its service's body, so a second
+sound vendor is a second adapter and never an edit to the score. Sound is billed by the second of audio, because that is how
 sound is billed, at a rate in US dollars per minute in the sound adapter's own table. A sound's
-ledger digest is taken over the endpoint as the service publishes it and the request body, without the configured `base_url`, so
-moving to another host of the same service or to a local mock buys nothing again.
+ledger digest is taken over the endpoint as the service publishes it and the body the adapter renders, without the configured `base_url`, so
+moving to another host of the same service or to a local mock buys nothing again. A host's own
+sound provider renders its own body, so its digest is taken over the request's own fields.
 
 ### Alignment
 

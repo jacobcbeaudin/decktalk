@@ -18,6 +18,7 @@ from decktalk.errors import InputError
 from decktalk.inputs.cues import SECTION_START, json_of
 from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at, relative
+from decktalk.tomlmap import Bounds, tune
 from decktalk.tomlmap.read import Table
 
 
@@ -28,18 +29,43 @@ class Marker:
     name: str
     section: int
     phrase: str = SECTION_START
-    offset_seconds: float = 0.0
-    occurrence: int = 1
+    offset_seconds: float = tune(
+        0.0,
+        "Seconds added to the matched second.",
+        unit="seconds",
+        bounds=Bounds(ge=-10, le=10),
+        hazard="A marker answers its phrase, so a nudge past ten seconds lands it where the phrase is not.",
+    )
+    occurrence: int = tune(1, "Which match of the phrase to take, counting from one.", bounds=Bounds(ge=1))
     case_sensitive: bool = False
-    mute_seconds: float = 0.0
+    mute_seconds: float = tune(
+        0.0,
+        "Seconds of silence before the swell starts.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=30),
+        hazard="A mute ends where the swell starts, so a negative mute would end before it began.",
+    )
 
 
 @dataclass(frozen=True)
 class Markers:
     """The whole markers file: how loud and how long a swell is, and where the swells fall."""
 
-    boost_db: float = 3.0
-    boost_seconds: float = 2.0
+    boost_db: float = tune(
+        3.0,
+        "How far each marker raises the music.",
+        unit="dB",
+        bounds=Bounds(ge=0, le=12),
+        hazard="A swell is a rise, so a value below zero is a dip, which `mute_seconds` already spells, and a rise "
+        "past 12 dB lifts a bed at its default level halfway to the voice it sits under.",
+    )
+    boost_seconds: float = tune(
+        2.0,
+        "How long each swell lasts.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=30),
+        hazard="A swell is placed after its marker, so a negative length would end before it began.",
+    )
     markers: tuple[Marker, ...] = field(default_factory=tuple)
     notes: tuple[str, ...] = ()
     """One sentence per key the file holds and nothing reads, which the run that loads it reports."""

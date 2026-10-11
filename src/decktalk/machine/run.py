@@ -55,7 +55,7 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logging.getLogger(__name__)
 
 RUN_DIGITS = 12
-"""How much of a random id names a run, which is enough that two runs never share a file."""
+"""Calibration: how much of a random id names a run, which is enough that two runs never share a file."""
 
 
 def new_run() -> str:

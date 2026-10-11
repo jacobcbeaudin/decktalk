@@ -37,11 +37,11 @@ one is also a command of its own with the same name.
 | Stage | Command | Reads | Writes |
 |---|---|---|---|
 | `narrate` | `decktalk narrate` | `script.md` | `build/narrate/takes.json`, one take and one words file per turn, and `build/narrate/narration.mp3` |
-| `cue` | `decktalk cue` | `build/narrate/takes.json` | `build/cue-times.json` |
+| `cue` | `decktalk cue` | `build/narrate/takes.json`, and `build/recordings/` when it is there | `build/cue-times.json` |
 | `record` | `decktalk record` | `build/narrate/takes.json`, `build/cue-times.json` | `build/recordings/` |
 | `score` | `decktalk score` | `[score]` in `decktalk.toml` | `score/`, the bought sounds and their ledger, and `build/score/` |
-| `assemble` | `decktalk assemble` | `build/narrate/takes.json`, `build/recordings/`, `score/`, `build/score/` | `build/sections/`, then `build/final/` |
-| `verify` | `decktalk verify` | `build/cue-times.json`, `build/final/` | nothing |
+| `assemble` | `decktalk assemble` | `build/narrate/takes.json`, `build/cue-times.json`, `build/recordings/`, `score/`, `build/score/` | `build/sections/`, then `build/final/` |
+| `verify` | `decktalk verify` | `build/narrate/takes.json`, `build/cue-times.json`, `build/recordings/`, `build/final/` | nothing |
 
 - `narrate` turns the script into one spoken take per turn, the stretch of a section one voice reads,
   and a start and an end for every word in it, then joins a section's turns on the section's clock. A
@@ -71,8 +71,8 @@ stages that can spend money sit as late as they can.
   `decktalk build --no-spend --to record` therefore spends nothing and still exercises the cues, the
   pages, the recording and the checks.
 - `assemble` is fifth because it consumes what all four stages before it wrote. It needs the take
-  index for the lengths, the recordings for the picture, the score for the mix and the narration
-  for the voice.
+  index for the lengths, the cue times for the sounds on their cues, the recordings for the picture,
+  the score for the mix and the narration for the voice.
 - `verify` is last because it measures the film, and there is no film until `assemble` has written
   one.
 

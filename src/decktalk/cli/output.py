@@ -60,11 +60,11 @@ from decktalk.results import (
 )
 
 STAGE_COLUMN = 12
-"""How wide the stage name sits in a progress line, right-aligned, which is wider than every stage name and every
-word that shares the column."""
+"""Calibration: how wide the stage name sits in a progress line, right-aligned, which is wider than every
+stage name and every word that shares the column."""
 
 REFRESH_PER_SECOND = 8
-"""How often the live region redraws, which is fast enough to read and slow enough not to flicker."""
+"""Calibration: how often the live region redraws, which is fast enough to read and slow enough not to flicker."""
 
 ERROR_STYLE = "bold red"
 WARNING_STYLE = "yellow"

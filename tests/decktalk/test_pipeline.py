@@ -73,9 +73,16 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
         Stage.CUE: {Stage.NARRATE},
         Stage.RECORD: {Stage.NARRATE, Stage.CUE},
         Stage.SCORE: frozenset(),
-        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SCORE},
-        Stage.VERIFY: {Stage.CUE, Stage.ASSEMBLE},
+        Stage.ASSEMBLE: {Stage.NARRATE, Stage.CUE, Stage.RECORD, Stage.SCORE},
+        Stage.VERIFY: {Stage.NARRATE, Stage.CUE, Stage.RECORD, Stage.ASSEMBLE},
     }
+
+
+def test_a_read_a_stage_makes_only_when_it_is_there_never_orders_the_stages() -> None:
+    """`cue` judges a page against its recording once one stands, and runs before `record` all the same."""
+    assert Stage.CUE.spec.optional_reads == (Artifact.RECORDINGS,)
+    assert Stage.RECORD not in NEEDS[Stage.CUE]
+    assert required((Stage.CUE,)) == (Artifact.TAKES,)
 
 
 @pytest.mark.parametrize(
@@ -87,6 +94,7 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
         ((Stage.ASSEMBLE,), (Stage.VERIFY,)),
         ((Stage.VERIFY,), ()),
         ((Stage.RECORD, Stage.ASSEMBLE), (Stage.VERIFY,)),
+        ((Stage.RECORD,), (Stage.ASSEMBLE, Stage.VERIFY)),
     ],
 )
 def test_a_change_reaches_every_stage_that_reads_from_it_however_far(
@@ -105,8 +113,9 @@ def test_a_table_that_reads_in_a_circle_is_refused(monkeypatch: pytest.MonkeyPat
     ("plan", "wanted"),
     [
         (tuple(Stage), ()),
-        ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.RECORDINGS, Artifact.SCORE)),
-        ((Stage.VERIFY,), (Artifact.CUE_TIMES, Artifact.FINAL)),
+        ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.SCORE)),
+        ((Stage.VERIFY,), (Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.FINAL)),
+        ((Stage.ASSEMBLE, Stage.VERIFY), (Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.SCORE)),
         ((Stage.RECORD,), (Artifact.TAKES, Artifact.CUE_TIMES)),
         ((Stage.SCORE,), ()),
         ((Stage.NARRATE, Stage.CUE), ()),

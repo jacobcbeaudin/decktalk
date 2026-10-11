@@ -27,6 +27,7 @@ class Table:
         *,
         text: str = "",
         table: str = "",
+        item: int | None = None,
     ) -> None:
         self.data = data
         self.where = where
@@ -39,12 +40,32 @@ class Table:
         # The dotted name of this table inside the file, which a key's own name is not enough to
         # find, because the same key name sits in several tables.
         self.table = table
+        # Which table of an array of tables this is, counting from one, because every one of them
+        # writes the same keys and the line of a refusal is the line in this one.
+        self.item = item
+
+    def inner(self, data: Mapping[str, Any], where: str, *, table: str = "", item: int | None = None) -> Table:
+        """A table read out of this one's file, which keeps the file and its text so its refusals name the line."""
+        return Table(data, where, self.path, text=self.text, table=table, item=item)
 
     def _refuse(self, message: str, key: str, hint: str | None = None) -> InputError:
         dotted = f"{self.table}.{key}" if self.table else key
-        line = locate(self.text, dotted) if self.text else None
+        line = locate(self.text, dotted, item=self.item) if self.text else None
         location = Location(where=f"{self.where} {key}", file=self.path, line=line) if self.path else None
         return InputError(message, hint=hint, location=location)
+
+    def held(self, key: str, value: Any, bounds: Bounds | None, *, hazard: str | None = None) -> Any:
+        """`value` when it is finite and sits inside `bounds`, or the refusal at the line that wrote it.
+
+        A NaN compares false against both ends of a range and TOML spells one, so a value that is not
+        finite is refused whatever its range. The hint is the key's hazard, which says what a value
+        past the edge would break.
+        """
+        if not finite(value):
+            raise self._refuse(f"{self.where}: '{key}' must be a finite number, got {value!r}", key, hazard)
+        if bounds is not None and value is not None and not bounds.holds(value):
+            raise self._refuse(f"{self.where}: '{key}' {bounds.sentence}, got {value!r}", key, hazard)
+        return value
 
     def _get(self, key: str, kind: type | tuple[type, ...], default: Any, required: bool) -> Any:
         if key not in self.data:

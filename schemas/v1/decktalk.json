@@ -1121,6 +1121,92 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_MIX_MARKER_BOOST_RAMP_SECONDS"
+        },
+        "music_db": {
+          "description": "The music level.",
+          "type": "number",
+          "default": -24.0,
+          "x-kind": "content",
+          "minimum": -60,
+          "maximum": 0,
+          "x-range": "must be between -60 and 0",
+          "x-unit": "dB",
+          "x-hazard": "The narration plays at its own level, so a level above 0 dB plays this layer louder than the voice, and below -60 dB the loudness pass leaves nothing audible. Leave the file out for none."
+        },
+        "music_duck_db": {
+          "description": "The extra level change under each spoken span and each clip.",
+          "type": "number",
+          "default": -6.0,
+          "x-kind": "content",
+          "minimum": -40,
+          "maximum": 0,
+          "x-range": "must be between -40 and 0",
+          "x-unit": "dB",
+          "x-hazard": "A duck lowers the music under speech, so a value above zero would raise it there instead."
+        },
+        "music_fade_in_seconds": {
+          "description": "The fade in.",
+          "type": "number",
+          "default": 2.0,
+          "x-kind": "content",
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "x-range": "must be above 0 and must be at most 30",
+          "x-unit": "seconds",
+          "x-hazard": "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one above zero."
+        },
+        "music_fade_out_seconds": {
+          "description": "The fade out.",
+          "type": "number",
+          "default": 3.0,
+          "x-kind": "content",
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "x-range": "must be above 0 and must be at most 30",
+          "x-unit": "seconds",
+          "x-hazard": "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one above zero."
+        },
+        "ambience_db": {
+          "description": "The ambience level.",
+          "type": "number",
+          "default": -20.0,
+          "x-kind": "content",
+          "minimum": -60,
+          "maximum": 0,
+          "x-range": "must be between -60 and 0",
+          "x-unit": "dB",
+          "x-hazard": "The narration plays at its own level, so a level above 0 dB plays this layer louder than the voice, and below -60 dB the loudness pass leaves nothing audible. Leave the file out for none."
+        },
+        "effect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "db": {
+                "description": "The level.",
+                "type": "number",
+                "default": -16.0,
+                "x-kind": "content",
+                "minimum": -60,
+                "maximum": 0,
+                "x-range": "must be between -60 and 0",
+                "x-unit": "dB",
+                "x-hazard": "The narration plays at its own level, so a level above 0 dB plays this layer louder than the voice, and below -60 dB the loudness pass leaves nothing audible. Leave the file out for none."
+              },
+              "offset_seconds": {
+                "description": "Seconds added to the cue time. This offset belongs to the sound and not to the cue.",
+                "type": "number",
+                "default": 0.0,
+                "x-kind": "content",
+                "minimum": -10,
+                "maximum": 10,
+                "x-range": "must be between -10 and 10",
+                "x-unit": "seconds",
+                "x-hazard": "An effect answers its cue, so a nudge past ten seconds plays it at a moment the cue does not name."
+              }
+            },
+            "additionalProperties": true
+          }
         }
       },
       "additionalProperties": true
@@ -1731,6 +1817,20 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
         },
+        "fix_timeout_seconds": {
+          "description": "Longest one DeckTalk command a fix runs, such as the fetch of a browser and an encoder, may run before it is stopped.",
+          "type": "number",
+          "default": 1800.0,
+          "minimum": 60,
+          "maximum": 7200,
+          "x-range": "must be between 60 and 7200",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A fix that fetches a browser and an encoder downloads a few hundred megabytes, so under a minute a slow link stops it part way every time.",
+          "x-environment": "DECKTALK_TOOLS_FIX_TIMEOUT_SECONDS"
+        },
         "cache_dir": {
           "description": "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache.",
           "type": "string",
@@ -1903,6 +2003,54 @@
         "type": "object",
         "description": "One section of the script, in the order the film plays them.",
         "x-kind": "document",
+        "properties": {
+          "slate_seconds": {
+            "description": "How long the titled slate plays when the clip's file is not there.",
+            "type": "number",
+            "default": 5.0,
+            "x-kind": "content",
+            "exclusiveMinimum": 0,
+            "maximum": 60,
+            "x-range": "must be above 0 and must be at most 60",
+            "x-unit": "seconds",
+            "x-hazard": "A slate has to last a frame to be in the film at all, and one past a minute is a hole in the film rather than a placeholder."
+          },
+          "hold_seconds": {
+            "description": "Seconds the page keeps playing after its narration, while the narration pauses for it.",
+            "type": "number",
+            "default": 0.0,
+            "x-kind": "content",
+            "minimum": 0,
+            "maximum": 60,
+            "x-range": "must be between 0 and 60",
+            "x-unit": "seconds",
+            "x-hazard": "The narration pauses for the hold, so a hold past a minute is a minute of film with nothing said."
+          },
+          "lead_seconds": {
+            "description": "The silence before this section's first word, in place of `[narration] lead_seconds`.",
+            "type": "number",
+            "x-kind": "content",
+            "minimum": 0,
+            "maximum": 5,
+            "x-range": "must be between 0 and 5",
+            "x-unit": "seconds",
+            "x-see-also": [
+              "narration.lead_seconds"
+            ]
+          },
+          "tail_seconds": {
+            "description": "The silence after this section's last word, in place of `[narration] tail_seconds`.",
+            "type": "number",
+            "x-kind": "content",
+            "minimum": 0,
+            "maximum": 10,
+            "x-range": "must be between 0 and 10",
+            "x-unit": "seconds",
+            "x-see-also": [
+              "narration.tail_seconds"
+            ]
+          }
+        },
         "additionalProperties": true
       }
     },
@@ -1921,6 +2069,22 @@
       "type": "object",
       "description": "How one section is joined to the next.",
       "x-kind": "document",
+      "properties": {
+        "dip_seconds": {
+          "description": "How long a dip to black lasts, rounded to whole frames so a fade never ends part way through one.",
+          "type": "number",
+          "default": 0.15,
+          "x-kind": "content",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "x-range": "must be above 0 and must be at most 1",
+          "x-unit": "seconds",
+          "x-hazard": "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one above zero. Write `dips = []` for straight cuts. A dip longer than `verify.after_dip_seconds` is still dark on the frame the start check reads.",
+          "x-see-also": [
+            "verify.after_dip_seconds"
+          ]
+        }
+      },
       "additionalProperties": true
     }
   },

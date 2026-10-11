@@ -673,14 +673,20 @@ class LiveRun(Model):
 
 
 BYTES_PER_MB = 1_000_000
-"""How many bytes a megabyte is in a sentence that sizes files, which is the decimal unit a file browser shows."""
+"""Truth: how many bytes a megabyte is in a sentence that sizes files, which is the decimal unit a file
+browser shows."""
+
+
+MB_SHOWN_FROM = 0.1
+"""Truth: the smallest share of a megabyte that a size written to one place shows as more than nothing, so a
+smaller size is written in kilobytes."""
 
 
 def sized(count: int) -> str:
     """A number of bytes as a file browser shows it: megabytes to one place, then kilobytes, then bytes."""
     if count < 1000:
         return counted(count, "byte")
-    if count * 10 < BYTES_PER_MB:
+    if count < MB_SHOWN_FROM * BYTES_PER_MB:
         return f"{count / 1000:.0f} KB"
     return f"{count / BYTES_PER_MB:.1f} MB"
 

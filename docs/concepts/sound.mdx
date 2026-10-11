@@ -138,7 +138,7 @@ one the GitHub Action checks out, mixes the film with no key and leaves no track
 on a terminal.
 
 `score/ledger.json` records what this project has already bought, keyed by the request
-that bought it: the endpoint as the sound provider publishes it and the request body, and never
+that bought it: the endpoint as the sound provider publishes it and the body it sends, and never
 `base_url`, so a project that moves to another host of the same service buys nothing again. An item whose request still matches its row and whose audio is still on disk is kept
 rather than bought again, and the ledger is written after every paid call, so a run stopped half way
 through a long piece keeps what it has and asks only for the rest.

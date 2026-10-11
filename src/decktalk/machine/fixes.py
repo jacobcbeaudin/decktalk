@@ -45,9 +45,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
 log = logging.getLogger(__name__)
 
-FIX_TIMEOUT_SECONDS = 1800.0
-"""The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
-
 
 def apply_fixes(
     run: Run, findings: Finding | Iterable[Finding], *, root: Path, scope: Scope, unsafe: bool
@@ -144,6 +141,7 @@ def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
         )
     argv = [sys.executable, "-m", *fix.command]
     typed = command_line(fix.command)
+    limit = run.machine.toolchain.tools.fix_timeout_seconds
     started = time.monotonic()
     try:
         finished = subprocess.run(
@@ -152,18 +150,18 @@ def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
             env=run.machine.child_environ(),
             check=False,
             capture_output=True,
-            timeout=FIX_TIMEOUT_SECONDS,
+            timeout=limit,
         )
     except subprocess.TimeoutExpired as late:
         log.warning(
             "`%s` was stopped after %.0f seconds (timeout).",
             typed,
-            FIX_TIMEOUT_SECONDS,
-            extra={"data": {"argv": command_line(argv), "reason": "timeout", "limit": FIX_TIMEOUT_SECONDS}},
+            limit,
+            extra={"data": {"argv": command_line(argv), "reason": "timeout", "limit": limit}},
         )
         raise ToolError(
-            f"`{typed}` ran for {FIX_TIMEOUT_SECONDS:.0f} seconds and was stopped.",
-            hint=f"Run `{typed}` by hand to see where it waits.",
+            f"`{typed}` ran for {limit:.0f} seconds and was stopped.",
+            hint=f"Run `{typed}` by hand to see where it waits, or raise `tools.fix_timeout_seconds` on this machine.",
         ) from late
     said = finished.stderr or finished.stdout or b""
     traced(log, typed, argv, code=finished.returncode, seconds=time.monotonic() - started, said=said)

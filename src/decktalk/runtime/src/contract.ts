@@ -52,7 +52,7 @@ export const DUE_SLACK_SECONDS = 1e-6;
 /**
  * The slowest rate a film is recorded at, which is the lowest `video.fps` admits.
  *
- * The recorder steps the section clock at `video.fps`, so a frame is never longer than one at this
+ * Truth: the recorder steps the section clock at `video.fps`, so a frame is never longer than one at this
  * rate, and every range below is written in frames of it so that it holds at every rate a film may use.
  */
 export const SLOWEST_FPS = 25;
@@ -60,7 +60,7 @@ export const SLOWEST_FPS = 25;
 /**
  * One frame at the slowest rate in milliseconds, which is the finest interval any range on this page may name.
  *
- * It is written out rather than divided, because every range below is written in whole frames and a
+ * Derived: it is written out rather than divided, because every range below is written in whole frames and a
  * reader should be able to see the step the ranges are built on. A test holds it equal to
  * `1000 / SLOWEST_FPS`, so the two can never drift.
  */
@@ -69,7 +69,7 @@ export const FRAME_STEP_MS = 40;
 /**
  * The longest motion a cue may still be playing, in seconds.
  *
- * This one number is three things the design keeps together on purpose. It is the point at which an
+ * Calibration: this one number is three things the design keeps together on purpose. It is the point at which an
  * effect marks its own cue unmeasurable, it is the ceiling `motion.scale` is clamped one frame under,
  * and it is the total a staggered container may not pass. A page range that admitted a value above it would
  * let an author delete a check by changing one attribute.
@@ -79,7 +79,7 @@ export const MEASURABLE_SPAN_SECONDS = 0.5;
 /**
  * The longest motion the page plays, in seconds, which is one captured frame under the ceiling.
  *
- * The frame of headroom is on purpose. A motion that ended exactly at the ceiling would be decided by
+ * Derived: the frame of headroom is on purpose. A motion that ended exactly at the ceiling would be decided by
  * whichever side of one frame boundary the recorder happened to stamp it on, so `scaled()` clamps
  * here and every span the contract declares sits at or below it, which is what makes the length the
  * catalog publishes the length the page plays. It is written out for the reason the frame step is,
@@ -87,13 +87,17 @@ export const MEASURABLE_SPAN_SECONDS = 0.5;
  */
 export const PLAYABLE_SPAN_SECONDS = 0.46;
 
-/** The share of an entrance that must be drawn in its first captured frame, so verify reads an onset. */
+/** Calibration: the share of an entrance that must be drawn in its first captured frame, so verify reads an onset. */
 export const ONSET_FIRST_FRAME_PERCENT = 25;
 
-/** The words `appear` may reveal one at a time before the line is longer than a cue can carry. */
+/** Calibration: the words `appear` may reveal one at a time before the line is longer than a cue can carry. */
 export const APPEAR_WORDS_MAX = 8;
 
-/** The opacity a stepped-back element holds, which is dim enough to read as secondary and light enough to read. */
+/**
+ * The opacity a stepped-back element holds.
+ *
+ * Calibration: dim enough to read as secondary and light enough to read.
+ */
 export const BACK_OPACITY = 0.45;
 
 // ---- the closed word sets ---------------------------------------------------------------------
@@ -103,6 +107,8 @@ export const BACK_OPACITY = 0.45;
  *
  * A static check inflates an element's measured box by its entrance's envelope, because the box the
  * probe measures is where the element comes to rest and not where it passes through.
+ *
+ * Calibration: each length is a whole number of captured frames at the slowest rate, set by eye.
  */
 export const ENTRANCES = {
   rise: { seconds: 0.32, liftPixels: 10, overshootPercent: 0 },
@@ -113,31 +119,31 @@ export const ENTRANCES = {
   cut: { seconds: 0, liftPixels: 0, overshootPercent: 0 },
 } as const;
 
-/** How long each exit plays. Both exits are the same length, because an exit is never the subject. */
+/** Calibration: how long each exit plays. Both exits are the same length, because an exit is never the subject. */
 export const EXITS = {
   fade: { seconds: 0.2 },
   fall: { seconds: 0.2 },
 } as const;
 
-/** How a slide replaces the one before it, and how long that takes. */
+/** Calibration: how a slide replaces the one before it, and how long that takes. */
 export const SLIDE_ENTRANCES = {
   crossfade: { seconds: 0.24 },
   cut: { seconds: 0 },
 } as const;
 
-/** How a line is shown on the voice, and how long one word takes to arrive. */
+/** Calibration: how a line is shown on the voice, and how long one word takes to arrive. */
 export const WORD_STYLES = {
   highlight: { seconds: 0.12 },
   appear: { seconds: 0.12 },
 } as const;
 
-/** Which number in the text counts up from zero, and how long the count runs. */
+/** Calibration: which number in the text counts up from zero, and how long the count runs. */
 export const COUNTS = {
   last: { seconds: 0.44 },
   first: { seconds: 0.44 },
 } as const;
 
-/** How long a step back and a return to the front play. */
+/** Calibration: how long a step back and a return to the front play. */
 export const ATTENTION = {
   back: { seconds: 0.28 },
   front: { seconds: 0.2 },
@@ -151,6 +157,8 @@ export const ATTENTION = {
  * `spring` ease to rest, which looks soft and has no edge, so an arrival on either is allowed only on a
  * cue `cues.json` marks `"verify": false`. A `curve` is a cubic Bezier's two control points, and the
  * spring has none because it is a critically damped spring stretched to the motion's length.
+ *
+ * Calibration: each curve was chosen by eye, and `firm` keeps enough speed at its end for verify to find it.
  */
 export const MOTION_EASES = {
   firm: { curve: [0.25, 0.8, 0.5, 0.95], arrival: "edge" },
@@ -317,16 +325,16 @@ type AttrRow = {
  */
 const READ_FROM_THE_PAGE = null;
 
-/** How long an entrance may play, which is three to eleven captured frames and never past the playable span. */
+/** Derived: how long an entrance may play, which is three to eleven captured frames and never past the playable span. */
 const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
 
-/** How far apart a container's children arrive, which is one to five captured frames. */
+/** Derived: how far apart a container's children arrive, which is one to five captured frames. */
 const STAGGER_RANGE: Range = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
 
-/** How long one turn of a declared loop takes, which is anything from a fifth of a second to a minute. */
+/** Calibration: how long one turn of a declared loop takes, which is anything from a fifth of a second to a minute. */
 const LOOP_SECONDS_RANGE: Range = { min: 0.2, max: 60, step: 0.04, unit: "seconds" };
 
-/** How long a slide rests in the preview, which no recording reads and no check measures. */
+/** Calibration: how long a slide rests in the preview, which no recording reads and no check measures. */
 const PREVIEW_SECONDS_RANGE: Range = { min: 1, max: 60, step: 1, unit: "seconds" };
 
 /**
@@ -334,6 +342,9 @@ const PREVIEW_SECONDS_RANGE: Range = { min: 1, max: 60, step: 1, unit: "seconds"
  *
  * The generated table keeps this order, so the first ten rows are the ten a person holds in their
  * head and the rows written once a deck sit after the rows written forty times a deck.
+ *
+ * Truth: each span is the length its own registry row above plays, and each default is the value
+ * an author who writes nothing is given.
  */
 export const ATTRS = {
   "data-in": {

@@ -11,6 +11,7 @@ import decktalk
 from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code
+from decktalk.inputs.document import content_keys
 from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS, Scope
 from decktalk.settings import BY_ID, KEYS, MEMBER, TEMPLATES, VOICE_NAME
@@ -117,6 +118,22 @@ def _ids(properties: dict[str, object], prefix: str = "") -> list[str]:
     return found
 
 
+def test_the_schema_publishes_every_content_number_with_its_range_and_default() -> None:
+    """A project's own numbers are refused outside their range, so an editor and an agent are shown that range."""
+    committed = json.loads((SCHEMA_DIR / "decktalk.json").read_text(encoding="utf-8"))["properties"]
+    rendered = {row["id"]: row for row in catalog.settings_schema()["content"]}
+    for key in content_keys():
+        table, name = key.id.rsplit(".", 1)
+        body = committed
+        for part in table.split("."):
+            body = body[part]
+            body = body.get("items", body)["properties"]
+        published = body[name]
+        assert published["x-range"] == key.range and published.get("default") == key.default, key.id
+        assert rendered[key.id]["bounds"] == key.range and rendered[key.id]["default"] == key.default, key.id
+    assert committed["transition"]["properties"]["dip_seconds"]["exclusiveMinimum"] == 0
+
+
 def test_the_schema_lists_every_voice_key_under_its_family() -> None:
     """A voice is named by its author, so the schema publishes one table of keys any voice name may hold."""
     committed = json.loads((SCHEMA_DIR / "decktalk.json").read_text(encoding="utf-8"))
@@ -179,6 +196,7 @@ def test_every_stage_is_a_row_with_what_it_reads_and_writes() -> None:
     assert [row["stage"] for row in rows] == [spec.stage.value for spec in PIPELINE]
     for row, spec in zip(rows, PIPELINE, strict=True):
         assert row["reads"] == [artifact.value for artifact in spec.reads]
+        assert row["reads_when_there"] == [artifact.value for artifact in spec.optional_reads]
         assert row["writes"] == [artifact.value for artifact in spec.writes]
 
 

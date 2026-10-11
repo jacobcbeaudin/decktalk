@@ -49,13 +49,13 @@ from decktalk.findings import Model
 log = logging.getLogger(__name__)
 
 DIGEST_BYTES = 8
-"""How much of a BLAKE3 names some content, sixteen hex characters, which never collide within one project."""
+"""Truth: how much of a BLAKE3 names some content, sixteen hex characters, which never collide within one project."""
 
 DIGEST_DIGITS = 2 * DIGEST_BYTES
 """Derived: the hex characters of a key cut from a sha256, which is as long as a content digest and as safe."""
 
 THREADED_BYTES = 1 << 20
-"""Measured: below a mebibyte, handing a file to several threads costs more than hashing it on one does."""
+"""Calibration: below a mebibyte, handing a file to several threads costs more than hashing it on one does."""
 
 GONE = "gone"
 """What a file that is not on disk is digested as, so a key over a missing file still names it."""

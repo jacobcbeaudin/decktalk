@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import pytest
 
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
-from decktalk.inputs.document import ClipSection, Document, Mix, PageSection, Transition, frame_dip
+from decktalk.inputs.document import (
+    ClipSection,
+    Document,
+    Mix,
+    PageSection,
+    Transition,
+    content_keys,
+    frame_dip,
+)
 from support.projects import MINIMAL_TOML, write_project
 
 
@@ -154,3 +165,50 @@ def test_a_section_cannot_be_both_a_page_and_a_render() -> None:
         Document.from_toml(
             {"section": [{"number": 1, "page": "deck/index.html", "render_command": ["make"]}]}, default_name="t"
         )
+
+
+# ---- every number a project writes is held to its range -----------------------------------------
+
+OUT_OF_RANGE = [
+    ("[[section]]\nnumber = 3\nclip = 'media/b.mp4'\nslate_seconds = -3\n", "section.slate_seconds", 22),
+    ("[transition]\ndip_seconds = 99\n", "transition.dip_seconds", 20),
+    ("[transition]\ndip_seconds = 0\n", "transition.dip_seconds", 20),
+    ("[mix]\nmusic_db = 40\n", "mix.music_db", 20),
+    ("[mix]\nmusic_fade_out_seconds = 0\n", "mix.music_fade_out_seconds", 20),
+    ("[[mix.effect]]\nfile = 'media/t.wav'\nsection = 1\ncue = 'now'\ndb = 12\n", "mix.effect.db", 23),
+    ("[[section]]\nnumber = 3\npage = 'deck/b.html'\nhold_seconds = -1\n", "section.hold_seconds", 22),
+]
+"""The audit's probe values and their neighbours: each loaded silently before, and each sits on its own line."""
+
+
+@pytest.mark.parametrize(("table", "key", "line"), OUT_OF_RANGE, ids=[key for _t, key, _l in OUT_OF_RANGE])
+def test_a_number_outside_its_range_is_refused_at_its_file_and_line(tmp_path, table: str, key: str, line: int) -> None:
+    """A typo reaches ffmpeg otherwise, as a negative slate or a music bed louder than the voice."""
+    with pytest.raises(InputError) as refused:
+        Inputs.load(write_project(tmp_path, MINIMAL_TOML + "\n" + table), environ={})
+    error = refused.value
+    assert f"'{key.rsplit('.', 1)[-1]}' must be" in str(error), str(error)
+    assert error.location is not None
+    assert error.location.file == Path("decktalk.toml") and error.location.line == line, error.location
+
+
+def test_the_line_of_a_refused_section_is_the_line_in_that_section() -> None:
+    """Two sections can write the same key, and the refusal opens the one that is wrong."""
+    text = (
+        "[[section]]\nnumber = 1\nclip = 'a.mp4'\nslate_seconds = 2\n\n"
+        "[[section]]\nnumber = 2\nclip = 'b.mp4'\nslate_seconds = -2\n"
+    )
+    with pytest.raises(InputError) as refused:
+        Document.from_toml(tomllib.loads(text), default_name="t", text=text)
+    assert refused.value.location is not None and refused.value.location.line == 9
+
+
+def test_every_bounded_content_default_sits_inside_its_own_range() -> None:
+    """A default outside its range would be refused the moment a project wrote it back."""
+    keys = content_keys()
+    assert {"section.slate_seconds", "transition.dip_seconds", "mix.music_db", "mix.effect.db"} <= {
+        key.id for key in keys
+    }
+    for key in keys:
+        assert key.bounds is not None, key.id
+        assert key.default is None or key.bounds.holds(key.default), key.id

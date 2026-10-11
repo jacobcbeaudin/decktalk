@@ -26,6 +26,7 @@ from decktalk.files import drafted, json_text, replace_all
 from decktalk.inputs import Inputs
 from decktalk.results import SoundKind
 from decktalk.settings import Settings
+from decktalk.speech.sound import SoundRequest
 from decktalk.stages import kept
 from decktalk.stages.assemble import cut
 from decktalk.stages.score import Planned
@@ -122,6 +123,7 @@ def test_the_sound_request_the_ledger_keeps_keeps_its_bytes() -> None:
         prompt="rain",
         out=Path("rain.mp3"),
         endpoint="e",
+        requests=(SoundRequest(SoundKind.AMBIENCE, "rain", 1.0, "m", loop=True),),
         bodies=(PARTING,),
         digest="d",
     )

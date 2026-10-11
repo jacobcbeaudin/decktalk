@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,8 +20,9 @@ from decktalk.findings import (
     Location,
 )
 from decktalk.machine import Machine
-from decktalk.machine.fixes import FIX_TIMEOUT_SECONDS, apply_fix, fixes_of
+from decktalk.machine.fixes import apply_fix, fixes_of
 from decktalk.results import FixOutcome, Scope
+from decktalk.settings import ToolsConfig
 from decktalk.toolchain import command_line
 from support.links import link
 from support.logs import data_of
@@ -106,6 +108,9 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
 ) -> None:
     """`decktalk` on `PATH` may be another install, and an unbounded command holds `apply` for ever."""
     here = a_machine(tmp_path, ONLY_THIS="1")
+    here = replace(
+        here, toolchain=replace(here.toolchain, tools=replace(here.toolchain.tools, fix_timeout_seconds=90.0))
+    )
     asked: dict[str, object] = {}
 
     def record(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
@@ -115,7 +120,7 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
     monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", record)
     assert ran(here, INSTALL_FIX).applied
     assert asked["argv"] == [sys.executable, "-m", "decktalk", "install"]
-    assert asked["timeout"] == FIX_TIMEOUT_SECONDS
+    assert asked["timeout"] == 90.0, "the machine's own `tools.fix_timeout_seconds` bounds the command"
     assert asked["env"] == {
         "ONLY_THIS": "1",
         "DECKTALK_MACHINE_FILE": str(here.machine_file),
@@ -127,7 +132,7 @@ def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     def hang(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        raise subprocess.TimeoutExpired(argv, FIX_TIMEOUT_SECONDS)
+        raise subprocess.TimeoutExpired(argv, ToolsConfig().fix_timeout_seconds)
 
     monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", hang)
     outcome = ran(a_machine(tmp_path), INSTALL_FIX)
@@ -137,7 +142,7 @@ def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
     assert data_of(said) == {
         "argv": command_line([sys.executable, "-m", *INSTALL]),
         "reason": "timeout",
-        "limit": FIX_TIMEOUT_SECONDS,
+        "limit": ToolsConfig().fix_timeout_seconds,
     }
 
 

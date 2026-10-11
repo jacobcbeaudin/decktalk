@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -46,6 +46,7 @@ from decktalk.results import (
     money,
 )
 from decktalk.settings import MACHINE_FILE_VARIABLE
+from decktalk.speech.sound import SoundRequest
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import score as score_stage
 from decktalk.stages.build import build
@@ -361,10 +362,16 @@ def test_a_run_of_the_score_alone_needs_no_take_index(inputs: Inputs, watched: W
     assert calls.names == ["score"]
 
 
+def _narrated_and_cued(inputs: Inputs) -> None:
+    """The take index and the cue times a run that starts past `cue` reads, as placeholders."""
+    inputs.workspace.narrate_dir.mkdir(parents=True)
+    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    inputs.workspace.cue_times_path.write_text("{}", encoding="utf-8")
+
+
 def test_a_project_with_no_score_may_still_assemble_without_one(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """The score is the one artifact a project may honestly have none of."""
-    (inputs.workspace.narrate_dir).mkdir(parents=True)
-    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for section in inputs.document.page_sections:
         inputs.workspace.recording(section.key).write_bytes(b"")
@@ -374,8 +381,7 @@ def test_a_project_with_no_score_may_still_assemble_without_one(inputs: Inputs, 
 
 def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A build and the status report read one rule, so neither calls half a record stage finished."""
-    inputs.workspace.narrate_dir.mkdir(parents=True)
-    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     first = inputs.document.page_sections[0]
     inputs.workspace.recording(first.key).write_bytes(b"")
@@ -389,8 +395,7 @@ def _with_a_score(inputs: Inputs) -> Inputs:
     """The same project with one generated ambience bed declared and nothing generated yet."""
     toml = inputs.root / "decktalk.toml"
     toml.write_text(TOML + '\n[score.ambience]\nprompt = "a quiet room"\n', encoding="utf-8")
-    inputs.workspace.narrate_dir.mkdir(parents=True)
-    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for section in inputs.document.page_sections:
         inputs.workspace.recording(section.key).write_bytes(b"")
@@ -518,14 +523,14 @@ class Purchases:
     """Every take and every sound a build bought, counted at the two seams that are paid."""
 
     voice: FakeVoice
-    sounds: list[dict[str, object]] = field(default_factory=list)
+    sounds: list[SoundRequest] = field(default_factory=list)
 
-    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def effect(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"sound"
 
-    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def music(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"music"
 
     @property
@@ -1155,8 +1160,10 @@ def test_a_charged_total_counts_only_the_stages_that_had_leave_to_buy(
 
 def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A reader that met a null there would need to know which stages price before reading zero."""
-    inputs.workspace.cue_times_path.parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.cue_times_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
+    inputs.workspace.recordings_dir.mkdir(parents=True)
+    for section in inputs.document.page_sections:
+        inputs.workspace.recording(section.key).write_bytes(b"")
     inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.film.write_bytes(b"")
     result = build(inputs, watched.run, stages=[Stage.VERIFY])

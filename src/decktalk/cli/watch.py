@@ -26,7 +26,7 @@ from decktalk.project import Project
 from decktalk.results import UNPRICED, BuildResult, TakeState
 
 POLL_SECONDS = 0.4
-"""How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
+"""Calibration: how long the loop sleeps between two readings of the tree, which is under an author's own pause."""
 
 
 def loop(

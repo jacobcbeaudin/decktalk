@@ -36,8 +36,8 @@ scene its `[[section]]` names and the slide ids of its cues all agree.
 
 ### `script.md`
 
-What the voice says. `## N. Title` starts section `N`, and `## N. Title - 0:40 to 1:10` adds a time
-budget. Bracketed text is a direction the voice does not speak: `[beat]` and any other note
+What the voice says. `## N. Title` starts section `N`, and the rest of the line is its title.
+Bracketed text is a direction the voice does not speak: `[beat]` and any other note
 become a short pause, `[pause 3]` becomes a three second pause, and an ALL-CAPS bracket such as
 `[NUMBER]` is an unfilled blank that raises `SCRIPT_UNFINISHED`. Markdown formatting is stripped before
 the text is sent, and the exact text a section sends is that take's cache key.

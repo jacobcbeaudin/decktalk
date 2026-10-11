@@ -35,9 +35,12 @@ prints every flag.
 The stage inside `decktalk build` is the same call, so a build measures everything a bare `verify`
 would.
 
-Two refusals come before any measurement. A film that is not there is `NOT_BUILT`, and so is a film
+Three refusals come before any measurement. A film that is not there is `NOT_BUILT`, and so is a film
 that carries no placements file and has no section files to read a shape from. Both say to run
-`decktalk assemble` first.
+`decktalk assemble` first. A film whose recorded page sections have no recording log under
+`build/recordings/` is `NOT_BUILT` too, because without the logs `verify` would repeat none of the
+recorder's findings and measure none of the motion, so a film moved to another machine takes
+`build/recordings/` with it. A section the film filled with black was never recorded and needs none.
 
 ## What it prints
 

@@ -22,7 +22,7 @@ SCRIPT = """# Title
 
 Hi there.
 
-## 1. Open — 0:00 to 0:20
+## 1. Open
 
 [Deck. Title.]
 
@@ -37,11 +37,18 @@ not a section
 """
 
 
+def test_a_heading_is_its_number_and_its_title_and_nothing_after_the_title_is_read_apart():
+    """A time range after a title was once read as a budget nothing used, so it is now part of the title."""
+    (section,) = parse_script("## 1. Open - 0:00 to 0:20\n\nHello.\n")
+    assert (section.number, section.title) == (1, "Open - 0:00 to 0:20")
+    assert not hasattr(section, "target_seconds")
+
+
 def test_parse_script_sections_and_directions():
     segs = parse_script(SCRIPT)
     assert [s.number for s in segs] == [0, 1]
     one = segs[1]
-    assert one.title == "Open" and one.target_seconds == 20
+    assert one.title == "Open"
     # The direction before any prose has nothing to pause after, and the one between paragraphs is a beat.
     assert one.pieces == (
         Piece("Welcome to the deck. It has code and a link.", BEAT),

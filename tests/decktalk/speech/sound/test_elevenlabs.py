@@ -17,8 +17,8 @@ from decktalk.results import SoundKind
 from decktalk.secret import Secret
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import http as _http
-from decktalk.speech.sound import SOUNDS, SoundContext, SoundProviders, endpoint
-from decktalk.speech.sound.elevenlabs import MUSIC_PATH, PUBLISHED_BASE, SOUND_PATH, ElevenLabsSound
+from decktalk.speech.sound import SOUNDS, SoundContext, SoundProviders, SoundRequest, endpoint
+from decktalk.speech.sound.elevenlabs import MUSIC_PATH, PUBLISHED_BASE, SOUND_PATH, ElevenLabsSound, sound_body
 
 SENTINEL = "sk_sentinel_sound_key_that_must_never_print"
 AUDIO = b"ID3 a sound"
@@ -56,15 +56,19 @@ def a_context(**over: Any) -> SoundContext:
     return SoundContext(**{**fields, **over})
 
 
+CHIME = SoundRequest(SoundKind.EFFECT, "a chime", 1.5, "fx_v1", influence=0.3)
+"""One effect as the score asks for it, in DeckTalk's words."""
+
+
 def test_an_effect_is_bought_from_the_sound_endpoint_of_the_base_it_was_built_with(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     asked = answers(monkeypatch)
     sound = SoundProviders(factories=SOUNDS).provider("elevenlabs", a_context())
-    assert sound.effect({"text": "a chime"}, output_format=FORMAT) == AUDIO
+    assert sound.effect(CHIME, output_format=FORMAT) == AUDIO
     (sent,) = asked
     assert sent["url"] == f"{BASE}{SOUND_PATH}?output_format={FORMAT}"
-    assert sent["body"] == {"text": "a chime"}
+    assert sent["body"] == {"text": "a chime", "duration_seconds": 1.5, "prompt_influence": 0.3, "model_id": "fx_v1"}
     assert sent["headers"]["Xi-api-key"] == SENTINEL
     assert sent["timeout"] == 42
 
@@ -72,8 +76,21 @@ def test_an_effect_is_bought_from_the_sound_endpoint_of_the_base_it_was_built_wi
 def test_music_is_bought_from_the_music_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     asked = answers(monkeypatch)
     sound = ElevenLabsSound.for_context(a_context())
-    assert sound.music({"prompt": "strings"}, output_format=FORMAT) == AUDIO
+    strings = SoundRequest(SoundKind.MUSIC, "strings", 20.5, "music_v2", instrumental=True, part=2, parts=3)
+    assert sound.music(strings, output_format=FORMAT) == AUDIO
     assert asked[0]["url"] == f"{BASE}{MUSIC_PATH}?output_format={FORMAT}"
+    assert asked[0]["body"] == {
+        "prompt": "strings (part 2 of 3, same key and tempo, seamless mood)",
+        "force_instrumental": True,
+        "model_id": "music_v2",
+        "music_length_ms": 20500,
+    }
+
+
+def test_a_bed_that_loops_is_asked_for_as_one_and_nothing_else_says_loop() -> None:
+    bed = SoundRequest(SoundKind.AMBIENCE, "a room", 25.0, "fx_v1", loop=True, influence=0.3)
+    assert sound_body(bed)["loop"] is True
+    assert "loop" not in sound_body(CHIME)
 
 
 def test_the_key_is_never_printed_by_the_adapter() -> None:
@@ -83,7 +100,7 @@ def test_the_key_is_never_printed_by_the_adapter() -> None:
 def test_the_base_the_machine_names_is_used_as_it_is(monkeypatch: pytest.MonkeyPatch) -> None:
     asked = answers(monkeypatch)
     sound = SoundProviders(factories=SOUNDS).provider("elevenlabs", a_context(base_url="http://127.0.0.1:9/v1/"))
-    sound.effect({"text": "a tap"}, output_format=FORMAT)
+    sound.effect(CHIME, output_format=FORMAT)
     assert asked[0]["url"] == f"http://127.0.0.1:9/v1{SOUND_PATH}?output_format={FORMAT}"
 
 

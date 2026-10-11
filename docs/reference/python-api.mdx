@@ -52,7 +52,7 @@ Every other public type lives in the module that defines its kind:
 | `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `CommandFix`, `Applicability` and `RaisedBy`. |
 | `decktalk.settings` | `Settings`, one `*Config` class per table, `ProviderTable` and `Layers`. |
 | `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `SpeechFactory`, `SpeechContext`, `Secrets`, `Secret`, `SpeechProviders`, `Billing`, `Output` and `BEAT`. The aligner protocol: `Aligner`, `AlignerIdentity`, `AlignmentRequest` and `AlignerContext`. |
-| `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundContext`, `SoundFactory` and `SoundProviders`. |
+| `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundRequest`, `SoundContext`, `SoundFactory` and `SoundProviders`. |
 
 A type any public field, parameter or return value names is importable from one of them, which
 `tests/contract/test_api.py` holds by walking every public signature.

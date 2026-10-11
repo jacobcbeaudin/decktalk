@@ -8,8 +8,9 @@ two halves, and knowing which half a key is in tells you everything else about i
 
 The **document** is the content this project is: what it is called, which section plays which page or
 clip, which voice reads it, what the sound is made of and how the cuts behave. Every value in it
-changes from presentation to presentation, it has no default worth publishing, and this page is its
-reference.
+changes from presentation to presentation, and this page is its reference. Each number in it still
+has a range the loader holds it to, which the tables below give and which `decktalk schema setting`
+publishes under `content` with its default and the reason for each edge.
 
 The **settings** are what a project changes. Every settings key publishes its default, its safe range, its unit,
 its scope and what a value at the edge risks, all from one declaration in the code, so
@@ -79,7 +80,8 @@ refusal names what it read and would not accept.
 - A section names more than one of `page`, `clip` and `render_command`, or none of them.
 - A `render_command`, or a `[[clip]]` `command`, is not a list of words, or holds an empty word.
 - Two `[[clip]]` tables write one `file`.
-- `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
+- A number in a document table is outside its range, such as `slate_seconds = -3` or
+  `[mix] music_db = 40`. The refusal names the line that wrote it.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effect]]` row names a section that does not exist.
 - A settings value is outside its safe range.
@@ -160,9 +162,9 @@ them or none fails the load.
 |---|---|---|---|
 | `page` | path | required | The HTML file to record, such as `deck/index.html`. It sits in a directory of its own, never at the project root. |
 | `scene` | integer or string | the section's `number` | Which `data-scene` of that page to play. It reaches the page as a string. |
-| `hold_seconds` | number | `0` | How long the page plays on after the section's narration. The hold is recorded like the rest of the section, so a motion that arrives after the last word lands in it. The narration waits for the hold, and the next section starts after it. |
-| `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
-| `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. |
+| `hold_seconds` | number | `0` | How long the page plays on after the section's narration. The hold is recorded like the rest of the section, so a motion that arrives after the last word lands in it. The narration waits for the hold, and the next section starts after it. Between 0 and 60. |
+| `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. Between 0 and 5, as `[narration] lead_seconds` is. |
+| `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. Between 0 and 10, as `[narration] tail_seconds` is. |
 | `with_ambience` | boolean | `false` | Play the ambience bed under this section. |
 | `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `freeze`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
 
@@ -238,7 +240,7 @@ of its cues.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `clip` | path | required | Your own video file. It keeps its own audio. |
-| `slate_seconds` | number | `5` | How long the titled slate plays when the file is not there. |
+| `slate_seconds` | number | `5` | How long the titled slate plays when the file is not there. Above 0, at most 60. |
 | `optional` | boolean | `false` | A missing file is expected here for now, so `decktalk status` raises no `FILE_MISSING` for it and `Project.assemble(strict=True)` plays the slate rather than refusing. Delete the line once the clip is there. |
 
 A clip whose file is not there plays a titled slate for `slate_seconds`, and `decktalk status`
@@ -432,13 +434,13 @@ Without `[mix]` the film carries the narration and the audio of any clip, and no
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `music` | path | none | Music under the whole film. It loops, and it ducks under speech and under clips. |
-| `music_db` | number | `-24` | The music level. |
-| `music_duck_db` | number | `-6` | The extra level change under each spoken span and each clip. |
-| `music_fade_in_seconds` | number | `2` | The fade in. |
-| `music_fade_out_seconds` | number | `3` | The fade out. |
+| `music_db` | number | `-24` | The music level, between -60 and 0. |
+| `music_duck_db` | number | `-6` | The extra level change under each spoken span and each clip, between -40 and 0. |
+| `music_fade_in_seconds` | number | `2` | The fade in. Above 0, at most 30, because ffmpeg reads a fade of no length as a second long. |
+| `music_fade_out_seconds` | number | `3` | The fade out. Above 0, at most 30. |
 | `music_markers` | path | none | A markers file that swells and mutes the music at spoken phrases. |
 | `ambience` | path | none | The ambience bed for every section that sets `with_ambience = true`. |
-| `ambience_db` | number | `-20` | The ambience level. |
+| `ambience_db` | number | `-20` | The ambience level, between -60 and 0. |
 | `slate` | path | a rendered slate | A PNG to show for a missing clip, instead of the titled slate DeckTalk renders. |
 
 A missing music or ambience file does not fail the build. `assemble` warns and plays the film
@@ -453,8 +455,8 @@ One table per sound effect, each of which plays at a cue.
 | `file` | path | required | The audio file to play. |
 | `section` | integer | required | The section whose cue places it. The section must exist. |
 | `cue` | string | required | The cue id of the cue in that section, such as `3.2:expand`. |
-| `db` | number | `-16` | The level. |
-| `offset_seconds` | number | `0` | Seconds added to the cue time. This offset belongs to the sound and not to the cue. |
+| `db` | number | `-16` | The level, between -60 and 0. |
+| `offset_seconds` | number | `0` | Seconds added to the cue time, between -10 and 10. This offset belongs to the sound and not to the cue. |
 | `caption` | string | none | The line a viewer reads when the sound plays, such as `ball bounces`. `assemble` gives it a line of its own in the captions. |
 
 A missing file or a cue that never resolved does not fail the build. `assemble` skips that effect and
@@ -477,16 +479,16 @@ writes one, so the block below is the shape rather than a starter's values.
 
 | Key | Where | Type | Default | Meaning |
 |---|---|---|---|---|
-| `boost_db` | top level | number | `3` | How far each marker raises the music, in dB. |
-| `boost_seconds` | top level | number | `2` | How long each swell lasts. |
+| `boost_db` | top level | number | `3` | How far each marker raises the music, in dB, between 0 and 12. |
+| `boost_seconds` | top level | number | `2` | How long each swell lasts, between 0 and 30. |
 | `markers` | top level | array | `[]` | The markers. |
 | `name` | marker | string | none | The name a warning uses for it. |
 | `section` | marker | integer | required | The section that holds the phrase. |
 | `phrase` | marker | string | `$start` | A spoken phrase, `$start` or `$end`. |
-| `offset_seconds` | marker | number | `0` | Seconds added to the matched second. |
-| `occurrence` | marker | integer | `1` | Which match of the phrase to take. |
+| `offset_seconds` | marker | number | `0` | Seconds added to the matched second, between -10 and 10. |
+| `occurrence` | marker | integer | `1` | Which match of the phrase to take, counting from 1. |
 | `case_sensitive` | marker | boolean | `false` | Whether the match compares case. |
-| `mute_seconds` | marker | number | `0` | Seconds of silence before the swell starts. |
+| `mute_seconds` | marker | number | `0` | Seconds of silence before the swell starts, between 0 and 30. |
 
 A marker resolves exactly as a cue does, against the words of its own section. A marker whose phrase
 is not spoken is reported by `assemble` and skipped.
@@ -496,7 +498,7 @@ is not spoken is reported by `assemble` and skipped.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `dips` | array of two-integer arrays | every cut | Which boundaries dip to black, written as `[[from, to], ...]` of section numbers. Leave the key out to dip at every cut, and write `dips = []` for none. |
-| `dip_seconds` | number | `0.15` | How long a dip lasts, rounded to whole frames so a fade never ends part way through one. |
+| `dip_seconds` | number | `0.15` | How long a dip lasts, rounded to whole frames so a fade never ends part way through one. Above 0, at most 1: ffmpeg reads a fade of no length as a second long, so write `dips = []` for straight cuts. |
 | `page_fades_in` | boolean | `true` | Pages fade themselves in, so the cut into a page section adds no fade of its own. |
 
 Audio never dips. A dip shows on screen, so leave a pair out of `dips` for a cut that should not
