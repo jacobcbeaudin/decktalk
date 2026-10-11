@@ -23,14 +23,13 @@ from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.media import audio, browser, ffmpeg, frames, stepping
 from decktalk.media.pagereport import PageReport, Recording
-from decktalk.media.stepping import RecordingSink
 from decktalk.page import Q
 from decktalk.pipeline import Outcome
 from decktalk.results import Word
 from decktalk.settings import Settings
 from decktalk.stages.cue import cue
 from decktalk.stages.narrate import narrate
-from decktalk.stages.record import plan, pool, record, stale_recording
+from decktalk.stages.record import LogSink, plan, pool, record, stale_recording
 from decktalk.stages.status import status
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
@@ -88,6 +87,10 @@ class Driven:
         self.lengths: dict[Path, float] = {}
         # When set, no launch returns until every party has launched, so no worker can finish first.
         self.launches_together: threading.Barrier | None = None
+        # The frames of each piece a section was joined from, in the order they were handed to the join.
+        self.joined: list[list[range]] = []
+        self.real_join = stepping.join
+        self.real_write = LogSink.write
         # Launches released together count at once, and an unguarded increment could lose one.
         self.counting = threading.Lock()
 
@@ -103,38 +106,41 @@ class Driven:
         self.switches.append(switches)
         yield object()
 
-    def record_page(
-        self,
-        _browser: object,
-        url: str,
-        seconds: float,
-        out: Path,
-        *,
-        log_sink: RecordingSink,
-        **_kwargs: object,
-    ) -> Recording:
+    def record_piece(self, _browser: object, url: str, frames: range, out: Path, **_kwargs: object) -> stepping.Piece:
+        section = out.with_name(out.name.removeprefix(".").split(".piece")[0] + out.suffix)
         self.urls.append(url)
-        log_sink.clear()
-        self.order.append(f"cleared {out.name}")
+        if not section.with_suffix(".json").exists():
+            self.order.append(f"cleared {section.name}")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"mp4")
-        self.lengths[out] = stepping.frame_count(seconds, FPS) / FPS
-        self.order.append(f"placed {out.name}")
-        report = self.report
-        recording = Recording(
+        return stepping.Piece(
+            path=out,
+            frames=frames,
             url=url,
+            fps=FPS,
             assets=("deck/index.html",),
             external=(),
             missing=self.missing,
-            requested_seconds=seconds,
-            fps=FPS,
             load_seconds=0.2,
             page_errors=(),
-            report=report,
+            console=(),
+            report=self.report,
+            undeclared=(),
+            captured=len(frames),
+            steps=len(frames),
         )
-        log_sink.write(recording)
-        self.order.append(f"logged {out.name}")
+
+    def join(self, pieces: list[stepping.Piece], out: Path, *, seconds: float) -> Recording:
+        self.joined.append([piece.frames for piece in pieces])
+        # The joined file runs every frame its pieces were asked for, which is what the stepped recorder writes.
+        self.lengths[out] = sum(len(piece.frames) for piece in pieces) / FPS
+        recording = self.real_join(pieces, out, seconds=seconds)
+        self.order.append(f"placed {out.name}")
         return recording
+
+    def write_log(self, sink: LogSink, recording: Recording) -> None:
+        self.real_write(sink, recording)
+        self.order.append(f"logged {sink.job.out.name}")
 
 
 @pytest.fixture
@@ -144,8 +150,12 @@ def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
     # One recording at a time, so the order a test reads is the order a single recorder writes in.
     monkeypatch.setattr(pool, "available_cpus", lambda: float(pool.CPUS_PER_RECORDING))
     monkeypatch.setattr(browser, "chromium", fake.chromium)
-    monkeypatch.setattr(stepping, "record_page", fake.record_page)
+    monkeypatch.setattr(stepping, "record_piece", fake.record_piece)
+    monkeypatch.setattr(stepping, "join", fake.join)
+    monkeypatch.setattr(LogSink, "write", lambda sink, recording: fake.write_log(sink, recording))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: fake.lengths[path])
+    # The one ffmpeg run the recorder makes is the join of a section's pieces, which writes its last argument.
+    monkeypatch.setattr(ffmpeg, "run", lambda *args: Path(args[-1]).write_bytes(b"mp4"))
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, BRIGHT_LUMA))
     return fake
 
@@ -396,18 +406,46 @@ def test_sections_recorded_at_once_come_back_in_order_with_their_own_pair_of_lin
     tmp_path: Path, driven: Driven, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Record waited for every section in turn, so a film took as long to record as it runs."""
-    monkeypatch.setattr(pool, "available_cpus", lambda: 8.0)
-    # One worker could otherwise take both sections before the other worker takes its first.
-    driven.launches_together = threading.Barrier(2, timeout=LAUNCH_WAIT_SECONDS)
+    monkeypatch.setattr(pool, "available_cpus", lambda: float(pool.CPUS_PER_RECORDING * pool.MOST_AT_ONCE))
+    # One worker could otherwise take every chunk before the others take their first.
+    driven.launches_together = threading.Barrier(pool.MOST_AT_ONCE, timeout=LAUNCH_WAIT_SECONDS)
     inputs = a_project(tmp_path)
     lines: list[Event] = []
     result = record(inputs, a_run(inputs.root, lines=lines))
     assert [row.section for row in result.sections] == [1, 2]
-    assert driven.launched == 2, "each worker drives a Chromium of its own"
+    assert driven.launched == pool.MOST_AT_ONCE, "each worker drives a Chromium of its own"
     for number in (1, 2):
         paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
         assert paired[0] == "SectionStart" and "SectionDone" in paired, paired
     assert [(line.done, line.section) for line in lines if isinstance(line, StageProgress)] == [(1, 1), (2, 2)]
+
+
+CHUNKED = {"record": {"concurrency": 4, "chunk_frames_min": 10, "chunk_startup_seconds": 0.1, "step_seconds": 0.1}}
+"""A machine of four recorders whose page loads as fast as it draws a frame, so every section splits four ways."""
+
+
+def test_a_section_split_across_recorders_is_recorded_in_chunks_and_joined_in_frame_order(
+    tmp_path: Path, driven: Driven
+) -> None:
+    """A motion-heavy section recorded by one Chromium left every other core idle while it stepped."""
+    inputs = a_project(tmp_path, machine=CHUNKED)
+    lines: list[Event] = []
+    result = record(inputs, a_run(inputs.root, lines=lines))
+    frames = stepping.frame_count(SPAN_SECONDS + 0.3, FPS)
+    assert [row.section for row in result.sections] == [1, 2]
+    assert [sorted((one.start, one.stop) for one in pieces) for pieces in driven.joined] == [
+        [(0, 27), (27, 54), (54, 81), (81, frames)]
+    ] * 2
+    for number in (1, 2):
+        paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
+        assert paired.count("SectionStart") == paired.count("SectionDone") == 1, paired
+        done = [line for line in lines if isinstance(line, SectionDone) and line.section == number]
+        assert done[0].outcome is Outcome.RAN
+    log = RecordingLog.read(inputs.workspace.recording_log("01"))
+    assert log is not None and log.checks is not None
+    assert log.recording.pieces == (0, 27, 54, 81)
+    assert log.checks.duration_seconds == pytest.approx(frames / FPS)
+    assert list(inputs.workspace.recording("01").parent.glob(".*")) == []
 
 
 def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(tmp_path: Path, driven: Driven) -> None:
@@ -445,6 +483,17 @@ def test_a_dialogue_section_is_recorded_for_its_whole_span(tmp_path: Path) -> No
     jobs = plan(loaded, a_run(tmp_path), None)
     margin = loaded.document.page_sections[0].record_margin_seconds
     assert [job.seconds for job in jobs] == [round(2 * SPAN_SECONDS + 1.0, 3) + margin, SPAN_SECONDS + margin]
+
+
+def test_a_held_section_is_recorded_through_its_hold(tmp_path: Path) -> None:
+    """The hold is picture the page keeps drawing, so a motion arriving after the last word lands in it."""
+    held = TOML.replace('scene = "1"\n', 'scene = "1"\nhold_seconds = 2.0\n', 1)
+    inputs = load_project(tmp_path, held, page=TWO_SCENE_PAGE)
+    write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (1, 2)))
+    loaded = Inputs.load(tmp_path, environ={})
+    jobs = plan(loaded, a_run(tmp_path), None)
+    margin = loaded.document.page_sections[0].record_margin_seconds
+    assert [job.seconds for job in jobs] == [SPAN_SECONDS + 2.0 + margin, SPAN_SECONDS + margin]
 
 
 # ---- one turn edited in a two-section deck that shares one page ---------------------------------

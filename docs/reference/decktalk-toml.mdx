@@ -159,8 +159,8 @@ them or none fails the load.
 |---|---|---|---|
 | `page` | path | required | The HTML file to record, such as `deck/index.html`. It sits in a directory of its own, never at the project root. |
 | `scene` | integer or string | the section's `number` | Which `data-scene` of that page to play. It reaches the page as a string. |
-| `record_margin_seconds` | number | `0.3` | How long the recording runs past the section's span. |
-| `hold_seconds` | number | `0` | How long the section's last frame holds after its narration. The narration waits for the hold, and the next section starts after it. |
+| `record_margin_seconds` | number | `0.3` | How long the recording runs past the section's span and its hold. |
+| `hold_seconds` | number | `0` | How long the page plays on after the section's narration. The hold is recorded like the rest of the section, so a motion that arrives after the last word lands in it. The narration waits for the hold, and the next section starts after it. |
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
 | `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. |
 | `with_ambience` | boolean | `false` | Play the ambience bed under this section. |
@@ -182,7 +182,7 @@ number = 4
 chapter = "The edit"
 page = "deck/index.html"
 lead_seconds = 1.5    # the page shows for 1.5 seconds before the first word
-hold_seconds = 2      # the last frame stays 2 seconds before section 5
+hold_seconds = 2      # the page plays on 2 seconds before section 5
 ```
 
 A page may load only what this file declares. Every page is opened at a local origin that answers

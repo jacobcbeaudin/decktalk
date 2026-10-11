@@ -273,6 +273,13 @@ class Code(Enum):
         "PAGE_SPOTLIGHT_EMPTY",
         "A spotlight container has no child with a cue, so nothing comes to the front.",
     )
+    PAGE_MOTION_UNFINISHED = (
+        "PAGE_MOTION_UNFINISHED",
+        "A script motion still changes its picture after it arrives, and nothing draws it past its arrival, "
+        "so the picture stops where the arrival left it.",
+        RaisedBy.RUNTIME,
+        (Stage.RECORD.value, Stage.VERIFY.value),
+    )
 
     # Measured in Python, about the page.
     PAGE_MOTION_OVERRUN = (
@@ -312,6 +319,13 @@ class Code(Enum):
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
         RaisedBy.PYTHON,
         PAGE_REPORTERS,
+    )
+    PAGE_CHANGE_UNDECLARED = (
+        "PAGE_CHANGE_UNDECLARED",
+        "A script changed the picture outside every cue, motion, loop and frame hook, so verify cannot mask it "
+        "and may read it as a reveal.",
+        RaisedBy.PYTHON,
+        (Stage.RECORD.value, Stage.VERIFY.value),
     )
     RECORD_BLACK = (
         "RECORD_BLACK",

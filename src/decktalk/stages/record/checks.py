@@ -1,9 +1,10 @@
 """What one finished recording is judged on, before anything is assembled from it.
 
 The frames say how long the recording ran and how bright it is, so a black or truncated section is
-caught while the page is still on screen rather than in the final mp4. The page says what it could
-not honour, and every one of those arrives as a code the media layer already validated, so nothing
-here reads a sentence to work out what happened.
+caught while the page is still on screen rather than in the final mp4. The steps say where a script
+changed the picture with nothing declared to explain it. The page says what it could not honour,
+and every one of those arrives as a code the media layer already validated, so nothing here reads a
+sentence to work out what happened.
 """
 
 from __future__ import annotations
@@ -72,6 +73,26 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
     return found
 
 
+def change_findings(recording: Recording, *, page: str, section: int) -> list[Finding]:
+    """One judgement per element a script changed the picture in with nothing declared to explain it.
+
+    Verify masks what the page declared and reads every other change as a reveal, so a change the
+    page made outside every cue, motion, loop and frame hook is either hidden by a mask or read as a
+    reveal nobody cued.
+    """
+    return [
+        judge(
+            Code.PAGE_CHANGE_UNDECLARED,
+            f"{row.what} changed the picture at {row.at:.2f}s, on {row.frames} "
+            f"{'frame' if row.frames == 1 else 'frames'} in all, with no cue, motion, loop or frame hook to "
+            "explain it.",
+            Location(where=page, file=Path(page), section=section),
+            stage=Stage.RECORD,
+        )
+        for row in recording.undeclared
+    ]
+
+
 def recording_findings(
     recording: Recording,
     checks: RecordingChecks,
@@ -81,7 +102,7 @@ def recording_findings(
     section: int,
     settings: Settings,
 ) -> tuple[Finding, ...]:
-    """Every judgement one finished recording carries, from the page, the frames and the network.
+    """Every judgement one finished recording carries, from the page, the frames, the steps and the network.
 
     They are one list rather than three, so a reader of the log dispatches on a code and never on
     which of three places a sentence came from.
@@ -89,12 +110,14 @@ def recording_findings(
     return (
         *page_findings(recording.report, page=page, section=section, stage=Stage.RECORD),
         *frame_findings(checks, where=where, section=section, settings=settings),
+        *change_findings(recording, page=page, section=section),
         *asset_findings(recording.external, where=page, section=section),
     )
 
 
 __all__ = [
     "LUMA_POINTS",
+    "change_findings",
     "check_recording",
     "frame_findings",
     "measure_luma",

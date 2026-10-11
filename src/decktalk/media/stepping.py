@@ -16,8 +16,14 @@ earliest second anything can next change, so every frame of a still stretch is w
 even a step: the page is stepped once across the stretch, to its last frame, and then to the frame
 where the next change lands.
 
-    record_page   what the stage calls, which writes the video and its log as one pair
-    Stepper       the frame loop behind it: the clock, the step and the capture
+Because frame `k` is a function of its second alone, a section's frames split into pieces that
+several pages record at once, each into a lossless file of its own that starts on a keyframe, and
+the pieces join into the section's file without being encoded again. A still stretch ends at a
+piece's last frame, and every piece captures its own first frame.
+
+    record_piece  one range of a section's frames, recorded in a page of its own into a file of its own
+    join          the pieces of one section, joined into its file, and what their pages said as one recording
+    Stepper       the frame loop behind a piece: the clock, the step and the capture
     FrameSink     where the frames go, which `LosslessPipe` is for the one lossless encode, fed from a thread
 """
 
@@ -30,7 +36,7 @@ import math
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,11 +45,12 @@ from typing import Protocol
 from playwright.sync_api import CDPSession, Page
 
 from ..errors import ToolError
+from ..page import SECOND_DIGITS
 from ..settings import MotionConfig
 from . import ffmpeg
 from .browser import Chromium
 from .origin import Allowed, Assets, route_pages
-from .pagereport import Recording
+from .pagereport import PageReport, Recording, UndeclaredChange, joined
 from .pages import (
     CONSOLE_KINDS,
     await_painted,
@@ -64,9 +71,10 @@ MILLISECONDS = 1000
 STEP_JS = "([seconds, wait]) => window.__decktalkProbe.step(seconds, wait)"
 """The one call that moves a recorded page, which answers once the page has drawn the second it was moved to.
 
-It answers `{due, changed, stillUntil}`: the second the next task is due, or null, whether anything
-the page draws may have changed since the step before, and the earliest second anything can next
-change, or null when nothing ever will.
+It answers `{due, changed, stillUntil, undeclared}`: the second the next task is due, or null, whether
+anything the page draws may have changed since the step before, the earliest second anything can
+next change, or null when nothing ever will, and the element a script changed since the step before
+inside nothing the page declared as moving, or null.
 """
 
 STILL_SLACK_MS = 1
@@ -94,32 +102,20 @@ The hold has to land after every timer the load already owed, so a timer the pag
 loaded runs once, before the first frame, rather than in the middle of the section.
 """
 
-LOSSLESS = ("-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-pix_fmt", "yuv444p")
+LOSSLESS = (
+    "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-pix_fmt", "yuv444p", "-x264-params", "stitchable=1",
+)  # fmt: skip
 """Truth: the encode a recording is written with, which keeps every captured pixel.
 
 A recording is an intermediate that `assemble` encodes once more at the film's own quality, so a
 lossy encode here would put the encoder's ringing into the frames twice and into every frame verify
-compares. Lossless at the fastest preset costs disk, which `build/` is for, and no time.
+compares. Lossless at the fastest preset costs disk, which `build/` is for, and no time. Every piece
+of a section is written with the same parameters, and `stitchable` keeps x264 from tuning its headers
+to one piece, so the pieces join into one stream without an encode.
 """
 
 CAPTURE = {"format": "png", "optimizeForSpeed": True}
 """Truth: what each frame is captured as, a lossless image the encoder reads straight from the pipe."""
-
-
-class RecordingSink(Protocol):
-    """Where the log of one recording is kept, which the recorder clears before it captures and fills after.
-
-    The pair on disk has to be complete or absent. A video replaced under the log of the recording
-    before it keeps that log's digest, so a section the next run calls unchanged would show a picture
-    nobody judged. Clearing first and writing last leaves a crash with no log, which the next run
-    reads as a section it has not recorded.
-    """
-
-    def clear(self) -> None:
-        """Delete the log of the recording that is about to be replaced, before anything is captured."""
-
-    def write(self, recording: Recording) -> None:
-        """Write the log of the recording now on disk, once the video is in place."""
 
 
 class FrameSink(Protocol):
@@ -257,6 +253,11 @@ class Stepper:
     step has since the last capture, so `record` can write a frame where none did again rather than
     capture it. It answers the earliest second anything can next change as well, which is how `record`
     writes the frames of a still stretch again without stepping the page to each.
+
+    A step also names an element a script changed since the step before, outside every cue, frame
+    hook and animation and inside nothing the page declared as moving. The stepper counts it as
+    undeclared change once a captured frame differs from the frame before it, so a change no pixel
+    shows is never reported.
     """
 
     page: Page
@@ -279,6 +280,10 @@ class Stepper:
     """How many frames this stepper wrote again without a capture."""
     steps: int = 0
     """How many times this stepper moved the page, a task's own second included."""
+    unexplained: tuple[float, str] | None = None
+    """The second and the element of the first undeclared change a step named since the last capture."""
+    undeclared: dict[str, UndeclaredChange] = field(default_factory=dict)
+    """Every element undeclared change was seen in, keyed by how the page names it, in the order first seen."""
 
     def millisecond(self, seconds: float) -> int:
         """The whole millisecond a section second sits at on the page's timers.
@@ -304,6 +309,7 @@ class Stepper:
         self.changed = True
         self.still_until = 0.0
         self.shown = None
+        self.unexplained = None
 
     def step(self, seconds: float) -> None:
         """Move the page's timers and section clock to `seconds`, wait until it is drawn, and learn what it answered."""
@@ -322,6 +328,9 @@ class Stepper:
         # Likewise anything but a second or a plain null is no still stretch at all.
         still = answer.get("stillUntil", seconds) if isinstance(answer, dict) else seconds
         self.still_until = None if still is None else float(still) if isinstance(still, (int, float)) else seconds
+        what = answer.get("undeclared") if isinstance(answer, dict) else None
+        if isinstance(what, str) and self.unexplained is None:
+            self.unexplained = (seconds, what)
 
     def advance(self, k: int) -> bool:
         """Step the page to frame `k`, and answer whether its picture may have changed since the last capture.
@@ -341,10 +350,19 @@ class Stepper:
         """What the page shows now as a PNG, which is frame `k` once the page has been advanced to it."""
         with driving(f"the page stopped at frame {k}"):
             shot = self.cdp().send("Page.captureScreenshot", CAPTURE)
-        self.shown = base64.b64decode(shot["data"])
+        before, self.shown = self.shown, base64.b64decode(shot["data"])
+        if self.unexplained is not None and before is not None and self.shown != before:
+            self.seen(*self.unexplained)
+        self.unexplained = None
         self.changed = False
         self.captured += 1
         return self.shown
+
+    def seen(self, seconds: float, what: str) -> None:
+        """Count one frame that showed undeclared change made in `what`, first seen at `seconds`."""
+        row = self.undeclared.get(what)
+        at = round(seconds, SECOND_DIGITS) if row is None else row.at
+        self.undeclared[what] = UndeclaredChange(what=what, at=at, frames=1 if row is None else row.frames + 1)
 
     def frame(self, k: int) -> bytes:
         """Frame `k` as a PNG, which is the page at second `k / fps` on its section clock, always captured."""
@@ -380,9 +398,14 @@ class Stepper:
             )
 
     def record(
-        self, count: int, sink: FrameSink, check: Callable[[], None], *, skip_still: bool, audit_every: int
+        self, frames: range, sink: FrameSink, check: Callable[[], None], *, skip_still: bool, audit_every: int
     ) -> None:
-        """Write `count` frames into `sink` in order, asking `check` before each, so a stopped run stops in a frame.
+        """Write each frame of `frames` into `sink` in order, asking `check` before each, so a stopped run stops.
+
+        A range that starts after frame zero is a piece of a section. Its first frame is always
+        captured, and the frame before it is captured first and not written, so that first frame is
+        judged against the frame before it as a recording of the whole section judges it. A still
+        stretch ends at the range's last frame.
 
         With `skip_still`, a frame no step since the last capture called changed is written again
         rather than captured, and so is every frame of a still stretch, without a step: the page is
@@ -392,10 +415,12 @@ class Stepper:
         the first that differs.
         """
         skipped = 0
-        k = 0
+        k, count = frames.start, frames.stop
+        if k > 0:
+            self.frame(k - 1)
         while k < count:
             check()
-            if self.advance(k) or not skip_still or self.shown is None:
+            if self.advance(k) or not skip_still or self.shown is None or k == frames.start:
                 sink.write(self.capture(k))
             else:
                 skipped += 1
@@ -461,14 +486,35 @@ def stepping(
             context.close()
 
 
-def record_page(
+@dataclass(frozen=True)
+class Piece:
+    """One range of a section's frames, recorded into a file of its own, and what its page said while it was."""
+
+    path: Path
+    frames: range
+    url: str
+    fps: int
+    assets: tuple[str, ...]
+    external: tuple[str, ...]
+    missing: tuple[str, ...]
+    load_seconds: float
+    page_errors: tuple[str, ...]
+    console: tuple[tuple[str, str], ...]
+    report: PageReport
+    undeclared: tuple[UndeclaredChange, ...]
+    captured: int
+    """How many frames the piece's page was captured on, the frame before its first included."""
+    steps: int
+    """How many times the piece's page was moved, the seconds stepped before its first frame included."""
+
+
+def record_piece(
     chromium: Chromium,
     url: str,
-    seconds: float,
+    frames: range,
     out: Path,
     *,
     allowed: Allowed,
-    log_sink: RecordingSink,
     width: int,
     height: int,
     fps: int,
@@ -479,20 +525,20 @@ def record_page(
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
     check: Callable[[], None] = lambda: None,
-) -> Recording:
-    """Record `url` for `seconds` of section clock, one frame at a time, and leave the video beside its log.
+) -> Piece:
+    """Record frames `frames` of `url` in a page of their own into `out`, which starts on its first frame.
 
     `allowed` is what the local origin may answer with, so the page may fetch its own files, the log
-    can name every one of them, and a page reaching for the script or for `.env` is turned away.
+    can name every one of them, and a page reaching for the script or for `.env` is turned away. The
+    page is stepped to the first frame through the seconds work is due alone, so a piece that starts
+    late in a section costs its page load and those steps, not every frame before it.
     `skip_still` and `skip_audit_every` are `[record]`'s two keys of the same names, which decide
     whether a frame nothing changed on is written again rather than captured and how often one is
     captured anyway to prove it.
 
-    The old log goes before anything is captured, the video is written to a file beside `out` and
-    moved onto it once the encode has finished, and the log of what was just recorded is written
-    last, so the pair on disk is either complete or absent.
+    The video is written to a file beside `out` and moved onto it once the encode has finished, so a
+    piece on disk is always whole.
     """
-    log_sink.clear()
     partial = out.with_name(f".{out.name}.part{out.suffix}")
     out.parent.mkdir(parents=True, exist_ok=True)
     with stepping(
@@ -514,13 +560,7 @@ def record_page(
                 ffmpeg.fed(*encoding(partial, fps), what=f"the encode of {out.name}") as write,
                 LosslessPipe.feeding(write) as sink,
             ):
-                stepper.record(
-                    frame_count(seconds, fps),
-                    sink,
-                    check,
-                    skip_still=skip_still,
-                    audit_every=skip_audit_every,
-                )
+                stepper.record(frames, sink, check, skip_still=skip_still, audit_every=skip_audit_every)
         except BaseException:
             partial.unlink(missing_ok=True)
             raise
@@ -534,26 +574,105 @@ def record_page(
         )
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
-    for kind, text in console:
-        # A console.error is the author telling themselves something broke, so it reaches the terminal.
-        level = logging.WARNING if kind == "error" else logging.DEBUG
-        log.log(level, "[page] %s  console %s: %s", out.stem, kind, text, extra={"data": {"kind": kind, "text": text}})
     if not partial.exists():
         raise ToolError(f"the encode of {out.name} wrote no file.")
     partial.replace(out)
-    recording = Recording(
+    return Piece(
+        path=out,
+        frames=frames,
         url=url,
+        fps=fps,
         assets=tuple(assets.paths),
         external=tuple(assets.external),
         missing=tuple(assets.missing),
-        requested_seconds=round(seconds, 3),
-        fps=fps,
         load_seconds=round(loaded - opened, 3),
         page_errors=tuple(errors),
+        console=tuple(console),
         report=report,
+        undeclared=tuple(stepper.undeclared.values()),
+        captured=stepper.captured,
+        steps=stepper.steps,
     )
-    log_sink.write(recording)
-    return recording
+
+
+def _union[T](groups: Sequence[Sequence[T]]) -> tuple[T, ...]:
+    """Every item of `groups`, once each, in the order the groups first hold it."""
+    return tuple(dict.fromkeys(item for group in groups for item in group))
+
+
+def _undeclared(groups: Sequence[Sequence[UndeclaredChange]]) -> tuple[UndeclaredChange, ...]:
+    """Each element undeclared change was seen in once, first seen at the earliest second, on every frame it showed."""
+    rows: dict[str, UndeclaredChange] = {}
+    for group in groups:
+        for row in group:
+            seen = rows.get(row.what)
+            rows[row.what] = (
+                row
+                if seen is None
+                else UndeclaredChange(what=row.what, at=min(seen.at, row.at), frames=seen.frames + row.frames)
+            )
+    return tuple(rows.values())
+
+
+def join(pieces: Sequence[Piece], out: Path, *, seconds: float) -> Recording:
+    """Join the pieces of one section into `out`, in frame order, and give back what their pages said as one.
+
+    The pieces are lossless streams written with the same parameters, each starting on a keyframe,
+    so they are joined by copying their packets, and the frames of the join are the frames of the
+    pieces. One piece is moved into place as it is. Either way the file is written beside `out` and
+    moved onto it once it is whole, and the pieces are deleted.
+
+    Each page loaded the section, stepped through the seconds work was due before its first frame,
+    and drew its own frames, so what the pages said is joined as `pagereport.joined` joins it, a
+    line a page printed is kept once however many pages printed it, and the load is the first page's.
+    """
+    ordered = sorted(pieces, key=lambda piece: piece.frames.start)
+    if not ordered:
+        raise ToolError(f"{out.name} has no piece to join.")
+    partial = out.with_name(f".{out.name}.part{out.suffix}")
+    if len(ordered) == 1:
+        ordered[0].path.replace(partial)
+    else:
+        listing = out.with_name(f".{out.stem}.pieces.txt")
+        listing.write_text(ffmpeg.concat_list(piece.path.resolve() for piece in ordered), encoding="utf-8")
+        try:
+            ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", str(partial))
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
+        finally:
+            listing.unlink(missing_ok=True)
+        for piece in ordered:
+            piece.path.unlink(missing_ok=True)
+    partial.replace(out)
+    first = ordered[0]
+    steps = sum(piece.steps for piece in ordered)
+    log.debug(
+        "[page] %s  joined from %d pieces, %d frames captured, %d steps",
+        out.stem,
+        len(ordered),
+        sum(piece.captured for piece in ordered),
+        steps,
+        extra={"data": {"pieces": len(ordered), "steps": steps}},
+    )
+    for kind, text in _union([piece.console for piece in ordered]):
+        # A console.error is the author telling themselves something broke, so it reaches the terminal.
+        level = logging.WARNING if kind == "error" else logging.DEBUG
+        log.log(level, "[page] %s  console %s: %s", out.stem, kind, text, extra={"data": {"kind": kind, "text": text}})
+    return Recording(
+        url=first.url,
+        assets=_union([piece.assets for piece in ordered]),
+        external=_union([piece.external for piece in ordered]),
+        missing=_union([piece.missing for piece in ordered]),
+        requested_seconds=round(seconds, 3),
+        fps=first.fps,
+        load_seconds=first.load_seconds,
+        page_errors=_union([piece.page_errors for piece in ordered]),
+        report=joined([piece.report for piece in ordered]),
+        undeclared=_undeclared([piece.undeclared for piece in ordered]),
+        pieces=tuple(piece.frames.start for piece in ordered),
+        steps=steps,
+    )
 
 
 __all__ = [
@@ -561,10 +680,11 @@ __all__ = [
     "LOSSLESS",
     "FrameSink",
     "LosslessPipe",
-    "RecordingSink",
+    "Piece",
     "Stepper",
     "encoding",
     "frame_count",
-    "record_page",
+    "join",
+    "record_piece",
     "stepping",
 ]

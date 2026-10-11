@@ -437,8 +437,9 @@
    *
    * What the recorder calls
    *   window.__decktalkProbe.step(t, s) move the section clock to second t and answer the next due second,
-   *                                    whether the picture may have changed and the earliest second it next
-   *                                    can, once the page has drawn it, or refuse once s seconds pass without that
+   *                                    whether the picture may have changed, the earliest second it next
+   *                                    can and what the page changed undeclared since the step before,
+   *                                    once the page has drawn it, or refuse once s seconds pass without that
    *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
    *                                    refuse once s seconds pass without that
    *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
@@ -466,7 +467,16 @@
   var touch = () => {
     touched = true;
   };
-  var watcher = new MutationObserver(touch);
+  var between = [];
+  function keep(records) {
+    if (!records.length) return;
+    touched = true;
+    for (const record of records) {
+      if (between.length >= KEEP) return;
+      between.push(record.target);
+    }
+  }
+  var watcher = new MutationObserver(keep);
   watcher.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
   document.addEventListener("scroll", touch, { capture: true, passive: true });
   var PAGE_CLOCK = "__pwClock";
@@ -485,7 +495,16 @@
   function mutated() {
     const seen = touched || watcher.takeRecords().length > 0;
     touched = false;
+    between = [];
     return seen;
+  }
+  var answered = false;
+  function undeclared() {
+    keep(watcher.takeRecords());
+    const changed = between;
+    between = [];
+    if (!answered || !changed.length) return null;
+    return window.__decktalk?.undeclared(changed) ?? null;
   }
   function rendered() {
     return new Promise((done) => {
@@ -521,6 +540,7 @@
     }
   }
   function step(seconds, waitSeconds) {
+    const outside = undeclared();
     const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
     const touchedBefore = mutated();
     return new Promise((answer, refuse) => {
@@ -532,11 +552,13 @@
         nativeCancel(late);
         const touchedWhileDrawn = mutated();
         const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+        answered = true;
         const heard = waited || touchedWhileDrawn || selfDrawn;
         answer({
           due: stepped.due,
           changed: stepped.changed || touchedBefore || heard,
           stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+          undeclared: outside,
         });
       });
     });

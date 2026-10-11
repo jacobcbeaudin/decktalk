@@ -94,7 +94,7 @@
           "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
         },
         "concurrency": {
-          "description": "How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
+          "description": "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a section after another. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
           "type": "integer",
           "default": 0,
           "minimum": 0,
@@ -103,8 +103,64 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "Each recording steps its own Chromium and its own encode, so a number above the machine's share makes every section wait on the others and the run slower rather than faster.",
+          "x-hazard": "Each recorder steps its own Chromium and its own encode, so a number above the machine's share makes every chunk wait on the others and the run slower rather than faster.",
+          "x-see-also": [
+            "record.chunk_frames_min"
+          ],
           "x-environment": "DECKTALK_RECORD_CONCURRENCY"
+        },
+        "chunk_frames_min": {
+          "description": "Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section shorter than two chunks of this length is recorded whole by one recorder.",
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 100000,
+          "x-range": "must be between 1 and 100000",
+          "x-unit": "frames",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Every chunk loads the page again, so chunks much shorter than a page load spend the machine on loading rather than on frames.",
+          "x-see-also": [
+            "record.chunk_startup_seconds",
+            "record.step_seconds"
+          ],
+          "x-environment": "DECKTALK_RECORD_CHUNK_FRAMES_MIN"
+        },
+        "chunk_startup_seconds": {
+          "description": "How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps * recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its last recording took.",
+          "type": "number",
+          "default": 0.2,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "x-range": "must be above 0 and must be at most 60",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A start-up stated far too low splits short sections into chunks that each spend more loading the page than recording it.",
+          "x-see-also": [
+            "record.step_seconds",
+            "record.chunk_frames_min"
+          ],
+          "x-environment": "DECKTALK_RECORD_CHUNK_STARTUP_SECONDS"
+        },
+        "step_seconds": {
+          "description": "How long one recorder takes to step its page once on this machine, the capture of the frame it lands on included, which `record` weighs against `chunk_startup_seconds` when it splits a section.",
+          "type": "number",
+          "default": 0.014,
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "x-range": "must be above 0 and must be at most 10",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "record.chunk_startup_seconds",
+            "record.chunk_frames_min"
+          ],
+          "x-environment": "DECKTALK_RECORD_STEP_SECONDS"
         },
         "capture_switches": {
           "description": "Chromium switches `record` launches its browser with, which stop it holding its frames to the display's refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same frames as one without them. An empty list launches Chromium with none.",

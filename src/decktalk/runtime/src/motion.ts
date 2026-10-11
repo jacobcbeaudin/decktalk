@@ -14,6 +14,7 @@ import { earliest, every, round } from "./clock.ts";
 import {
   ATTRS,
   type Ease,
+  MEASURABLE_SPAN_SECONDS,
   MILLISECONDS,
   MOTION_EASES,
   PLAYABLE_SPAN_SECONDS,
@@ -115,10 +116,15 @@ type Swept = {
 /** What the recorder's steps saw of each lane, keyed by the lane's id. */
 const swept = new Map<string, Swept>();
 
+/** The element a region names now, or null when it is not on the page. */
+function resolve(region: Region): Element | null {
+  const found = typeof region === "string" ? document.querySelector(region) : region;
+  return found?.isConnected ? found : null;
+}
+
 /** The element a lane's region names now, or null when it is not on the page. */
 function regionOf(one: Lane): Element | null {
-  const found = typeof one.region === "string" ? document.querySelector(one.region) : one.region;
-  return found?.isConnected ? found : null;
+  return resolve(one.region);
 }
 
 /** Whether a lane is moving at one second: a motion between its two cues, anything else while it is on the page. */
@@ -256,6 +262,22 @@ function describe(el: Element | null): string {
 }
 
 /**
+ * The first of some changed nodes on the page that nothing declared as moving, named, or null when every one is.
+ *
+ * The probe hands over every node the page changed between two steps, which is a change no cue, no
+ * frame hook and no animation the runtime holds made. A text node stands for the element holding it,
+ * and a node no longer on the page shows nothing.
+ */
+export function undeclaredChange(nodes: readonly Node[]): string | null {
+  for (const node of nodes) {
+    const el = node instanceof Element ? node : node.parentElement;
+    if (!el?.isConnected || covered(el)) continue;
+    return describe(el);
+  }
+  return null;
+}
+
+/**
  * Report an animation the timeline has just met when it outlives a cue's half second undeclared.
  *
  * This is the recorder's half of the rule. The index page's half reads every slide's stylesheet
@@ -344,10 +366,46 @@ export type Scripted = {
 };
 
 /**
+ * What a region shows, as far as script can read it: its markup, its inline styles and every canvas in it.
+ *
+ * A canvas the page may not read back, such as one drawn from another origin, reads as empty.
+ */
+function picture(el: Element): string {
+  const canvases = el instanceof HTMLCanvasElement ? [el] : [...el.querySelectorAll("canvas")];
+  const drawn = canvases.map((canvas) => {
+    try {
+      return canvas.toDataURL();
+    } catch {
+      return "";
+    }
+  });
+  return [el.outerHTML, ...drawn].join("\n");
+}
+
+/**
+ * Draw a script motion's arrival, and report it when its draw still changes the picture after it.
+ *
+ * A motion is drawn no further than its arrival, so a draw that keeps changing once its progress is
+ * one, such as a fade it times from the second, would stop on whatever the arrival showed. The draw
+ * is first called once at `MEASURABLE_SPAN_SECONDS` past the arrival, the half second verify reads
+ * an arrival over, and then at the arrival itself, which is the call the frame keeps. The two
+ * pictures differ only when the draw still moves after it lands.
+ */
+function arrive(region: Region, motion: Scripted, seconds: number): void {
+  const el = resolve(region);
+  const later = el ? (motion.draw(1, seconds + MEASURABLE_SPAN_SECONDS), picture(el)) : null;
+  motion.draw(1, seconds);
+  if (el && later !== null && later !== picture(el)) {
+    warn("PAGE_MOTION_UNFINISHED", null, motion.to, { value: describe(el), from: motion.from });
+  }
+}
+
+/**
  * Draw a motion from script between two cues, with its progress eased and its second beside it.
  *
  * Nothing is drawn before the departure, the last call is exactly at the arrival with progress one,
- * and a cue the page was never handed is reported once and draws nothing.
+ * and a cue the page was never handed is reported once and draws nothing. A draw that would still
+ * change the picture after the arrival is reported at the arrival's cue, because nothing draws it there.
  */
 export function scripted(region: Region, motion: Scripted, at: (cue: string) => number | null): void {
   const start = at(motion.from);
@@ -361,8 +419,12 @@ export function scripted(region: Region, motion: Scripted, at: (cue: string) => 
   every((seconds) => {
     if (seconds < start) return true;
     const u = Math.min(1, (seconds - start) / (end - start));
-    motion.draw(eased(ease, u), seconds);
-    return u < 1;
+    if (u < 1) {
+      motion.draw(eased(ease, u), seconds);
+      return true;
+    }
+    arrive(region, motion, seconds);
+    return false;
   });
 }
 

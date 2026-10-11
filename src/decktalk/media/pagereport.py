@@ -15,6 +15,7 @@ two names of a field sit beside each other, and `page.REPORT` is what holds the 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 from pydantic import ConfigDict, Field, ValidationError, field_validator
@@ -223,6 +224,18 @@ ROWS: dict[str, type[Model]] = {
 """Each list field of the report against the model one of its rows has to be, which is what `read` walks."""
 
 
+class UndeclaredChange(Model):
+    """One element a script changed the picture in between two steps, inside nothing the page declared as moving.
+
+    The page names the element and the recorder counts the frames, because only a captured frame that
+    differs from the one before says the change was seen.
+    """
+
+    what: str = Field(description="The element the change was made in, as the page names it.")
+    at: float = Field(ge=0, description="The first second on the section clock a frame showed the change.")
+    frames: int = Field(gt=0, description="How many frames showed a change made in it.")
+
+
 class Recording(Model):
     """One section recorded: what the page loaded, what it said, and the rate its clock was stepped at.
 
@@ -245,6 +258,20 @@ class Recording(Model):
     load_seconds: float = Field(ge=0, description="How long the page took to load and paint before its first step.")
     page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
     report: PageReport = Field(description="What the page said about itself, read once.")
+    undeclared: tuple[UndeclaredChange, ...] = Field(
+        (), description="Every element a script changed the picture in with nothing declared to explain it."
+    )
+    pieces: tuple[int, ...] = Field(
+        (0,),
+        description="The first frame of each piece the video was joined from, which is one piece when one page "
+        "recorded it whole.",
+    )
+    steps: int = Field(
+        0,
+        ge=0,
+        description="How many times the pages that recorded it were moved, which is what recording it cost, or 0 "
+        "when a command drew it.",
+    )
 
 
 def _rows(field: str, given: object) -> tuple[list[Model], list[str]]:
@@ -288,3 +315,90 @@ def read(given: object) -> PageReport:
         fields[field] = tuple(kept)
         unreadable += refused
     return PageReport.model_validate({**fields, "unreadable": tuple(unreadable)})
+
+
+def _once[T: Model](groups: Sequence[Sequence[T]]) -> tuple[T, ...]:
+    """Every row of `groups` once, in the order the groups first hold it, a row being equal to one with its values."""
+    seen: dict[str, T] = {}
+    for group in groups:
+        for row in group:
+            seen.setdefault(row.model_dump_json(), row)
+    return tuple(seen.values())
+
+
+def _first_shown(groups: Sequence[Sequence[WordRow]]) -> tuple[WordRow, ...]:
+    """Each line shown word by word once, at the earliest second any page saw its first word drawn.
+
+    A page draws a line's words at the seconds it is stepped to, and a page that started after the
+    line began only stepped the seconds work was due before its first frame, so it may see the first
+    word later than the page whose frames hold it. The page whose frames hold it saw it at its own
+    second, which is the earliest any page saw. Lines are told apart by what they are and how many
+    times a page reported one of them, and stay in the order they were first shown.
+    """
+    best: dict[tuple[str, int], tuple[WordRow, int, int]] = {}
+    for piece, group in enumerate(groups):
+        counted: dict[str, int] = {}
+        for at, row in enumerate(group):
+            line = row.model_dump_json(exclude={"first_shown"})
+            nth = counted[line] = counted.get(line, 0) + 1
+            kept = best.get((line, nth))
+            if kept is None or row.first_shown < kept[0].first_shown:
+                best[(line, nth)] = (row, piece, at)
+    ordered = sorted(best.values(), key=lambda kept: (kept[0].first_shown, kept[1], kept[2]))
+    return tuple(row for row, _piece, _at in ordered)
+
+
+def _swept(groups: Sequence[Sequence[MotionLane]]) -> tuple[MotionLane, ...]:
+    """Each lane once, with the box every page saw it sweep and the first and last second any page saw it move.
+
+    A page notes a lane at every second it is stepped to, and each page stepped some of the seconds
+    of one recording, so the lane the recording swept is the union of what the pages saw. Its size is
+    the one seen at the first second it moved. A page declares lanes as it reaches them, so the pages
+    that started later hold every lane the earlier ones declared, in the order the page declared them.
+    """
+    seen: dict[str, list[MotionLane]] = {}
+    # The page that declared the most lanes goes first, so the lanes keep the order the page declared them in.
+    for group in sorted(groups, key=len, reverse=True):
+        for lane in group:
+            seen.setdefault(lane.id, []).append(lane)
+    return tuple(_lane(lanes) for lanes in seen.values())
+
+
+def _lane(seen: Sequence[MotionLane]) -> MotionLane:
+    """One lane as several pages saw it, joined into the lane one page stepping every second would have seen."""
+    moved = [lane for lane in seen if lane.box is not None and lane.departs is not None and lane.arrives is not None]
+    if not moved:
+        return seen[0]
+    boxes = [lane.box for lane in moved if lane.box is not None]
+    left, top = min(box.x for box in boxes), min(box.y for box in boxes)
+    right, bottom = max(box.x + box.w for box in boxes), max(box.y + box.h for box in boxes)
+    first = min(moved, key=lambda lane: lane.departs if lane.departs is not None else 0.0)
+    return first.model_copy(
+        update={
+            "box": Box(x=left, y=top, w=right - left, h=bottom - top),
+            "arrives": max(lane.arrives for lane in moved if lane.arrives is not None),
+        }
+    )
+
+
+def joined(reports: Sequence[PageReport]) -> PageReport:
+    """What several pages that each recorded a range of one section said, as one page recording all of it said.
+
+    Each page loaded the section and stepped every second work was due before its own frames, so
+    every cue that ran and every warning raised before a page's last frame is in its report, and the
+    page that recorded the last frames saw the section end. What a page measures only on the frames
+    it draws, the lanes a motion swept and the second a line's first word was shown, is joined from
+    every page. `reports` is in frame order.
+    """
+    if len(reports) == 1:
+        return reports[0]
+    last = reports[-1]
+    return last.model_copy(
+        update={
+            "warnings": _once([report.warnings for report in reports]),
+            "cues": _once([report.cues for report in reports]),
+            "words": _first_shown([report.words for report in reports]),
+            "motions": _swept([report.motions for report in reports]),
+            "unreadable": tuple(dict.fromkeys(line for report in reports for line in report.unreadable)),
+        }
+    )

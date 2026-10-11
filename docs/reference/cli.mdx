@@ -94,12 +94,14 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`PAGE_APPEAR_TOO_LONG`](/reference/findings/PAGE_APPEAR_TOO_LONG) | error | A line shown with data-words=appear holds more words than one cue can carry one at a time. |
 | [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY) | error | An element staggers its children and has none, so the stagger plays nothing. |
 | [`PAGE_SPOTLIGHT_EMPTY`](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | error | A spotlight container has no child with a cue, so nothing comes to the front. |
+| [`PAGE_MOTION_UNFINISHED`](/reference/findings/PAGE_MOTION_UNFINISHED) | error | A script motion still changes its picture after it arrives, and nothing draws it past its arrival, so the picture stops where the arrival left it. |
 | [`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN) | error | A motion span runs past the measurable ceiling, so the cue it carries cannot be verified. |
 | [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) | error | A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact. |
 | [`PAGE_THIN_DRAW`](/reference/findings/PAGE_THIN_DRAW) | warning | A frozen slide draws less of the picture than a change must cross to be seen. |
 | [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | error | An element changes the picture and describes nothing, so the transcript loses the change. |
 | [`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) | warning | A swap's two halves land far enough apart that a viewer sees the gap between them. |
 | [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) | error | The page loads an asset from a network origin, so the film depends on somebody else's server. |
+| [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) | error | A script changed the picture outside every cue, motion, loop and frame hook, so verify cannot mask it and may read it as a reveal. |
 | [`RECORD_BLACK`](/reference/findings/RECORD_BLACK) | error | A recorded frame is black, so the film shows nothing at that moment. |
 | [`RECORD_TRUNCATED`](/reference/findings/RECORD_TRUNCATED) | error | A recording stopped before its section's clock ran out, so the film is short of picture. |
 | [`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE) | error | A motion eases to rest on an arrival verify would measure, and an ease to rest has no edge to measure. |

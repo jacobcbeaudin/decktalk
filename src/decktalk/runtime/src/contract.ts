@@ -223,6 +223,8 @@ export const CODES = {
   PAGE_STAGGER_EMPTY: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
   PAGE_SPOTLIGHT_EMPTY:
     "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+  PAGE_MOTION_UNFINISHED:
+    "The script motion on {value} from {from} still changes after it arrives at {cue}, so move its arrival later or end the change by it.",
   PAGE_MOTION_OVERRUN:
     "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
   PAGE_STAGGER_OVERRUN:
@@ -233,6 +235,8 @@ export const CODES = {
   PAGE_SWAP_APART:
     "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
   PAGE_CDN_ASSET: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+  PAGE_CHANGE_UNDECLARED:
+    "{value} changed the picture with no cue, motion, loop or frame hook to explain it, so declare it or draw it from a cue.",
   RECORD_BLACK: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
   RECORD_TRUNCATED: "The recording ends {value} s before the narration does, so the last cues are not in it.",
 } as const satisfies Record<string, string>;

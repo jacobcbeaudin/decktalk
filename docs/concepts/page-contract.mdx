@@ -211,7 +211,7 @@ Three more things on a page may move for longer than a moment, and each is decla
 | Declaration | What moves | Where it is written |
 |---|---|---|
 | A loop | An element that turns for as long as its slide is on screen. | `data-loop` names its `@keyframes` and `data-loop-seconds` one turn's length. |
-| A script motion | Whatever `draw(progress, seconds)` draws on each frame between two cue ids. | `DeckTalk.motion(el, { from, to, ease, draw })`. |
+| A script motion | Whatever `draw(progress, seconds)` draws on each frame between two cue ids, and nothing after the arrival. | `DeckTalk.motion(el, { from, to, ease, draw })`. |
 | A region | Whatever a frame hook draws on each frame from the section second. | `DeckTalk.frame(fn, { region })`. |
 
 [Things that move](/guides/motion) shows each of them in a working deck.
@@ -227,6 +227,13 @@ The rule is held in two places. The index page reads the computed style of every
 slide, so `check` names a long or endless CSS animation the markup forgot before a frame is recorded.
 The recorder meets every animation as the stepped clock first sees it, so `record` names one a script
 starts. A frame hook with no region is undeclared from the call that registers it.
+
+A script can also change the picture in one step, with no animation at all, such as a `setTimeout`
+that shows an element. Verify reads that as a reveal nobody cued, or a mask hides it. So the recorder
+watches what the page changes between two frames, outside every cue, frame hook and animation the
+runtime ran, and a change that sits inside no declared motion, loop or region and shows in the frame
+is [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED). Make the change in a cue's
+handler, draw it from a frame hook with a region, or declare it as a motion.
 
 A `<video>` or an `<audio>` element is refused outright as
 [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA), because it plays at its own rate

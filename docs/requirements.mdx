@@ -159,7 +159,7 @@ machine rather than the film, so they are machine keys like the ones above.
 
 | Key | Default | What it decides |
 |---|---|---|
-| `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per three CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
+| `record.concurrency` | `0` | How many recorders `record` runs at once, each a Chromium of its own. Zero chooses from the CPU this process may use: one recorder per three CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
 | `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
 | `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
 | `narration.store_wait_seconds` | `900` | How many seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request. |
@@ -457,9 +457,20 @@ Recording steps each section one frame at a time, and each frame the page change
 and an encode, so a section takes as long to record as its changing frames take to draw and a heavy
 page records slower than it plays. A frame nothing changed on is written again without a capture,
 which is most frames of a narrated slide, and a stretch of them is written again without stepping
-the page to each. Several page sections record at once, as many as `record.concurrency` allows, so a film of several sections
-records in about the time of its longest few rather than of all of them end to end, and most of a
-build is the recording. [Build times](/reference/measured#build-times) gives the starter's build
+the page to each. Frame `k` is the page at second `k / fps` however the page reached it, so `record` splits each
+long section into chunks and runs as many recorders at once as `record.concurrency` allows, each
+recording one chunk after another, longest first. Each chunk is a lossless file of its own, and the
+chunks of a section are joined into its recording without an encode, so a film records in about its
+frames divided by the recorders rather than in the time of its longest section, and most of a build
+is the recording.
+
+How finely a section is split weighs what a chunk costs to start, a page loaded in a recorder's
+Chromium and stepped to its first frame, against what one step costs, which are this machine's
+`record.chunk_startup_seconds` and `record.step_seconds`. A section's work is the steps its last
+recording took, or one a frame when it has none, and it is split into about
+`sqrt(step_seconds * steps * recorders / chunk_startup_seconds)` chunks, never more than the
+recorders, and never into chunks shorter than `record.chunk_frames_min` frames, so a short section is
+recorded whole. [Build times](/reference/measured#build-times) gives the starter's build
 cold, kept and after one changed word, measured on a named machine.
 
 [Rebuild one section](/guides/rebuild-one-section) shows how to record only what changed.

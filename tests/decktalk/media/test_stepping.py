@@ -9,6 +9,7 @@ whose tool cache holds both.
 from __future__ import annotations
 
 import hashlib
+import itertools
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -18,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import ToolError
+from decktalk.findings import Code
 from decktalk.media import browser, ffmpeg, stepping
 from decktalk.media.origin import Allowed, page_url
 from decktalk.media.pagereport import Recording
@@ -74,26 +76,39 @@ def fixture_page(tmp_path: Path, script: str, markup: str = "") -> Allowed:
 URL = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0", Q.T0: T0_SIGNAL})
 
 
-class Sink:
-    """A log sink that remembers the order it was asked to clear and write in."""
-
-    def __init__(self) -> None:
-        self.moments: list[str] = []
-
-    def clear(self) -> None:
-        self.moments.append("clear")
-
-    def write(self, recording: Recording) -> None:  # noqa: ARG002  (the name the protocol calls it by)
-        self.moments.append("write")
-
-
-def record(allowed: Allowed, out: Path, seconds: float) -> Recording:
+def record(
+    allowed: Allowed,
+    out: Path,
+    seconds: float,
+    *,
+    url: str = URL,
+    starts: tuple[int, ...] = (0,),
+    skip_still: bool = SKIP_STILL,
+    audit_every: int = AUDIT_EVERY,
+) -> Recording:
+    """Record `seconds` of the page into `out`, in one piece for each of `starts`, each in a page of its own."""
+    count = stepping.frame_count(seconds, FPS)
+    bounds = [*starts, count]
     with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
-        return stepping.record_page(
-            real, URL, seconds, out, allowed=allowed, log_sink=Sink(), width=WIDTH, height=HEIGHT, fps=FPS,
-            frame_wait_seconds=WAIT, skip_still=SKIP_STILL, skip_audit_every=AUDIT_EVERY, color_scheme="dark",
-            motion=MotionConfig(),
-        )  # fmt: skip
+        pieces = [
+            stepping.record_piece(
+                real,
+                url,
+                range(first, stop),
+                out.with_name(f".{out.stem}.piece{first}{out.suffix}"),
+                allowed=allowed,
+                width=WIDTH,
+                height=HEIGHT,
+                fps=FPS,
+                frame_wait_seconds=WAIT,
+                skip_still=skip_still,
+                skip_audit_every=audit_every,
+                color_scheme="dark",
+                motion=MotionConfig(),
+            )  # fmt: skip
+            for first, stop in itertools.pairwise(bounds)
+        ]
+    return stepping.join(pieces, out, seconds=seconds)
 
 
 def luma_frames(video: Path) -> list[bytes]:
@@ -158,7 +173,7 @@ def test_an_encode_that_fails_is_a_tool_error_naming_the_section_and_leaves_no_f
     out = tmp_path / "07.mp4"
     with pytest.raises(ToolError) as raised:
         record(fixture_page(tmp_path, GROW), out, 0.4)
-    assert "07.mp4" in str(raised.value)
+    assert ".07.piece0.mp4" in str(raised.value)
     assert not out.exists()
     assert list(tmp_path.glob("*.part*")) == []
 
@@ -197,7 +212,7 @@ def a_frame(allowed: Allowed, k: int, *, walked: bool, url: str = URL) -> bytes:
             stepper.hold()
             if walked:
                 sink = Frames()
-                stepper.record(k + 1, sink, lambda: None, skip_still=False, audit_every=0)
+                stepper.record(range(k + 1), sink, lambda: None, skip_still=False, audit_every=0)
                 return sink.frames[-1]
             return stepper.frame(k)
 
@@ -254,12 +269,7 @@ def moving_page(tmp_path: Path) -> Allowed:
 def test_every_declared_motion_reports_the_lane_it_swept_and_the_cues_it_lands_on(tmp_path):
     """Verify masks what the page said moved, so the page says where, when and on which cues, frame by frame."""
     url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2,1.1:land@0.6", Q.T0: T0_SIGNAL})
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
-        recording = stepping.record_page(
-            real, url, 1.0, tmp_path / "01.mp4", allowed=moving_page(tmp_path), log_sink=Sink(), width=WIDTH,
-            height=HEIGHT, fps=FPS, frame_wait_seconds=WAIT, skip_still=SKIP_STILL, skip_audit_every=AUDIT_EVERY,
-            color_scheme="dark", motion=MotionConfig(),
-        )  # fmt: skip
+    recording = record(moving_page(tmp_path), tmp_path / "01.mp4", 1.0, url=url)
     motion, loop = recording.report.motions
     scale = WIDTH / 1920
     assert motion.kind == "motion" and loop.kind == "loop"
@@ -312,7 +322,7 @@ def test_a_webgl_composition_is_drawn_from_its_second_and_records_the_same_frame
 
 @contextmanager
 def held(allowed: Allowed, url: str = URL) -> Iterator[stepping.Stepper]:
-    """A loaded fixture page held still on its clock, prepared the way `record_page` prepares one."""
+    """A loaded fixture page held still on its clock, prepared the way `record_piece` prepares one."""
     with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
         opened = stepping.stepping(
             real, allowed, width=WIDTH, height=HEIGHT, color_scheme="dark", motion=MotionConfig()
@@ -466,7 +476,7 @@ def stepped_frames(allowed: Allowed, seconds: float, *, skip_still: bool, audit_
     """Every frame of a fixture page recorded into memory, skipping still frames or capturing every one."""
     sink = Frames()
     with held(allowed) as stepper:
-        stepper.record(stepping.frame_count(seconds, FPS), sink, lambda: None, skip_still=skip_still,
+        stepper.record(range(stepping.frame_count(seconds, FPS)), sink, lambda: None, skip_still=skip_still,
                        audit_every=audit_every)  # fmt: skip
     return sink
 
@@ -486,12 +496,7 @@ def test_a_style_a_plain_timer_changes_is_captured_on_its_own_frame_and_every_st
     assert skipped.frames == captured.frames
     assert skipped.repeats >= FPS - 3, "a page that changes on two frames is captured on few more"
     out = tmp_path / "01.mp4"
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
-        stepping.record_page(
-            real, URL, 1.0, out, allowed=allowed, log_sink=Sink(), width=WIDTH, height=HEIGHT, fps=FPS,
-            frame_wait_seconds=WAIT, skip_still=True, skip_audit_every=AUDIT_EVERY, color_scheme="dark",
-            motion=MotionConfig(),
-        )  # fmt: skip
+    record(allowed, out, 1.0, skip_still=True)
     shown = [lit_width(frame, 100) > 0 for frame in luma_frames(out)]
     assert shown.index(True) == 10
     assert all(shown[10:])
@@ -645,10 +650,14 @@ def stepped_seconds(allowed: Allowed, url: str, seconds: float) -> tuple[list[fl
             step(at)
 
         patch.setattr(stepper, "step", counted)
-        stepper.record(stepping.frame_count(seconds, FPS), skipping, lambda: None, skip_still=True, audit_every=0)
+        stepper.record(
+            range(stepping.frame_count(seconds, FPS)), skipping, lambda: None, skip_still=True, audit_every=0
+        )
     capturing = Frames()
     with held(allowed, url) as stepper:
-        stepper.record(stepping.frame_count(seconds, FPS), capturing, lambda: None, skip_still=False, audit_every=0)
+        stepper.record(
+            range(stepping.frame_count(seconds, FPS)), capturing, lambda: None, skip_still=False, audit_every=0
+        )
     return seen, skipping, capturing
 
 
@@ -723,3 +732,136 @@ def decoded(frames: list[bytes], tmp_path: Path) -> list[bytes]:
         still.write_bytes(png)
         planes.append(ffmpeg.raw("-i", str(still), "-f", "rawvideo", "-pix_fmt", "gray", "-"))
     return planes
+
+
+# ---- what the page draws that nothing declared, and what a motion leaves undrawn -----------------
+
+
+SCRIPTED_URL = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.1,1.1:land@0.4", Q.T0: T0_SIGNAL})
+
+
+def scripted_page(tmp_path: Path, opacity: str) -> Allowed:
+    """A box a script motion widens from `go` to `land`, whose opacity `draw` sets from `opacity`, a JS expression."""
+    return deck_page(
+        tmp_path,
+        "<style>#box{position:fixed;left:0;top:0;height:60px;width:0;background:#fff}</style><script>"
+        "DeckTalk.scene(1, { slides: [{ id: '1.1', owns: ['go', 'land'], render: () => '<div id=box></div>' }] });"
+        "DeckTalk.on('1.1:go', (slide) => DeckTalk.motion(slide.querySelector('#box'), { from: '1.1:go',"
+        " to: '1.1:land', draw: (p, t) => { const box = document.getElementById('box');"
+        f" box.style.width = (p * 200) + 'px'; box.style.opacity = String({opacity}); }} }}));</script>",
+    )
+
+
+def recorded(allowed: Allowed, out: Path, url: str, seconds: float, *, audit_every: int = AUDIT_EVERY) -> Recording:
+    return record(allowed, out, seconds, url=url, audit_every=audit_every)
+
+
+def test_a_script_motion_whose_draw_still_changes_after_it_arrives_is_reported_on_its_arrival(tmp_path):
+    """A draw that fades in over 0.2 s once its progress is 1 is never drawn past the arrival, so the page says so."""
+    unsettled = recorded(scripted_page(tmp_path, "p < 1 ? 0 : Math.min(1, (t - 0.4) / 0.2)"), tmp_path / "a.mp4",
+                         SCRIPTED_URL, 1.0)  # fmt: skip
+    rows = [(row.code, row.cue) for row in unsettled.report.warnings]
+    assert (Code.PAGE_MOTION_UNFINISHED, "1.1:land") in rows
+    settled = recorded(scripted_page(tmp_path, "p"), tmp_path / "b.mp4", SCRIPTED_URL, 1.0)
+    assert Code.PAGE_MOTION_UNFINISHED not in [row.code for row in settled.report.warnings]
+
+
+UNDECLARED_TIMER = (
+    "DeckTalk.on('1.1:go', () => setTimeout(() => {"
+    " document.getElementById('late').style.visibility = 'visible'; }, 400));"
+)
+"""A cue that starts a plain timer which shows `#late` from second 0.4, inside nothing the page declared as moving."""
+
+
+def test_a_change_a_plain_timer_draws_outside_every_declared_lane_is_named_with_its_second(tmp_path):
+    """The recorder learns a script changed the picture with nothing declared to explain it, and where and when."""
+    recording = recorded(fixture_page(tmp_path, UNDECLARED_TIMER), tmp_path / "a.mp4", URL, 1.0)
+    assert [(row.what, row.at, row.frames) for row in recording.undeclared] == [("<div#late>", 0.4, 1)]
+
+
+def test_a_timer_that_changes_a_declared_region_or_nothing_visible_is_not_undeclared_change(tmp_path):
+    """A change inside a region a frame hook declares is masked, and a change no pixel shows cannot mislead verify."""
+    region = UNDECLARED_TIMER + "DeckTalk.frame(() => {}, { region: '#late' });"
+    declared = recorded(fixture_page(tmp_path, region), tmp_path / "a.mp4", URL, 1.0)
+    assert declared.undeclared == ()
+    unseen = UNDECLARED_TIMER.replace(".style.visibility = 'visible'", ".dataset.seen = 'yes'")
+    invisible = recorded(fixture_page(tmp_path, unseen), tmp_path / "b.mp4", URL, 1.0)
+    assert invisible.undeclared == ()
+
+
+def test_a_timer_inside_a_still_stretch_ends_the_stretch_and_is_reported_as_undeclared_change(tmp_path):
+    """Crossing a still stretch in one step must still stop where the page's own timer lands, and name what it drew."""
+    out = tmp_path / "a.mp4"
+    recording = recorded(fixture_page(tmp_path, UNDECLARED_TIMER), out, URL, 1.0, audit_every=0)
+    shown = [lit_width(frame, 100) > 0 for frame in luma_frames(out)]
+    assert shown.index(True) == 10 and all(shown[10:]), "the stretch ends on the frame the timer lands on"
+    assert [(row.what, row.at, row.frames) for row in recording.undeclared] == [("<div#late>", 0.4, 1)]
+
+
+SPOKEN_LINE = (
+    "<style>.said{position:absolute;left:20px;top:60px;font:40px sans-serif;color:#fff}</style>"
+    '<div data-scene="1" data-name="said"><template data-slide="1.1">'
+    '<p class="said" data-in="go" data-words>one two three four</p></template></div>'
+)
+"""A line shown word by word on the voice, whose words are said between the frames, not on them."""
+
+SPOKEN_LINE_URL = page_url(
+    "deck/index.html",
+    {Q.SCENE: "1", Q.CUES: "1.1:go@0.1", Q.WORDS: "one@0.3,two@0.43,three@0.57,four@0.7", Q.T0: T0_SIGNAL},
+)
+
+
+@pytest.mark.parametrize("k", [9, 11, 13, 15, 17, 20])
+def test_a_word_shown_on_the_voice_arrives_on_the_same_frames_however_the_frame_was_reached(tmp_path, k):
+    """A word is revealed at its own second, so its fade is as far along on a frame reached by its index.
+
+    A piece of the starter that began on frame 439 showed a word starting its fade on the piece's
+    first frame, which the one pass had finished drawing, because a word was revealed only on the
+    seconds a step happened to draw.
+    """
+    allowed = deck_page(tmp_path, SPOKEN_LINE)
+    assert a_frame(allowed, k, walked=False, url=SPOKEN_LINE_URL) == a_frame(
+        allowed, k, walked=True, url=SPOKEN_LINE_URL
+    )
+
+
+# ---- a section recorded in pieces and joined ----------------------------------------------------
+
+
+def test_a_section_recorded_in_pieces_and_joined_is_the_frames_and_the_report_of_one_pass(tmp_path):
+    """Pieces that each start on a keyframe join without an encode into the frames one page records whole.
+
+    The packet's lane is swept across every piece and the ring turns through all of them, so the
+    joined report has to take the union of what each page saw, and the lanes and cues of one pass are
+    what it reads.
+    """
+    allowed = moving_page(tmp_path)
+    whole, split = tmp_path / "whole.mp4", tmp_path / "split.mp4"
+    once = record(allowed, whole, 1.0, url=MOVING_URL)
+    joined = record(allowed, split, 1.0, url=MOVING_URL, starts=(0, 7, 13, 19))
+    assert joined.pieces == (0, 7, 13, 19)
+    pairs = list(zip(luma_frames(whole), luma_frames(split), strict=True))
+    assert len(pairs) == FPS
+    assert [k for k, (one, other) in enumerate(pairs) if one != other] == []
+    assert joined.report == once.report
+    assert list(tmp_path.glob(".*")) == []
+
+
+TRAVELLING = MOVING.replace('<div class="ring" data-loop="spin" data-loop-seconds="2"></div>', "")
+"""The moving slide with its packet alone, which stands still before it departs and after it lands."""
+
+
+def test_a_section_recorded_in_pieces_with_still_frames_skipped_is_the_one_pass_that_captured_every_frame(tmp_path):
+    """Each piece skips the frames nothing changed on and still captures its own first frame.
+
+    The packet stands still before it departs and after it lands, so most frames of every piece are
+    written again rather than captured, and the join is still the one pass that captured them all.
+    """
+    allowed = deck_page(tmp_path, TRAVELLING)
+    whole, split = tmp_path / "whole.mp4", tmp_path / "split.mp4"
+    once = record(allowed, whole, 1.0, url=MOVING_URL, skip_still=False)
+    joined = record(allowed, split, 1.0, url=MOVING_URL, starts=(0, 3, 17, 21), skip_still=True)
+    pairs = list(zip(luma_frames(whole), luma_frames(split), strict=True))
+    assert len(pairs) == FPS
+    assert [k for k, (one, other) in enumerate(pairs) if one != other] == []
+    assert joined.report == once.report

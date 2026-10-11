@@ -540,7 +540,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -592,7 +592,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -644,7 +644,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -698,7 +698,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -753,7 +753,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -810,7 +810,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4

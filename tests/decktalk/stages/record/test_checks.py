@@ -117,6 +117,15 @@ def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings
     }
 
 
+def test_a_change_no_declaration_explains_is_judged_once_per_element_with_its_second(settings: Settings) -> None:
+    undeclared = [{"what": "<div#late>", "at": 0.4, "frames": 3}, {"what": "<p.count>", "at": 1.2, "frames": 1}]
+    found = recording_findings(
+        a_recording(undeclared=undeclared), checks_of(), page=PAGE, where=WHERE, section=SECTION, settings=settings
+    )
+    assert [(row.code, row.location.section) for row in found] == [(Code.PAGE_CHANGE_UNDECLARED, SECTION)] * 2
+    assert "<div#late>" in found[0].message and "0.40s" in found[0].message and "3 frames" in found[0].message
+
+
 def test_a_warning_the_page_has_no_business_raising_is_refused_before_it_reaches_a_finding() -> None:
     """The media layer refuses a code DeckTalk measures itself, so no deck can decide its own verdict."""
     with pytest.raises(ValueError, match="RECORD_BLACK"):

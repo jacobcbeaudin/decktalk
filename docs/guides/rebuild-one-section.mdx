@@ -192,8 +192,7 @@ refused over them.
 | A slide inside the scene section N plays | nothing | every section that plays that scene |
 | The head, a style or a script of a page | nothing | every section of that page |
 | An image or a stylesheet the page loads | nothing | every section whose log lists that file |
-| `record_margin_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
-| `hold_seconds` on section N | nothing | nothing, because the hold is picture that `assemble` adds |
+| `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
 | The voice id, the model, the output format, `[voices.NAME] speed` or a voice field of the provider's table | every turn that voice reads | every section that voice reads in, because its word times move |
 | `[narration] voice`, or a `[voice NAME]` line handing a turn to another voice | every turn whose voice changed | every section whose voice changed |
 | A voice's name, renamed with its `[voice NAME]` lines | nothing | nothing |

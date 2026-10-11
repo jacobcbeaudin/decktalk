@@ -27,7 +27,7 @@ scene = "2"
 number = 3
 chapter = "A picture from elsewhere"
 render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landings}", "{ffmpeg}"]
-hold_seconds = 1.0     # the last frame holds this long after the narration
+hold_seconds = 1.0     # the page plays on this long after the narration
 
 [narration]
 tail_seconds = 1.0  # silence kept after the last word of a section, so a cut breathes

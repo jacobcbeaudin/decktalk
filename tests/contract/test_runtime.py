@@ -490,8 +490,16 @@ def test_a_script_motion_draws_its_eased_progress_between_two_cues_and_refuses_a
     for seconds in (1.0, 1.5, 2.0, 2.5):
         page.evaluate(f"() => window.DeckTalk.stepTo({seconds})")
     drawn = page.evaluate("() => window.drawn")
-    assert [(round(progress, 6), seconds) for progress, seconds in drawn] == [(0, 1.0), (0.5, 1.5), (1, 2.0)]
+    # The arrival is drawn once half a second past it, to learn whether the draw still moves there, and then at it.
+    later = 2.0 + MEASURABLE_SPAN_SECONDS
+    assert [(round(progress, 6), seconds) for progress, seconds in drawn] == [
+        (0, 1.0),
+        (0.5, 1.5),
+        (1, later),
+        (1, 2.0),
+    ]
     assert Code.PAGE_MOTION_CUE_UNKNOWN.value in codes_of(page)
+    assert Code.PAGE_MOTION_UNFINISHED.value not in codes_of(page)
 
 
 def test_a_composition_reads_every_cue_s_second_and_every_spoken_word_from_the_runtime(page, tmp_path):

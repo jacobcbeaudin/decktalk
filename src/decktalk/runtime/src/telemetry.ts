@@ -160,9 +160,18 @@ export type Step = {
   readonly stillUntil: number | null;
 };
 
+/**
+ * What the probe answers for one step, which is the runtime's step and what only the browser saw.
+ *
+ * `undeclared` names the first element the page changed between the step before and this one, outside
+ * every cue, frame hook and animation the runtime ran and inside nothing the page declared as moving,
+ * or is null when there is none.
+ */
+export type Stepped = Step & { readonly undeclared: string | null };
+
 /** Everything the recorder injects as `window.__decktalkProbe`, which the recorder and the runtime both call. */
 export type Probe = {
-  step(seconds: number, waitSeconds: number): Promise<Step>;
+  step(seconds: number, waitSeconds: number): Promise<Stepped>;
   started(waitSeconds: number): Promise<boolean>;
   ready(): Promise<boolean>;
   report(): Record<ReportField, unknown>;
@@ -195,6 +204,8 @@ export type RuntimeView = {
   started(): boolean;
   /** Draw one caption in the band of a page opened with `?caption=1`, or none, and answer once it has painted. */
   caption(caption: Caption | null): Promise<boolean>;
+  /** The first of some nodes the page changed that nothing declared as moving, named, or null when there is none. */
+  undeclared(nodes: readonly Node[]): string | null;
 };
 
 declare global {

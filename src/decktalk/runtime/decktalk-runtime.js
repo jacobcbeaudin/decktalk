@@ -26,6 +26,7 @@
   var MILLISECONDS = 1e3;
   var SECOND_DIGITS = 3;
   var FRAME_STEP_MS = 40;
+  var MEASURABLE_SPAN_SECONDS = 0.5;
   var PLAYABLE_SPAN_SECONDS = 0.46;
   var APPEAR_WORDS_MAX = 8;
   var BACK_OPACITY = 0.45;
@@ -110,6 +111,8 @@
     PAGE_STAGGER_EMPTY: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
     PAGE_SPOTLIGHT_EMPTY:
       "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+    PAGE_MOTION_UNFINISHED:
+      "The script motion on {value} from {from} still changes after it arrives at {cue}, so move its arrival later or end the change by it.",
     PAGE_MOTION_OVERRUN:
       "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
     PAGE_STAGGER_OVERRUN:
@@ -120,6 +123,8 @@
     PAGE_SWAP_APART:
       "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
     PAGE_CDN_ASSET: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+    PAGE_CHANGE_UNDECLARED:
+      "{value} changed the picture with no cue, motion, loop or frame hook to explain it, so declare it or draw it from a cue.",
     RECORD_BLACK:
       "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
     RECORD_TRUNCATED: "The recording ends {value} s before the narration does, so the last cues are not in it.",
@@ -1417,17 +1422,17 @@
   }
   function ready(root) {
     if (!wants() || window.katex) return Promise.resolve();
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const started2 = performance.now();
       const look = () => {
         if (window.katex) {
           if (root) typeset(root);
-          resolve();
+          resolve2();
           return;
         }
         if (performance.now() - started2 > KATEX_SECONDS * MILLISECONDS) {
           warn("PAGE_KATEX_MISSING", null, null, { attr: ATTR.tex });
-          resolve();
+          resolve2();
           return;
         }
         setTimeout(look, LOOK_EVERY_MS);
@@ -1487,9 +1492,12 @@
   }
   var lanes = [];
   var swept = /* @__PURE__ */ new Map();
-  function regionOf(one) {
-    const found = typeof one.region === "string" ? document.querySelector(one.region) : one.region;
+  function resolve(region2) {
+    const found = typeof region2 === "string" ? document.querySelector(region2) : region2;
     return found?.isConnected ? found : null;
+  }
+  function regionOf(one) {
+    return resolve(one.region);
   }
   function alive(one, seconds2) {
     if (one.from !== null && one.to !== null) return seconds2 >= one.from - DUE && seconds2 <= one.to + DUE;
@@ -1578,6 +1586,14 @@
     const classes = [...el.classList].map((name) => `.${name}`).join("");
     return `<${el.localName}${id}${classes}>`;
   }
+  function undeclaredChange(nodes) {
+    for (const node of nodes) {
+      const el = node instanceof Element ? node : node.parentElement;
+      if (!el?.isConnected || covered(el)) continue;
+      return describe(el);
+    }
+    return null;
+  }
   function born(animation, slideId) {
     if (animation.endSeconds <= PLAYABLE_SPAN_SECONDS || covered(animation.target)) return;
     warn("PAGE_MOTION_UNDECLARED", slideId, null, { value: describe(animation.target) });
@@ -1629,6 +1645,25 @@
       });
     }
   }
+  function picture(el) {
+    const canvases = el instanceof HTMLCanvasElement ? [el] : [...el.querySelectorAll("canvas")];
+    const drawn = canvases.map((canvas) => {
+      try {
+        return canvas.toDataURL();
+      } catch {
+        return "";
+      }
+    });
+    return [el.outerHTML, ...drawn].join("\n");
+  }
+  function arrive(region2, motion, seconds2) {
+    const el = resolve(region2);
+    const later = el ? (motion.draw(1, seconds2 + MEASURABLE_SPAN_SECONDS), picture(el)) : null;
+    motion.draw(1, seconds2);
+    if (el && later !== null && later !== picture(el)) {
+      warn("PAGE_MOTION_UNFINISHED", null, motion.to, { value: describe(el), from: motion.from });
+    }
+  }
   function scripted(region2, motion, at) {
     const start2 = at(motion.from);
     const end = at(motion.to);
@@ -1641,8 +1676,12 @@
     every((seconds2) => {
       if (seconds2 < start2) return true;
       const u = Math.min(1, (seconds2 - start2) / (end - start2));
-      motion.draw(eased(ease, u), seconds2);
-      return u < 1;
+      if (u < 1) {
+        motion.draw(eased(ease, u), seconds2);
+        return true;
+      }
+      arrive(region2, motion, seconds2);
+      return false;
     });
   }
   function region(where) {
@@ -1789,29 +1828,24 @@
     scene.onLeave(() => {
       live = false;
     });
-    const tick = (at) => {
-      if (!live) return false;
-      let waiting3 = false;
-      const words = el.querySelectorAll(`.${CLASS.word}`);
-      words.forEach((word2, index2) => {
-        if (word2.classList.contains(CLASS.shown)) return;
-        if (at >= due2[index2]) {
-          word2.classList.add(CLASS.shown, styleClass("word", style2));
-          if (!told) {
-            told = true;
-            recorder().words({
-              text: text.slice(0, TEXT_MAX),
-              cueAt: round(cueAt2),
-              spokenAt: spoken[start2].at,
-              count: keys.length,
-              firstShown: round(at),
-            });
-          }
-        } else waiting3 = true;
+    const show2 = (word2) => {
+      if (!live) return;
+      word2.classList.add(CLASS.shown, styleClass("word", style2));
+      if (told) return;
+      told = true;
+      recorder().words({
+        text: text.slice(0, TEXT_MAX),
+        cueAt: round(cueAt2),
+        spokenAt: spoken[start2].at,
+        count: keys.length,
+        firstShown: round(now()),
       });
-      return waiting3;
     };
-    if (tick(cueAt2)) every(tick);
+    el.querySelectorAll(`.${CLASS.word}`).forEach((word2, index2) => {
+      const at = due2[index2];
+      if (at <= cueAt2) show2(word2);
+      else schedule(at, "reveal", scene.cue ?? text.slice(0, TEXT_MAX), () => show2(word2));
+    });
   }
   function resting(style2) {
     return style2 === "highlight" ? BACK_OPACITY : 0;
@@ -2524,10 +2558,10 @@
     ).then(() => {
       done2 = true;
     });
-    const limit = new Promise((resolve) => {
+    const limit = new Promise((resolve2) => {
       setTimeout(() => {
         if (!done2) warn("PAGE_WAIT_UNSETTLED");
-        resolve();
+        resolve2();
       }, GATE_SECONDS * MILLISECONDS);
     });
     return Promise.race([all_, limit]);
@@ -2689,6 +2723,7 @@
     now,
     started,
     caption: (caption) => showCaption(caption),
+    undeclared: undeclaredChange,
   };
   window.DeckTalk = DeckTalk;
   window.__decktalk = view;

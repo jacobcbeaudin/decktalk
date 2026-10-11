@@ -10,11 +10,14 @@ beside it, and a long run can be read while it runs.
     capture.py   the page URL, what a recording is made from, and the page cut into its scenes
     render.py    a section whose picture a command draws, which is the second source of a picture
     checks.py    the frames, the page's own codes and the origins it reached for
-    pool.py      how many sections record at once, on the pool in `decktalk.stages.pool`
+    pool.py      how many recorders work at once, and the chunks each section is split into
 
-Sections are recorded several at a time, each worker with a Chromium of its own, because each
-recording is one browser and one encode and the sections of a film share nothing but the project.
-The rows, the progress lines and the result come back in section order whatever order the workers
+Frame `k` of a section is the page at second `k / fps` however it was reached, so each section is
+split into chunks of its frames and several recorders, each a worker with a Chromium of its own,
+record chunks at once, longest first across every section. Each chunk is a lossless piece of its own
+starting on a keyframe, and the recorder that finishes a section's last chunk joins the pieces into
+the section's video without an encode. A section too short to repay another page load is one chunk.
+The rows, the progress lines and the result come back in section order whatever order the recorders
 finish in.
 
 A section none of whose parts has moved is kept rather than recorded again, because the run would
@@ -27,7 +30,7 @@ A section named by `--section` is always recorded, which is how an author asks f
 page that has not changed.
 
 The order the recorder writes in is the whole of its safety. The log of the recording being replaced
-goes before anything is captured, the video is placed next, and the log of what was just recorded is
+goes before anything is captured, the joined video is placed next, and the log of what was just recorded is
 written last, so the pair on disk is complete or absent and a crash can never leave a new picture
 under an old judgement.
 """
@@ -35,16 +38,19 @@ under an old judgement.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from decktalk.artifacts import RecordingChecks, RecordingLog, UnreadableCache, UnreadablePaidRecord
-from decktalk.errors import InputError
-from decktalk.events import Level, Unit
+from decktalk.errors import STOPS, InputError
+from decktalk.events import Level, SectionDone, SectionStart, Unit
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs, PageSection
-from decktalk.logs import cache_decision
+from decktalk.logs import cache_decision, within
 from decktalk.machine.run import Run
 from decktalk.media import browser, stepping
 from decktalk.media.origin import Allowed
@@ -62,7 +68,7 @@ from decktalk.stages.record.capture import (
     said,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
-from decktalk.stages.record.pool import automatic
+from decktalk.stages.record.pool import Chunk, Span, automatic, chunked
 
 log = logging.getLogger(__name__)
 
@@ -71,11 +77,12 @@ log = logging.getLogger(__name__)
 class LogSink:
     """Where one section's recording log is kept, cleared before the capture and written after it.
 
-    The media layer clears this before it captures anything and writes it once the video is in place,
-    which is what keeps the pair on disk complete or absent. What it writes here is everything the
-    recorder knows, and the stage writes the log again with the frame measurements and the judgements
-    as soon as it has measured them, so a run stopped in between leaves a log with no checks in it,
-    which the next run reads as a section it has not finished recording.
+    The section's first chunk clears this before anything is captured, and it is written once the
+    joined video is in place, which is what keeps the pair on disk complete or absent. What is written
+    then is everything the recorders know, and the stage writes the log again with the frame
+    measurements and the judgements as soon as it has measured them, so a run stopped in between
+    leaves a log with no checks in it, which the next run reads as a section it has not finished
+    recording.
     """
 
     inputs: Inputs
@@ -126,7 +133,7 @@ def stale_recording(inputs: Inputs, section: PageSection, script: Sequence[TurnT
     if not span:
         return f"section {section.number} has no narration span yet"
     cue_times = inputs.cue_times()
-    job = plan_job(inputs, section, cue_times, span + section.record_margin_seconds, script)
+    job = plan_job(inputs, section, cue_times, span + section.recorded_past_span_seconds, script)
     if job.unchanged:
         return None
     if not job.out.exists():
@@ -161,7 +168,7 @@ def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
         if not span:
             run.note(f"Section {section.number} has no narration span yet, so it is not recorded.", level=Level.WARNING)
             continue
-        planned.append(plan_job(inputs, section, cue_times, span + section.record_margin_seconds))
+        planned.append(plan_job(inputs, section, cue_times, span + section.recorded_past_span_seconds))
     if not planned:
         raise InputError(
             "no page section has a length to record.",
@@ -205,24 +212,19 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
         )
 
 
-def capture(
-    inputs: Inputs, run: Run, opened: browser.Chromium, job: Job, sink: LogSink, check: Callable[[], None]
-) -> Recording:
-    """Record one section by stepping its clock through its span, and give back what the page reported."""
+def piece(
+    inputs: Inputs, opened: browser.Chromium, job: Job, chunk: Chunk, out: Path, check: Callable[[], None]
+) -> stepping.Piece:
+    """Record one chunk of a page section by stepping its clock through the chunk's frames into `out`."""
     settings = inputs.settings
     # The variable is not called `record`, because that is this module's own stage function.
     recorder, video = settings.record, settings.video
-    if job.section.rendered:
-        return rendered_section(inputs, job, sink)
-    allowed = Allowed.of(inputs.root, inputs.served_paths())
-    documents = inputs.documents()
-    taken = stepping.record_page(
+    return stepping.record_piece(
         opened,
         job.url,
-        job.seconds,
-        job.out,
-        allowed=allowed,
-        log_sink=sink,
+        chunk.frames,
+        out,
+        allowed=Allowed.of(inputs.root, inputs.served_paths()),
         width=video.width,
         height=video.height,
         fps=video.fps,
@@ -231,27 +233,19 @@ def capture(
         skip_audit_every=recorder.skip_audit_every,
         color_scheme=recorder.color_scheme,
         motion=settings.motion,
-        documents=documents,
+        documents=inputs.documents(),
         check=check,
     )
-    for name in taken.page_errors:
-        run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
-    for name in taken.missing:
-        run.note(
-            f"Section {job.section.number} asked for {name}, which the project does not have.", level=Level.WARNING
-        )
-    return taken
 
 
-def rendered_section(inputs: Inputs, job: Job, sink: LogSink) -> Recording:
-    """Draw one rendered section by running its command, and keep the log in the order a page's recording is kept.
+def rendered_section(inputs: Inputs, job: Job) -> Recording:
+    """Draw one rendered section by running its command, which writes the video at the section's own path.
 
     The command is the second source of a section's picture, so what it hands back is the same
     recording a page's is: the video at the section's own path, and a report carrying the lanes it
     said it drew for verify to mask and measure.
     """
     render.admitted(inputs.settings.record.page_policy, number=job.section.number)
-    sink.clear()
     done = render.run_command(
         job.section.render_command,
         root=inputs.root,
@@ -261,7 +255,7 @@ def rendered_section(inputs: Inputs, job: Job, sink: LogSink) -> Recording:
         timeout=inputs.settings.tools.timeout_seconds,
         label=f"section {job.section.number}",
     )
-    taken = Recording(
+    return Recording(
         url=job.url,
         assets=(),
         external=(),
@@ -271,37 +265,120 @@ def rendered_section(inputs: Inputs, job: Job, sink: LogSink) -> Recording:
         page_errors=(),
         report=PageReport(motions=done.motions),
     )
-    sink.write(taken)
-    return taken
 
 
-def recorded(
-    inputs: Inputs, run: Run, opened: browser.Chromium, job: Job, check: Callable[[], None]
-) -> SectionRecording:
-    """Record one section, measure it, and leave its log beside the webm with every judgement in it.
+@dataclass(eq=False)
+class Underway:
+    """One section whose chunks the recorders are recording, which the recorder that finishes the last one joins.
 
-    `check` raises when the section should stop, which the recorder asks before every frame.
+    The section opens on the stream when its first chunk starts, and the log of the recording it
+    replaces goes then, before anything is captured. Each chunk is recorded into a piece beside the
+    section's video. The recorder that finishes the last chunk joins the pieces into the video, writes
+    the log of what was recorded, measures and judges it, writes the log again with the judgements,
+    and closes the section on the stream, so no recorder ever waits on another.
     """
-    sink = LogSink(inputs, job)
-    recording = capture(inputs, run, opened, job, sink, check)
-    checks = check_recording(job.out, recording)
-    page = job.url if job.section.rendered else inputs.relative(inputs.path(job.section.page)).as_posix()
-    where = inputs.relative(job.out)
-    found = recording_findings(
-        recording,
-        checks,
-        page=page,
-        where=where,
-        section=job.section.number,
-        settings=inputs.settings,
-    )
-    for finding in found:
-        run.found(finding)
-    log = sink.log(recording, checks=checks, findings=found)
-    log.write(job.log_path)
-    run.wrote(job.out)
-    run.wrote(job.log_path)
-    return row(inputs, job, checks.duration_seconds, kept=False)
+
+    inputs: Inputs
+    run: Run
+    job: Job
+    chunks: tuple[Chunk, ...]
+    sink: LogSink
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    started: float | None = None
+    pieces: list[stepping.Piece] = field(default_factory=list)
+    ended: bool = False
+
+    def piece_path(self, chunk: Chunk) -> Path:
+        """Where one chunk's piece is written, beside the section's video and hidden from a listing of it."""
+        out = self.job.out
+        return out.with_name(f".{out.stem}.piece{chunk.first}{out.suffix}")
+
+    def begin(self) -> None:
+        """Open the section on the stream and clear the log it replaces, once, when its first chunk starts."""
+        with self.lock:
+            if self.started is not None:
+                return
+            self.started = time.monotonic()
+            self.run.emit(SectionStart, stage=Stage.RECORD, section=self.job.section.number)
+            self.sink.clear()
+            for stale in self.job.out.parent.glob(f".{self.job.out.stem}.piece*"):
+                stale.unlink(missing_ok=True)
+
+    def add(self, done: stepping.Piece) -> bool:
+        """Keep one chunk's piece, and say whether it was the last the section was waiting for.
+
+        A piece finished after another chunk of its section failed is deleted, because nothing joins it.
+        """
+        with self.lock:
+            if self.ended:
+                done.path.unlink(missing_ok=True)
+                return False
+            self.pieces.append(done)
+            return len(self.pieces) == len(self.chunks)
+
+    def end(self, outcome: Outcome) -> None:
+        """Close the section on the stream once, with how it ended, and delete any piece it did not join."""
+        with self.lock:
+            if self.started is None or self.ended:
+                return
+            self.ended = True
+            elapsed = time.monotonic() - self.started
+            self.run.emit(
+                SectionDone,
+                stage=Stage.RECORD,
+                section=self.job.section.number,
+                outcome=outcome,
+                elapsed_seconds=elapsed,
+            )
+            for left in self.pieces:
+                left.path.unlink(missing_ok=True)
+
+    def finish(self, recording: Recording) -> SectionRecording:
+        """Measure the section's video, leave its log beside it with every judgement in it, and close it."""
+        inputs, run, job = self.inputs, self.run, self.job
+        self.sink.write(recording)
+        for name in recording.page_errors:
+            run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
+        for name in recording.missing:
+            run.note(
+                f"Section {job.section.number} asked for {name}, which the project does not have.", level=Level.WARNING
+            )
+        checks = check_recording(job.out, recording)
+        page = job.url if job.section.rendered else inputs.relative(inputs.path(job.section.page)).as_posix()
+        found = recording_findings(
+            recording,
+            checks,
+            page=page,
+            where=inputs.relative(job.out),
+            section=job.section.number,
+            settings=inputs.settings,
+        )
+        for finding in found:
+            run.found(finding)
+        self.sink.log(recording, checks=checks, findings=found).write(job.log_path)
+        run.wrote(job.out)
+        run.wrote(job.log_path)
+        self.end(Outcome.RAN)
+        return row(inputs, job, checks.duration_seconds, kept=False)
+
+    def record(self, opened: browser.Chromium, chunk: Chunk, check: Callable[[], None]) -> SectionRecording | None:
+        """Record one chunk, and when it is the section's last, join, measure and judge the section.
+
+        Gives back the section's row from the recorder that finished it, and None from every other.
+        `check` raises when the section should stop, which the recorder asks before every frame.
+        """
+        with within(stage=Stage.RECORD, section=self.job.section.number):
+            self.begin()
+            try:
+                if self.job.section.rendered:
+                    return self.finish(rendered_section(self.inputs, self.job))
+                made = piece(self.inputs, opened, self.job, chunk, self.piece_path(chunk), check)
+                if not self.add(made):
+                    return None
+                return self.finish(stepping.join(self.pieces, self.job.out, seconds=self.job.seconds))
+            except BaseException as failure:
+                self.end(Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED)
+                raise
 
 
 def row(inputs: Inputs, job: Job, seconds: float, *, kept: bool) -> SectionRecording:
@@ -338,6 +415,46 @@ def _decided(job: Job, *, force: bool, named: set[int]) -> bool:
     return why != "unchanged"
 
 
+def expected(job: Job, fps: int) -> tuple[int, int]:
+    """A section's frames and the steps recording it is expected to take.
+
+    The steps are what the section's last recording took, scaled to its frames now, because an edit
+    rarely changes how much of a section holds still. A section never recorded is expected to step
+    on every frame.
+    """
+    frames = stepping.frame_count(job.seconds, fps)
+    before = job.previous.recording if job.previous is not None else None
+    if before is None or not before.steps:
+        return frames, frames
+    then = stepping.frame_count(before.requested_seconds, before.fps)
+    return frames, max(1, min(frames, round(before.steps * frames / then))) if then else frames
+
+
+def underway(inputs: Inputs, run: Run, todo: Sequence[Job], workers: int) -> tuple[dict[int, Underway], list[Chunk]]:
+    """Each section to record with its chunks, and every chunk in the order the recorders are handed them."""
+    fps = inputs.settings.video.fps
+    spans = [Span(job.section.number, *expected(job, fps), splits=not job.section.rendered) for job in todo]
+    chunks = chunked(spans, workers, inputs.settings.record)
+    sections = {
+        job.section.number: Underway(
+            inputs,
+            run,
+            job,
+            tuple(sorted((chunk for chunk in chunks if chunk.section == job.section.number), key=lambda c: c.first)),
+            LogSink(inputs, job),
+        )
+        for job in todo
+    }
+    log.debug(
+        "%d sections are recorded in %d chunks on %d recorders.",
+        len(sections),
+        len(chunks),
+        workers,
+        extra={"data": {"sections": len(sections), "chunks": len(chunks), "workers": workers}},
+    )
+    return sections, chunks
+
+
 def record(
     inputs: Inputs,
     run: Run,
@@ -347,15 +464,17 @@ def record(
 ) -> RecordResult:
     """Record every page section this run names, and judge each one as soon as it is finished.
 
-    The sections that must be recorded go to a pool of workers as `[record] concurrency` allows, and
-    the sections that are kept are reported by this thread, so every row is in section order.
+    The sections that must be recorded are split into chunks, which go to a pool of recorders as
+    `[record] concurrency` allows, longest first. The sections that are kept are reported by this
+    thread, so every row is in section order.
     """
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())
     todo = [job for job in planned if _decided(job, force=force, named=named)]
-    by_number = {job.section.number: job for job in todo}
     recorder = inputs.settings.record
+    workers = automatic(recorder.concurrency)
+    sections, chunks = underway(inputs, run, todo, workers)
 
     def opening(stack: ExitStack) -> browser.Chromium:
         return stack.enter_context(
@@ -367,25 +486,34 @@ def record(
             )
         )
 
-    def one(opened: browser.Chromium, number: int, halt: Halt) -> SectionRecording:
-        with run.section(Stage.RECORD, number):
-            return recorded(inputs, run, opened, by_number[number], halt.check)
+    def one(opened: browser.Chromium, chunk: Chunk, halt: Halt) -> SectionRecording | None:
+        return sections[chunk.section].record(opened, chunk, halt.check)
 
     rows: list[SectionRecording] = []
     total = len(planned)
-    workers = automatic(recorder.concurrency, len(todo))
-    with Pool(list(by_number), workers, opening, one, run.cancel) as pool:
-        for done, job in enumerate(planned, start=1):
-            number = job.section.number
-            rows.append(pool.result(number) if number in by_number else kept_row(inputs, run, job))
-            label = f"section {number} of {inputs.document.name}"
-            run.progress(Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=number)
+    try:
+        with Pool(chunks, workers, opening, one, run.cancel) as pool:
+            for done, job in enumerate(planned, start=1):
+                number = job.section.number
+                if number in sections:
+                    made = [pool.result(chunk) for chunk in sections[number].chunks]
+                    rows.append(next(made_row for made_row in made if made_row is not None))
+                else:
+                    rows.append(kept_row(inputs, run, job))
+                label = f"section {number} of {inputs.document.name}"
+                run.progress(Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=number)
+    except BaseException:
+        # A section a halt stopped between its chunks never reaches its last one, so it is closed here.
+        for section in sections.values():
+            section.end(Outcome.STOPPED)
+        raise
     return run.result(RecordResult, sections=tuple(rows))
 
 
 __all__ = [
     "LogSink",
     "TurnText",
+    "Underway",
     "record",
     "stale_recording",
 ]

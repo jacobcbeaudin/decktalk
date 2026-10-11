@@ -8,7 +8,10 @@ workers and a re-record from the middle of a section stand on. That holds only i
 second is a function of that second and not of which seconds were shown before it. This golden builds
 the starter and each shipped example with no voice, splits every page section at every cue, at a few
 frames drawn from a seed and at the frames a path dependence was once seen on, records each piece in
-a fresh page, and requires every decoded frame to equal the one pass `build` recorded.
+a fresh page, and requires every decoded frame to equal the one pass `build` recorded. It then records
+every project again the way `record` splits a section across its workers, in many chunks joined into
+one file, and requires the same decoded frames, the same report from the page and the same verify
+numbers as the one pass.
 
 It records every packaged project twice over, so it carries the `scaffold` marker and runs with the
 suite that already builds every packaged project, rather than on every pull request. The mechanisms
@@ -19,6 +22,7 @@ from __future__ import annotations
 
 import json
 import random
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -31,11 +35,11 @@ from decktalk.errors import Exit
 from decktalk.inputs import Inputs
 from decktalk.media import browser, ffmpeg, stepping
 from decktalk.media.origin import Allowed
-from decktalk.media.pages import await_painted
 from decktalk.page import Q
 from decktalk.template import EXAMPLES, STARTER
 from support.commands import HOSTILE_DIRECTORY, clean_environ
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
+from support.tools import machine_tools
 
 PIECES_BUDGET_SECONDS = budget(2 * EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
 """How long one project may take here, which is its build and a second recording of every frame it holds."""
@@ -48,15 +52,31 @@ PACKAGED = [STARTER, *(example.name for example in EXAMPLES if example.shipped)]
 SEEDED_SPLITS = 3
 """How many frames drawn from a seed each section is also split at, besides its cues."""
 
-SEEN_SPLITS: dict[tuple[str, str], tuple[int, ...]] = {("lesson", "01"): (1072,)}
+SEEN_SPLITS: dict[tuple[str, str], tuple[int, ...]] = {("lesson", "01"): (1072,), ("starter", "01"): (439,)}
 """Frames a piece once started on and drew a different picture, kept so that each stays a split.
 
 Lesson frame 1072 drew one dial's outline from a tile the continuous pass had partly redrawn, which
-a full raster of every redrawn tile settled.
+a full raster of every redrawn tile settled. Starter frame 439 started a word's fade on the piece's
+first frame, because a word on the voice was revealed only on the seconds a step drew, which a
+task at each word's own second settled.
 """
 
 STALE_SPAN = 150
 """How many frames from lesson frame 1072 the stale outline lasted, plus a margin, which its own test records."""
+
+ONE_PASS = ("--set", "record.concurrency=1", "--set", "record.skip_still=false")
+"""What records every section in one chunk and captures every frame of it.
+
+A section is split no wider than the recorders that record it, so one recorder records it whole, and
+a frame nothing changed on is captured rather than written again, so the chunks, which skip such
+frames, are held to frames every one of which was drawn.
+"""
+
+MANY_CHUNKS = ("--set", "record.concurrency=8", "--set", "record.chunk_frames_min=25")
+"""What splits every section of a second or more into chunks, eight workers wide with chunks of one second."""
+
+VERIFY_RUN_FIELDS = ("run", "elapsed_seconds")
+"""The fields of verify's answer that name its own run rather than measure the film."""
 
 
 def decktalk(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -85,7 +105,7 @@ class Built(dict[str, Path]):
         chosen = () if name == STARTER else ("--example", name)
         made = decktalk("init", str(root), "--no-skills", *chosen, cwd=home)
         assert made.returncode == Exit.FOUND_NOTHING, made.stderr
-        done = decktalk("--project", str(root), "build", "--no-spend", cwd=home)
+        done = decktalk("--project", str(root), "build", "--no-spend", *ONE_PASS, cwd=home)
         assert json.loads(done.stdout)["film"], done.stderr
         self[name] = root
         return root
@@ -110,34 +130,39 @@ def frame_digests(video: Path) -> list[str]:
 
 
 def record_pieces(root: Path, section: str, starts: list[int], end: int, into: Path) -> list[str]:
-    """Record `[starts[i], starts[i + 1])` of one section, each piece in a fresh page, and digest every frame."""
+    """Record `[starts[i], starts[i + 1])` of one section, each piece in a fresh page, and digest every frame.
+
+    Each piece is recorded the way `record` records a chunk, with every frame captured, so nothing is
+    written again that the piece did not draw.
+    """
     inputs = Inputs.load(root, environ={})
     log = RecordingLog.read(root / "build" / "recordings" / f"{section}.json")
     assert log is not None
-    video = inputs.settings.video
+    video, recorder = inputs.settings.video, inputs.settings.record
     bounds = [*starts, end]
     digests: list[str] = []
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
+    with (
+        machine_tools(),
+        browser.chromium(policy=browser.TRUSTED, spend=False, switches=recorder.capture_switches) as real,
+    ):
         for first, stop in zip(bounds, bounds[1:], strict=False):
-            opened = stepping.stepping(
+            piece = stepping.record_piece(
                 real,
-                Allowed.of(inputs.root, inputs.served_paths()),
+                log.recording.url,
+                range(first, stop),
+                into / f"{section}-{first}.mp4",
+                allowed=Allowed.of(inputs.root, inputs.served_paths()),
                 width=video.width,
                 height=video.height,
-                color_scheme=inputs.settings.record.color_scheme,
+                fps=video.fps,
+                frame_wait_seconds=recorder.frame_wait_seconds,
+                skip_still=False,
+                skip_audit_every=0,
+                color_scheme=recorder.color_scheme,
                 motion=inputs.settings.motion,
                 documents=inputs.documents(),
             )
-            piece = into / f"{section}-{first}.mp4"
-            with opened as (page, _assets):
-                page.goto(log.recording.url, wait_until="load")
-                await_painted(page)
-                stepper = stepping.Stepper(page, video.fps, inputs.settings.record.frame_wait_seconds)
-                stepper.hold()
-                with ffmpeg.fed(*stepping.encoding(piece, video.fps), what=piece.name) as write:
-                    for k in range(first, stop):
-                        write(stepper.frame(k))
-            digests += frame_digests(piece)
+            digests += frame_digests(piece.path)
     return digests
 
 
@@ -179,3 +204,47 @@ def test_every_section_split_anywhere_records_the_frames_of_one_pass(built, tmp_
         starts = splits(name, section, log.recording.url, log.recording.fps, len(whole))
         got = record_pieces(root, section, starts, len(whole), tmp_path)
         assert differing(whole, got, 0) == [], (name, section, starts)
+
+
+def measured(root: Path) -> dict[str, object]:
+    """What `verify` measures of the project's film, without the fields that name its own run."""
+    done = decktalk("--project", str(root), "verify", cwd=root.parent)
+    answer = json.loads(done.stdout)
+    assert answer["film"], done.stderr
+    return {key: value for key, value in answer.items() if key not in VERIFY_RUN_FIELDS}
+
+
+@pytest.mark.parametrize("name", PACKAGED)
+def test_every_section_recorded_in_many_chunks_is_the_one_pass_in_frames_report_and_verify(built, tmp_path, name):
+    """A section split across workers and joined is the section one worker records whole, to the decoded frame.
+
+    The copy is recorded again in chunks of one second on eight workers and built again, so each of
+    its sections is a join of several files, and its frames, what its page reported and what verify
+    measures of its film are each the one pass.
+    """
+    root = built[name]
+    once = measured(root)
+    copy = tmp_path / name
+    shutil.copytree(root, copy)
+    redone = decktalk("--project", str(copy), "record", "--force", *MANY_CHUNKS, cwd=tmp_path)
+    assert json.loads(redone.stdout).get("sections"), redone.stdout
+    built_again = decktalk("--project", str(copy), "build", "--no-spend", *MANY_CHUNKS, cwd=tmp_path)
+    assert json.loads(built_again.stdout).get("film"), built_again.stdout
+    inputs = Inputs.load(root, environ={})
+    for section in inputs.document.page_sections:
+        if section.rendered:
+            continue
+        path = inputs.workspace.recording(section.key)
+        whole = RecordingLog.read(path.with_suffix(".json"))
+        split = RecordingLog.read(copy / path.relative_to(root).with_suffix(".json"))
+        assert whole is not None and split is not None, path
+        assert whole.recording.pieces == (0,), (name, section.key)
+        assert len(split.recording.pieces) > 1, (name, section.key, split.recording.pieces)
+        assert differing(frame_digests(path), frame_digests(copy / path.relative_to(root)), 0) == [], (
+            name,
+            section.key,
+            split.recording.pieces,
+        )
+        assert split.recording.report == whole.recording.report, (name, section.key)
+        assert set(split.recording.assets) == set(whole.recording.assets), (name, section.key)
+    assert measured(copy) == once

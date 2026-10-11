@@ -365,7 +365,7 @@ log as soon as that section is done and a measurement always belongs to the reco
     "missing": [],
     "requested_seconds": 20.087,
     "fps": 25,
-    "load_seconds": 0.065,
+    "load_seconds": 0.048,
     "page_errors": [],
     "report": {
       "version": "0.5.0",
@@ -378,7 +378,10 @@ log as soon as that section is done and a measurement always belongs to the reco
       "words": [],
       "motions": [],
       "unreadable": []
-    }
+    },
+    "undeclared": [],
+    "pieces": [0, 126, 251, 376],
+    "steps": 115
   },
   "findings": [],
   "checks": {
@@ -527,7 +530,7 @@ Beside each section video, `NN.json` holds the key it was encoded from.
 
 {/* sample: section-json, build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson */}
 ```json build/sections/01.json
-{ "digest": "895442e44759346ef5cf05abe10a67716e2b3eb57952838b84ec6e9311fef9ec" }
+{ "digest": "69cce425e900ce795b5a8ba31daff72968b0c48ecc081c1ff625467ece52c857" }
 ```
 
 The digest is a sha256 over the whole argument list of the encode, the BLAKE3 digest of every file it
@@ -649,16 +652,16 @@ file per run, never truncated, so a watch loop running beside a build by hand ca
 the other is writing. `--events` prints the same lines on stderr as they happen.
 
 {/* sample: cue-events, decktalk cue, on a starter built with --no-spend, the whole events file it wrote */}
-```jsonl build/events/db45a925f4e6.jsonl
-{"event":"run.start","time":"2026-10-09T03:02:24.676227Z","seq":0,"run":"db45a925f4e6","events_file":"build/events/db45a925f4e6.jsonl"}
-{"event":"run.log","time":"2026-10-09T03:02:24.677255Z","seq":1,"run":"db45a925f4e6","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":10687,"lock":".lock"}}
-{"event":"section.start","time":"2026-10-09T03:02:24.679588Z","seq":2,"run":"db45a925f4e6","stage":"cue","section":1,"turn":null}
-{"event":"section.done","time":"2026-10-09T03:02:24.679743Z","seq":3,"run":"db45a925f4e6","stage":"cue","section":1,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-09T03:02:24.679817Z","seq":4,"run":"db45a925f4e6","stage":"cue","section":2,"turn":null}
-{"event":"section.done","time":"2026-10-09T03:02:24.679866Z","seq":5,"run":"db45a925f4e6","stage":"cue","section":2,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-09T03:02:24.679910Z","seq":6,"run":"db45a925f4e6","stage":"cue","section":3,"turn":null}
-{"event":"section.done","time":"2026-10-09T03:02:24.679951Z","seq":7,"run":"db45a925f4e6","stage":"cue","section":3,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"run.done","time":"2026-10-09T03:02:24.684635Z","seq":8,"run":"db45a925f4e6","outcome":"ran","elapsed_seconds":0.009,"error":null,"dropped":0}
+```jsonl build/events/6a5a550a5659.jsonl
+{"event":"run.start","time":"2026-10-09T04:24:50.633842Z","seq":0,"run":"6a5a550a5659","events_file":"build/events/6a5a550a5659.jsonl"}
+{"event":"run.log","time":"2026-10-09T04:24:50.634725Z","seq":1,"run":"6a5a550a5659","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":3316,"lock":".lock"}}
+{"event":"section.start","time":"2026-10-09T04:24:50.636715Z","seq":2,"run":"6a5a550a5659","stage":"cue","section":1,"turn":null}
+{"event":"section.done","time":"2026-10-09T04:24:50.636830Z","seq":3,"run":"6a5a550a5659","stage":"cue","section":1,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-09T04:24:50.636897Z","seq":4,"run":"6a5a550a5659","stage":"cue","section":2,"turn":null}
+{"event":"section.done","time":"2026-10-09T04:24:50.636950Z","seq":5,"run":"6a5a550a5659","stage":"cue","section":2,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-09T04:24:50.636991Z","seq":6,"run":"6a5a550a5659","stage":"cue","section":3,"turn":null}
+{"event":"section.done","time":"2026-10-09T04:24:50.637027Z","seq":7,"run":"6a5a550a5659","stage":"cue","section":3,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"run.done","time":"2026-10-09T04:24:50.641436Z","seq":8,"run":"6a5a550a5659","outcome":"ran","elapsed_seconds":0.008,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. `time`, `seq` and `run` are on every line, and `seq` counts per run

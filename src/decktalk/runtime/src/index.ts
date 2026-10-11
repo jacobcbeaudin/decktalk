@@ -36,6 +36,7 @@ import {
   sample,
   scripted,
   stillUntil,
+  undeclaredChange,
 } from "./motion.ts";
 import { all, declare, findSlide, type Handler, on, type SceneInput, setMotionScale } from "./scene.ts";
 import { type Probe, type RuntimeView, setRecorder } from "./telemetry.ts";
@@ -264,6 +265,7 @@ const view: RuntimeView = {
   now,
   started,
   caption: (caption: Caption | null) => showCaption(caption),
+  undeclared: undeclaredChange,
 };
 
 window.DeckTalk = DeckTalk;

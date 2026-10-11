@@ -50,7 +50,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `narration.store_wait_seconds`, `record.page_policy`, `record.concurrency`, `record.capture_switches`, `record.frame_wait_seconds`, `record.skip_audit_every`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `narration.store_wait_seconds`, `record.page_policy`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `record.capture_switches`, `record.frame_wait_seconds`, `record.skip_audit_every`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -141,7 +141,10 @@ These keys tune how `record` opens each page section in headless Chromium and st
 |---|---|---|---|---|---|---|---|
 | `color_scheme` | string | `"light"` | must be one of light, dark, no-preference |  | project |  | Color scheme that Chromium reports to the page. |
 | `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | machine |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page. |
-| `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
+| `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a section after another. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
+| `chunk_frames_min` | integer | `50` | must be between 1 and 100000 | frames | machine |  | Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section shorter than two chunks of this length is recorded whole by one recorder. |
+| `chunk_startup_seconds` | number | `0.2` | must be above 0 and must be at most 60 | seconds | machine |  | How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps * recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its last recording took. |
+| `step_seconds` | number | `0.014` | must be above 0 and must be at most 10 | seconds | machine |  | How long one recorder takes to step its page once on this machine, the capture of the frame it lands on included, which `record` weighs against `chunk_startup_seconds` when it splits a section. |
 | `capture_switches` | array | `["disable-frame-rate-limit", "disable-gpu-vsync"]` | must hold values that each must be one of disable-frame-rate-limit, disable-gpu-vsync |  | machine |  | Chromium switches `record` launches its browser with, which stop it holding its frames to the display's refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same frames as one without them. An empty list launches Chromium with none. |
 | `frame_wait_seconds` | number | `15.0` | must be above 0 and must be at most 120 | seconds | machine |  | Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every image decoded and the step laid out and painted, before it fails the section rather than capture the frame half drawn. |
 | `skip_still` | boolean | `true` | takes any value of its type |  | project |  | Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes. |
@@ -150,7 +153,11 @@ These keys tune how `record` opens each page section in headless Chromium and st
 <Warning>
 **`record.page_policy`** A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
 
-**`record.concurrency`** Each recording steps its own Chromium and its own encode, so a number above the machine's share makes every section wait on the others and the run slower rather than faster.
+**`record.concurrency`** Each recorder steps its own Chromium and its own encode, so a number above the machine's share makes every chunk wait on the others and the run slower rather than faster.
+
+**`record.chunk_frames_min`** Every chunk loads the page again, so chunks much shorter than a page load spend the machine on loading rather than on frames.
+
+**`record.chunk_startup_seconds`** A start-up stated far too low splits short sections into chunks that each spend more loading the page than recording it.
 
 **`record.capture_switches`** With the switches no frame waits for a display refresh, so each recording keeps more of the CPU busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on each other.
 

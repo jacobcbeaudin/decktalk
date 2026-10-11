@@ -7,7 +7,7 @@
  */
 
 import { CLASS, motionScale, styleClass } from "./canvas.ts";
-import { every, now, round } from "./clock.ts";
+import { every, now, round, schedule } from "./clock.ts";
 import {
   APPEAR_WORDS_MAX,
   BACK_OPACITY,
@@ -197,29 +197,26 @@ export function line(el: HTMLElement, text: string, style: WordStyle, scene: Sce
   scene.onLeave(() => {
     live = false;
   });
-  const tick = (at: number) => {
-    if (!live) return false;
-    let waiting = false;
-    const words = el.querySelectorAll(`.${CLASS.word}`);
-    words.forEach((word, index) => {
-      if (word.classList.contains(CLASS.shown)) return;
-      if (at >= (due[index] as number)) {
-        word.classList.add(CLASS.shown, styleClass("word", style));
-        if (!told) {
-          told = true;
-          recorder().words({
-            text: text.slice(0, TEXT_MAX),
-            cueAt: round(cueAt),
-            spokenAt: (spoken[start] as Spoken).at,
-            count: keys.length,
-            firstShown: round(at),
-          });
-        }
-      } else waiting = true;
+  // Each word is a task due at its own second, so the stepped clock steps to that second whichever
+  // seconds it showed before, and the word's fade is born there and not on the frame that drew it.
+  const show = (word: Element) => {
+    if (!live) return;
+    word.classList.add(CLASS.shown, styleClass("word", style));
+    if (told) return;
+    told = true;
+    recorder().words({
+      text: text.slice(0, TEXT_MAX),
+      cueAt: round(cueAt),
+      spokenAt: (spoken[start] as Spoken).at,
+      count: keys.length,
+      firstShown: round(now()),
     });
-    return waiting;
   };
-  if (tick(cueAt)) every(tick);
+  el.querySelectorAll(`.${CLASS.word}`).forEach((word, index) => {
+    const at = due[index] as number;
+    if (at <= cueAt) show(word);
+    else schedule(at, "reveal", scene.cue ?? text.slice(0, TEXT_MAX), () => show(word));
+  });
 }
 
 /** What a word looks like before it is said, which is dim for a highlight and absent for an appear. */

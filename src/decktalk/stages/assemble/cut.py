@@ -1,10 +1,11 @@
 """Every section becomes one silent mp4, and the placements record where each one plays.
 
-A page section is cut to its exact span in the narration, rounded on cumulative frame boundaries so
-the picture never drifts, with the recorder's lead-in trimmed off the head and the last frame cloned
-to fill. A clip section plays its own file, or a titled slate when that file is missing. A page
-section with no recording plays black. No intermediate carries audio, so the concatenation cannot
-reintroduce AAC priming and the picture starts at pts 0 as the sound does.
+A page section is cut to its exact span in the narration and its hold, rounded on cumulative frame
+boundaries so the picture never drifts. The recorder stepped the page through both, so the hold is
+recorded picture, and the last frame is cloned only over the slack a recording may fall short by.
+A clip section plays its own file, or a titled slate when that file is missing. A page section with
+no recording plays black. No intermediate carries audio, so the concatenation cannot reintroduce
+AAC priming and the picture starts at pts 0 as the sound does.
 
 `placements.json` is written from the same rows, so where a section plays, what it was made from and
 whether a slate or a black frame stands in for it are all recorded once.

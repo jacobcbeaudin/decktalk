@@ -12,8 +12,9 @@
  *
  * What the recorder calls
  *   window.__decktalkProbe.step(t, s) move the section clock to second t and answer the next due second,
- *                                    whether the picture may have changed and the earliest second it next
- *                                    can, once the page has drawn it, or refuse once s seconds pass without that
+ *                                    whether the picture may have changed, the earliest second it next
+ *                                    can and what the page changed undeclared since the step before,
+ *                                    once the page has drawn it, or refuse once s seconds pass without that
  *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
  *                                    refuse once s seconds pass without that
  *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
@@ -31,7 +32,7 @@
 
 import { ATTRS, type Attr, cueId, MILLISECONDS, MOMENT_SELECTOR, type Q, type ReportField } from "../contract.ts";
 import type * as Seam from "../telemetry.ts";
-import type { Step } from "../telemetry.ts";
+import type { Stepped } from "../telemetry.ts";
 
 /** The most rows of any one kind the probe keeps, so a long recording cannot grow without a bound. */
 const KEEP = 5000;
@@ -81,7 +82,27 @@ const touch = () => {
   touched = true;
 };
 
-const watcher = new MutationObserver(touch);
+/**
+ * Every node a mutation touched since the last step answered, which is what the page changed with no step running.
+ *
+ * A step runs the cues, the frame hooks and the animations, and everything they change is handed to
+ * the observer while the step draws. What the observer holds when the next step begins was therefore
+ * changed by something else: a timer or an animation frame of the page's own that the recorder's
+ * clock ran between the two steps.
+ */
+let between: Node[] = [];
+
+/** Keep the nodes some mutation records touched, up to the probe's bound, and count them as a change. */
+function keep(records: readonly MutationRecord[]): void {
+  if (!records.length) return;
+  touched = true;
+  for (const record of records) {
+    if (between.length >= KEEP) return;
+    between.push(record.target);
+  }
+}
+
+const watcher = new MutationObserver(keep);
 watcher.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
 document.addEventListener("scroll", touch, { capture: true, passive: true });
 
@@ -129,7 +150,25 @@ function sooner(one: number | null, other: number | null): number | null {
 function mutated(): boolean {
   const seen = touched || watcher.takeRecords().length > 0;
   touched = false;
+  between = [];
   return seen;
+}
+
+/** Whether a step has answered yet, because what changed before the first one is the page loading. */
+let answered = false;
+
+/**
+ * The first element the page changed since the last step answered that nothing declared as moving, named, or null.
+ *
+ * It is asked before the runtime moves, so nothing the step runs is counted. The runtime decides what
+ * is declared, because it alone holds the motions, the loops and the regions.
+ */
+function undeclared(): string | null {
+  keep(watcher.takeRecords());
+  const changed = between;
+  between = [];
+  if (!answered || !changed.length) return null;
+  return window.__decktalk?.undeclared(changed) ?? null;
 }
 
 /**
@@ -200,6 +239,9 @@ async function drawn(): Promise<boolean> {
  * step before. The runtime says what it knows: a task ran, a hook drew, an animation or a declared
  * motion moved. This adds what only the browser knows: the DOM changed or scrolled, a font or an image
  * arrived, or the page holds something that draws on its own. A page with no runtime always changed.
+ * It also names the first element the page changed since the step before outside everything the
+ * runtime ran and inside nothing it declared as moving, which the recorder reports when the frame
+ * shows it.
  *
  * The answer also carries the earliest second the picture can next change, which is the runtime's
  * own unless one of the page's timers is due sooner. It is the step's own second when the page holds
@@ -212,7 +254,9 @@ async function drawn(): Promise<boolean> {
  * step's text has only just asked for and an image still decoding. So the answer waits for all of
  * them, and a page that has not drawn the step within `waitSeconds` is refused rather than captured.
  */
-export function step(seconds: number, waitSeconds: number): Promise<Step> {
+export function step(seconds: number, waitSeconds: number): Promise<Stepped> {
+  // What the page changed between the two steps is read before the runtime moves and before `mutated` empties it.
+  const outside = undeclared();
   const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
   const touchedBefore = mutated();
   return new Promise((answer, refuse) => {
@@ -224,11 +268,13 @@ export function step(seconds: number, waitSeconds: number): Promise<Step> {
       nativeCancel(late);
       const touchedWhileDrawn = mutated();
       const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+      answered = true;
       const heard = waited || touchedWhileDrawn || selfDrawn;
       answer({
         due: stepped.due,
         changed: stepped.changed || touchedBefore || heard,
         stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+        undeclared: outside,
       });
     });
   });

@@ -54,6 +54,11 @@ A step says the picture changed when any of these holds:
 - The page has no runtime.
 
 So anything a page draws outside that list has to be drawn from a frame hook or declared as a loop.
+A DOM change a timer or an animation frame of the page's own makes between two steps is seen, and is
+undeclared change when it sits inside no declared motion, loop or region: the step names the element,
+and when the frame captured after it differs from the frame before, `record` reports
+[`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) with the element, the first
+second and the number of frames. A change no pixel shows is not reported.
 A change made only through a style sheet's object model, such as `insertRule`, or inside a shadow
 root, or by an animated image, is not seen, and the recording shows the frame before until something
 else changes. `record.skip_still` turns the skip off for a project whose page needs it.

@@ -76,8 +76,8 @@ class PageSection:
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
     section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
     after its last. Both are placed when the takes are joined and never sent to the voice, so
-    changing either never makes a take stale. `hold_seconds` holds the section's
-    last frame after its narration, and the narration pauses for it.
+    changing either never makes a take stale. `hold_seconds` keeps the page playing after its
+    narration, and the narration pauses for it.
     """
 
     number: int
@@ -105,6 +105,15 @@ class PageSection:
     def rendered(self) -> bool:
         """Whether a command draws this section's picture rather than a page."""
         return bool(self.render_command)
+
+    @property
+    def recorded_past_span_seconds(self) -> float:
+        """How long the recorder steps the page on past the section's span: its hold, then its margin.
+
+        The hold is recorded like every other second of the section, so a motion that arrives after
+        the last word lands in the film rather than stopping on the frame the narration ended on.
+        """
+        return self.hold_seconds + self.record_margin_seconds
 
     @property
     def freeze_params(self) -> dict[str, str]:

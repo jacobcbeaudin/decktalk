@@ -331,15 +331,55 @@ class RecordConfig:
     )
     concurrency: int = tune(
         0,
-        "How many page sections `record` records at once. Zero chooses from the CPU this process may use, "
-        "which inside a container is its quota rather than the host's core count.",
+        "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a "
+        "section after another. Zero chooses from the CPU this process may use, which inside a container is "
+        "its quota rather than the host's core count.",
         bounds=Bounds(ge=0, le=16),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         hazard=(
-            "Each recording steps its own Chromium and its own encode, so a number above the machine's share "
-            "makes every section wait on the others and the run slower rather than faster."
+            "Each recorder steps its own Chromium and its own encode, so a number above the machine's share "
+            "makes every chunk wait on the others and the run slower rather than faster."
         ),
+        see_also=("record.chunk_frames_min",),
+    )
+    chunk_frames_min: int = tune(
+        50,
+        "Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section "
+        "shorter than two chunks of this length is recorded whole by one recorder.",
+        unit="frames",
+        bounds=Bounds(ge=1, le=100_000),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "Every chunk loads the page again, so chunks much shorter than a page load spend the machine on "
+            "loading rather than on frames."
+        ),
+        see_also=("record.chunk_startup_seconds", "record.step_seconds"),
+    )
+    chunk_startup_seconds: float = tune(
+        0.2,
+        "How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and "
+        "stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps "
+        "* recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its "
+        "last recording took.",
+        unit="seconds",
+        bounds=Bounds(gt=0, le=60),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A start-up stated far too low splits short sections into chunks that each spend more loading the page "
+        "than recording it.",
+        see_also=("record.step_seconds", "record.chunk_frames_min"),
+    )
+    step_seconds: float = tune(
+        0.014,
+        "How long one recorder takes to step its page once on this machine, the capture of the frame it lands "
+        "on included, which `record` weighs against `chunk_startup_seconds` when it splits a section.",
+        unit="seconds",
+        bounds=Bounds(gt=0, le=10),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        see_also=("record.chunk_startup_seconds", "record.chunk_frames_min"),
     )
     capture_switches: tuple[str, ...] = tune(
         CAPTURE_SWITCHES,

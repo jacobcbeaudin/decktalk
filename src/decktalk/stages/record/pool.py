@@ -13,14 +13,19 @@ zero chooses it here.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
+
+from decktalk.settings import RecordConfig
 
 log = logging.getLogger(__name__)
 
 CPUS_PER_RECORDING = 3
-"""Calibration: the CPUs one recording keeps busy, rounded up so recordings at once do not starve each other.
+"""Calibration: the CPUs one recorder keeps busy, rounded up so recorders at once do not starve each other.
 
 With `[record] capture_switches` on, no frame waits for a display refresh, so the page, the compositor
 and the encoder of one recording rarely rest. Recording the lesson's 114 second section on an 18 core
@@ -30,14 +35,14 @@ records slower and never differently, because the recorder steps the clock.
 """
 
 MOST_AT_ONCE = 4
-"""Calibration: the most sections an automatic choice records at once, because each one is a Chromium in memory.
+"""Calibration: the most recorders an automatic choice runs at once, because each one is a Chromium in memory.
 
 Four recordings held about 900 MB beside each other, which is what a small render worker can spare,
 and a machine with more to give says so through `[record] concurrency`.
 """
 
 WINDOWS_AT_ONCE = 1
-"""Calibration: Windows records one section at a time until its capture is measured under load."""
+"""Calibration: Windows runs one recorder at a time until its capture is measured under load."""
 
 CGROUP_V2_MAX = Path("/sys/fs/cgroup/cpu.max")
 """Truth: where a cgroup v2 container states its CPU quota and period, or `max` for none."""
@@ -84,8 +89,8 @@ def available_cpus() -> float:
     return min(cores, stated) if stated is not None else cores
 
 
-def at_once(requested: int, jobs: int, *, cpus: float, windows: bool) -> int:
-    """How many sections to record at once: what the machine asked for, or one per `CPUS_PER_RECORDING`, up to the jobs.
+def at_once(requested: int, *, cpus: float, windows: bool) -> int:
+    """How many recorders to run at once: what the machine asked for, or one per `CPUS_PER_RECORDING`, at least one.
 
     `requested` is `[record] concurrency`, and zero asks this function to choose.
     """
@@ -95,24 +100,89 @@ def at_once(requested: int, jobs: int, *, cpus: float, windows: bool) -> int:
         chosen = WINDOWS_AT_ONCE
     else:
         chosen = min(MOST_AT_ONCE, int(cpus // CPUS_PER_RECORDING))
-    return max(1, min(chosen, jobs))
+    return max(1, chosen)
 
 
-def automatic(requested: int, jobs: int) -> int:
+def automatic(requested: int) -> int:
     """`at_once` for this machine, which reads its own CPUs and platform, and records what it chose.
 
     How many recorders ran is the first thing an operator asks about a slow container, so the choice
     is recorded beside the CPUs it was made from.
     """
     cpus = available_cpus()
-    chosen = at_once(requested, jobs, cpus=cpus, windows=sys.platform == "win32")
+    chosen = at_once(requested, cpus=cpus, windows=sys.platform == "win32")
     log.debug(
-        "%d sections are recorded on %d workers.",
-        jobs,
+        "%d recorders run at once.",
         chosen,
-        extra={"data": {"workers": chosen, "jobs": jobs, "cpus": cpus, "requested": requested}},
+        extra={"data": {"workers": chosen, "cpus": cpus, "requested": requested}},
     )
     return chosen
 
 
-__all__ = ["at_once", "automatic", "available_cpus"]
+@dataclass(frozen=True)
+class Span:
+    """One section a run records: its frames, the steps recording it is expected to take, and whether it splits.
+
+    A page steps once a frame, except across a still stretch, which it crosses in one step, so a
+    slide that mostly holds still costs far fewer steps than frames. A page section may be split
+    across recorders. A section a command draws is one run of that command, so it is one chunk.
+    """
+
+    section: int
+    frames: int
+    steps: int
+    splits: bool
+
+    @property
+    def steps_a_frame(self) -> float:
+        """How many steps each frame is expected to cost, which is one where every frame is a step."""
+        return self.steps / self.frames if self.frames else 1.0
+
+
+@dataclass(frozen=True)
+class Chunk:
+    """Frames `first` up to `stop` of one section, which one recorder records into one piece."""
+
+    section: int
+    first: int
+    stop: int
+    steps: float
+    """The steps this chunk is expected to take, which is its share of its section's."""
+
+    @property
+    def frames(self) -> range:
+        """The frames of the section this chunk records, in order."""
+        return range(self.first, self.stop)
+
+
+def chunk_count(span: Span, workers: int, record: RecordConfig) -> int:
+    """How many chunks a section is split into on `workers` recorders.
+
+    `sqrt(c*W*N/s)` rounded, where `W` is the steps the section is expected to take and `c` and `s`
+    are the machine's `[record] step_seconds` and `chunk_startup_seconds`, never more than the
+    recorders, never so many that a chunk holds fewer than `chunk_frames_min` frames, and never fewer
+    than one.
+    """
+    best = round(math.sqrt(record.step_seconds * span.steps * workers / record.chunk_startup_seconds))
+    return max(1, min(best, workers, span.frames // record.chunk_frames_min))
+
+
+def chunked(spans: Sequence[Span], workers: int, record: RecordConfig) -> list[Chunk]:
+    """Every chunk of every section, in the order recorders are handed them: the dearest first.
+
+    A section is cut into nearly equal ranges of frames, each expected to cost its share of the
+    section's steps. Chunks are handed out by that cost, the longest processing time first, and
+    chunks of equal cost go in section order and then frame order.
+    """
+    chunks: list[Chunk] = []
+    for span in spans:
+        count = chunk_count(span, workers, record) if span.splits else 1
+        bounds = [round(span.frames * at / count) for at in range(count + 1)]
+        chunks += [
+            Chunk(span.section, first, stop, (stop - first) * span.steps_a_frame)
+            for first, stop in zip(bounds, bounds[1:], strict=False)
+        ]
+    return sorted(chunks, key=lambda chunk: (-chunk.steps, chunk.section, chunk.first))
+
+
+__all__ = ["Chunk", "Span", "at_once", "automatic", "available_cpus", "chunk_count", "chunked"]
