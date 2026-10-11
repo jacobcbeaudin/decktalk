@@ -38,6 +38,15 @@ export const MILLISECONDS = 1000;
  */
 export const SECOND_DIGITS = 3;
 
+/**
+ * How far apart two stepped seconds may sit and still be the same second.
+ *
+ * Truth: a frame's second is `k / fps`, which a float division rounds, so a time due exactly on a
+ * frame could otherwise read as a hair later than it and wait one frame more. It is far under one
+ * frame at any rate.
+ */
+export const DUE_SLACK_SECONDS = 1e-6;
+
 // ---- what the recording can see ---------------------------------------------------------------
 
 /**
@@ -286,7 +295,7 @@ export type Range = {
 };
 
 /** One row of the attribute table, which is everything published about one attribute. */
-export type AttrRow = {
+type AttrRow = {
   readonly name: string;
   readonly on: readonly Subject[];
   readonly kind: Kind;

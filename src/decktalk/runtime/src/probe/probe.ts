@@ -19,6 +19,8 @@
  *                                    refuse once s seconds pass without that
  *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
  *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
+ *   window.__decktalkProbe.within(p, s) what p settles with, or a refusal once s seconds pass on the
+ *                                    browser's own timer, which every other call is raced through
  *
  * What the runtime reads, and only when this file is there
  *   window.__decktalkProbe.recorder                          the telemetry sink, read once at startup
@@ -163,12 +165,12 @@ function mutated(): boolean {
 let answered = false;
 
 /**
- * The first element the page changed since the last step answered that nothing declared as moving, named, or null.
+ * What the page changed since the last step answered that nothing declared as moving, named and placed, or null.
  *
  * It is asked before the runtime moves, so nothing the step runs is counted. The runtime decides what
  * is declared, because it alone holds the motions, the loops and the regions.
  */
-function undeclared(): string | null {
+function undeclared(): Seam.Undeclared | null {
   keep(watcher.takeRecords());
   const changed = between;
   between = [];
@@ -265,24 +267,18 @@ export function step(seconds: number, waitSeconds: number): Promise<Stepped> {
   const outside = undeclared();
   const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
   const touchedBefore = mutated();
-  return new Promise((answer, refuse) => {
-    const late = nativeTimer(
-      () => refuse(new Error(`the page had not drawn second ${seconds} within ${waitSeconds} seconds`)),
-      waitSeconds * MILLISECONDS,
-    );
-    drawn().then((waited) => {
-      nativeCancel(late);
-      const touchedWhileDrawn = mutated();
-      const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
-      answered = true;
-      const heard = waited || touchedWhileDrawn || selfDrawn;
-      answer({
-        due: stepped.due,
-        changed: stepped.changed || touchedBefore || heard,
-        stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
-        undeclared: outside,
-      });
-    });
+  const late = `the page had not drawn second ${seconds} within ${waitSeconds} seconds`;
+  return within(drawn(), waitSeconds, late).then((waited) => {
+    const touchedWhileDrawn = mutated();
+    const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+    answered = true;
+    const heard = waited || touchedWhileDrawn || selfDrawn;
+    return {
+      due: stepped.due,
+      changed: stepped.changed || touchedBefore || heard,
+      stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+      undeclared: outside,
+    };
   });
 }
 
@@ -303,15 +299,41 @@ export function started(waitSeconds: number): Promise<boolean> {
       await Promise.all(waiting.map((animation) => animation.ready.catch(() => undefined)));
     }
   };
-  return new Promise((answer, refuse) => {
-    const late = nativeTimer(
-      () => refuse(new Error(`the page's animations had not started within ${waitSeconds} seconds`)),
-      waitSeconds * MILLISECONDS,
+  const late = `the page's animations had not started within ${waitSeconds} seconds`;
+  return within(
+    settle().then(() => true),
+    waitSeconds,
+    late,
+  );
+}
+
+// ---- the deadline on every call -----------------------------------------------------------------
+
+/**
+ * Answer what `answer` settles with, or refuse with `late` once `seconds` pass on the browser's own timer.
+ *
+ * Every call the recorder makes into a page is raced here, a step and the hold among them.
+ * Playwright's clock holds the page's timers still between steps and a deck may replace `setTimeout`,
+ * so a deadline on the page's timer would never fire on a held page, and the call it guards would
+ * hold the build for as long as it hung. This timer was taken before either could replace it.
+ */
+export function within<T>(
+  answer: Promise<T>,
+  seconds: number,
+  late = `the page did not answer within ${seconds} seconds`,
+): Promise<T> {
+  return new Promise((settle, refuse) => {
+    const timer = nativeTimer(() => refuse(new Error(late)), seconds * MILLISECONDS);
+    answer.then(
+      (value) => {
+        nativeCancel(timer);
+        settle(value);
+      },
+      (error: unknown) => {
+        nativeCancel(timer);
+        refuse(error);
+      },
     );
-    settle().then(() => {
-      nativeCancel(late);
-      answer(true);
-    });
   });
 }
 
@@ -473,5 +495,5 @@ export function measure(catalog: Seam.CatalogEntry[], canvas: Seam.CanvasLoan): 
   return catalog;
 }
 
-const probe: Seam.Probe = { step, started, ready, report, recorder, freezeCues, measure };
+const probe: Seam.Probe = { step, started, ready, report, within, recorder, freezeCues, measure };
 window.__decktalkProbe = probe;

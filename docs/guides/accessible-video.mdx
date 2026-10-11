@@ -104,7 +104,9 @@ nobody. The speech inside a clip carries the clip's own voice and turn the same 
 file names them. A line that says what is heard, such as `[ball bounces]`, carries `data-sound`. A caption
 shows on the frames from the one its start rounds to up to the one its end rounds to, which are the
 frames a player shows the same caption on from the `.vtt`. A caption over a clip section, or over a
-section a command renders, is drawn by the first page the film plays.
+section a command renders, is drawn by the first page the film plays. A film that plays no page has
+nothing to draw its captions with, so `assemble`, and a build that reaches it, refuses it before
+anything runs.
 
 Each caption is drawn once and kept in `build/stills/` under everything it was drawn from, so a
 rebuild that changed one line draws one caption again. The sound and the chapter markers are copied
@@ -113,9 +115,11 @@ from the film untouched, and only the picture is encoded again.
 ## The transcript, and the words a reveal is described in
 
 The transcript page carries, for every chapter in the order it plays: a heading, the span in the
-finished film, the spoken text of each section under it, the speech inside a clip that names a words
-file, and a list of that chapter's described reveals with the second each one fired. A section spoken in
-more than one voice is one paragraph per turn, each opening with the name of its voice.
+finished film, the spoken text of each section under it, the speech inside every clip the captions
+carry, a clip section's and a pane clip's alike, and a list of that chapter's described reveals with the
+second each one fired. The paragraphs of a section are in the order the film plays them. A section spoken
+in more than one voice is one paragraph per turn, each opening with the name of its voice, and a clip's
+speech is one paragraph that names nobody.
 
 What it cannot carry on its own is what a reveal meant. Three attributes are where you write that,
 and each one is read by the runtime and reported into the recording log, which is what the transcript

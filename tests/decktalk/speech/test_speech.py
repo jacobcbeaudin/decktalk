@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -31,12 +32,13 @@ from decktalk.speech import (
     AlignerContext,
     Output,
     Speech,
-    SpeechFactory,
     SpeechProviders,
     VoiceInForce,
     canonical_text,
+    registered,
 )
 from decktalk.speech.dtsp import DtspAligner
+from decktalk.speech.sound import SOUNDS
 from support.fakes import FakeVoice
 from support.paths import DATA, REPO, SRC, TESTS
 from support.voice_server import VoiceServer
@@ -311,21 +313,6 @@ def spellings(name: str) -> list[str]:
     return [name.upper(), name.title(), f" {name}", f"{name}\n", "".join(chr(ord(c) + 0xFEE0) for c in name)]
 
 
-@pytest.mark.parametrize("name", sorted(DECLARED))
-def test_a_host_factory_under_a_shipped_name_is_refused(name: str) -> None:
-    """The spend gate trusts the bill of the name, so only the shipped code may answer under a shipped name."""
-    with pytest.raises(ValueError, match=rf"{name!r} is the name of a voice DeckTalk ships.*Register it under another"):
-        SpeechProviders(factories={**PROVIDERS, name: house})
-
-
-@pytest.mark.parametrize(
-    ("name", "spelled"), [(name, spelled) for name in sorted(DECLARED) for spelled in spellings(name)]
-)
-def test_a_spelling_of_a_shipped_name_is_refused_too(name: str, spelled: str) -> None:
-    with pytest.raises(ValueError, match=re.escape(f"{spelled!r} is the name of a voice DeckTalk ships, {name!r}")):
-        SpeechProviders(factories={spelled: house})
-
-
 def test_a_spelling_of_a_shipped_name_in_a_project_is_billed_as_a_host_voice() -> None:
     """A project names a provider by its exact key, so no other spelling is read as a shipped voice's bill."""
     for name in DECLARED:
@@ -334,15 +321,35 @@ def test_a_spelling_of_a_shipped_name_in_a_project_is_billed_as_a_host_voice() -
             assert voice.billing is BillingBasis.UNDECLARED, spelled
 
 
-def test_the_shipped_voices_register_under_their_own_names_beside_a_hosts() -> None:
-    assert dict(SpeechProviders(factories=PROVIDERS).factories) == dict(PROVIDERS)
-    both = SpeechProviders(factories={**PROVIDERS, "house": house})
-    assert sorted(both.factories) == sorted([*PROVIDERS, "house"])
+SHIPPED: dict[str, Mapping[str, Callable[[Any], object]]] = {"a voice": PROVIDERS, "a sound provider": SOUNDS}
+"""Every closed set a host registers beside, by the words a refusal names its kind in."""
+
+REFUSED = [
+    (what, name, spelled) for what, table in SHIPPED.items() for name in table for spelled in (name, *spellings(name))
+]
 
 
-def test_a_hosts_table_changed_after_it_registered_changes_no_voice() -> None:
+@pytest.mark.parametrize(("what", "name", "spelled"), REFUSED)
+def test_a_host_factory_under_any_spelling_of_a_shipped_name_is_refused(what: str, name: str, spelled: str) -> None:
+    """The spend gate trusts the bill of the name, so only the shipped code may answer under a shipped name."""
+    another = "" if spelled == name else f", {name!r}, spelled another way"
+    said = f"{spelled!r} is the name of {what} DeckTalk ships{another}, and"
+    with pytest.raises(ValueError, match=re.escape(said)):
+        registered({spelled: house}, SHIPPED[what], what=what, key="k")
+
+
+@pytest.mark.parametrize("shipped", SHIPPED.values())
+def test_the_shipped_factories_register_beside_a_hosts_and_the_table_is_copied_as_it_passed(
+    shipped: Mapping[str, Callable[[Any], object]],
+) -> None:
     """The check is made once, so the table it passed is the one the machine answers with."""
-    table: dict[str, SpeechFactory] = {"house": house}
-    registered = SpeechProviders(factories=table)
-    table[next(iter(DECLARED))] = house
-    assert list(registered.factories) == ["house"]
+    table = {**shipped, "house": house}
+    held = registered(table, shipped, what="a voice", key="k")
+    table[next(iter(shipped))] = house
+    assert dict(held) == {**shipped, "house": house}
+
+
+@pytest.mark.parametrize("name", sorted(DECLARED))
+def test_a_host_factory_under_a_shipped_name_is_refused_by_the_voices_a_machine_answers_with(name: str) -> None:
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a voice DeckTalk ships.*Register it under another"):
+        SpeechProviders(factories={**PROVIDERS, name: house})

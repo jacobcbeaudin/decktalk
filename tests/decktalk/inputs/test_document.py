@@ -43,9 +43,7 @@ def test_a_project_that_writes_no_value_gets_the_default_its_field_declares() ->
     )
     clip, page = doc.sections
     assert isinstance(clip, ClipSection) and clip.slate_seconds == ClipSection(number=1, clip="a.mp4").slate_seconds
-    assert (
-        isinstance(page, PageSection) and page.record_margin_seconds == PageSection(1, "a", "1").record_margin_seconds
-    )
+    assert isinstance(page, PageSection) and page.hold_seconds == PageSection(1, "a", "1").hold_seconds
     assert doc.mix == Mix() and doc.transition == Transition()
 
 

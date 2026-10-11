@@ -120,10 +120,10 @@ export type CatalogEntry = {
 };
 
 /** A slide as the probe sees it while it measures, which is its id and nothing the probe could change. */
-export type LoanedSlide = { readonly id: string };
+type LoanedSlide = { readonly id: string };
 
 /** A scene as the probe sees it while it measures, which is its slides in order. */
-export type LoanedScene = { readonly slides: readonly LoanedSlide[] };
+type LoanedScene = { readonly slides: readonly LoanedSlide[] };
 
 /**
  * What the runtime lends the probe to measure in, which is the layer to build into and the frame to measure against.
@@ -161,13 +161,25 @@ export type Step = {
 };
 
 /**
+ * Some change the page made that nothing declared as moving: the first element it changed, named, and
+ * where every element it changed is laid out now.
+ *
+ * `box` is in viewport pixels, which are the pixels a captured frame holds, and is null when nothing
+ * changed is laid out, so the whole frame stands in for it.
+ */
+export type Undeclared = {
+  readonly what: string;
+  readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null;
+};
+
+/**
  * What the probe answers for one step, which is the runtime's step and what only the browser saw.
  *
- * `undeclared` names the first element the page changed between the step before and this one, outside
- * every cue, frame hook and animation the runtime ran and inside nothing the page declared as moving,
- * or is null when there is none.
+ * `undeclared` is what the page changed between the step before and this one, outside every cue,
+ * frame hook and animation the runtime ran and inside nothing the page declared as moving, or is
+ * null when there is none.
  */
-export type Stepped = Step & { readonly undeclared: string | null };
+export type Stepped = Step & { readonly undeclared: Undeclared | null };
 
 /** Everything the recorder injects as `window.__decktalkProbe`, which the recorder and the runtime both call. */
 export type Probe = {
@@ -175,6 +187,7 @@ export type Probe = {
   started(waitSeconds: number): Promise<boolean>;
   ready(): Promise<boolean>;
   report(): Record<ReportField, unknown>;
+  within<T>(answer: Promise<T>, seconds: number): Promise<T>;
   readonly recorder: Recorder;
   freezeCues(order: readonly string[], slide: string, warn: WarnAt): readonly string[];
   measure(catalog: CatalogEntry[], canvas: CanvasLoan): CatalogEntry[];
@@ -206,8 +219,8 @@ export type RuntimeView = {
   started(): boolean;
   /** Draw one caption in the band of a page opened with `?caption=1`, or none, and answer once it has painted. */
   caption(caption: Caption | null): Promise<boolean>;
-  /** The first of some nodes the page changed that nothing declared as moving, named, or null when there is none. */
-  undeclared(nodes: readonly Node[]): string | null;
+  /** Those of some nodes the page changed that nothing declared as moving, named and placed, or null when none. */
+  undeclared(nodes: readonly Node[]): Undeclared | null;
 };
 
 declare global {

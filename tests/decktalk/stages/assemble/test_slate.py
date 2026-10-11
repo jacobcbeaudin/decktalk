@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
 from playwright.sync_api import Error as PlaywrightError
@@ -13,12 +12,12 @@ from playwright.sync_api import Error as PlaywrightError
 from decktalk.errors import ToolError
 from decktalk.media.browser import Chromium
 from decktalk.stages.assemble import slate
-from support.recorder import FakeBrowser, FakeContext, FakePage
+from support.fakes import BareBrowser, FakePage
 
 
 def drawing(monkeypatch: pytest.MonkeyPatch, launched: list[tuple[str, bool]]) -> list[FakePage]:
     """A launched browser whose pages are kept, so a test can read what each one was given to draw."""
-    fake = FakeBrowser()
+    fake = BareBrowser()
     drawn: list[FakePage] = []
 
     @contextmanager
@@ -27,7 +26,7 @@ def drawing(monkeypatch: pytest.MonkeyPatch, launched: list[tuple[str, bool]]) -
         yield fake.opened()
 
     def new_page(**_kwargs: object) -> FakePage:
-        drawn.append(FakePage(FakeContext(Path("."))))
+        drawn.append(FakePage())
         return drawn[-1]
 
     monkeypatch.setattr(fake, "new_page", new_page)

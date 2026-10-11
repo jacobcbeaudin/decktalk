@@ -11,6 +11,7 @@ import pytest
 from decktalk.artifacts import (
     AlignedWords,
     AlignmentInputs,
+    AudioPrint,
     ProviderWords,
     Take,
     TimedBy,
@@ -25,6 +26,7 @@ from decktalk.inputs.script import spoken_words
 from decktalk.page import Q
 from decktalk.pipeline import Stage
 from decktalk.results import BillingBasis, SectionKind, StatusResult, TakeState, Word
+from decktalk.speech import ALIGNER, ALIGNERS
 from decktalk.speech import http as speech_http
 from decktalk.stages import kept
 from decktalk.stages import status as stage
@@ -674,24 +676,60 @@ def test_aligned_words_of_audio_no_section_plays_are_listed(tmp_path: Path) -> N
     assert unplayed.files == (inputs.relative(gone),)
 
 
+def estimated(tmp_path: Path, *, printed: bool) -> Inputs:
+    """A project whose one voiced take plays estimated words, with or without the audio print aligned words key by."""
+    inputs = a_project(tmp_path)
+    built_up_to(inputs, 1)
+    index = inputs.takes()
+    assert index is not None
+    rows = tuple(row.model_copy(update={"timed_by": TimedBy.ESTIMATED}) for row in index.sections)
+    write_takes(inputs, *rows)
+    printed_words = ProviderWords(timed=False, audio=AudioPrint.of(b"audio", suffix=TAKE_SUFFIX) if printed else None)
+    printed_words.write(inputs.workspace.takes / words_file(rows[0].digest))
+    return inputs
+
+
 def test_a_take_playing_estimated_words_warns_and_leaves_the_next_step_to_the_pipeline(tmp_path: Path) -> None:
     """Where no aligner ever runs that state is for good, so it is a warning and never a step that loops."""
     timed = a_project(tmp_path / "timed")
     built_up_to(timed, 1)
     pipeline = status(timed, a_run(tmp_path / "timed")).next
-    inputs = a_project(tmp_path / "untimed")
-    built_up_to(inputs, 1)
-    index = inputs.takes()
-    assert index is not None
-    estimated = tuple(row.model_copy(update={"timed_by": TimedBy.ESTIMATED}) for row in index.sections)
-    write_takes(inputs, *estimated)
-    run = a_run(tmp_path / "untimed")
+    inputs = estimated(tmp_path / "untimed", printed=True)
+    # The aligner DeckTalk ships, which status never builds, so no socket is opened.
+    run = a_run(tmp_path / "untimed", aligners=dict(ALIGNERS))
     said = notes(run)
     assert status(inputs, run).next == pipeline
     assert (
-        "Section(s) [1] play estimated words over a take no aligner timed. Start decktalk-voice at the address "
-        "[dtsp] base_url names, then run decktalk narrate." in said
+        "Section(s) [1] play estimated words over a take that came with no word times, and no aligner has timed it. "
+        "Start decktalk-voice at the address [dtsp] base_url names, then run decktalk narrate --section 1." in said
     )
+
+
+def test_a_take_whose_words_carry_no_print_is_told_to_be_made_again_and_not_to_start_an_aligner(tmp_path: Path) -> None:
+    """A take whose words file cannot key aligned words is never aligned, which narrate said and status did not."""
+    inputs = estimated(tmp_path, printed=False)
+    run = a_run(tmp_path)
+    said = notes(run)
+    status(inputs, run)
+    assert (
+        "Section(s) [1] play estimated words over a take that came with no word times, and its words file carries "
+        "no fingerprint to key aligned words by. Run decktalk narrate --section 1 --replace-voiced to make the take "
+        "again." in said
+    )
+    assert not any("decktalk-voice" in line for line in said)
+
+
+@pytest.mark.parametrize("host", ["its own aligner", "no aligner"])
+def test_a_host_is_never_told_to_start_the_aligner_decktalk_ships(tmp_path: Path, host: str) -> None:
+    """A host's machine answers with its own aligner or with none, and decktalk-voice is neither."""
+    inputs = estimated(tmp_path, printed=True)
+    aligners = {ALIGNER: lambda _context: pytest.fail("status opens no socket")} if host == "its own aligner" else {}
+    run = a_run(tmp_path, aligners=aligners)
+    said = notes(run)
+    status(inputs, run)
+    (line,) = [line for line in said if "estimated words" in line]
+    assert line.startswith("Section(s) [1] play estimated words over a take")
+    assert "decktalk-voice" not in line
 
 
 def test_status_opens_no_socket_on_an_aligned_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -77,6 +77,7 @@ def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: o
     row["timed_by"] = TimedBy.ESTIMATED if fields.get("voiced") is False else TimedBy.PROVIDER
     row["alignment"] = None
     row["model_digest"] = None
+    row["audio_blake3"] = None
     return Take.model_validate({**row, **fields})
 
 
@@ -92,13 +93,14 @@ def hold_take(inputs: Inputs, digest: str, *, audio: bytes = b"take", words: tup
 
     A voiced take goes to the takes directory with the words a provider would send back, and a
     placeholder goes under the build with estimated words, which is where each kind is looked for.
+    A voiced take held with no words is one whose voice sent no word times.
     """
     if is_placeholder(digest):
         place = inputs.workspace.narrate_dir
         said: Words = EstimatedWords(words=words)
     else:
         place = inputs.workspace.takes
-        said = ProviderWords(words=words, audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX))
+        said = ProviderWords(words=words, timed=bool(words), audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX))
     place.mkdir(parents=True, exist_ok=True)
     (place / take_file(digest, TAKE_SUFFIX)).write_bytes(audio)
     said.write(place / words_file(digest))

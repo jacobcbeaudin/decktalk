@@ -16,13 +16,11 @@ import pytest
 
 from decktalk.artifacts import (
     AlignedWords,
-    AudioPrint,
     ProviderWords,
     Take,
     Takes,
     TimedBy,
     TurnKey,
-    take_file,
     words_file,
 )
 from decktalk.errors import Cancelled, ProviderError
@@ -48,7 +46,7 @@ from decktalk.speech import http as speech_http
 from decktalk.stages.build import build
 from decktalk.stages.cue import cue
 from decktalk.stages.narrate import narrate
-from decktalk.stages.narrate.align import first_words
+from decktalk.stages.narrate.align import START
 from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, FakeAligner, FakeFfmpeg, FakeVoice, refusing_aligners
 from support.projects import load_project
 from support.runs import Watched
@@ -125,12 +123,8 @@ def down(message: str = "could not reach http://127.0.0.1:9361/v1/models: Connec
 # ---- the words a take plays first ----------------------------------------------------------------
 
 
-def test_a_take_with_its_own_words_plays_them_first(inputs: Inputs) -> None:
-    own = ProviderWords(words=(Word(word="A", start=0.0, end=0.4),), audio=AudioPrint.of(b"take", suffix=TAKE_SUFFIX))
-    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    (inputs.workspace.takes / take_file(VOICED, TAKE_SUFFIX)).write_bytes(b"take")
-    own.write(inputs.workspace.takes / words_file(VOICED))
-    assert first_words(inputs, "A.", VOICED) == (own, own)
+def test_the_advice_beside_a_down_aligner_names_its_server_and_the_setting_that_says_where() -> None:
+    assert START == "Start decktalk-voice at the address [dtsp] base_url names"
 
 
 def test_a_take_with_its_own_words_never_builds_an_aligner(
@@ -159,7 +153,7 @@ def test_a_miss_aligns_once_and_keeps_the_words_in_the_takes_directory(
     assert {path.name.removesuffix(".words.json") for path in kept(inputs)} == {row.alignment for row in index.values()}
     for row in index.values():
         assert (row.timed_by, row.model_digest) == (TimedBy.ALIGNED, SERVED)
-    assert type(inputs.words(1)) is AlignedWords
+    assert type(inputs.take_words_of(index[1])) is AlignedWords
     assert kept(inputs)[0].is_relative_to(inputs.workspace.takes / "aligned")
 
 

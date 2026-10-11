@@ -46,6 +46,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from decktalk.artifacts import words_beside
 from decktalk.errors import InputError, ToolError
+from decktalk.files import drafted
 from decktalk.inputs.document import MadeClip
 from decktalk.media import ffmpeg
 from decktalk.media.browser import UNTRUSTED
@@ -122,10 +123,9 @@ def run_program(
 
     The command runs with the scrubbed environment every tool gets, never the process's own, so a
     credential a host left in its environment does not reach it. A command that fails, outlives the
-    machine's tool limit or writes no video is a `ToolError` naming `what`.
+    machine's tool limit or writes no video is a `ToolError` naming `what`. `out` is the draft a
+    caller moves onto the file once this has answered, so no file is there before the command runs.
     """
-    out.unlink(missing_ok=True)
-    out.parent.mkdir(parents=True, exist_ok=True)
     argv = filled(command, words)
     began = time.monotonic()
     try:
@@ -175,32 +175,27 @@ def run_command(
 def make_clip(clip: MadeClip, *, root: Path, fps: int, width: int, height: int, timeout: float) -> Path:
     """Run the command of one clip the project makes, and move what it wrote onto the clip's own file.
 
-    The video is written beside the clip under a name that opens with a dot, which the origin never
-    serves, and moved onto the clip only once the command has finished, so the clip is whole or absent.
+    The video is drafted beside the clip, as `files.drafted` names it, and moved onto the clip only
+    once the command has finished, so the clip is whole or absent.
     """
     final = root / clip.file
-    partial = final.with_name(f".{final.stem}.part{final.suffix}")
     landings, said = landings_of(final), words_beside(final)
     landings.unlink(missing_ok=True)
     said.unlink(missing_ok=True)
-    words: dict[str, Callable[[], str]] = {
-        "out": lambda: str(partial),
-        "landings": lambda: str(landings),
-        "words": lambda: str(said),
-        "python": lambda: sys.executable,
-        "ffmpeg": ffmpeg.ffmpeg,
-        "fps": lambda: str(fps),
-        "width": lambda: str(width),
-        "height": lambda: str(height),
-    }
-    try:
+    with drafted(final) as draft:
+        words: dict[str, Callable[[], str]] = {
+            "out": lambda: str(draft),
+            "landings": lambda: str(landings),
+            "words": lambda: str(said),
+            "python": lambda: sys.executable,
+            "ffmpeg": ffmpeg.ffmpeg,
+            "fps": lambda: str(fps),
+            "width": lambda: str(width),
+            "height": lambda: str(height),
+        }
         run_program(
-            clip.command, root=root, out=partial, words=words, timeout=timeout, what=f"the command of {clip.file}"
+            clip.command, root=root, out=draft, words=words, timeout=timeout, what=f"the command of {clip.file}"
         )
-    except BaseException:
-        partial.unlink(missing_ok=True)
-        raise
-    partial.replace(final)
     return final
 
 

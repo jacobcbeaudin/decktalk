@@ -470,6 +470,8 @@
    *                                    refuse once s seconds pass without that
    *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
    *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
+   *   window.__decktalkProbe.within(p, s) what p settles with, or a refusal once s seconds pass on the
+   *                                    browser's own timer, which every other call is raced through
    *
    * What the runtime reads, and only when this file is there
    *   window.__decktalkProbe.recorder                          the telemetry sink, read once at startup
@@ -570,24 +572,18 @@
     const outside = undeclared();
     const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
     const touchedBefore = mutated();
-    return new Promise((answer, refuse) => {
-      const late = nativeTimer(
-        () => refuse(new Error(`the page had not drawn second ${seconds} within ${waitSeconds} seconds`)),
-        waitSeconds * MILLISECONDS,
-      );
-      drawn().then((waited) => {
-        nativeCancel(late);
-        const touchedWhileDrawn = mutated();
-        const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
-        answered = true;
-        const heard = waited || touchedWhileDrawn || selfDrawn;
-        answer({
-          due: stepped.due,
-          changed: stepped.changed || touchedBefore || heard,
-          stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
-          undeclared: outside,
-        });
-      });
+    const late = `the page had not drawn second ${seconds} within ${waitSeconds} seconds`;
+    return within(drawn(), waitSeconds, late).then((waited) => {
+      const touchedWhileDrawn = mutated();
+      const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+      answered = true;
+      const heard = waited || touchedWhileDrawn || selfDrawn;
+      return {
+        due: stepped.due,
+        changed: stepped.changed || touchedBefore || heard,
+        stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+        undeclared: outside,
+      };
     });
   }
   function started(waitSeconds) {
@@ -597,15 +593,26 @@
         await Promise.all(waiting.map((animation) => animation.ready.catch(() => void 0)));
       }
     };
-    return new Promise((answer, refuse) => {
-      const late = nativeTimer(
-        () => refuse(new Error(`the page's animations had not started within ${waitSeconds} seconds`)),
-        waitSeconds * MILLISECONDS,
+    const late = `the page's animations had not started within ${waitSeconds} seconds`;
+    return within(
+      settle().then(() => true),
+      waitSeconds,
+      late,
+    );
+  }
+  function within(answer, seconds, late = `the page did not answer within ${seconds} seconds`) {
+    return new Promise((settle, refuse) => {
+      const timer = nativeTimer(() => refuse(new Error(late)), seconds * MILLISECONDS);
+      answer.then(
+        (value) => {
+          nativeCancel(timer);
+          settle(value);
+        },
+        (error) => {
+          nativeCancel(timer);
+          refuse(error);
+        },
       );
-      settle().then(() => {
-        nativeCancel(late);
-        answer(true);
-      });
     });
   }
   function ready() {
@@ -715,6 +722,6 @@
     layer.remove();
     return catalog;
   }
-  var probe = { step, started, ready, report, recorder, freezeCues, measure };
+  var probe = { step, started, ready, report, within, recorder, freezeCues, measure };
   window.__decktalkProbe = probe;
 })();

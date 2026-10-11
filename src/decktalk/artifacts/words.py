@@ -104,9 +104,7 @@ class AudioPrint(Model):
 
     bytes: int = Field(ge=0, description="How many bytes the take's audio file holds.")
     blake3: str = Field(description="The BLAKE3 of the take's audio, as `file_digest` spells it.")
-    suffix: str | None = Field(
-        None, description="The suffix the take's audio file is named with, or null when the file records none."
-    )
+    suffix: str = Field(description="The suffix the take's audio file is named with, such as .mp3.")
 
     @classmethod
     def of(cls, audio: builtins.bytes, *, suffix: str) -> AudioPrint:
@@ -133,18 +131,6 @@ class ProviderWords(Words):
     model_digest: str | None = Field(
         None, description="The digest of the model the provider served this take with, or null when it named none."
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _untimed_when_empty(cls, data: object) -> object:
-        """Read a file written before `timed` was recorded as untimed when it holds no words.
-
-        An empty word list then meant a voice that sent no times. Read as a take that says nothing, it
-        would leave every cue unresolved, so it goes to the aligner instead.
-        """
-        if isinstance(data, dict) and "timed" not in data:
-            return {**data, "timed": bool(data.get("words"))}
-        return data
 
     @model_validator(mode="after")
     def _no_words_when_untimed(self) -> ProviderWords:

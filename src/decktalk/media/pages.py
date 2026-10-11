@@ -6,8 +6,10 @@ module, and the recorder learns which files the page actually loaded.
 
 Two rules hold this module to a page it does not trust. Every call into the page carries a deadline,
 because a deck's own script runs in the same thread and a page that never answers would otherwise
-hold a build for as long as it cared to. And the probe is sealed onto the window before any script
-of the page runs, so the measurements come from the instrumentation the recorder injected.
+hold a build for as long as it cared to. The deadline is kept on the browser's own timer, which the
+probe took before Playwright's clock or the page could replace it, so it fires on a page whose clock
+the recorder holds as on any other. And the probe is sealed onto the window before any script of the
+page runs, so the measurements and the deadline come from the instrumentation the recorder injected.
 """
 
 from __future__ import annotations
@@ -75,7 +77,11 @@ NO_CATALOG = (
 )
 
 DEADLINE_SECONDS = 15.0
-"""Calibration: many times the longest a probe call measures, so only a page that stopped answering hits it."""
+"""Calibration: many times the longest a probe call or a recorded frame's draw measures.
+
+Only a page that stopped answering, or a font or an image that never arrives, reaches it, and every
+call into a page, a recorded step included, is held to it.
+"""
 
 ColorScheme = Literal["light", "dark", "no-preference"]
 """What a page may be told the viewer prefers, which is the closed set `[record] color_scheme` publishes."""
@@ -118,22 +124,14 @@ def driving(what: str) -> Iterator[None]:
 def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> object:
     """Run one expression in the page and refuse to wait for it past the deadline.
 
-    The expression is raced against a timer inside the page, because the page is where a deck's own
-    promises are kept and a call that hangs there hangs this build. A page whose script never yields
-    the thread at all cannot be raced from inside itself, and that is what `page.close()` on the way
-    out of the recording context is for. The timer is cleared once the race is decided, so a page on
-    the recorder's clock is left holding no timer of the recorder's own to end a still stretch.
+    The expression is raced by the probe's `within`, on the browser's own timer, because the page is
+    where a deck's own promises are kept and a call that hangs there hangs this build. That timer is
+    neither the page's nor Playwright's clock, so it fires on a held page and leaves the clock no
+    timer of the recorder's own to end a still stretch. A page whose script never yields the thread
+    at all cannot be raced from inside itself, and that is what `page.close()` on the way out of the
+    recording context is for.
     """
-    raced = (
-        "async () => {"
-        "  let timer;"
-        f"  const answer = Promise.resolve().then({script});"
-        "  const late = new Promise((_ok, no) => { timer = setTimeout("
-        f"    () => no(new Error('the page did not answer within {deadline_seconds:g} seconds')),"
-        f"    {deadline_seconds * 1000:.0f}); }});"
-        "  try { return await Promise.race([answer, late]); } finally { clearTimeout(timer); }"
-        "}"
-    )
+    raced = f"() => window.__decktalkProbe.within(Promise.resolve().then({script}), {deadline_seconds:g})"
     with driving("the page could not answer"):
         return page.evaluate(raced)
 

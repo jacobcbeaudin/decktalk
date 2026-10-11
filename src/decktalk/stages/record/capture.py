@@ -42,9 +42,6 @@ from decktalk.stages.record import render
 
 log = logging.getLogger(__name__)
 
-WORD_DIGITS = 2
-"""How precisely a word's start is written into the page URL, which is a hundredth of a second."""
-
 
 def as_query(params: dict[str, str]) -> dict[Q, str]:
     """A section's own params as contract keys, refusing a key no page reads.
@@ -77,12 +74,14 @@ def words_param(words: tuple[Word, ...]) -> str | None:
     """A section's words as word@seconds pairs, in seconds after that section starts.
 
     The contract's list separator divides two pairs and its time mark divides a word from its
-    second, so neither may appear inside a word that is written into the value.
+    second, so neither may appear inside a word that is written into the value. Each second is
+    written to `SECOND_DIGITS`, as every word time is kept, so rounding never moves a word onto the
+    second the next turn begins.
     """
     if not words:
         return None
     pairs = ((word.word.replace(LIST_SEPARATOR, "").replace(TIME_MARK, ""), max(0.0, word.start)) for word in words)
-    return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{WORD_DIGITS}f}" for said, start in pairs)
+    return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{SECOND_DIGITS}f}" for said, start in pairs)
 
 
 def turns_param(turns: Sequence[TurnWords]) -> str | None:
@@ -90,11 +89,12 @@ def turns_param(turns: Sequence[TurnWords]) -> str | None:
 
     The page numbers the turns by their place in the list, so a turn that says no word is still
     written, and a word belongs to the last turn that began at or before its own second. The second
-    is written as a word's is, so the first word of a turn is never written before its turn begins.
+    is written as a word's is, so the first word of a turn is never written before its turn begins, and
+    a last word that starts before the next turn begins is never written at or after it.
     """
     if not turns:
         return None
-    return LIST_SEPARATOR.join(f"{turn.voice}{TIME_MARK}{max(0.0, turn.start):.{WORD_DIGITS}f}" for turn in turns)
+    return LIST_SEPARATOR.join(f"{turn.voice}{TIME_MARK}{max(0.0, turn.start):.{SECOND_DIGITS}f}" for turn in turns)
 
 
 def spoken_query(inputs: Inputs, section: PageSection) -> dict[Q, str]:

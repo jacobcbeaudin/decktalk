@@ -6,7 +6,11 @@ A place that cannot load a caption file still needs the captions, so `[output] c
 second film beside the clean one. Each caption is drawn by the page that plays where it shows, in a
 band the runtime lays out over a clear frame, so the deck's own fonts and styles set it, and the page
 places it by the voice and the turn that say it without the caption naming anyone. A caption over a
-clip section, or over a section a command renders, is drawn by the film's first drawn page.
+clip section, or over a section a command renders, is drawn by the film's first drawn page, and a film
+with no drawn page is refused before any work starts, because the copy could show none of its captions.
+
+The copy belongs to the film it was drawn over, so it is removed before a new film is published and
+drawn again after it, and a run that fails in between leaves no copy of the last film beside the new one.
 
 Each caption is drawn once as a PNG with an alpha channel and kept among the stills under everything
 it is drawn from, so an unchanged caption opens no browser. The stills are laid over the clean film's
@@ -55,14 +59,29 @@ class Shown:
     after: int
 
 
-def drawing_page(inputs: Inputs, placements: Placements, at: float) -> str | None:
-    """The page that draws a caption shown at second `at`: the page of the section playing then, else the first."""
-    drawn = inputs.document.drawn_sections
+def require_a_drawing_page(inputs: Inputs) -> None:
+    """Refuse a project that asks for the captioned copy and plays no page to draw its captions.
+
+    It is asked before any work starts, by `assemble` and by a build whose plan reaches it, because
+    the copy could show none of the film's captions.
+    """
+    if inputs.settings.output.captioned and not inputs.document.drawn_sections:
+        raise InputError(
+            "[output] captioned asks for a captioned copy, and no section plays a page to draw its captions.",
+            hint="Add a section that plays a page, or turn [output] captioned off.",
+        )
+
+
+def drawing_page(inputs: Inputs, placements: Placements, at: float) -> str:
+    """The page that draws a caption shown at second `at`: the page of the section playing then, else the first.
+
+    A film with no drawn page never gets here, because `require_a_drawing_page` refused it first.
+    """
     playing = next((p for p in placements.sections if p.start <= at < p.end), None)
     section = inputs.document.section(playing.section) if playing is not None else None
     if isinstance(section, PageSection) and not section.rendered:
         return section.page
-    return drawn[0].page if drawn else None
+    return inputs.document.drawn_sections[0].page
 
 
 def page_caption(cue: CaptionCue) -> dict[str, object]:
@@ -72,24 +91,14 @@ def page_caption(cue: CaptionCue) -> dict[str, object]:
 
 
 def shown(inputs: Inputs, placements: Placements, cues: Sequence[CaptionCue], fps: int, frames: int) -> list[Shown]:
-    """Every caption that covers at least one of the film's `frames`, with the page that draws it, in order.
-
-    A film with captions and no page to draw them is refused, because the copy the project asked for
-    could not show any of them.
-    """
+    """Every caption that covers at least one of the film's `frames`, with the page that draws it, in order."""
     out: list[Shown] = []
     for cue in cues:
         covered = span_indices(cue.start, cue.end, Fraction(fps), frames)
         if not covered:
             continue
-        first, after = covered.start, covered.stop
         page = drawing_page(inputs, placements, cue.start)
-        if page is None:
-            raise InputError(
-                "[output] captioned asks for a captioned copy, and no section plays a page to draw its captions.",
-                hint="Add a section that plays a page, or turn [output] captioned off.",
-            )
-        out.append(Shown(page=page, caption=page_caption(cue), first=first, after=after))
+        out.append(Shown(page=page, caption=page_caption(cue), first=covered.start, after=covered.stop))
     return out
 
 
@@ -188,7 +197,10 @@ def write_captioned(inputs: Inputs, run: Run, cues: Sequence[CaptionCue], placem
 
 
 def remove_captioned(inputs: Inputs) -> None:
-    """Remove a captioned copy an earlier build left, so a project that turned the copy off never ships a stale one."""
+    """Remove the captioned copy of the film about to be replaced, so no copy sits beside a film it was not drawn over.
+
+    A project that turned the copy off never ships a stale one either.
+    """
     inputs.workspace.captioned_film.unlink(missing_ok=True)
 
 
@@ -200,6 +212,7 @@ __all__ = [
     "layer_listing",
     "page_caption",
     "remove_captioned",
+    "require_a_drawing_page",
     "shown",
     "write_captioned",
 ]

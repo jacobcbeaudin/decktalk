@@ -68,7 +68,7 @@ from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Stage
 from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, TurnStatus, UnplayedTakes, VoiceStatus
 from decktalk.stages.kept import BUILT, assembled, read_kept, verify_digest
-from decktalk.stages.narrate import SectionTakeState, TakeStates, take_states
+from decktalk.stages.narrate import SectionTakeState, TakeStates, Unaligned, before_narrate, take_states
 from decktalk.stages.record import TurnText, stale_recording
 
 log = logging.getLogger(__name__)
@@ -226,7 +226,7 @@ def _stale(
         return False
     if why is None:
         return False
-    run.note(f"{why[0].upper()}{why[1:]}, so it would be recorded again.", level=Level.WARNING)
+    run.note(f"{why}, so it would be recorded again.", level=Level.WARNING)
     return True
 
 
@@ -408,16 +408,24 @@ def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes |
 
 
 def _note_estimated(inputs: Inputs, run: Run) -> None:
-    """Warn when a voiced take plays estimated words because no aligner timed it, which narrate alone can mend."""
+    """Warn when a voiced take plays estimated words because no aligner timed it, once for each reason why.
+
+    The reason and what mends it are narrate's own, told without asking any aligner: a take whose
+    words file records no audio print is made again, and any other waits on the aligner this machine
+    answers for.
+    """
     index = inputs.takes()
-    numbers = [
-        row.section for row in (index.sections if index is not None else ()) if row.voiced
-        and row.timed_by is TimedBy.ESTIMATED
-    ]  # fmt: skip
-    if numbers:
+    why: dict[Unaligned, list[int]] = {}
+    for row in index.sections if index is not None else ():
+        if row.voiced and row.timed_by is TimedBy.ESTIMATED:
+            reason = before_narrate(run.machine.aligners, inputs.take_words(row.digest))
+            numbers = why.setdefault(reason, [])
+            if row.section not in numbers:
+                numbers.append(row.section)
+    for reason, numbers in why.items():
         run.note(
-            f"Section(s) {numbers} play estimated words over a take no aligner timed. Start decktalk-voice at the "
-            "address [dtsp] base_url names, then run decktalk narrate.",
+            f"Section(s) {numbers} play estimated words over a take that came with no word times, and {reason.why}. "
+            f"{reason.action(','.join(map(str, numbers)))}",
             level=Level.WARNING,
         )
 

@@ -26,8 +26,8 @@ from decktalk.stages.storyboard import (
     storyboard,
     write_page,
 )
+from support.fakes import FakePage
 from support.pages import a_project, catalog
-from support.recorder import FakeContext, FakePage
 from support.runs import a_run
 
 CUES = {"1": {"cues": [{"id": "1.1:a", "phrase": "there"}]}}
@@ -162,7 +162,7 @@ def test_a_sheet_reads_each_sections_words_and_the_documents_once_however_many_s
     monkeypatch.setattr(stage, "spoken_query", lambda _inputs, section: reads.append(f"words {section.number}") or {})
     documents = published.documents
     monkeypatch.setattr(type(published), "documents", lambda self: reads.append("documents") or documents())
-    pages = {"deck/index.html": (FakePage(FakeContext(tmp_path)).page(), Assets(published.root))}
+    pages = {"deck/index.html": (FakePage().page(), Assets(published.root))}
     sheet = stage.Sheet(published, a_run(tmp_path), pages, tmp_path / "out")
     section = published.document.page_sections[0]
     for freeze in (Freeze("1.1"), Freeze("1.1", cue="1.1:a"), Freeze("1.1")):
@@ -328,7 +328,7 @@ def test_a_page_the_browser_will_not_load_is_a_tool_failure_and_not_a_bug(tmp_pa
 
     inputs = a_project(tmp_path, cues=CUES)
     with pytest.raises(ToolError, match=r"^could not load http"):
-        stage.reports_of(Unreachable(FakeContext(tmp_path)).page(), inputs, ["deck/index.html"])
+        stage.reports_of(Unreachable().page(), inputs, ["deck/index.html"])
 
 
 def test_the_storyboard_names_the_voices_of_each_section(tmp_path: Path) -> None:

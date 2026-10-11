@@ -21,14 +21,14 @@
  * this module never touches an animation itself.
  */
 
-import { MILLISECONDS, SECOND_DIGITS } from "./contract.ts";
+import { DUE_SLACK_SECONDS, MILLISECONDS, SECOND_DIGITS } from "./contract.ts";
 import type { Step } from "./telemetry.ts";
 
 /** What a queued task is, which decides the order two tasks due at the same second run in. */
 export type Kind = "mount" | "cue" | "reveal" | "retire";
 
 /** One piece of work the page owes the clock, with the second on the section clock it is due at. */
-export type Task = {
+type Task = {
   readonly at: number;
   readonly kind: Kind;
   readonly id: string;
@@ -36,7 +36,7 @@ export type Task = {
 };
 
 /** Who moves the clock: a person's browser in real time, or the recorder one frame at a time. */
-export type Driver = "realtime" | "stepped";
+type Driver = "realtime" | "stepped";
 
 /**
  * Something redrawn every frame from the section second, which returns false once it has finished.
@@ -44,7 +44,7 @@ export type Driver = "realtime" | "stepped";
  * A hook is how a count, a word-by-word line and an author's own `DeckTalk.frame` are drawn, so the
  * stepped driver draws them at exactly the second a frame shows and never at the wall clock's.
  */
-export type Hook = (seconds: number) => boolean | undefined;
+type Hook = (seconds: number) => boolean | undefined;
 
 /**
  * What hears the clock move, which is the timeline that seeks every animation on the page.
@@ -75,14 +75,6 @@ export type Observer = {
  */
 const MOUNT_FIRST = 0;
 const AFTER_THE_MOUNT = 1;
-
-/**
- * How far past a due second a step still counts the task as due.
- *
- * Truth: a frame's second is `k / fps`, which a float division rounds, so a cue due exactly on a
- * frame could otherwise read as a hair later than it and wait one frame more.
- */
-const DUE_SLACK = 1e-9;
 
 /** The driver in force, which the first `start` or the first `stepTo` decides for the life of the page. */
 let driver: Driver = "realtime";
@@ -186,7 +178,7 @@ export function observe(next: Observer | null): void {
  */
 function drain(seconds: number): boolean {
   let ran = false;
-  while (queue.length && (queue[0] as Task).at <= seconds + DUE_SLACK) {
+  while (queue.length && (queue[0] as Task).at <= seconds + DUE_SLACK_SECONDS) {
     const task = queue.shift() as Task;
     observer?.running(task.at);
     task.run();

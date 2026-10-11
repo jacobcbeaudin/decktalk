@@ -79,7 +79,7 @@ refusal names what it read and would not accept.
 - A section names more than one of `page`, `clip` and `render_command`, or none of them.
 - A `render_command`, or a `[[clip]]` `command`, is not a list of words, or holds an empty word.
 - Two `[[clip]]` tables write one `file`.
-- `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
+- `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effect]]` row names a section that does not exist.
 - A settings value is outside its safe range.
@@ -160,7 +160,6 @@ them or none fails the load.
 |---|---|---|---|
 | `page` | path | required | The HTML file to record, such as `deck/index.html`. It sits in a directory of its own, never at the project root. |
 | `scene` | integer or string | the section's `number` | Which `data-scene` of that page to play. It reaches the page as a string. |
-| `record_margin_seconds` | number | `0.3` | How long the recording runs past the section's span and its hold. |
 | `hold_seconds` | number | `0` | How long the page plays on after the section's narration. The hold is recorded like the rest of the section, so a motion that arrives after the last word lands in it. The narration waits for the hold, and the next section starts after it. |
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
 | `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. |
@@ -170,7 +169,9 @@ them or none fails the load.
 `lead_seconds` and `tail_seconds` are placed when the takes are joined and are never sent to the
 voice, so changing either voices nothing. The section starts where its silence starts, so
 `lead_seconds` moves every word and every phrase cue of the section later while a `$start` cue stays
-at zero. [script.md](/reference/script-md) has the whole rule.
+at zero. A change reaches the clock when `narrate` joins the takes again: until then `words`, `cue` and
+`record` read the lead the take index holds, which is the lead the narration plays.
+[script.md](/reference/script-md) has the whole rule.
 
 `record` sets `t0` itself so that the page starts its clock on the recorder's signal, and it fills
 `cues` and `words` from what `cue` and `narrate` resolved unless the section names them. A frozen
@@ -199,8 +200,8 @@ directory is a place, so every name under it is served however the page spells i
 A render section names the program that draws its picture in place of a page. It is narrated
 exactly as a page section is: its take sets its length, `cue` resolves its cues from its words, and
 the narration runs through it without a pause. It names no `page` and no `scene`, and it takes the
-page section keys `record_margin_seconds`, `hold_seconds`, `lead_seconds`, `tail_seconds` and
-`with_ambience` with the same meaning. A `scene` or a `params` table written on it is ignored.
+page section keys `hold_seconds`, `lead_seconds`, `tail_seconds` and `with_ambience` with the same
+meaning. A `scene` or a `params` table written on it is ignored.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|

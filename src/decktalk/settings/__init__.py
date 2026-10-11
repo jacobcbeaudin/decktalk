@@ -77,13 +77,6 @@ HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 PAGE_POLICIES = ("trusted", "untrusted")
 """The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
-CAPTURE_SWITCHES = ("disable-frame-rate-limit", "disable-gpu-vsync")
-"""Truth: the Chromium switches `record` may launch with, each named as Chromium spells it without its dashes.
-
-They are a closed set because each one is held to recording the same frames as a launch without it,
-and a free switch would be a launch nobody held to that.
-"""
-
 # The three constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
 # one with its unit and its reason, so the reason is written there alone.
 BLOCK_PX = 8
@@ -263,26 +256,12 @@ class NarrationConfig:
     )
     timeout_seconds: int = tune(
         180,
-        "Seconds before a speech or alignment request times out.",
+        "Seconds before a speech or alignment request times out. With `retries` it also sets how long a run "
+        "waits while another run on this machine voices the same take into the take store: one whole take "
+        "request, every attempt this long with the waits between them, before it is refused as locked.",
         unit="seconds",
         bounds=Bounds(ge=10, le=1800),
         nature=Nature.APPARATUS,
-    )
-    store_wait_seconds: int = tune(
-        900,
-        "Seconds a run waits while another run on this machine voices the same take into the take store, before "
-        "it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus "
-        "one, with the waits between them. The default covers that at the default `timeout_seconds` and "
-        "`retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
-        unit="seconds",
-        bounds=Bounds(ge=1, le=36000),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        hazard=(
-            "Below the length of one take request, a run is refused while another run's healthy request is still "
-            "being answered."
-        ),
-        see_also=("narration.store_dir", "narration.timeout_seconds", "narration.retries"),
     )
     sound_end_noise_dbfs: float = tune(
         -35.0,
@@ -381,36 +360,6 @@ class RecordConfig:
         nature=Nature.APPARATUS,
         see_also=("record.chunk_startup_seconds", "record.chunk_frames_min"),
     )
-    capture_switches: tuple[str, ...] = tune(
-        CAPTURE_SWITCHES,
-        "Chromium switches `record` launches its browser with, which stop it holding its frames to the display's "
-        "refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same "
-        "frames as one without them. An empty list launches Chromium with none.",
-        bounds=Bounds(items=Bounds(enum=CAPTURE_SWITCHES)),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        hazard=(
-            "With the switches no frame waits for a display refresh, so each recording keeps more of the CPU "
-            "busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on "
-            "each other."
-        ),
-        see_also=("record.concurrency",),
-    )
-    frame_wait_seconds: float = tune(
-        15.0,
-        "Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every "
-        "image decoded and the step laid out and painted, before it fails the section rather than capture "
-        "the frame half drawn.",
-        unit="seconds",
-        bounds=Bounds(gt=0, le=120),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        hazard=(
-            "A wait too short for this machine fails sections whose pages are only slow to fetch a font or "
-            "decode an image. It never shortens a recording that succeeds, because a page that has drawn "
-            "its frame is captured at once."
-        ),
-    )
     skip_still: bool = tune(
         True,
         "Write a frame again rather than capture it when the page reports that nothing it draws changed "
@@ -423,21 +372,6 @@ class RecordConfig:
             "sheet's object model or inside a shadow root, records the frame before until something it "
             "knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off."
         ),
-        see_also=("record.skip_audit_every",),
-    )
-    skip_audit_every: int = tune(
-        0,
-        "Step to and capture every this many frames `record` writes again anyway, and stop the section if "
-        "one differs from the frame before. Zero audits none, which is the fast path, and the test suite "
-        "sets it to prove the frames written again.",
-        unit="frames",
-        bounds=Bounds(ge=0, le=10_000),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        hazard=(
-            "Every audited frame costs one step and one capture, so one audits every skipped frame and saves no time."
-        ),
-        see_also=("record.skip_still",),
     )
 
 

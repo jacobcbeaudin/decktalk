@@ -13,8 +13,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
-import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,7 +23,7 @@ import pytest
 from decktalk.findings import Code
 from decktalk.media import ffmpeg
 from decktalk.media.frames import changed_count
-from support.commands import HOSTILE_DIRECTORY, clean_environ
+from support.commands import HOSTILE_DIRECTORY, decktalk
 from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget
 from support.tools import machine_tools
 
@@ -39,19 +37,6 @@ CLIP = "deck/clips/film.mp4"
 
 PLACEHOLDER = {Code.TAKE_MISSING.value}
 """What a build with no spend reports, which is news about the voice and not about the picture."""
-
-
-def decktalk(*args: str, cwd: Path) -> dict[str, Any]:
-    ran = subprocess.run(
-        [sys.executable, "-m", "decktalk", *args, "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=clean_environ(cwd),
-        cwd=cwd,
-    )
-    assert ran.stdout.strip(), ran.stderr
-    return json.loads(ran.stdout)
 
 
 @pytest.fixture(scope="module")

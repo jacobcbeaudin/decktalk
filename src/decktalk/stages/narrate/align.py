@@ -1,8 +1,8 @@
 """Timing the words of a take whose voice sent none, through the aligner, after every take is made.
 
 A voice that sends a take with no word times leaves a whole, fingerprinted pair whose words file says
-so. `first_words` is what such a take plays when its row is first written: words DeckTalk estimated
-over its sound, where a take whose voice sent its words plays those.
+so. Such a take plays words DeckTalk estimated over its sound when its row is first written, as
+`takes.first_words` says, where a take whose voice sent its words plays those.
 
 `time_takes` is the alignment pass. It runs once per narrate, on the caller's thread, after every take
 is made, so no worker waits on the aligner and a Ctrl-C stops the alignment in flight at once. It
@@ -34,7 +34,6 @@ from pydantic import ValidationError
 from decktalk.artifacts import (
     AlignedWords,
     AlignmentInputs,
-    EstimatedWords,
     ProviderWords,
     Take,
     Takes,
@@ -42,71 +41,81 @@ from decktalk.artifacts import (
     TurnKey,
     Words,
     alignment_match,
-    is_placeholder,
 )
 from decktalk.artifacts.words import WORDS_SUFFIX
 from decktalk.errors import NotBuiltError, ProviderError
 from decktalk.events import Unit
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import estimated_words, spoken_words
+from decktalk.inputs.script import spoken_words
 from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.speech import ALIGNER, Aligner, AlignerContext, AlignerIdentity, AlignmentRequest
-from decktalk.stages.narrate.takes import retimed, sound_end_of
+from decktalk.speech import ALIGNER, ALIGNERS, DECLARED, Aligner, AlignerContext, AlignerIdentity, AlignmentRequest
+from decktalk.stages.narrate.takes import retimed, take_label
 
-START = "Start decktalk-voice at the address [dtsp] base_url names"
+START = DECLARED[ALIGNER].start_hint
 """What starts the aligner DeckTalk ships, which is the advice beside a down aligner that named no other."""
 
 
 @dataclass(frozen=True)
-class _Down:
-    """Why a take was not aligned, in the clause its finding says after "and", and what to do about it."""
+class Unaligned:
+    """Why a take that came with no word times plays estimated words, in the clause a line says after "and", and
+    what to do about it."""
 
     why: str
-    action: Callable[[int], str]
-    """The sentence that tells the author what to do about section `n`."""
+    action: Callable[[str], str]
+    """The sentence that tells the author what to do about the sections a `--section` value selects."""
 
 
-def _then_run(hint: str) -> Callable[[int], str]:
+def _then_run(hint: str) -> Callable[[str], str]:
     return lambda n: f"{hint.rstrip('.')}, then run decktalk narrate --section {n}."
 
 
-NO_ALIGNER = _Down("this machine answers for no aligner", _then_run(START))
-"""Why a take was not aligned on a machine whose host gave it no aligner."""
+NO_ALIGNER = Unaligned(
+    "this machine answers for no aligner",
+    lambda n: f"Run decktalk narrate --section {n} on a machine that answers for an aligner.",
+)
+"""Why a take was not aligned on a machine whose host gave it no aligner, which no aligner of DeckTalk's can mend."""
 
-NO_PRINT = _Down(
+NO_PRINT = Unaligned(
     "its words file carries no fingerprint to key aligned words by",
     lambda n: f"Run decktalk narrate --section {n} --replace-voiced to make the take again.",
 )
 """Why a take whose words file records no audio print is never aligned."""
 
+UNASKED = Unaligned("no aligner has timed it", _then_run(START))
+"""Why a take plays estimated words before narrate asks the aligner DeckTalk ships, which is down or not yet asked."""
 
-def _down_reason(failure: ProviderError) -> _Down:
+UNASKED_BY_HOST = Unaligned(
+    "no aligner has timed it", lambda n: f"Run decktalk narrate --section {n} once this machine's aligner answers."
+)
+"""The same, on a machine whose host gave it an aligner of its own, which DeckTalk does not start."""
+
+
+def before_narrate(aligners: Mapping[str, object], said: Words | None) -> Unaligned:
+    """Why a voiced take whose voice sent no word times plays estimated words, told without asking any aligner.
+
+    `said` is the take's own words file. A file that records no audio print is never aligned, and
+    otherwise the reason is the machine's: it answers for no aligner, for the one DeckTalk ships, or
+    for its host's own. This is what `status` tells an author, who reads it without a socket opened.
+    """
+    if isinstance(said, ProviderWords) and not said.timed and said.audio is None:
+        return NO_PRINT
+    factory = aligners.get(ALIGNER)
+    if factory is None:
+        return NO_ALIGNER
+    return UNASKED if factory is ALIGNERS[ALIGNER] else UNASKED_BY_HOST
+
+
+def _down_reason(failure: ProviderError) -> Unaligned:
     """Why the aligner is down, in its own words, and what to do: run again when waiting is enough, else its hint."""
     said = str(failure).rstrip(".")
     why = said[:1].lower() + said[1:]
     if failure.retryable:
         hint = failure.hint
-        return _Down(why, lambda n: hint or f"Run decktalk narrate --section {n} again once the aligner answers.")
-    return _Down(why, _then_run(failure.hint or START))
-
-
-def first_words(inputs: Inputs, spoken: str, digest: str) -> tuple[Words, ProviderWords | None]:
-    """The words a take plays before any aligner is asked, and the take's own words file.
-
-    A take's own words when its voice sent them, or estimated words over its sound when it sent none.
-    A placeholder's own words file is its estimate, so it answers None for the second.
-    """
-    said = inputs.take_words(digest)
-    own = said if isinstance(said, ProviderWords) else None
-    if own is not None and not own.timed:
-        end = sound_end_of(inputs, inputs.take_places.find(digest).audio)
-        return EstimatedWords(words=tuple(estimated_words(spoken, end))), own
-    if said is None:
-        return (EstimatedWords() if is_placeholder(digest) else ProviderWords()), None
-    return said, own
+        return Unaligned(why, lambda n: hint or f"Run decktalk narrate --section {n} again once the aligner answers.")
+    return Unaligned(why, _then_run(failure.hint or START))
 
 
 def _plays(path: Path, audio_print: str, words: tuple[str, ...]) -> AlignedWords | None:
@@ -244,7 +253,7 @@ def _settle(inputs: Inputs, state: _Pass, untimed: list[_Untimed], previous: Tak
     return missed
 
 
-def _aligner(inputs: Inputs, run: Run) -> tuple[Aligner | None, _Down | None]:
+def _aligner(inputs: Inputs, run: Run) -> tuple[Aligner | None, Unaligned | None]:
     """The aligner this machine answers with, built by asking its server who it is, or why there is none."""
     factory = run.machine.aligners.get(ALIGNER)
     if factory is None:
@@ -261,7 +270,7 @@ def _aligner(inputs: Inputs, run: Run) -> tuple[Aligner | None, _Down | None]:
         return None, _down_reason(failure)
 
 
-def _align_every(inputs: Inputs, run: Run, state: _Pass, untimed: list[_Untimed], aligner: Aligner) -> _Down | None:
+def _align_every(inputs: Inputs, run: Run, state: _Pass, untimed: list[_Untimed], aligner: Aligner) -> Unaligned | None:
     """Check every take against the aligner that answered, aligning each one it has no kept words of, until it is down.
 
     A take two sections share is aligned once. The pass stops at the first failure that says the
@@ -325,16 +334,16 @@ def _align_one(inputs: Inputs, run: Run, take: _Untimed, keyed: AlignmentInputs,
     return aligned
 
 
-def _unaligned(inputs: Inputs, state: _Pass, key: TurnKey, down: _Down) -> Finding:
+def _unaligned(inputs: Inputs, state: _Pass, key: TurnKey, down: Unaligned) -> Finding:
     """The finding for one turn whose take plays estimated words, saying why no aligner timed it.
 
     A section of one turn is named alone, and a section of several names the turn too.
     """
     number = key.section
-    take = f"Section {number}'s take of turn {key.turn}" if state.several(number) else f"Section {number}'s take"
+    take = take_label(number, key.turn, several=state.several(number))
     return judge(
         Code.TAKE_UNALIGNED,
-        f"{take} came with no word times, and {down.why}, so it plays estimated words. {down.action(number)}",
+        f"{take} came with no word times, and {down.why}, so it plays estimated words. {down.action(str(number))}",
         Location(where=f"section {number}", file=inputs.relative(inputs.script_path), section=number),
         stage=Stage.NARRATE,
     )
@@ -368,4 +377,4 @@ def _tie_note(run: Run, state: _Pass) -> None:
             return
 
 
-__all__ = ["first_words", "kept_alignment", "time_takes"]
+__all__ = ["Unaligned", "before_narrate", "kept_alignment", "time_takes"]

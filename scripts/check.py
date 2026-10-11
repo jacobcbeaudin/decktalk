@@ -579,10 +579,11 @@ GROUPS: tuple[Group, ...] = (
     ),
     Group(
         name="scaffold",
-        why="Every packaged project recorded and verified without a voice, which is the scaffold's promise.",
+        why="Every packaged project recorded again and again, held to the frames one recording of it holds.",
         # The row judges what was already released rather than gating the release: it runs weekly,
-        # because seven minutes on every merge buys one answer that the template's own data tests
-        # give on every pull request. A release is never more than a week from its first scaffold run.
+        # because it records every packaged project several times over, and `e2e` builds and
+        # verifies each of them once on every pull request. A release is never more than a week from
+        # its first scaffold run.
         commands=((*PYTEST, "-m", "scaffold"),),
         runners=(LINUX,),
         pythons=(FLOOR,),

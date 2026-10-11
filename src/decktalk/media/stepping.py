@@ -33,6 +33,7 @@ import base64
 import contextvars
 import logging
 import math
+import tempfile
 import threading
 import time
 from collections import deque
@@ -45,6 +46,7 @@ from typing import Protocol
 from playwright.sync_api import CDPSession, Page
 
 from ..errors import ToolError
+from ..files import drafted
 from ..page import SECOND_DIGITS
 from ..settings import MotionConfig
 from . import ffmpeg
@@ -54,7 +56,8 @@ from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording, UndeclaredChange, joined
 from .pages import (
     CONSOLE_KINDS,
-    await_painted,
+    DEADLINE_SECONDS,
+    await_ready,
     driving,
     instrument,
     motion_scripts,
@@ -117,6 +120,13 @@ to one piece, so the pieces join into one stream without an encode.
 
 CAPTURE = {"format": "png", "optimizeForSpeed": True}
 """Truth: what each frame is captured as, a lossless image the encoder reads straight from the pipe."""
+
+SKIP_AUDIT_EVERY: int = 0
+"""Truth: how often a recording captures a frame it would write again and stops if it differs, zero for never.
+
+Every build DeckTalk runs takes the fast path. The test suite raises it, so every frame its builds
+write again is proved against a capture of the same frame.
+"""
 
 
 class FrameSink(Protocol):
@@ -236,6 +246,62 @@ class LosslessPipe:
         pipe.raise_failed()
 
 
+Area = tuple[int, int, int, int]
+"""A rectangle of a captured frame in its own pixels, as its left, top, right and bottom edges."""
+
+
+@dataclass(frozen=True)
+class Unexplained:
+    """Undeclared change the steps since a capture named: the first element, its second, and where it all lies.
+
+    `area` is every changed element as the page laid it out, or None when one of them is laid out
+    nowhere, so the whole frame stands for it. Only a frame that differs inside it shows the change,
+    because the same step may run a cue that draws somewhere else.
+    """
+
+    at: float
+    what: str
+    area: Area | None
+
+    @classmethod
+    def of(cls, seconds: float, said: object) -> Unexplained | None:
+        """What one step said the page changed undeclared, or None when it named nothing."""
+        if not isinstance(said, dict) or not isinstance(said.get("what"), str):
+            return None
+        box = said.get("box")
+        if not isinstance(box, dict) or not all(isinstance(box.get(k), (int, float)) for k in "xywh"):
+            return cls(seconds, said["what"], None)
+        left, top = math.floor(box["x"]), math.floor(box["y"])
+        return cls(seconds, said["what"], (left, top, math.ceil(box["x"] + box["w"]), math.ceil(box["y"] + box["h"])))
+
+    def joined(self, later: Unexplained) -> Unexplained:
+        """This change and one a later step named before the same capture, first named first, in one area."""
+        if self.area is None or later.area is None:
+            return Unexplained(self.at, self.what, None)
+        (a, b, c, d), (e, f, g, h) = self.area, later.area
+        return Unexplained(self.at, self.what, (min(a, e), min(b, f), max(c, g), max(d, h)))
+
+    def shown(self, before: bytes, after: bytes) -> bool:
+        """Whether two captured frames differ where this change lies, which a frame differing elsewhere does not."""
+        if before == after:
+            return False
+        if self.area is None:
+            return True
+        left, top, right, bottom = self.area
+        crop = f"crop={right - left}:{bottom - top}:{left}:{top},format=rgba"
+        with tempfile.TemporaryDirectory() as work:
+            frames = [Path(work, "before.png"), Path(work, "after.png")]
+            for path, shot in zip(frames, (before, after), strict=True):
+                path.write_bytes(shot)
+            pixels = ffmpeg.raw(
+                "-i", str(frames[0]), "-i", str(frames[1]),
+                "-filter_complex", f"[0:v]{crop}[a];[1:v]{crop}[b];[a][b]vstack",
+                "-frames:v", "1", "-f", "rawvideo", "-",
+            )  # fmt: skip
+        half = len(pixels) // 2
+        return pixels[:half] != pixels[half:]
+
+
 @dataclass
 class Stepper:
     """One loaded page held still on Playwright's clock, which shows any frame it is asked for by its index.
@@ -248,7 +314,8 @@ class Stepper:
 
     A step answers only once the page has drawn it, so nothing the browser does on its own time, a
     rendering update, a font fetch or an image decode, decides what a captured frame shows. A page
-    that has not drawn a step within `wait_seconds` stops the recording at that frame.
+    that has not drawn a step within `pages.DEADLINE_SECONDS`, the deadline every call into a page
+    has, stops the recording at that frame.
 
     Every step also answers whether the picture may have changed, and the stepper keeps whether any
     step has since the last capture, so `record` can write a frame where none did again rather than
@@ -263,8 +330,6 @@ class Stepper:
 
     page: Page
     fps: int
-    wait_seconds: float
-    """How long one step may take to be drawn before the recording stops, which is `[record] frame_wait_seconds`."""
     ticked: int = 0
     """How many milliseconds the page's timers have moved since the clock was held."""
     due: float | None = 0.0
@@ -281,8 +346,8 @@ class Stepper:
     """How many frames this stepper wrote again without a capture."""
     steps: int = 0
     """How many times this stepper moved the page, a task's own second included."""
-    unexplained: tuple[float, str] | None = None
-    """The second and the element of the first undeclared change a step named since the last capture."""
+    unexplained: Unexplained | None = None
+    """The undeclared change every step since the last capture named, with the second the first one named it."""
     undeclared: dict[str, UndeclaredChange] = field(default_factory=dict)
     """Every element undeclared change was seen in, keyed by how the page names it, in the order first seen."""
 
@@ -301,7 +366,7 @@ class Stepper:
         step pauses each one where it is sought rather than where the browser was about to start it.
         """
         with driving("could not hold the page's clock"):
-            self.page.evaluate(STARTED_JS, self.wait_seconds)
+            self.page.evaluate(STARTED_JS, DEADLINE_SECONDS)
             ahead = float(self.page.evaluate(NOW_JS)) + HOLD_LEAD_MS
             # Playwright reads a number handed to `pause_at` as seconds, and the page counts milliseconds.
             self.page.clock.pause_at(ahead / MILLISECONDS)
@@ -320,7 +385,7 @@ class Stepper:
         if at > self.ticked:
             self.page.clock.run_for(at - self.ticked)
             self.ticked = at
-        answer = self.page.evaluate(STEP_JS, [seconds, self.wait_seconds])
+        answer = self.page.evaluate(STEP_JS, [seconds, DEADLINE_SECONDS])
         self.steps += 1
         due = answer.get("due") if isinstance(answer, dict) else None
         self.due = float(due) if isinstance(due, (int, float)) else None
@@ -329,9 +394,9 @@ class Stepper:
         # Likewise anything but a second or a plain null is no still stretch at all.
         still = answer.get("stillUntil", seconds) if isinstance(answer, dict) else seconds
         self.still_until = None if still is None else float(still) if isinstance(still, (int, float)) else seconds
-        what = answer.get("undeclared") if isinstance(answer, dict) else None
-        if isinstance(what, str) and self.unexplained is None:
-            self.unexplained = (seconds, what)
+        seen = Unexplained.of(seconds, answer.get("undeclared") if isinstance(answer, dict) else None)
+        if seen is not None:
+            self.unexplained = seen if self.unexplained is None else self.unexplained.joined(seen)
 
     def advance(self, k: int) -> bool:
         """Step the page to frame `k`, and answer whether its picture may have changed since the last capture.
@@ -352,8 +417,9 @@ class Stepper:
         with driving(f"the page stopped at frame {k}"):
             shot = self.cdp().send("Page.captureScreenshot", CAPTURE)
         before, self.shown = self.shown, base64.b64decode(shot["data"])
-        if self.unexplained is not None and before is not None and self.shown != before:
-            self.seen(*self.unexplained)
+        unexplained = self.unexplained
+        if unexplained is not None and before is not None and unexplained.shown(before, self.shown):
+            self.seen(unexplained.at, unexplained.what)
         self.unexplained = None
         self.changed = False
         self.captured += 1
@@ -525,9 +591,7 @@ def record_piece(
     width: int,
     height: int,
     fps: int,
-    frame_wait_seconds: float,
     skip_still: bool,
-    skip_audit_every: int,
     color_scheme: str,
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
@@ -539,26 +603,29 @@ def record_piece(
     can name every one of them, and a page reaching for the script or for `.env` is turned away. The
     page is stepped to the first frame through the seconds work is due alone, so a piece that starts
     late in a section costs its page load and those steps, not every frame before it.
-    `skip_still` and `skip_audit_every` are `[record]`'s two keys of the same names, which decide
-    whether a frame nothing changed on is written again rather than captured and how often one is
-    captured anyway to prove it.
+    `skip_still` is `[record] skip_still`, which decides whether a frame nothing changed on is written
+    again rather than captured, and `SKIP_AUDIT_EVERY` how often one is captured anyway to prove it.
+    The page is held once it says it is ready, which is once its fonts, the promises its author
+    handed the runtime and its scene are in place, and every step after that waits for the page to
+    draw it.
 
-    The video is written to a file beside `out` and moved onto it once the encode has finished, so a
-    piece on disk is always whole.
+    The video is drafted beside `out` and moved onto it once the page has been read, so a piece on
+    disk is always whole.
     """
-    partial = out.with_name(f".{out.name}.part{out.suffix}")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with stepping(
-        chromium,
-        allowed,
-        width=width,
-        height=height,
-        color_scheme=color_scheme,
-        motion=motion,
-        documents=documents,
-        # Every pane clip is decoded at the film's rate and no larger than its frame, by the ffmpeg the encode runs.
-        clips=ClipFrames(fps=fps, executable=ffmpeg.ffmpeg(), width=width, height=height),
-    ) as (page, assets):
+    with (
+        drafted(out) as partial,
+        stepping(
+            chromium,
+            allowed,
+            width=width,
+            height=height,
+            color_scheme=color_scheme,
+            motion=motion,
+            documents=documents,
+            # Every pane clip is decoded at the film's rate and no larger than its frame, by the ffmpeg the encode runs.
+            clips=ClipFrames(fps=fps, executable=ffmpeg.ffmpeg(), width=width, height=height),
+        ) as (page, assets),
+    ):
         caught: list[str] = []
         console: list[tuple[str, str]] = []
         page.on("pageerror", lambda err: caught.append(page_error_text(err)))
@@ -566,19 +633,15 @@ def record_piece(
         opened = time.monotonic()
         with driving(f"could not load {url}"):
             page.goto(url, wait_until="load")
-        await_painted(page)
+        await_ready(page)
         loaded = time.monotonic()
-        stepper = Stepper(page, fps, frame_wait_seconds)
+        stepper = Stepper(page, fps)
         stepper.hold()
-        try:
-            with (
-                ffmpeg.fed(*encoding(partial, fps), what=f"the encode of {out.name}") as write,
-                LosslessPipe.feeding(write) as sink,
-            ):
-                stepper.record(frames, sink, check, skip_still=skip_still, audit_every=skip_audit_every)
-        except BaseException:
-            partial.unlink(missing_ok=True)
-            raise
+        with (
+            ffmpeg.fed(*encoding(partial, fps), what=f"the encode of {out.name}") as write,
+            LosslessPipe.feeding(write) as sink,
+        ):
+            stepper.record(frames, sink, check, skip_still=skip_still, audit_every=SKIP_AUDIT_EVERY)
         log.debug(
             "[page] %s  %d frames captured, %d written again, %d steps",
             out.stem,
@@ -589,9 +652,8 @@ def record_piece(
         )
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
-    if not partial.exists():
-        raise ToolError(f"the encode of {out.name} wrote no file.")
-    partial.replace(out)
+        if not partial.exists():
+            raise ToolError(f"the encode of {out.name} wrote no file.")
     return Piece(
         path=out,
         frames=frames,
@@ -629,13 +691,13 @@ def _undeclared(groups: Sequence[Sequence[UndeclaredChange]]) -> tuple[Undeclare
     return tuple(rows.values())
 
 
-def join(pieces: Sequence[Piece], out: Path, *, seconds: float) -> Recording:
+def join(pieces: Sequence[Piece], out: Path, *, seconds: float, name: str) -> Recording:
     """Join the pieces of one section into `out`, in frame order, and give back what their pages said as one.
 
     The pieces are lossless streams written with the same parameters, each starting on a keyframe,
     so they are joined by copying their packets, and the frames of the join are the frames of the
-    pieces. One piece is moved into place as it is. Either way the file is written beside `out` and
-    moved onto it once it is whole, and the pieces are deleted.
+    pieces. One piece is moved onto `out` as it is, and joined pieces are deleted. `out` is the draft
+    the caller moves onto the section's video, and `name` is what the lines say for that video.
 
     Each page loaded the section, stepped through the seconds work was due before its first frame,
     and drew its own frames, so what the pages said is joined as `pagereport.joined` joins it, a
@@ -643,28 +705,23 @@ def join(pieces: Sequence[Piece], out: Path, *, seconds: float) -> Recording:
     """
     ordered = sorted(pieces, key=lambda piece: piece.frames.start)
     if not ordered:
-        raise ToolError(f"{out.name} has no piece to join.")
-    partial = out.with_name(f".{out.name}.part{out.suffix}")
+        raise ToolError(f"{name} has no piece to join.")
     if len(ordered) == 1:
-        ordered[0].path.replace(partial)
+        ordered[0].path.replace(out)
     else:
-        listing = out.with_name(f".{out.stem}.pieces.txt")
+        listing = out.with_suffix(".pieces.txt")
         listing.write_text(ffmpeg.concat_list(piece.path.resolve() for piece in ordered), encoding="utf-8")
         try:
-            ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", str(partial))
-        except BaseException:
-            partial.unlink(missing_ok=True)
-            raise
+            ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", str(out))
         finally:
             listing.unlink(missing_ok=True)
         for piece in ordered:
             piece.path.unlink(missing_ok=True)
-    partial.replace(out)
     first = ordered[0]
     steps = sum(piece.steps for piece in ordered)
     log.debug(
         "[page] %s  joined from %d pieces, %d frames captured, %d steps",
-        out.stem,
+        name,
         len(ordered),
         sum(piece.captured for piece in ordered),
         steps,
@@ -673,7 +730,7 @@ def join(pieces: Sequence[Piece], out: Path, *, seconds: float) -> Recording:
     for kind, text in _union([piece.console for piece in ordered]):
         # A console.error is the author telling themselves something broke, so it reaches the terminal.
         level = logging.WARNING if kind == "error" else logging.DEBUG
-        log.log(level, "[page] %s  console %s: %s", out.stem, kind, text, extra={"data": {"kind": kind, "text": text}})
+        log.log(level, "[page] %s  console %s: %s", name, kind, text, extra={"data": {"kind": kind, "text": text}})
     return Recording(
         url=first.url,
         assets=_union([piece.assets for piece in ordered]),
@@ -693,6 +750,7 @@ def join(pieces: Sequence[Piece], out: Path, *, seconds: float) -> Recording:
 __all__ = [
     "CAPTURE",
     "LOSSLESS",
+    "SKIP_AUDIT_EVERY",
     "FrameSink",
     "LosslessPipe",
     "Piece",

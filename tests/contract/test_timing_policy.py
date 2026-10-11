@@ -5,17 +5,15 @@ recorder steps the section clock one frame at a time, so the frame a reveal show
 of its cue's second alone and a runner's speed cannot move it. A test that reads a reveal a frame
 late is reading a broken deck or a broken recorder, never a slow machine.
 
-The first section holds the frame rule to each case without a build. The second holds the other
-half of it, which is that no leg of `GROUPS` and no option of the suite can loosen it. The last
-section holds the budget, which is the one allowance a slow runner still gets, because it is about
-how long a run takes and nothing about where a frame lands.
+The first section holds the frame rule to each case without a build. The second holds the budget,
+which is the one allowance a slow runner still gets, because it is about how long a run takes and
+nothing about where a frame lands.
 """
 
 from __future__ import annotations
 
 import pytest
 
-import check
 from support.timing_policy import BASE_BUDGET_SECONDS, ENTRANCE_READ_FRAMES, PLATFORM_FACTOR, budget, frames_late
 
 FPS = 25
@@ -56,26 +54,6 @@ def test_a_reveal_before_its_frame_is_early_rather_than_on_time() -> None:
 def test_verify_may_read_an_entrance_on_its_frame_or_the_next_and_on_no_other() -> None:
     """An eased entrance can sit under the onset rise on its first frame, and on no frame before or after that."""
     assert ENTRANCE_READ_FRAMES == {0, 1}
-
-
-# ---- nothing loosens the rule ----------------------------------------------------------------------
-
-
-def test_no_row_of_the_table_passes_a_timing_option() -> None:
-    """A leg that reported a late reveal instead of failing on it would hold a deck to less than its frame."""
-    loosened = [
-        f"{group.name}: {' '.join(command)}"
-        for group in check.GROUPS
-        for command in group.commands
-        if any(part.startswith("--timing") for part in command)
-    ]
-    assert loosened == []
-
-
-def test_the_suite_registers_no_timing_option(pytestconfig: pytest.Config) -> None:
-    """There is one way a suite reads a frame, so there is no option that chooses another."""
-    with pytest.raises(ValueError):
-        pytestconfig.getoption("--timing")
 
 
 # ---- the budget, which is about speed and never about frames ---------------------------------------

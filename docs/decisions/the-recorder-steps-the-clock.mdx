@@ -25,8 +25,8 @@ installed, until a whole rendering update has laid out, painted and committed th
 for every font the page shows and every image on it, rendering again after each arrives. A capture
 taken the moment the runtime returned would race the browser's own rendering, so what a frame
 showed would depend on how busy the machine was. A page that
-has not drawn a step within `[record] frame_wait_seconds` stops the recording at that frame, so a
-frame is never captured half drawn.
+has not drawn a step within 15 seconds, the deadline every call into a page has, stops the recording
+at that frame, so a frame is never captured half drawn.
 
 Frame `k` of the recording is therefore the page at section second `k / fps` by construction. A
 person's preview in their own browser still plays in real time, and only the recorder steps.
@@ -55,17 +55,18 @@ A step says the picture changed when any of these holds:
 
 So anything a page draws outside that list has to be drawn from a frame hook or declared as a loop.
 A DOM change a timer or an animation frame of the page's own makes between two steps is seen, and is
-undeclared change when it sits inside no declared motion, loop, region or pane clip: the step names the element,
-and when the frame captured after it differs from the frame before, `record` reports
+undeclared change when it sits inside no declared motion, loop, region or pane clip: the step names the element
+and where every changed element is laid out, and when the frame captured after it differs from the frame before
+inside that box, or anywhere when a changed element is laid out nowhere, `record` reports
 [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) with the element, the first
-second and the number of frames. A change no pixel shows is not reported.
+second and the number of frames. A change no pixel shows is not reported, and neither is one beside a cue that drew
+the frame's only difference somewhere else.
 A change made only through a style sheet's object model, such as `insertRule`, or inside a shadow
 root, or by an animated image, is not seen, and the recording shows the frame before until something
 else changes. `record.skip_still` turns the skip off for a project whose page needs it.
-`record.skip_audit_every` steps to and captures every that many skipped frames anyway and stops the
-section if one differs from the frame before. It is zero in production and set in the test suite,
-and a golden builds every packaged project with the skip on and off and requires the same decoded
-frames and the same verify numbers.
+The test suite's builds step to and capture every fifth skipped frame anyway and stop the section if
+one differs from the frame before, and a golden builds every packaged project with the skip on and
+off and requires the same decoded frames and the same verify numbers.
 
 ### Still stretches
 
@@ -114,17 +115,15 @@ reach it by stepping only the seconds a task is due before it. Three things hold
   anti-aliased edges it draws there differ from a whole tile's, so a frame would carry what the frames
   before it painted.
 
-The recorder's Chromium is also launched, after `--disable-partial-raster`, with the switches
-`[record] capture_switches` names, which are `--disable-frame-rate-limit` and `--disable-gpu-vsync`
-unless the machine sets fewer. Without them Chromium holds its frames to the display's refresh rate,
-so the rendering update a step waits for and the capture after it each wait for a refresh. With them
+Every Chromium is also launched, after `--disable-partial-raster`, with `--disable-frame-rate-limit`
+and `--disable-gpu-vsync`. Without them Chromium holds its frames to the display's refresh rate, so
+the rendering update a step waits for and the capture after it each wait for a refresh. With them
 neither is held to that rate, and a frame takes about half the time. The switches change speed only
 and never pixels, and that is the equivalence they are held to: a recording made with them decodes
-to exactly the frames of a recording made without them, every pixel of every frame, and each way
-records the same frames every time. `tests/e2e/test_capture_switches.py` records every page section
-of every packaged project both ways, twice each, and fails on one differing pixel. The switches are
-a closed set for that reason, because a switch that is not in it has not been held to the same
-frames.
+to exactly the frames of a recording made without them, every pixel of every frame.
+`tests/e2e/test_frame_addressing.py` records every page section of every packaged project again in
+pieces in a Chromium launched without them, and fails on one pixel that differs from the build's own
+recording.
 
 ## Why
 

@@ -13,8 +13,8 @@ every assertion here is an exit code, an artifact, a JSON shape or a path, and n
 never a millisecond of wall time. Every test is one property of the finished build, so a failure
 names what broke.
 
-The command line is driven as a real subprocess of `python -m decktalk`, so nothing about the CLI's
-internal module layout is assumed and nothing is faked. The commands and flags are spelled as
+The command line is driven as a real subprocess through `support.commands.run`, so nothing about the
+CLI's internal module layout is assumed and nothing is faked. The commands and flags are spelled as
 `docs/reference/cli.mdx` documents them, so a failure that names a missing command or an unknown flag
 is a drift between the two and not a broken property.
 """
@@ -27,7 +27,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,7 +44,8 @@ from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import CostState, Layer, SectionKind, Substitute, TakeState, Word
 from decktalk.settings import Settings
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
-from support.commands import HOSTILE_DIRECTORY, clean_environ, errors, flat
+from support.caption_files import caption_cues
+from support.commands import HOSTILE_DIRECTORY, clean_environ, errors, flat, run
 from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget, due_seconds, frames_late
 
 # An advisory lock on the output directory, where the platform has one.
@@ -191,21 +191,14 @@ class Project:
     def cli(self, *args: str) -> Run:
         """One `decktalk` command, run as a real subprocess against this project with no network.
 
-        The CLI is reached through `python -m decktalk` rather than through a console script, so the
+        The CLI is reached through the interpreter rather than through a console script, so the
         command under test is the one the wheel installs and no entry point has to be on PATH.
         """
         env = clean_environ(self.shim)
         env["E2E_ATTEMPTS"] = str(self.attempts)
         existing = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join([str(self.shim), *([existing] if existing else [])])
-        done = subprocess.run(
-            [sys.executable, "-m", "decktalk", "--project", str(self.root), *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-            cwd=self.shim,
-        )
+        done = run("--project", str(self.root), *args, cwd=self.shim, env=env)
         return Run((*args,), done.returncode, done.stdout, done.stderr)
 
     @property
@@ -553,28 +546,10 @@ def test_the_broll_clip_keeps_its_own_sound(built: Project) -> None:
 # ---- the captions ------------------------------------------------------------------------------------
 
 
-def srt_cues(path: Path) -> list[tuple[float, float, str]]:
-    """Every caption of an SRT file as its start, its end and its text, in the order it plays."""
-    rows: list[tuple[float, float, str]] = []
-    for block in path.read_text(encoding="utf-8").strip().split("\n\n"):
-        lines = block.splitlines()
-        [stamp] = [line for line in lines if " --> " in line]
-        start, end = (srt_seconds(value) for value in stamp.split(" --> "))
-        rows.append((start, end, "\n".join(lines[lines.index(stamp) + 1 :])))
-    return rows
-
-
-def srt_seconds(value: str) -> float:
-    """One SRT timestamp in seconds, which is hours, minutes, seconds and a comma before the millis."""
-    hms, millis = value.strip().split(",")
-    hours, minutes, seconds = hms.split(":")
-    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis) / 1000
-
-
 def test_no_caption_plays_over_the_clip_and_the_film_has_both_caption_files(built: Project) -> None:
     spans = built.spans()
     clip_start, clip_end = spans["03"]
-    captions = [(start, end) for start, end, _text in srt_cues(built.deliverable(".srt"))]
+    captions = [(start, end) for start, end, _text in caption_cues(built.deliverable(".srt"))]
     assert captions
     over = [row for row in captions if row[0] < clip_end - 1e-3 and row[1] > clip_start + 1e-3]
     assert over == [], f"captions play over the clip at {clip_start:.2f} to {clip_end:.2f}: {over}"
@@ -587,7 +562,7 @@ def test_the_cued_sound_reaches_the_captions(built: Project) -> None:
     caption = "[a tick lands]"
     assert caption in built.deliverable(".srt").read_text(encoding="utf-8")
     assert caption in built.deliverable(".vtt").read_text(encoding="utf-8")
-    start, end, text = next(row for row in srt_cues(built.deliverable(".srt")) if caption in row[2])
+    start, end, text = next(row for row in caption_cues(built.deliverable(".srt")) if caption in row[2])
     first_start, first_end = built.spans()["01"]
     assert first_start <= start < first_end, "the sound caption sits in the section that cues it"
     assert text.splitlines()[-1] == caption, "the sound is a line of its own"
@@ -596,7 +571,7 @@ def test_the_cued_sound_reaches_the_captions(built: Project) -> None:
 
 def test_no_two_captions_are_on_screen_at_once(built: Project) -> None:
     """Two overlapping cues are drawn twice or dropped, so a sound under speech joins the speech cue."""
-    spans = [(start, end) for start, end, _text in srt_cues(built.deliverable(".srt"))]
+    spans = [(start, end) for start, end, _text in caption_cues(built.deliverable(".srt"))]
     assert spans == sorted(spans)
     assert all(end <= next_start for (_start, end), (next_start, _end) in zip(spans, spans[1:], strict=False))
     assert all(end - start >= MINIMUM_CAPTION_SECONDS - 1e-3 for start, end in spans)

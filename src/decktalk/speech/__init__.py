@@ -1,7 +1,7 @@
 """The speech boundary, which is anything that reads text aloud and says when each word was spoken.
 
 DeckTalk needs a start and an end time for every word, because the cut is made on words. A voice
-answers one `Speech` per section: the audio, the time of every word when it sends them, and the model
+answers one `Speech` per turn: the audio, the time of every word when it sends them, and the model
 it served when it names one. A voice that sends no word times answers `None` for them, and an aligner
 times the take instead. The voices a project can name are a closed set of adapters in this
 package, each declared once in `DECLARED`:
@@ -100,10 +100,11 @@ def _written(pause: float | None) -> str:
 
 @dataclass(frozen=True)
 class SpeechRequest:
-    """One section of narration, and everything about it that decides what comes back.
+    """One turn of narration, and everything about it that decides what comes back.
 
-    The section travels as pieces with their pauses and never as markup, so the provider decides how
-    a pause is said. The neighbouring sections travel as their spoken words, for prosody.
+    The turn travels as pieces with their pauses and never as markup, so the provider decides how a
+    pause is said. The turns the same voice reads before and after it travel as their spoken words,
+    for prosody.
     """
 
     pieces: tuple[Piece, ...]
@@ -112,7 +113,7 @@ class SpeechRequest:
     voice_settings: dict[str, Any] = field(default_factory=dict)
     output_format: str = ""
     """The format its adapter declares, which `narrate` always names. Empty asks the service for its own default."""
-    previous_text: str | None = None  # neighbouring sections, for prosody continuity
+    previous_text: str | None = None  # the neighbouring turns of the same voice, for prosody continuity
     next_text: str | None = None
 
 
@@ -160,7 +161,7 @@ class Speech:
 
 
 class SpeechProvider(Protocol):
-    """Reads one section and returns its `Speech`: the audio, a time for every word when it has them, and its model.
+    """Reads one turn and returns its `Speech`: the audio, a time for every word when it has them, and its model.
 
     What a take is named by is not the provider's to say. The digest is taken in one place above this
     boundary, from the take's `TakeInputs`, which hold the output format its adapter declares in `DECLARED`.
@@ -238,6 +239,11 @@ class Declared:
     """How it is built from a context, which imports the adapter only when one is asked for."""
     server: str | None = None
     """The local server that answers for it, which a run that cannot reach it tells the author to start, or None."""
+
+    @property
+    def start_hint(self) -> str:
+        """The sentence that starts it when nothing answered, naming its server and the setting that says where."""
+        return f"Start {self.server or 'the voice server'} at the address [{self.table}] base_url names"
 
 
 def _elevenlabs_renders_pauses(model: str) -> bool:
@@ -407,9 +413,7 @@ class VoiceInForce:
             renders_pauses=declared.renders_pauses(table.model),
             base_url=table.base_url.rstrip("/"),
             key_variable=declared.key_variable,
-            start_hint=(
-                f"Start {declared.server or 'the voice server'} at the address [{declared.table}] base_url names"
-            ),
+            start_hint=declared.start_hint,
         )
 
 
@@ -419,8 +423,8 @@ PROVIDERS: Mapping[str, SpeechFactory] = MappingProxyType(
 """The factories of the closed set, which is the table a machine answers with unless its host gave another.
 
 It is read off `DECLARED`, so the set is written once and every adapter in it is declared whole. Neither
-table can be changed in place: a test hands its fake voice to the run's machine, as a host does through
-`Machine.of`.
+table can be changed in place. A host registers its own voices beside these, under names of its own,
+through `SpeechProviders`, which refuses any factory but the shipped one under a shipped name.
 """
 
 

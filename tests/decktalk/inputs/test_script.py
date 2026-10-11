@@ -9,7 +9,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from decktalk.errors import InputError
-from decktalk.inputs.script import estimated_words, parse_script, read_script, spoken_words, strip_markdown
+from decktalk.inputs.script import estimated_words, parse_script, read_script, spoken_words
 from decktalk.settings import Settings
 from decktalk.speech import BEAT, Piece, canonical_text
 from support.paths import DATA
@@ -50,8 +50,8 @@ def test_parse_script_sections_and_directions():
     assert one.word_count == 15
 
 
-def test_strip_markdown_keeps_placeholders():
-    assert strip_markdown("At [VENUE] tonight. [not spoken]") == (Piece("At [VENUE] tonight."),)
+def test_a_placeholder_is_spoken_and_a_direction_is_not():
+    assert parse_script("## 1. A\n\nAt [VENUE] tonight. [not spoken]")[0].pieces == (Piece("At [VENUE] tonight."),)
 
 
 def test_a_section_carries_its_pauses_as_data_and_never_as_markup():
@@ -153,17 +153,12 @@ HASHED = [
 """Every section whose digest a take was bought under, which a section with no voice direction must read alike."""
 
 
-def body(markdown: str) -> str:
-    """The text under a section's heading, which is what `strip_markdown` is handed."""
-    return markdown.split("\n", 1)[1]
-
-
 @pytest.mark.parametrize("markdown", HASHED, ids=[f"take-{place}" for place in range(len(HASHED))])
 def test_a_section_with_no_voice_direction_is_one_turn_of_todays_pieces(markdown: str) -> None:
     (section,) = parse_script(markdown)
     (turn,) = section.turns
     assert (turn.number, turn.voice, turn.gap) == (1, None, None)
-    assert turn.pieces == section.pieces == strip_markdown(body(markdown))
+    assert turn.pieces == section.pieces
 
 
 def test_a_leading_direction_changes_no_piece() -> None:

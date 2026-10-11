@@ -77,7 +77,7 @@ from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome
 from decktalk.speech import Speech, SpeechProvider
 from decktalk.stages import selects
-from decktalk.stages.narrate.align import first_words, time_takes
+from decktalk.stages.narrate.align import Unaligned, before_narrate, time_takes
 from decktalk.stages.narrate.plan import (
     id_variable,
     no_voice_note,
@@ -541,8 +541,7 @@ def _one_take(
     )
     if hit:
         inputs.take_places.keep(digest, run, section=plan.section.number)
-        words, said = first_words(inputs, plan.turn.spoken, digest)
-        return take_row(inputs, plan.section, plan.turn, chapter, digest, words, said=said), TakeOutcome.KEPT
+        return take_row(inputs, plan.section, plan.turn, chapter, digest), TakeOutcome.KEPT
     if down is not None and down.is_set() and plan.outcome is not TakeOutcome.PLACEHOLDER:
         # A take the voice would make, or one another turn was making, cannot come from a voice that is down.
         return _stand_in(inputs, run, plan, chapter, progress)
@@ -614,8 +613,7 @@ def _buy(
             raise
         down.set()
         return _stand_in(inputs, run, plan, chapter, progress)
-    words, said = first_words(inputs, plan.turn.spoken, digest)
-    return take_row(inputs, plan.section, plan.turn, chapter, digest, words, said=said), outcome
+    return take_row(inputs, plan.section, plan.turn, chapter, digest), outcome
 
 
 def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str, progress: _Progress) -> tuple[Take, TakeOutcome]:
@@ -708,6 +706,8 @@ __all__ = [
     "SectionTakeState",
     "TakePlan",
     "TakeStates",
+    "Unaligned",
+    "before_narrate",
     "narrate",
     "place",
     "price",

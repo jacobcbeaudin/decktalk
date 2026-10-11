@@ -29,8 +29,8 @@ def test_the_gain_is_the_distance_to_the_target_and_the_limiter_sits_under_the_c
     """A plain gain keeps the mix's dynamics, and only the peaks that would cross the ceiling are touched."""
     inputs = write_project(tmp_path)
     monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: a_measurement(i=-20.0, tp=-3.0))
-    before, after = normalize_loudness(inputs, tmp_path / "mix.mov", tmp_path / "work.mp4")
-    assert before.i == after.i == -20.0
+    after = normalize_loudness(inputs, tmp_path / "mix.mov", tmp_path / "work.mp4")
+    assert after.i == -20.0
     graph = next(call[call.index("-af") + 1] for call in fake_ffmpeg.calls if "-af" in call)
     target = inputs.settings.audio.target_lufs
     assert graph.startswith(f"volume={target - -20.0:.2f}dB,")

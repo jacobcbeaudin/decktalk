@@ -14,20 +14,13 @@ that do.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import subprocess
-import sys
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from decktalk.media import ffmpeg
-from decktalk.settings import Settings
-from support.commands import HOSTILE_DIRECTORY, clean_environ
+from decktalk.template import STARTER
+from support.commands import HOSTILE_DIRECTORY, decktalk, frame_digests, written
 from support.timing_policy import FIRST_FETCH_SECONDS, budget
-from support.tools import machine_tools
 
 RECORDINGS = 5
 """How many times the section is recorded.
@@ -45,34 +38,10 @@ RECORDING_SECONDS = 60
 pytestmark = [pytest.mark.scaffold, pytest.mark.timeout(budget(FIRST_FETCH_SECONDS + RECORDINGS * RECORDING_SECONDS))]
 
 
-def decktalk(*args: str, cwd: Path) -> dict[str, Any]:
-    """One `decktalk` command under `--json`, with no key, no voice variable and no machine file in reach."""
-    ran = subprocess.run(
-        [sys.executable, "-m", "decktalk", *args, "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=clean_environ(cwd),
-        cwd=cwd,
-    )
-    assert ran.stdout.strip(), ran.stderr
-    return json.loads(ran.stdout)
-
-
-def frame_digests(video: Path) -> list[str]:
-    """One digest per decoded rgb24 frame of `video`, at the size the project records at."""
-    video_settings = Settings().video
-    size = video_settings.width * video_settings.height * 3
-    with machine_tools():
-        raw = ffmpeg.raw(*ffmpeg.source(video), "-f", "rawvideo", "-pix_fmt", "rgb24", "-")
-    return [hashlib.sha256(raw[at : at + size]).hexdigest() for at in range(0, len(raw), size)]
-
-
 def test_the_starters_closing_section_records_the_same_frames_every_time(tmp_path: Path) -> None:
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
-    root = home / "starter"
-    decktalk("init", str(root), "--no-skills", cwd=home)
+    root = written(home, STARTER)
     decktalk("--project", str(root), "build", "--no-spend", cwd=home)
     video = root / "build" / "recordings" / f"{SECTION:02d}.mp4"
     runs = [frame_digests(video)]

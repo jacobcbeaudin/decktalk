@@ -45,7 +45,7 @@ from decktalk.media import audio, ffmpeg
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
-from decktalk.speech import Piece, Speech, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest
+from decktalk.speech import Piece, Speech, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest, http
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.cost import charge_of
@@ -1630,7 +1630,7 @@ def test_a_take_the_takes_directory_cannot_hold_is_kept_in_the_store_and_copied_
     cannot hold it costs one more run and no second purchase."""
     voice = a_voice_saying(voices, b"PAID")
     a = in_the_store(tmp_path, "a")
-    digest = take_states(a)[1].digest
+    digest = take_states(a)[1].turns[0].digest
     assert digest is not None
     squatter = a.workspace.takes / take_file(digest, TAKE_SUFFIX)
     squatter.mkdir(parents=True)
@@ -1686,20 +1686,21 @@ def test_a_re_buy_replaces_a_store_copy_that_does_not_hold_the_bytes_its_words_r
     assert (store / f"{audio_name}.unreadable").read_bytes() == b"XXXXX"
 
 
-def test_a_run_kept_waiting_past_store_wait_seconds_is_refused_naming_it_and_buys_nothing(
-    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
+def test_a_run_kept_waiting_past_one_whole_take_request_is_refused_naming_its_settings_and_buys_nothing(
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The wait on another run's voicing is its own machine setting, so the refusal names it and no request times."""
+    """The wait on another run's voicing is as long as one take request can run, which the refusal names."""
     voice = a_voice_saying(voices, b"PAID")
     store = tmp_path / STORED
-    toml = TOML.replace("[narration]\n", "[narration]\ntimeout_seconds = 10\n")
-    machine = {"narration": {"store_dir": str(store), "store_wait_seconds": 1}}
-    a = load_project(tmp_path / "a", toml, script=SCRIPT, environ=ENVIRON, machine=machine)
+    # The shortest request the settings allow still runs for ten seconds, which no test waits out.
+    monkeypatch.setattr(http, "longest_request_seconds", lambda _timeout, _retries: 1.0)
+    machine = {"narration": {"store_dir": str(store)}}
+    a = load_project(tmp_path / "a", TOML, script=SCRIPT, environ=ENVIRON, machine=machine)
     digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
     for place in (a.workspace.takes, store):
         (place / take_file(digest, TAKE_SUFFIX)).unlink()
         (place / words_file(digest)).unlink()
-    with FileLock(store / f"{digest}.lock"), pytest.raises(ProjectLocked, match=r"\[narration\] store_wait_seconds"):
+    with FileLock(store / f"{digest}.lock"), pytest.raises(ProjectLocked, match=r"\[narration\] timeout_seconds"):
         narrate(a, make_run(a, spend=True).run, only=[1])
     assert len(voice.requests) == 1
 

@@ -19,8 +19,8 @@ import pytest
 from contract.test_runtime import MARKUP_SCENE, deck
 from decktalk.findings import Code
 from decktalk.media.origin import Allowed, page_url, route_pages
+from decktalk.media.pages import DEADLINE_SECONDS
 from decktalk.page import REPORT
-from decktalk.settings import RecordConfig
 from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
 from support.browser_pages import Tab, chromium_tab, opened, settled, write_page
 
@@ -101,7 +101,7 @@ def test_a_step_moves_the_section_clock_to_the_second_the_recorder_names(page, e
     page.goto(f"{deck(tmp_path, 'step.html')}?scene=1&t0=signal&cues=1.1:ball@0.1")
     page.wait_for_function("() => window.__decktalk.ready")
     assert page.evaluate("() => window.__decktalk.started()") is False
-    page.evaluate("(wait) => window.__decktalkProbe.step(0.12, wait)", RecordConfig().frame_wait_seconds)
+    page.evaluate("(wait) => window.__decktalkProbe.step(0.12, wait)", DEADLINE_SECONDS)
     assert page.evaluate("() => window.__decktalk.now()") == 0.12
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
     assert page.evaluate("() => document.getElementById('dt-cover')") is None

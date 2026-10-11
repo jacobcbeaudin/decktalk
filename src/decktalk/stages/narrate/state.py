@@ -131,11 +131,6 @@ class SectionTakeState:
         return f"{worst.reason}, in turn {worst.turn.number}, which {worst.voice.name} reads"
 
     @property
-    def digest(self) -> str | None:
-        """The voiced take a section of one turn names, or None for a section of several or a voice with no id."""
-        return self.turns[0].digest if len(self.turns) == 1 else None
-
-    @property
     def takes_dir_gone(self) -> bool:
         """Whether any turn's take is missing because the takes directory moved."""
         return any(turn.takes_dir_gone for turn in self.turns)
@@ -392,17 +387,13 @@ class TakeStates(Mapping[int, SectionTakeState]):
         for an unchecked one, and estimated words at the placeholder pace for any other. A take whose
         voice sent no word times plays its kept aligned words, read with no take index and no server, or
         words estimated over its sound, which the row names when it names the take and is measured only
-        when no row does. A section of one turn answers that turn's words, as the kind read from disk,
-        and never a placeholder's words passed off as a provider's. A section of several answers every
-        turn's words on one clock, each turn after the lead, every earlier turn's length and its gap, as
-        `EstimatedWords` when any turn's are estimated.
+        when no row does. A section answers every turn's words on one clock, each turn after the lead its
+        settings name now, every earlier turn's length and its gap, as `EstimatedWords` when any turn's
+        are estimated, whether it has one turn or several.
         """
         state = self._states[number]
-        lead = self._inputs.lead_seconds(number)
-        if len(state.turns) == 1:
-            return on_section_clock(self._turn_words(number, state.turns[0]), lead)
         joined: list = []
-        at = lead
+        at = self._inputs.lead_seconds(number)
         estimated = False
         for one in state.turns:
             said = self._turn_words(number, one)

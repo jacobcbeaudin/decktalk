@@ -17,7 +17,7 @@ from __future__ import annotations
 import itertools
 import shutil
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -79,7 +79,7 @@ def build_captions(inputs: Inputs, narrated: Mapping[int, Sequence[SpokenTurn]])
     named = inputs.settings.output.caption_voices
     cues: list[CaptionCue] = []
     for turns in narrated.values():
-        dialogue = named and len({turn.voice for turn in turns}) > 1
+        dialogue = named and in_dialogue(turn.voice for turn in turns)
         for turn in turns:
             room = CAPTION_MAX_CHARS - len(voice_label(turn.voice)) if dialogue else CAPTION_MAX_CHARS
             cues += [
@@ -89,15 +89,13 @@ def build_captions(inputs: Inputs, narrated: Mapping[int, Sequence[SpokenTurn]])
     return cues
 
 
-def narrated_turns(
-    inputs: Inputs, takes: Takes, offsets: Mapping[int, float], texts: Mapping[int, str]
-) -> dict[int, list[SpokenTurn]]:
+def narrated_turns(inputs: Inputs, takes: Takes, offsets: Mapping[int, float]) -> dict[int, list[SpokenTurn]]:
     """Every turn of every spoken section, keyed by its section, its words where the finished film says them.
 
     `offsets` is what `inputs.timeline.narration_offsets` gives, which is what to add to a time in
     the joined narration to place it in the film. A turn's words take the punctuation and the case of
-    the text it was narrated from, and a section of one turn falls back to `texts`, which lends it the
-    script's.
+    the text its take index row says it was narrated from, so they match the audio even when the
+    script has been edited since it was voiced.
     """
     out: dict[int, list[SpokenTurn]] = {}
     placed = takes.placed
@@ -107,8 +105,7 @@ def narrated_turns(
         out[number] = []
         for turn in turns:
             words = list(turn.words.shifted(shift))
-            text = turn.spoken or (texts.get(number) if len(turns) == 1 else None)
-            shown = display_words(words, text) if text else words
+            shown = display_words(words, turn.spoken) if turn.spoken else words
             said = tuple(
                 SpokenWord(word=w.word, start=w.start, end=w.end, voice=turn.voice, turn=turn.turn) for w in shown
             )
@@ -307,20 +304,6 @@ def one_at_a_time(cues: list[CaptionCue]) -> list[CaptionCue]:
     return out
 
 
-def caption_texts(inputs: Inputs, takes: Takes) -> dict[int, str]:
-    """The spoken text per section, which lends the captions their punctuation and their case.
-
-    The take index records the text each section was narrated from, so the captions match the audio
-    even when the script has been edited since it was voiced.
-    """
-    spoken = {number: " ".join(row.spoken for row in takes.turns_of(number) if row.spoken) for number in takes.numbers}
-    texts = {number: text for number, text in spoken.items() if text}
-    if any(number not in texts for number in takes.numbers):
-        for section in inputs.script():
-            texts.setdefault(section.number, section.spoken)
-    return texts
-
-
 def build_chapters(rows: list[Rendered], titles: Mapping[int, str]) -> list[Chapter]:
     """One chapter per section, where consecutive sections with the same title share one marker."""
     starts = rendered_starts(rows)
@@ -377,22 +360,6 @@ def described_cues(inputs: Inputs, section: int, at: float) -> tuple[tuple[float
     return tuple(sorted(rows, key=lambda row: row[0]))
 
 
-def clip_speech(inputs: Inputs, section: int) -> str:
-    """What is spoken inside a clip section that names a words file, as one paragraph.
-
-    The captions carry a clip's dialogue, so the page that calls itself the media alternative carries
-    it too rather than leaving a viewer who reads the transcript with a silent gap.
-    """
-    found = next(
-        (s for s in inputs.document.clip_sections if s.number == section and s.words),
-        None,
-    )
-    if found is None or not found.words:
-        return ""
-    words = inputs.clip_words(found)
-    return "" if words is None else " ".join(word.word for word in words.words)
-
-
 def placement_note(placement: Placement) -> str:
     """What plays in a section that spoke nothing, in one sentence, or nothing when it spoke."""
     if placement.substitute is not None:
@@ -400,52 +367,97 @@ def placement_note(placement: Placement) -> str:
     return f"A clip plays here: {placement.source.as_posix()}." if placement.kind is SectionKind.CLIP else ""
 
 
-def dialogue_turns(takes: Takes) -> dict[int, tuple[Said, ...]]:
-    """Each section spoken in more than one voice, as one paragraph per turn that names its voice.
+def dialogue_turns(takes: Takes) -> dict[int, dict[int, Said]]:
+    """Each section spoken in more than one voice, as one paragraph per turn, by turn, that names its voice.
 
     A reader who cannot hear the film cannot tell two voices apart from the words alone, so a dialogue
     names who says each line. A section in one voice, however many turns it has, is read as one
     paragraph and names nobody, which is how it read before a project could have two voices.
     """
-    out: dict[int, tuple[Said, ...]] = {}
+    out: dict[int, dict[int, Said]] = {}
     for number in takes.numbers:
         rows = takes.turns_of(number)
-        if len({row.voice for row in rows}) > 1:
-            out[number] = tuple(Said(text=row.spoken, voice=row.voice) for row in rows if row.spoken)
+        if in_dialogue(row.voice for row in rows):
+            out[number] = {row.turn: Said(text=row.spoken, voice=row.voice) for row in rows if row.spoken}
     return out
+
+
+def in_dialogue(voices: Iterable[str]) -> bool:
+    """Whether the turns of one section are read in more than one voice, which is when a reader is told who."""
+    return len(set(voices)) > 1
 
 
 def transcript_sections(
     inputs: Inputs,
     placements: Placements,
-    texts: Mapping[int, str],
-    turns: Mapping[int, tuple[Said, ...]] | None = None,
+    takes: Takes,
+    *,
+    narrated: Mapping[int, Sequence[SpokenTurn]] | None = None,
+    inside: Sequence[Sequence[SpokenWord]] = (),
 ) -> list[TranscriptSection]:
     """One transcript entry per chapter, in the order they play, as the chapter markers group them.
 
     Consecutive sections that share a chapter share one heading, which is how the film's own markers
-    group them, and each section's speech stays its own paragraph inside it. A section `turns` holds,
-    which `dialogue_turns` gives, is one paragraph per turn instead, each naming its voice.
+    group them, and each section's speech, as its take index rows say it was narrated, stays its own
+    paragraph inside it. A section in more than one voice, which `dialogue_turns` gives, is one
+    paragraph per turn instead, each naming its voice.
+
+    `inside` is the speech inside every clip the film plays, a clip section's or a pane clip's, on
+    the film's clock as `clip_words` reads it for the captions. Each clip's is one paragraph in the
+    section it starts in, naming nobody, and every paragraph of a section is in the order the film
+    plays it, a turn by its first word in `narrated` and a clip by its own first word.
     """
     out: list[TranscriptSection] = []
+    turns = dialogue_turns(takes)
+    heard = _Heard(narrated or {}, inside)
     for chapter, grouped in itertools.groupby(placements.sections, key=lambda placement: placement.chapter):
         run = list(grouped)
-        said = tuple(one for placement in run for one in _said(inputs, placement, texts, turns or {}))
+        said = tuple(one for placement in run for one in _said(placement, takes, turns, heard))
         shown = tuple(one for placement in run for one in described_cues(inputs, placement.section, placement.start))
         out.append(TranscriptSection(chapter=chapter, start=run[0].start, end=run[-1].end, said=said, describes=shown))
     return out
 
 
+@dataclass(frozen=True)
+class _Heard:
+    """When the film plays each turn of its narration, and the speech inside its clips, on the film's clock."""
+
+    narrated: Mapping[int, Sequence[SpokenTurn]]
+    inside: Sequence[Sequence[SpokenWord]]
+
+    def turn_start(self, section: int, turn: int) -> float | None:
+        """The second one turn of one section starts at, or None when it has no words on the film's clock."""
+        found = next((one for one in self.narrated.get(section, ()) if one.turn == turn and one.words), None)
+        return found.words[0].start if found is not None else None
+
+    def clips_in(self, placement: Placement) -> list[tuple[float, Said]]:
+        """Every clip's speech that starts inside this section, as one paragraph each that names nobody."""
+        return [
+            (words[0].start, Said(text=" ".join(word.word for word in words)))
+            for words in self.inside
+            if words and placement.start <= words[0].start < placement.end
+        ]
+
+
 def _said(
-    inputs: Inputs, placement: Placement, texts: Mapping[int, str], turns: Mapping[int, tuple[Said, ...]]
+    placement: Placement, takes: Takes, turns: Mapping[int, Mapping[int, Said]], heard: _Heard
 ) -> tuple[Said, ...]:
-    """What one section contributes to its chapter's text: its speech or its turns, then the note on what plays."""
+    """What one section contributes to its chapter's text: its speech, its turns and its clips' speech in the
+    order the film plays them, then the note on what plays."""
+    number = placement.section
+
+    def at(turn: int) -> float:
+        start = heard.turn_start(number, turn)
+        return placement.start if start is None else start
+
+    if number in turns:
+        spoken = [(at(turn), said) for turn, said in turns[number].items()]
+    else:
+        text = " ".join(row.spoken for row in takes.turns_of(number) if row.spoken)
+        spoken = [(at(1), Said(text=text))] if text else []
+    played = sorted(spoken + heard.clips_in(placement), key=lambda piece: piece[0])
     note = placement_note(placement)
-    noted = (Said(text=note, note=True),) if note else ()
-    if placement.section in turns:
-        return turns[placement.section] + noted
-    spoken = texts.get(placement.section, "") or clip_speech(inputs, placement.section)
-    return ((Said(text=spoken, note=False),) if spoken else ()) + noted
+    return tuple(one for _at, one in played) + ((Said(text=note, note=True),) if note else ())
 
 
 # ---- the poster -------------------------------------------------------------------------------
@@ -524,10 +536,17 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
 
 
 def write_transcript_page(
-    inputs: Inputs, path: Path, placements: Placements, texts: Mapping[int, str], takes: Takes
+    inputs: Inputs,
+    path: Path,
+    placements: Placements,
+    takes: Takes,
+    *,
+    narrated: Mapping[int, Sequence[SpokenTurn]],
+    inside: Sequence[Sequence[SpokenWord]],
 ) -> None:
-    """The media alternative: one page with a heading per chapter, the speech, who says it and every reveal."""
-    sections = transcript_sections(inputs, placements, texts, dialogue_turns(takes))
+    """The media alternative: one page with a heading per chapter, the speech, who says it, the speech inside
+    every clip and every reveal."""
+    sections = transcript_sections(inputs, placements, takes, narrated=narrated, inside=inside)
     replace_all({path: transcript_html(inputs.workspace.name, sections, language=inputs.document.language)})
 
 
@@ -535,7 +554,6 @@ __all__ = [
     "SOUND_CAPTION_SECONDS",
     "build_captions",
     "build_chapters",
-    "caption_texts",
     "SpokenTurn",
     "clip_captions",
     "clip_words",
@@ -543,8 +561,8 @@ __all__ = [
     "inner_words",
     "narrated_turns",
     "spoken_cues",
-    "clip_speech",
     "dialogue_turns",
+    "in_dialogue",
     "placement_note",
     "described_cues",
     "mux_chapters",

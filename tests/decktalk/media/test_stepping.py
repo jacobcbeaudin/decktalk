@@ -15,17 +15,18 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib import resources
 from pathlib import Path
+from typing import cast
 
 import pytest
+from playwright.sync_api import Page
 
 from decktalk.artifacts.recordings import pane_landings
 from decktalk.errors import ToolError
 from decktalk.findings import Code
-from decktalk.media import browser, ffmpeg, stepping
+from decktalk.media import browser, ffmpeg, pages, stepping
 from decktalk.media.clipframes import landings_of
 from decktalk.media.origin import Allowed, page_url
 from decktalk.media.pagereport import Box, Recording
-from decktalk.media.pages import await_painted
 from decktalk.page import ENGINE_PATH, T0_SIGNAL, Q
 from decktalk.settings import MotionConfig, RecordConfig
 from decktalk.toolchain.assets import RUNTIME_FILE
@@ -43,9 +44,6 @@ def tools() -> Iterator[None]:
 
 WIDTH, HEIGHT, FPS = 320, 180, 25
 """A small frame at the default rate, which is all a test of the clock needs."""
-
-WAIT = RecordConfig().frame_wait_seconds
-"""How long a step may take to be drawn, which is the default a project records with."""
 
 SKIP_STILL = RecordConfig().skip_still
 """Whether a frame nothing changed on is written again rather than captured, which is the default."""
@@ -91,7 +89,8 @@ def record(
     """Record `seconds` of the page into `out`, in one piece for each of `starts`, each in a page of its own."""
     count = stepping.frame_count(seconds, FPS)
     bounds = [*starts, count]
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
+    with pytest.MonkeyPatch.context() as patch, browser.chromium(policy=browser.TRUSTED, spend=False) as real:
+        patch.setattr(stepping, "SKIP_AUDIT_EVERY", audit_every)
         pieces = [
             stepping.record_piece(
                 real,
@@ -102,15 +101,13 @@ def record(
                 width=WIDTH,
                 height=HEIGHT,
                 fps=FPS,
-                frame_wait_seconds=WAIT,
                 skip_still=skip_still,
-                skip_audit_every=audit_every,
                 color_scheme="dark",
                 motion=MotionConfig(),
             )  # fmt: skip
             for first, stop in itertools.pairwise(bounds)
         ]
-    return stepping.join(pieces, out, seconds=seconds)
+    return stepping.join(pieces, out, seconds=seconds, name=out.stem)
 
 
 def luma_frames(video: Path) -> list[bytes]:
@@ -204,19 +201,12 @@ def deck_page(tmp_path: Path, body: str) -> Allowed:
 
 def a_frame(allowed: Allowed, k: int, *, walked: bool, url: str = URL) -> bytes:
     """Frame `k` of the fixture, reached by stepping every frame before it or by addressing it directly."""
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
-        opened = stepping.stepping(
-            real, allowed, width=WIDTH, height=HEIGHT, color_scheme="dark", motion=MotionConfig()
-        )
-        with opened as (page, _assets):
-            page.goto(url, wait_until="load")
-            stepper = stepping.Stepper(page, FPS, WAIT)
-            stepper.hold()
-            if walked:
-                sink = Frames()
-                stepper.record(range(k + 1), sink, lambda: None, skip_still=False, audit_every=0)
-                return sink.frames[-1]
-            return stepper.frame(k)
+    with held(allowed, url, ready=False) as stepper:
+        if walked:
+            sink = Frames()
+            stepper.record(range(k + 1), sink, lambda: None, skip_still=False, audit_every=0)
+            return sink.frames[-1]
+        return stepper.frame(k)
 
 
 def test_a_frame_addressed_by_its_index_is_the_frame_stepping_every_frame_before_it_reaches(tmp_path):
@@ -319,20 +309,46 @@ def test_a_webgl_composition_is_drawn_from_its_second_and_records_the_same_frame
     assert len(set(frames_a)) > len(frames_a) // 2, "the canvas changes with its second"
 
 
+class Answering:
+    """A page on a held clock that answers every step at once and keeps what each call was handed."""
+
+    def __init__(self) -> None:
+        self.clock = self
+        self.handed: list[object] = []
+
+    def run_for(self, _milliseconds: int) -> None:
+        """The page's timers move, which nothing here watches."""
+
+    def evaluate(self, _script: str, arg: object = None) -> object:
+        self.handed.append(arg)
+        return {"due": None, "changed": True, "stillUntil": None, "undeclared": None}
+
+
+def test_a_step_waits_for_the_page_as_long_as_every_other_call_into_it():
+    """One deadline holds every call into a page, so a step and a report give up on a silent page alike."""
+    page = Answering()
+    stepping.Stepper(cast("Page", page), FPS).step(0.2)
+    assert page.handed == [[0.2, pages.DEADLINE_SECONDS]]
+
+
 # ---- a frame is captured only once the page has drawn it ----------------------------------------
 
 
 @contextmanager
-def held(allowed: Allowed, url: str = URL) -> Iterator[stepping.Stepper]:
-    """A loaded fixture page held still on its clock, prepared the way `record_piece` prepares one."""
+def held(allowed: Allowed, url: str = URL, *, ready: bool = True) -> Iterator[stepping.Stepper]:
+    """A loaded fixture page held still on its clock, prepared the way `record_piece` prepares one.
+
+    With `ready` false the page is held straight after it loads, with nothing waited on in between.
+    """
     with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
         opened = stepping.stepping(
             real, allowed, width=WIDTH, height=HEIGHT, color_scheme="dark", motion=MotionConfig()
         )
         with opened as (page, _assets):
             page.goto(url, wait_until="load")
-            await_painted(page)
-            stepper = stepping.Stepper(page, FPS, WAIT)
+            if ready:
+                pages.await_ready(page)
+            stepper = stepping.Stepper(page, FPS)
             stepper.hold()
             yield stepper
 
@@ -384,18 +400,18 @@ def test_a_step_that_shows_text_in_a_font_not_yet_used_answers_once_the_font_has
     assert status == "loaded"
 
 
-FRAME_WAIT_FOR_A_HUNG_PAGE_SECONDS = 0.5
-"""A wait short enough that a page which never finishes drawing fails this test quickly."""
+HUNG_PAGE_DEADLINE_SECONDS = 0.5
+"""A deadline short enough that a page which never finishes drawing fails this test quickly."""
 
 
-def test_a_page_that_is_never_drawn_within_the_wait_fails_the_frame_rather_than_capturing_it(tmp_path):
+def test_a_page_that_is_never_drawn_within_the_wait_fails_the_frame_rather_than_capturing_it(tmp_path, monkeypatch):
     """A frame whose image never decodes is a ToolError naming the frame, never a frame captured half drawn."""
     script = "DeckTalk.frame((t) => { if (t >= 0.2 && !window.__hung) { window.__hung = true;"
     script += " const img = new Image(); img.src = 'never.png'; img.decode = () => new Promise(() => {});"
     script += " document.body.appendChild(img); } });"
     allowed = fixture_page(tmp_path, script)
     with held(allowed) as stepper:
-        stepper.wait_seconds = FRAME_WAIT_FOR_A_HUNG_PAGE_SECONDS
+        monkeypatch.setattr(stepping, "DEADLINE_SECONDS", HUNG_PAGE_DEADLINE_SECONDS)
         stepper.frame(4)
         with pytest.raises(ToolError) as raised:
             stepper.frame(5)
@@ -549,23 +565,9 @@ PENDING_JS = "() => document.getAnimations().filter((animation) => animation.pen
 """How many of the page's animations are still waiting for the browser to start or pause them."""
 
 
-@contextmanager
-def held_fresh(allowed: Allowed, url: str) -> Iterator[stepping.Stepper]:
-    """A fresh page held still straight after it loads, with nothing waited on between the load and the hold."""
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
-        opened = stepping.stepping(
-            real, allowed, width=WIDTH, height=HEIGHT, color_scheme="dark", motion=MotionConfig()
-        )
-        with opened as (page, _assets):
-            page.goto(url, wait_until="load")
-            stepper = stepping.Stepper(page, FPS, WAIT)
-            stepper.hold()
-            yield stepper
-
-
 def test_the_clock_is_held_only_once_every_animation_the_page_set_playing_has_started(tmp_path):
     """A loop the first slide starts is often still waiting to start at load, and a hold must not freeze it there."""
-    with held_fresh(moving_page(tmp_path), MOVING_URL) as stepper:
+    with held(moving_page(tmp_path), MOVING_URL, ready=False) as stepper:
         assert stepper.page.evaluate(PENDING_JS) == 0
 
 
@@ -578,7 +580,7 @@ def test_frame_zero_of_a_slide_whose_loop_is_turning_is_the_same_from_every_fres
     allowed = moving_page(tmp_path)
     first = []
     for _ in range(FRESH_PAGES):
-        with held_fresh(allowed, MOVING_URL) as stepper:
+        with held(allowed, MOVING_URL, ready=False) as stepper:
             first.append(hashlib.sha256(stepper.frame(0)).hexdigest())
     assert len(set(first)) == 1, first
 
@@ -840,17 +842,13 @@ def scripted_page(tmp_path: Path, opacity: str) -> Allowed:
     )
 
 
-def recorded(allowed: Allowed, out: Path, url: str, seconds: float, *, audit_every: int = AUDIT_EVERY) -> Recording:
-    return record(allowed, out, seconds, url=url, audit_every=audit_every)
-
-
 def test_a_script_motion_whose_draw_still_changes_after_it_arrives_is_reported_on_its_arrival(tmp_path):
     """A draw that fades in over 0.2 s once its progress is 1 is never drawn past the arrival, so the page says so."""
-    unsettled = recorded(scripted_page(tmp_path, "p < 1 ? 0 : Math.min(1, (t - 0.4) / 0.2)"), tmp_path / "a.mp4",
-                         SCRIPTED_URL, 1.0)  # fmt: skip
+    unsettled = record(scripted_page(tmp_path, "p < 1 ? 0 : Math.min(1, (t - 0.4) / 0.2)"), tmp_path / "a.mp4", 1.0,
+                       url=SCRIPTED_URL)  # fmt: skip
     rows = [(row.code, row.cue) for row in unsettled.report.warnings]
     assert (Code.PAGE_MOTION_UNFINISHED, "1.1:land") in rows
-    settled = recorded(scripted_page(tmp_path, "p"), tmp_path / "b.mp4", SCRIPTED_URL, 1.0)
+    settled = record(scripted_page(tmp_path, "p"), tmp_path / "b.mp4", 1.0, url=SCRIPTED_URL)
     assert Code.PAGE_MOTION_UNFINISHED not in [row.code for row in settled.report.warnings]
 
 
@@ -863,24 +861,24 @@ UNDECLARED_TIMER = (
 
 def test_a_change_a_plain_timer_draws_outside_every_declared_lane_is_named_with_its_second(tmp_path):
     """The recorder learns a script changed the picture with nothing declared to explain it, and where and when."""
-    recording = recorded(fixture_page(tmp_path, UNDECLARED_TIMER), tmp_path / "a.mp4", URL, 1.0)
+    recording = record(fixture_page(tmp_path, UNDECLARED_TIMER), tmp_path / "a.mp4", 1.0)
     assert [(row.what, row.at, row.frames) for row in recording.undeclared] == [("<div#late>", 0.4, 1)]
 
 
 def test_a_timer_that_changes_a_declared_region_or_nothing_visible_is_not_undeclared_change(tmp_path):
     """A change inside a region a frame hook declares is masked, and a change no pixel shows cannot mislead verify."""
     region = UNDECLARED_TIMER + "DeckTalk.frame(() => {}, { region: '#late' });"
-    declared = recorded(fixture_page(tmp_path, region), tmp_path / "a.mp4", URL, 1.0)
+    declared = record(fixture_page(tmp_path, region), tmp_path / "a.mp4", 1.0)
     assert declared.undeclared == ()
     unseen = UNDECLARED_TIMER.replace(".style.visibility = 'visible'", ".dataset.seen = 'yes'")
-    invisible = recorded(fixture_page(tmp_path, unseen), tmp_path / "b.mp4", URL, 1.0)
+    invisible = record(fixture_page(tmp_path, unseen), tmp_path / "b.mp4", 1.0)
     assert invisible.undeclared == ()
 
 
 def test_a_timer_inside_a_still_stretch_ends_the_stretch_and_is_reported_as_undeclared_change(tmp_path):
     """Crossing a still stretch in one step must still stop where the page's own timer lands, and name what it drew."""
     out = tmp_path / "a.mp4"
-    recording = recorded(fixture_page(tmp_path, UNDECLARED_TIMER), out, URL, 1.0, audit_every=0)
+    recording = record(fixture_page(tmp_path, UNDECLARED_TIMER), out, 1.0, audit_every=0)
     shown = [lit_width(frame, 100) > 0 for frame in luma_frames(out)]
     assert shown.index(True) == 10 and all(shown[10:]), "the stretch ends on the frame the timer lands on"
     assert [(row.what, row.at, row.frames) for row in recording.undeclared] == [("<div#late>", 0.4, 1)]
@@ -1063,7 +1061,7 @@ REVEALING = (
 def test_a_reveal_is_reported_on_the_box_it_was_drawn_in_departing_on_its_cue(tmp_path):
     """The canvas is drawn at a sixth, so the square stands at 100, 50 and is 100 wide in the recording."""
     url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2", Q.T0: T0_SIGNAL})
-    recording = recorded(deck_page(tmp_path, REVEALING), tmp_path / "01.mp4", url, 0.8)
+    recording = record(deck_page(tmp_path, REVEALING), tmp_path / "01.mp4", 0.8, url=url)
     assert recording.report.motions == ()
     (reveal,) = recording.report.reveals
     assert (reveal.kind, reveal.box, reveal.departs) == ("reveal", Box(x=100, y=50, w=100, h=100), 0.2)
@@ -1111,7 +1109,7 @@ def test_a_picture_shown_beside_a_pane_clip_never_draws_the_pictures_around_it_a
         )
         with opened as (page, _assets):
             page.goto(BESIDE_URL, wait_until="load")
-            stepper = stepping.Stepper(page, FPS, WAIT)
+            stepper = stepping.Stepper(page, FPS)
             stepper.hold()
             stepper.record(range(round(0.8 * FPS)), sink, lambda: None, skip_still=False, audit_every=0)
     planes = decoded(sink.frames, tmp_path)
@@ -1124,3 +1122,36 @@ def test_a_picture_shown_beside_a_pane_clip_never_draws_the_pictures_around_it_a
     assert moved == [], f"the slide's picture was drawn again on frames {moved}"
     shown = planes[round(0.6 * FPS)][270 * width + 450]
     assert shown != planes[round(0.3 * FPS)][270 * width + 450], "the cue shows the button"
+
+
+CUED_AND_UNSEEN = page_url("deck/index.html", {Q.SCENE: "2", Q.CUES: "2.1:go@0,2.1:show@0.4", Q.T0: T0_SIGNAL})
+"""A scene whose `show` cue draws `#late` at second 0.4, the frame a plain timer changes `#bar` unseen."""
+
+
+def test_a_change_no_pixel_shows_beside_a_declared_cue_in_one_frame_is_not_undeclared_change(tmp_path):
+    """The step kept the timer's element, and the cue's pixels made the frame differ, so the timer was blamed."""
+    script = (
+        'DeckTalk.scene(2, { slides: [{ id: "2.1", owns: ["go", "show"], render: () => "<p>cued</p>" }] });'
+        "DeckTalk.on('2.1:go', () => setTimeout(() => {"
+        " document.getElementById('quiet').dataset.seen = 'yes'; }, 380));"
+        "DeckTalk.on('2.1:show', () => { document.getElementById('late').style.visibility = 'visible'; });"
+    )
+    quiet = "<div id=quiet style='position:fixed;left:200px;top:0;width:50px;height:20px;background:#888'></div>"
+    recording = record(fixture_page(tmp_path, script, quiet), tmp_path / "a.mp4", 1.0, url=CUED_AND_UNSEEN)
+    assert recording.undeclared == ()
+
+
+RISING = REVEALING.replace('data-in-style="cut"', 'data-in-style="rise"')
+"""The square rising in at `go`, which settles well inside the half second a cue may still move."""
+
+
+@pytest.mark.parametrize("markup", [REVEALING, RISING], ids=["cut", "rise"])
+@pytest.mark.parametrize("starts", [(0, 9), (0, 13), (0, 6, 19)], ids=["inside", "after-settle", "seams"])
+def test_a_reveal_recorded_in_pieces_is_the_reveal_one_pass_records_field_for_field(tmp_path, markup, starts):
+    """A build crosses still frames in one step, so a piece starting inside a reveal's half second steps a second
+    the one pass never did, and the joined reveal still has to be the one pass's, `arrives` included."""
+    url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2", Q.T0: T0_SIGNAL})
+    allowed = deck_page(tmp_path, markup)
+    once = record(allowed, tmp_path / "01.mp4", 1.0, url=url, skip_still=True, audit_every=0)
+    split = record(allowed, tmp_path / "02.mp4", 1.0, url=url, starts=starts, skip_still=True, audit_every=0)
+    assert split.report.reveals == once.report.reveals

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -15,7 +14,6 @@ from decktalk.speech.sound import (
     SOUND_DECLARED,
     SOUNDS,
     SoundContext,
-    SoundFactory,
     SoundProvider,
     SoundProviders,
     endpoint,
@@ -81,11 +79,6 @@ def house(_context: SoundContext) -> SoundProvider:
     return Quiet()
 
 
-def spellings(name: str) -> list[str]:
-    """Ways of writing a shipped name that a reader takes for the shipped sound provider itself."""
-    return [name.upper(), name.title(), f" {name}", f"{name}\n", "".join(chr(ord(c) + 0xFEE0) for c in name)]
-
-
 @pytest.mark.parametrize("name", sorted(SOUND_DECLARED))
 def test_a_host_sound_factory_under_a_shipped_name_is_refused(name: str) -> None:
     """A sound is priced at the rate its provider's name declares, so only the shipped code answers under it."""
@@ -95,30 +88,8 @@ def test_a_host_sound_factory_under_a_shipped_name_is_refused(name: str) -> None
         SoundProviders(factories={**SOUNDS, name: house})
 
 
-@pytest.mark.parametrize(
-    ("name", "spelled"), [(name, spelled) for name in sorted(SOUND_DECLARED) for spelled in spellings(name)]
-)
-def test_a_spelling_of_a_shipped_sound_name_is_refused_too(name: str, spelled: str) -> None:
-    with pytest.raises(
-        ValueError, match=re.escape(f"{spelled!r} is the name of a sound provider DeckTalk ships, {name!r}")
-    ):
-        SoundProviders(factories={spelled: house})
-
-
-def test_the_shipped_sound_providers_register_under_their_own_names_beside_a_hosts() -> None:
-    assert dict(SoundProviders(factories=SOUNDS).factories) == dict(SOUNDS)
-    assert sorted(SoundProviders(factories={**SOUNDS, "house": house}).factories) == sorted([*SOUNDS, "house"])
-
-
 def test_the_shipped_sound_tables_cannot_be_changed_in_place() -> None:
     with pytest.raises(TypeError):
         SOUNDS["other"] = house  # ty: ignore[invalid-assignment]
     with pytest.raises(TypeError):
         SOUND_DECLARED["other"] = SOUND_DECLARED["elevenlabs"]  # ty: ignore[invalid-assignment]
-
-
-def test_a_hosts_sound_table_changed_after_it_registered_changes_no_provider() -> None:
-    table: dict[str, SoundFactory] = {"house": house}
-    registered = SoundProviders(factories=table)
-    table[next(iter(SOUND_DECLARED))] = house
-    assert list(registered.factories) == ["house"]

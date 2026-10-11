@@ -131,7 +131,7 @@ TWO_SECTIONS = "## 1. Open\n\nThe narrator reads this.\n\n## 2. Guest\n\n[voice 
 
 def digests_of(project: Inputs) -> list[str | None]:
     """The voiced take each spoken section names, read as narrate reads it."""
-    return [state.digest for state in take_states(project).values()]
+    return [state.turns[0].digest for state in take_states(project).values()]
 
 
 def test_a_take_is_named_by_its_voices_values_and_never_by_its_name(tmp_path: Path) -> None:

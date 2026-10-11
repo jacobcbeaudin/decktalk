@@ -1,4 +1,4 @@
-"""Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
+"""Frames on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
 
 Every comparison reads the luma plane only. An RGB image would carry the decoder's chroma
 upsampling and clipping, and comparing it with a frame that never left YUV reports changed pixels
@@ -20,59 +20,6 @@ from functools import cache
 from pathlib import Path
 
 from . import ffmpeg
-
-
-@dataclass(frozen=True)
-class FrameStats:
-    pts: float
-    yavg: float
-    ymax: float
-    uavg: float
-    vavg: float
-
-
-STATS_WIDTH = 480
-"""Calibration: the width a frame's statistics are read at, a quarter of 1080p's, as `STATS_HEIGHT` says why."""
-
-STATS_HEIGHT = 270
-"""Calibration: the height a frame's statistics are read at, a quarter of 1080p's.
-
-Averages barely move under the scale, and on the starter's recordings every frame read as a cover or
-as painted exactly as it did at full size, while the scan took a third of the time. The brightest
-pixel falls by a few levels, far inside the thresholds it is compared against.
-"""
-
-
-def frame_stats(path: Path, seconds: float) -> list[FrameStats]:
-    """Per-frame signalstats for the first `seconds` of the file, read on a scaled copy of each frame."""
-    vf = f"scale={STATS_WIDTH}:{STATS_HEIGHT},signalstats,metadata=print"
-    out = ffmpeg.stderr("-t", str(seconds), *ffmpeg.source(path), "-vf", vf, "-f", "null", "-")
-    frames: list[FrameStats] = []
-    cur: dict[str, float] = {}
-    for line in out.splitlines():
-        m = re.search(r"pts_time:([0-9.]+)", line)
-        if m:
-            if "YAVG" in cur:
-                frames.append(_stats(cur))
-            cur = {"pts": float(m.group(1))}
-            continue
-        mm = re.search(r"lavfi\.signalstats\.(YAVG|UAVG|VAVG|YMAX)=([0-9.]+)", line)
-        if mm and cur:
-            cur[mm.group(1)] = float(mm.group(2))
-    if "YAVG" in cur:
-        frames.append(_stats(cur))
-    return frames
-
-
-def _stats(d: dict[str, float]) -> FrameStats:
-    return FrameStats(
-        pts=d["pts"],
-        yavg=d.get("YAVG", 0.0),
-        ymax=d.get("YMAX", 0.0),
-        uavg=d.get("UAVG", 128.0),
-        vavg=d.get("VAVG", 128.0),
-    )
-
 
 COARSE_SEEK_SECONDS = 3.0
 """Truth: far enough back that a decoder passes a keyframe before `t`, and near enough to stay quick."""

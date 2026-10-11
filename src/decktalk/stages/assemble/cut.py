@@ -39,7 +39,7 @@ from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
-from decktalk.stages import selects
+from decktalk.stages import page_seconds, selects
 from decktalk.stages.assemble import slate
 
 log = logging.getLogger(__name__)
@@ -228,12 +228,11 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
 
 
 def page_target(takes: Takes, section: PageSection, fps: int) -> float:
-    """How long one page section runs in the film, which is its span in the narration plus its hold."""
-    span = section_targets(takes, fps).get(section.number, 0.0)
-    if span <= 0:
+    """How long one page section runs in the film, refused when the take index gives it no span."""
+    seconds = page_seconds(takes, section, fps)
+    if not seconds:
         raise NotBuiltError(f"section {section.number} has no span in the take index.", hint=Artifact.TAKES.next_step)
-    # The narration pauses for a hold exactly as it pauses for a clip, so the hold is picture alone.
-    return round(span + section.hold_seconds, SECOND_DIGITS)
+    return seconds
 
 
 def render_sections(
@@ -345,15 +344,6 @@ def concat(files: list[Path], out: Path) -> None:
         listing.unlink(missing_ok=True)
 
 
-def section_targets(takes: Takes, fps: int) -> dict[int, float]:
-    """Frame-exact video length per spoken section, from cumulative frame boundaries.
-
-    Each length is the difference between two rounded cumulative boundaries rather than one rounded
-    length, so the sections add up to the narration exactly and the picture never drifts off it.
-    """
-    return {section: (round(at.end * fps) - round(at.start * fps)) / fps for section, at in takes.placed.items()}
-
-
 def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     """The fade filters one section carries, which is what a dip to black at a cut is made of."""
     filters = ""
@@ -382,7 +372,6 @@ __all__ = [
     "render_sections",
     "rendered_starts",
     "section_slate",
-    "section_targets",
     "remove_stray_videos",
     "vfades",
 ]

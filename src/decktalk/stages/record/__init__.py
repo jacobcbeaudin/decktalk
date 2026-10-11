@@ -32,10 +32,11 @@ the page's sections alone, and is named by the parts that moved.
 A section named by `--section` is always recorded, which is how an author asks for another take of a
 page that has not changed.
 
-The order the recorder writes in is the whole of its safety. The log of the recording being replaced
-goes before anything is captured, the joined video is placed next, and the log of what was just recorded is
-written last, so the pair on disk is complete or absent and a crash can never leave a new picture
-under an old judgement.
+The order the recorder writes in is the whole of its safety. A section's new video is drafted beside
+the one it replaces, as every file a program writes is, so a recording that fails leaves the last
+video and its log as they were. Once the draft is whole, the old log goes, the draft is moved onto
+the video, and the log of what was just recorded is written last, so a crash can never leave a new
+picture under an old judgement.
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from pathlib import Path
 from decktalk.artifacts import RecordingChecks, RecordingLog, UnreadableCache, UnreadablePaidRecord
 from decktalk.errors import STOPS, InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
+from decktalk.files import drafted
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs, PageSection
 from decktalk.logs import cache_decision, within
@@ -62,7 +64,7 @@ from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
 from decktalk.settings import PROJECT_FILE
-from decktalk.stages import selects
+from decktalk.stages import page_seconds, selects
 from decktalk.stages.pool import Halt, Pool
 from decktalk.stages.record import render
 from decktalk.stages.record.capture import (
@@ -79,10 +81,11 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True, eq=False)
 class LogSink:
-    """Where one section's recording log is kept, cleared before the capture and written after it.
+    """Where one section's recording log is kept, cleared as its video is replaced and written after it.
 
-    The section's first chunk clears this before anything is captured, and it is written once the
-    joined video is in place, which is what keeps the pair on disk complete or absent. What is written
+    The recorder that finishes a section clears this just before its whole draft is moved onto the
+    video, and writes it once the video is in place, so no log ever judges a video it was not
+    written for. What is written
     then is everything the recorders know, and the stage writes the log again with the frame
     measurements and the judgements as soon as it has measured them, so a run stopped in between
     leaves a log with no checks in it, which the next run reads as a section it has not finished
@@ -93,7 +96,7 @@ class LogSink:
     job: Job
 
     def clear(self) -> None:
-        """Delete the log of the recording that is about to be replaced, before anything is captured."""
+        """Delete the log of the recording that is about to be replaced, before its video is."""
         self.job.log_path.unlink(missing_ok=True)
 
     def write(self, recording: Recording) -> None:
@@ -124,6 +127,8 @@ class LogSink:
 def stale_recording(inputs: Inputs, section: PageSection, script: Sequence[TurnText] | None = None) -> str | None:
     """Why the recording on disk for this section no longer matches the project, or None when it does.
 
+    The reason is the opening clause of a sentence, capitalised, which a line goes on after with its own ending.
+
     This is the one rule that decides whether a recording still stands, so what `record` skips and
     what `status` calls stale are the same question answered once, and neither compares file times.
     The reason names the parts that moved, such as the words of one turn or the markup of the
@@ -133,20 +138,20 @@ def stale_recording(inputs: Inputs, section: PageSection, script: Sequence[TurnT
     `record` run plays.
     """
     takes = inputs.takes()
-    span = takes.span_seconds(section.number) if takes is not None else 0.0
-    if not span:
-        return f"section {section.number} has no narration span yet"
+    seconds = page_seconds(takes, section, inputs.settings.video.fps) if takes is not None else 0.0
+    if not seconds:
+        return f"Section {section.number} has no narration span yet"
     cue_times = inputs.cue_times()
-    job = plan_job(inputs, section, cue_times, span + section.recorded_past_span_seconds, script)
+    job = plan_job(inputs, section, cue_times, seconds, script)
     if job.unchanged:
         return None
     if not job.out.exists():
-        return f"section {section.number} has no recording"
+        return f"Section {section.number} has no recording"
     if job.previous is None:
-        return f"section {section.number} has no log of what it was recorded from"
+        return f"Section {section.number} has no log of what it was recorded from"
     if job.previous.checks is None:
-        return f"section {section.number} was stopped before its recording was measured"
-    return f"section {section.number}: {said(job.moved)} changed since it was recorded"
+        return f"Section {section.number} was stopped before its recording was measured"
+    return f"Section {section.number}: {said(job.moved)} changed since it was recorded"
 
 
 def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
@@ -167,12 +172,13 @@ def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
             hint=f"The page sections are {every}.",
         )
     planned: list[Job] = []
+    fps = inputs.settings.video.fps
     for section in chosen:
-        span = takes.span_seconds(section.number)
-        if not span:
+        seconds = page_seconds(takes, section, fps)
+        if not seconds:
             run.note(f"Section {section.number} has no narration span yet, so it is not recorded.", level=Level.WARNING)
             continue
-        planned.append(plan_job(inputs, section, cue_times, span + section.recorded_past_span_seconds))
+        planned.append(plan_job(inputs, section, cue_times, seconds))
     if not planned:
         raise InputError(
             "no page section has a length to record.",
@@ -232,9 +238,7 @@ def piece(
         width=video.width,
         height=video.height,
         fps=video.fps,
-        frame_wait_seconds=recorder.frame_wait_seconds,
         skip_still=recorder.skip_still,
-        skip_audit_every=recorder.skip_audit_every,
         color_scheme=recorder.color_scheme,
         motion=settings.motion,
         documents=inputs.documents(),
@@ -242,8 +246,8 @@ def piece(
     )
 
 
-def rendered_section(inputs: Inputs, job: Job) -> Recording:
-    """Draw one rendered section by running its command, which writes the video at the section's own path.
+def rendered_section(inputs: Inputs, job: Job, out: Path) -> Recording:
+    """Draw one rendered section by running its command, which writes the section's video into `out`.
 
     The command is the second source of a section's picture, so what it hands back is the same
     recording a page's is: the video at the section's own path, and a report carrying the lanes it
@@ -254,7 +258,7 @@ def rendered_section(inputs: Inputs, job: Job) -> Recording:
         job.section.render_command,
         root=inputs.root,
         work=inputs.workspace.render_dir(job.section.key),
-        out=job.out,
+        out=out,
         document=job.document or {},
         timeout=inputs.settings.tools.timeout_seconds,
         label=f"section {job.section.number}",
@@ -275,11 +279,11 @@ def rendered_section(inputs: Inputs, job: Job) -> Recording:
 class Underway:
     """One section whose chunks the recorders are recording, which the recorder that finishes the last one joins.
 
-    The section opens on the stream when its first chunk starts, and the log of the recording it
-    replaces goes then, before anything is captured. Each chunk is recorded into a piece beside the
-    section's video. The recorder that finishes the last chunk joins the pieces into the video, writes
-    the log of what was recorded, measures and judges it, writes the log again with the judgements,
-    and closes the section on the stream, so no recorder ever waits on another.
+    The section opens on the stream when its first chunk starts. Each chunk is recorded into a piece
+    beside the section's video. The recorder that finishes the last chunk joins the pieces into a
+    draft, puts it in place of the video and its log, writes the log of what was recorded, measures
+    and judges it, writes the log again with the judgements, and closes the section on the stream, so
+    no recorder ever waits on another.
     """
 
     inputs: Inputs
@@ -298,13 +302,12 @@ class Underway:
         return out.with_name(f".{out.stem}.piece{chunk.first}{out.suffix}")
 
     def begin(self) -> None:
-        """Open the section on the stream and clear the log it replaces, once, when its first chunk starts."""
+        """Open the section on the stream and delete what a stopped run left, once, when its first chunk starts."""
         with self.lock:
             if self.started is not None:
                 return
             self.started = time.monotonic()
             self.run.emit(SectionStart, stage=Stage.RECORD, section=self.job.section.number)
-            self.sink.clear()
             for stale in self.job.out.parent.glob(f".{self.job.out.stem}.piece*"):
                 stale.unlink(missing_ok=True)
 
@@ -337,9 +340,16 @@ class Underway:
             for left in self.pieces:
                 left.path.unlink(missing_ok=True)
 
-    def finish(self, recording: Recording) -> SectionRecording:
-        """Measure the section's video, leave its log beside it with every judgement in it, and close it."""
+    def finish(self, draw: Callable[[Path], Recording]) -> SectionRecording:
+        """Draw the section's video into a draft, put it in place, leave its log beside it judged, and close it.
+
+        `draw` writes the whole video into the draft it is handed. Only then does the old log go and
+        the draft move onto the video, so a draw that fails leaves the last recording and its log.
+        """
         inputs, run, job = self.inputs, self.run, self.job
+        with drafted(job.out) as draft:
+            recording = draw(draft)
+            self.sink.clear()
         self.sink.write(recording)
         for name in recording.page_errors:
             run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
@@ -375,11 +385,13 @@ class Underway:
             self.begin()
             try:
                 if self.job.section.rendered:
-                    return self.finish(rendered_section(self.inputs, self.job))
+                    return self.finish(lambda draft: rendered_section(self.inputs, self.job, draft))
                 made = piece(self.inputs, opened, self.job, chunk, self.piece_path(chunk), check)
                 if not self.add(made):
                     return None
-                return self.finish(stepping.join(self.pieces, self.job.out, seconds=self.job.seconds))
+                return self.finish(
+                    lambda draft: stepping.join(self.pieces, draft, seconds=self.job.seconds, name=self.job.out.stem)
+                )
             except BaseException as failure:
                 self.end(Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED)
                 raise
@@ -506,7 +518,6 @@ def record(
                 inputs.settings.tools.chromium,
                 policy=recorder.page_policy,
                 spend=run.spend,
-                switches=recorder.capture_switches,
             )
         )
 

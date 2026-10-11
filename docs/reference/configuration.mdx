@@ -50,7 +50,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `narration.store_wait_seconds`, `record.page_policy`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `record.capture_switches`, `record.frame_wait_seconds`, `record.skip_audit_every`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.page_policy`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -115,8 +115,7 @@ These keys govern how the script is turned into audio.
 | `takes_dir` | string | `"takes"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project voices or finds there is written here. |
 | `store_dir` | string | `""` | takes any value of its type | path | machine |  | The take store: a folder outside every project where this machine keeps a second copy of every voiced take it makes and its provider words, each named by its digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS. |
 | `context_characters` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody: the end of the turn before and the start of the turn after. 0 sends no neighbouring text, so each turn is sent on its own. |
-| `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech or alignment request times out. |
-| `store_wait_seconds` | integer | `900` | must be between 1 and 36000 | seconds | machine |  | Seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus one, with the waits between them. The default covers that at the default `timeout_seconds` and `retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds. |
+| `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech or alignment request times out. With `retries` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request, every attempt this long with the waits between them, before it is refused as locked. |
 | `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH`, `TAKE_WORD_CUT` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
 | `sound_end_min_run_seconds` | number | `0.05` | must be between 0.02 and 0.5 | seconds | project | `CUT_SPEECH`, `TAKE_WORD_CUT` | Shortest run under the noise level that counts as the end of a take's sound. |
 
@@ -126,8 +125,6 @@ These keys govern how the script is turned into audio.
 **`narration.takes_dir`** An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a voiced take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.
 
 **`narration.store_dir`** It holds the spoken words of every script voiced on this machine, so keep it out of a synced or shared folder. A relative path, a folder inside the project or one inside the tool cache is refused when the project loads. Write an absolute path or one that starts with ~.
-
-**`narration.store_wait_seconds`** Below the length of one take request, a run is refused while another run's healthy request is still being answered.
 
 **`narration.sound_end_noise_dbfs`** Above about -25 dBFS the scan calls quiet speech silence, so the take is placed early and the cut that follows it lands on a word.
 
@@ -145,10 +142,7 @@ These keys tune how `record` opens each page section in headless Chromium and st
 | `chunk_frames_min` | integer | `50` | must be between 1 and 100000 | frames | machine |  | Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section shorter than two chunks of this length is recorded whole by one recorder. |
 | `chunk_startup_seconds` | number | `0.2` | must be above 0 and must be at most 60 | seconds | machine |  | How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps * recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its last recording took. |
 | `step_seconds` | number | `0.014` | must be above 0 and must be at most 10 | seconds | machine |  | How long one recorder takes to step its page once on this machine, the capture of the frame it lands on included, which `record` weighs against `chunk_startup_seconds` when it splits a section. |
-| `capture_switches` | array | `["disable-frame-rate-limit", "disable-gpu-vsync"]` | must hold values that each must be one of disable-frame-rate-limit, disable-gpu-vsync |  | machine |  | Chromium switches `record` launches its browser with, which stop it holding its frames to the display's refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same frames as one without them. An empty list launches Chromium with none. |
-| `frame_wait_seconds` | number | `15.0` | must be above 0 and must be at most 120 | seconds | machine |  | Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every image decoded and the step laid out and painted, before it fails the section rather than capture the frame half drawn. |
 | `skip_still` | boolean | `true` | takes any value of its type |  | project |  | Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes. |
-| `skip_audit_every` | integer | `0` | must be between 0 and 10000 | frames | machine |  | Step to and capture every this many frames `record` writes again anyway, and stop the section if one differs from the frame before. Zero audits none, which is the fast path, and the test suite sets it to prove the frames written again. |
 
 <Warning>
 **`record.page_policy`** A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
@@ -159,13 +153,7 @@ These keys tune how `record` opens each page section in headless Chromium and st
 
 **`record.chunk_startup_seconds`** A start-up stated far too low splits short sections into chunks that each spend more loading the page than recording it.
 
-**`record.capture_switches`** With the switches no frame waits for a display refresh, so each recording keeps more of the CPU busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on each other.
-
-**`record.frame_wait_seconds`** A wait too short for this machine fails sections whose pages are only slow to fetch a font or decode an image. It never shortens a recording that succeeds, because a page that has drawn its frame is captured at once.
-
 **`record.skip_still`** A page that changes its picture outside what DeckTalk knows of, such as through its style sheet's object model or inside a shadow root, records the frame before until something it knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off.
-
-**`record.skip_audit_every`** Every audited frame costs one step and one capture, so one audits every skipped frame and saves no time.
 
 </Warning>
 

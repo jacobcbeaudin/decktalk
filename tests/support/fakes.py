@@ -25,11 +25,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from playwright.sync_api import Browser, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Page, Playwright
 
 from decktalk.errors import ProviderError
 from decktalk.media import pages
+from decktalk.media.browser import TRUSTED, Chromium, PagePolicy
 from decktalk.results import Word
 from decktalk.speech import (
     ALIGNERS,
@@ -127,11 +128,11 @@ def _built_by[F](fakes: StandIns[F], name: str, real: Callable[[Any], object]) -
     return build
 
 
-def _refused(name: str) -> Callable[[object], object]:
-    """A factory that refuses to build the shipped provider `name`."""
+def _refused(name: str, what: str = "provider") -> Callable[[Any], Any]:
+    """A factory that refuses to build the shipped `what` called `name`."""
 
     def build(_context: object) -> object:
-        raise AssertionError(f"the test built the shipped provider {name!r}, which it never faked")
+        raise AssertionError(f"the test built the shipped {what} {name!r}, which it never faked")
 
     return build
 
@@ -142,14 +143,7 @@ def refusing_aligners() -> dict[str, Callable[[AlignerContext], Aligner]]:
     A run on this table that needs an aligner and was given no fake fails at the build, so no test
     ever reaches a local server by a table it left alone.
     """
-    return {name: _refused_aligner(name) for name in ALIGNERS}
-
-
-def _refused_aligner(name: str) -> Callable[[AlignerContext], Aligner]:
-    def build(_context: AlignerContext) -> Aligner:
-        raise AssertionError(f"the test built the shipped aligner {name!r}, which it never faked")
-
-    return build
+    return {name: _refused(name, "aligner") for name in ALIGNERS}
 
 
 @dataclass
@@ -183,11 +177,16 @@ NOTHING_REPORTED: dict[str, object] = {
 
 
 class FakePage:
-    """A Chromium page that answers every call and remembers what was asked of it."""
+    """A Chromium page that answers every call and remembers what was asked of it.
+
+    It is also a context or a page a script is added to, which is what `pages.instrument` is handed.
+    """
 
     def __init__(self) -> None:
         self.urls: list[str] = []
         self.scripts: list[str] = []
+        self.init_scripts: list[str] = []
+        self.html = ""
         self.report: dict[str, object] = dict(NOTHING_REPORTED)
 
     def page(self) -> Page:
@@ -197,8 +196,14 @@ class FakePage:
     def on(self, event: str, handler: object) -> None:
         """A recorder listens for the page's own exceptions, and this page throws none."""
 
+    def add_init_script(self, script: str) -> None:
+        self.init_scripts.append(script)
+
     def goto(self, url: str, **_kwargs: object) -> None:
         self.urls.append(url)
+
+    def set_content(self, html: str) -> None:
+        self.html = html
 
     def evaluate(self, script: str, *_args: object) -> object:
         self.scripts.append(script)
@@ -215,7 +220,7 @@ class FakePage:
         """A recorder waits in real time and a test does not, so this passes the time by skipping it."""
 
     def screenshot(self, *, path: str | Path, **_kwargs: object) -> None:
-        Path(path).write_bytes(b"")
+        Path(path).write_bytes(b"png")
 
     def close(self) -> None:
         """A page a test opened is closed the way a real one is, and closing it does nothing here."""
@@ -240,15 +245,19 @@ class FakeVoice:
 
 
 class BareBrowser:
-    """A launched Chromium, which opens pages that carry nothing and closes without a sound."""
+    """A launched Chromium, which opens pages that answer every call and closes without a sound."""
 
     version = "0.0.0.0"
 
     def __init__(self) -> None:
         self.closed = False
 
-    def new_page(self, **_kwargs: object) -> object:
-        return object()
+    def opened(self, policy: PagePolicy = TRUSTED) -> Chromium:
+        """This browser as a Chromium launched under `policy`, which is what `chromium()` yields."""
+        return Chromium(cast("Browser", self), policy)
+
+    def new_page(self, **_kwargs: object) -> FakePage:
+        return FakePage()
 
     def close(self) -> None:
         self.closed = True

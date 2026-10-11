@@ -85,7 +85,6 @@ class PageSection:
     page: str
     scene: str
     chapter: str = ""
-    record_margin_seconds: float = 0.3
     hold_seconds: float = 0.0
     with_ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
@@ -106,15 +105,6 @@ class PageSection:
     def rendered(self) -> bool:
         """Whether a command draws this section's picture rather than a page."""
         return bool(self.render_command)
-
-    @property
-    def recorded_past_span_seconds(self) -> float:
-        """How long the recorder steps the page on past the section's span: its hold, then its margin.
-
-        The hold is recorded like every other second of the section, so a motion that arrives after
-        the last word lands in the film rather than stopping on the frame the narration ended on.
-        """
-        return self.hold_seconds + self.record_margin_seconds
 
     @property
     def freeze_params(self) -> dict[str, str]:
@@ -383,7 +373,7 @@ def parse_section(raw: dict[str, Any], index: int, notes: list[str]) -> Section:
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
         raise InputError(f"{t.where}: 'scene' must be a number or a string")
-    for key in ("record_margin_seconds", "hold_seconds", "lead_seconds", "tail_seconds"):
+    for key in ("hold_seconds", "lead_seconds", "tail_seconds"):
         value = t.get_num(key)
         if value is not None and value < 0:
             raise InputError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")

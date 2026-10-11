@@ -161,8 +161,7 @@ machine rather than the film, so they are machine keys like the ones above.
 |---|---|---|
 | `record.concurrency` | `0` | How many recorders `record` runs at once, each a Chromium of its own. Zero chooses from the CPU this process may use: one recorder per three CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
 | `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
-| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
-| `narration.store_wait_seconds` | `900` | How many seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request. |
+| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. With `narration.timeout_seconds` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request. |
 | `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
 
 A recording waits for every frame it steps, so a frame drawn slowly is late on the clock of the

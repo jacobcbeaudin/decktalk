@@ -145,7 +145,7 @@ src/decktalk/
       encode.py          The settings and the tags every output shares, so each file DeckTalk writes is made the same way.
       environment.py     The environment a browser or an encoder DeckTalk starts is given, which is never the one the process holds.
       ffmpeg.py          Finding ffmpeg and ffprobe for this machine, running them, and probing what they read.
-      frames.py          Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
+      frames.py          Frames on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
       origin.py          The local origin every page is opened at, its request routing, and the server `decktalk serve` runs.
       pagereport.py      The one reader of what a page hands back, so nothing above this module trusts a page's own words.
       pages.py           Driving one page in a launched Chromium: the probe, the deadline on every call, and its report.
@@ -208,7 +208,7 @@ src/decktalk/
       record/            Stage 3: record each page section in a headless browser, one frame at a time, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is made from, part by part.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
-        pool.py          How many page sections record at once, which is the size of the pool `record` hands them to.
+        pool.py          How many recorders work at once, which is the size of the pool `record` hands chunks to, and the chunks.
         render.py        Programs a project names: the command that draws a narrated section, and the commands that make its clips.
       score/             Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.

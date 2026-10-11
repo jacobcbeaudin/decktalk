@@ -24,11 +24,9 @@ from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
     build_captions,
     build_chapters,
-    caption_texts,
     clip_captions,
-    clip_speech,
+    clip_words,
     described_cues,
-    dialogue_turns,
     film_words,
     inner_words,
     narrated_turns,
@@ -105,8 +103,9 @@ def test_a_note_says_what_plays_where_nothing_was_said():
 
 def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
+    takes = take_index(inputs, {1: ("Open", 2.0, 1.6, spoken("hello")), 3: ("The edit", 2.5, 2.0, spoken("again"))})
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
-    entries = transcript_sections(inputs, placements_of(inputs, rows), {1: "hello", 3: "again"})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), takes)
     assert [entry.chapter for entry in entries] == ["Open", "The edit", "Close"]
     # The clip and the page that share "The edit" are one heading with two paragraphs under it.
     assert len(entries[1].said) == 2
@@ -126,9 +125,7 @@ def test_each_turn_of_a_section_in_two_voices_is_a_paragraph_naming_its_voice(tm
     narrated(inputs, first, second, alone, again)
     takes = inputs.takes(required=True)
     rows = rendered(inputs, {1: 2.0, 2: 2.0})
-    entries = transcript_sections(
-        inputs, placements_of(inputs, rows), caption_texts(inputs, takes), dialogue_turns(takes)
-    )
+    entries = transcript_sections(inputs, placements_of(inputs, rows), takes)
     said = [one for entry in entries for one in entry.said]
     assert said == [
         Said("Says who?", voice="guest"),
@@ -148,7 +145,7 @@ def test_captions_name_the_voice_of_a_dialogue_only_when_the_project_asks(tmp_pa
     words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
     narrated(inputs, first, second, alone, words=words)
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes)))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}))
     expected = [True, True, False] if named else [False, False, False]
     assert [cue.named for cue in cues] == expected
     assert ("guest: alpha beta" in srt_text(cues)) is named
@@ -163,7 +160,7 @@ def test_every_spoken_caption_carries_its_voice_and_turn_whether_or_not_the_file
     words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
     narrated(inputs, first, second, alone, words=words)
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes)))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}))
     assert [(cue.voice, cue.turn, cue.named) for cue in cues] == [
         ("guest", 1, False),
         ("narrator", 2, False),
@@ -181,7 +178,7 @@ def test_a_named_voice_leaves_room_on_the_line_for_its_name(tmp_path):
     second = a_take(1, turn=2, seconds=1.0, spoken=near, voice="guest", digest="0000000000000002")
     narrated(inputs, first, second, words={(1, 1): spoken(said), (1, 2): spoken(near)})
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}, caption_texts(inputs, takes)))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}))
     assert all(cue.named and len(f"{cue.voice}: {cue.lines[0]}") <= CAPTION_MAX_CHARS for cue in cues)
     assert len(cues[-1].lines) == 2
 
@@ -193,27 +190,29 @@ def test_a_sound_before_a_voiced_line_stays_outside_the_voice():
     assert joined.lines == ("[door opens]", "Says who?") and joined.voice == "guest" and joined.spoken == (1, 2)
 
 
-def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path):
+def test_a_clip_s_speech_is_read_into_the_transcript_in_the_section_it_plays_in(tmp_path):
+    """The transcript reads the speech inside every clip the captions read, one paragraph naming nobody."""
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     Words(words=(Word(word="spoken", start=0.0, end=0.4),)).write(tmp_path / "media" / "before.words.json")
-    assert clip_speech(inputs, 2) == "spoken"
-    assert clip_speech(inputs, 1) == ""
+    rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}, audio={2: tmp_path / "media" / "before.mov"})
+    inside = clip_words(inputs, open_run(tmp_path).run, rows)
+    takes = take_index(inputs, {1: ("Open", 2.0, 1.6, spoken("hello")), 3: ("The edit", 2.5, 2.0, spoken("again"))})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), takes, inside=inside)
+    edited = entries[1]
+    assert edited.chapter == "The edit"
+    assert edited.said[0] == Said("spoken") and edited.said[1].note
 
 
-@pytest.mark.parametrize("reading", ["transcript", "captions"])
-def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path, reading):
+def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path):
     """The author named the file in decktalk.toml, so DeckTalk cannot build it again and never says to delete it."""
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     path = tmp_path / "media" / "before.words.json"
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(InputError) as refused:
-        if reading == "transcript":
-            clip_speech(inputs, 2)
-        else:
-            rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
-            clip_captions(inputs, open_run(tmp_path).run, rows)
+        rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
+        clip_captions(inputs, open_run(tmp_path).run, rows)
     said = f"{refused.value} {refused.value.hint}"
     assert refused.value.code is ErrorCode.INPUT
     assert str(refused.value).startswith("decktalk.toml: [[section]] number=2 words names media/before.words.json")
@@ -273,7 +272,7 @@ def test_consecutive_sections_with_one_title_share_one_chapter_marker(tmp_path):
 def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta")), 2: ("B", 2.0, 1.6, spoken("gamma delta"))})
-    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes)))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}))
     assert cues
     assert cues[0].start == 0.0
     # The second section's take starts where the first one ends in the joined narration.
@@ -302,22 +301,6 @@ def test_a_clip_whose_words_file_is_missing_is_said_and_plays_uncaptioned(tmp_pa
     rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
     assert clip_captions(inputs, opened.run, rows) == []
     assert any("plays with no captions" in note for note in opened.notes())
-
-
-def test_the_take_index_lends_the_captions_the_scripts_own_spelling(tmp_path):
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
-    assert caption_texts(inputs, takes) == {1: "alpha beta"}
-
-
-def test_a_section_the_index_never_spoke_falls_back_to_the_script(tmp_path):
-    inputs = write_project(tmp_path)
-    (tmp_path / "script.md").write_text("## 1. One\n\nWritten words.\n\n## 2. Two\n\nMore.\n", encoding="utf-8")
-    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha"))})
-    texts = caption_texts(
-        inputs, takes.model_copy(update={"sections": (takes.sections[0].model_copy(update={"spoken": ""}),)})
-    )
-    assert texts[1] == "Written words."
 
 
 # ---- sound captions ----------------------------------------------------------------------------
@@ -510,6 +493,6 @@ def test_a_caption_never_spans_two_turns(tmp_path):
     second = a_take(1, turn=2, voice="guest", seconds=1.0, spoken="gamma delta", digest="0000000000000002")
     narrated(inputs, first, second, words={(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta")})
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}, caption_texts(inputs, takes)))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}))
     assert [cue.lines for cue in cues] == [("alpha beta",), ("gamma delta",)]
     assert cues[1].start >= 1.3

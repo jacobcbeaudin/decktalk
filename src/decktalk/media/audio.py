@@ -25,7 +25,7 @@ from pathlib import Path
 from pydantic_core import from_json
 
 from ..errors import ToolError
-from ..settings import CLICK_LEVEL_DBFS
+from ..settings import CLICK_LEVEL_DBFS, AudioConfig
 from . import ffmpeg
 
 SILENCE_END_TOLERANCE_SECONDS = 0.06
@@ -245,10 +245,11 @@ class Loudness:
     offset: float
 
 
-def measure_loudness(path: Path, *, i: float, tp: float, lra: float) -> Loudness:
+def measure_loudness(path: Path, target: AudioConfig) -> Loudness:
+    """What one loudnorm pass reads of a file's audio, measured against the loudness `[audio]` masters to."""
+    graph = f"loudnorm=I={target.target_lufs}:TP={target.true_peak_max_dbtp}:LRA={target.range_max_lu}"
     err = ffmpeg.stderr(
-        *ffmpeg.source(path), "-map", "0:a",
-        "-af", f"loudnorm=I={i}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-",
+        *ffmpeg.source(path), "-map", "0:a", "-af", f"{graph}:print_format=json", "-f", "null", "-",
     )  # fmt: skip
 
     # loudnorm prints its measurement as the last JSON object on stderr, with every number a string.

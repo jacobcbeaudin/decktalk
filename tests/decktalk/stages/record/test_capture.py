@@ -117,7 +117,7 @@ def test_a_section_whose_page_is_not_there_is_refused(tmp_path: Path) -> None:
 
 def test_a_word_never_carries_the_separators_the_query_uses() -> None:
     value = words_param((Word(word="one,two@three", start=0.0, end=0.4),))
-    assert value == "onetwothree@0.00"
+    assert value == "onetwothree@0.000"
 
 
 def test_no_words_is_no_query_value() -> None:
@@ -131,8 +131,21 @@ def test_each_turn_is_written_as_its_voice_and_the_second_it_begins() -> None:
         TurnWords(turn=1, voice="narrator", spoken="hi", words=said, start=0.4),
         TurnWords(turn=2, voice="guest", spoken="", words=Words(), start=3.104),
     )
-    assert turns_param(turns) == "narrator@0.40,guest@3.10"
+    assert turns_param(turns) == "narrator@0.400,guest@3.104"
     assert turns_param(()) is None
+
+
+def test_a_last_word_just_before_the_next_turn_is_written_before_that_turn_begins() -> None:
+    """With no gap between turns, a last word can start a few milliseconds before the next turn does, and the page
+    gives a word to the last turn that began at or before it, so both are written to the same thousandth."""
+    last = Word(word="rolls", start=3.996, end=3.999)
+    turns = (
+        TurnWords(turn=1, voice="narrator", spoken="rolls", words=Words(words=(last,)), start=0.0),
+        TurnWords(turn=2, voice="guest", spoken="", words=Words(), start=4.0),
+    )
+    word = float((words_param((last,)) or "").split("@")[1])
+    begins = float((turns_param(turns) or "").split(",")[1].split("@")[1])
+    assert word < begins
 
 
 def test_a_page_is_cut_into_the_scene_a_section_plays_and_the_part_every_scene_shares() -> None:
@@ -184,14 +197,6 @@ def test_the_page_policy_a_render_runs_under_joins_the_key(tmp_path: Path) -> No
     trusted = a_project(tmp_path)
     sealed = Inputs.load(tmp_path, environ={}, machine={"record": {"page_policy": "untrusted"}})
     assert moved(made_from(trusted, 1), made_from(sealed, 1)) == (part_key(Part.POLICY),)
-
-
-def test_the_capture_switches_stay_out_of_the_key(tmp_path: Path) -> None:
-    """A recording with the switches decodes to the frames of one without them, so turning them over keeps it."""
-    switched = a_project(tmp_path)
-    plain = Inputs.load(tmp_path, environ={}, machine={"record": {"capture_switches": []}})
-    assert switched.settings.record.capture_switches != plain.settings.record.capture_switches
-    assert moved(made_from(switched, 1), made_from(plain, 1)) == ()
 
 
 def test_a_swapped_asset_moves_the_key_although_no_markup_changed(tmp_path: Path) -> None:

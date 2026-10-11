@@ -256,7 +256,6 @@ class Take(Model):
         description="The digest of the model the voice served this take with, when it named one."
     )
     audio_blake3: str | None = Field(
-        None,
         description="The BLAKE3 of the audio this row was measured on, as the take's words file records it, or null "
         "on a placeholder or a take whose words file records none.",
     )
@@ -379,11 +378,6 @@ class Takes(Stored):
     def voiced_sections(self) -> tuple[int, ...]:
         """Every section holding a voiced take of any of its turns."""
         return tuple(dict.fromkeys(take.section for take in self.sections if take.voiced))
-
-    @property
-    def voiced_turns(self) -> tuple[TurnKey, ...]:
-        """Every turn holding a voiced take."""
-        return tuple(take.turn_key for take in self.sections if take.voiced)
 
     def span_seconds(self, section: int) -> float:
         """How long one section runs in the joined narration: its lead, every turn with its gap, and its tail."""

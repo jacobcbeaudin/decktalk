@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path, PurePosixPath
@@ -77,7 +77,7 @@ from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Artifact
 from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
 from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
-from decktalk.speech import VoiceInForce
+from decktalk.speech import VoiceInForce, http
 from decktalk.tomlmap.suggest import did_you_mean
 
 log = logging.getLogger(__name__)
@@ -403,22 +403,17 @@ class Inputs:
     @cached_property
     def take_places(self) -> TakePlaces:
         """Every place this project's voiced takes are kept, which one instance serves for this value's whole life."""
-        return TakePlaces(self.workspace, wait_seconds=self.settings.narration.store_wait_seconds)
+        narration = self.settings.narration
+        return TakePlaces(
+            self.workspace, wait_seconds=http.longest_request_seconds(narration.timeout_seconds, narration.retries)
+        )
 
     def words(self, number: int) -> Words:
-        """One section's words on its section clock, as the kind that timed them, and never None.
+        """One section's words on its section clock, and never None.
 
-        A page section of one turn answers its take's words as its take index row says they were timed,
-        moved later by the section's lead. A row its provider timed answers the words read through
-        `take_words` by its digest, and one whose words file is gone answers no words of the kind its
-        digest names, so a placeholder still says its times are estimates. A row an aligner timed answers
-        the aligned words its `alignment` names, when that file reads under its own key. A voiced row no
-        aligner timed, or whose aligned words are gone, answers the row's spoken words estimated over the
-        take's sound. Every turn's words are cut at its take's sound end, where the join cuts the take, so
-        a word its voice gave to the take's trailing silence ends where the sound does. A section of
-        several turns answers every turn's words in turn order on one clock,
-        each turn moved by the section's lead and every earlier turn's span, as `EstimatedWords` when any
-        turn's are estimated and as plain `Words` otherwise. A clip section answers the words file its
+        A page section answers every turn's words in turn order on one clock, as `turn_words` places
+        them, as `EstimatedWords` when any turn's are estimated and as plain `Words` otherwise, whether
+        it has one turn or several. A clip section answers the words file its
         `words` key names, which already runs on the clip's own clock, and one that does not read is
         refused as `INPUT`. No take index, no row, or no such section answers an empty `Words`. Every
         answer is a copy for reading, which no writer puts on disk.
@@ -427,10 +422,6 @@ class Inputs:
         if isinstance(found, ClipSection):
             return on_section_clock(self.clip_words(found) or Words(), 0.0)
         turns = self.turn_words(number)
-        if not turns:
-            return on_section_clock(Words(), 0.0)
-        if len(turns) == 1:
-            return turns[0].words
         joined = tuple(word for turn in turns for word in turn.words.words)
         kind = EstimatedWords if any(turn.estimated for turn in turns) else Words
         return on_section_clock(kind(words=joined), 0.0)
@@ -438,8 +429,10 @@ class Inputs:
     def turn_words(self, number: int) -> tuple[TurnWords, ...]:
         """Every turn's words of one page section on its section clock, in turn order, or none without a take.
 
-        A turn's words move by the section's lead and by the span of every turn before it, which is the
-        lead, each earlier take to its sound end and the gap after it, as its take index rows hold them.
+        Each turn's are its take's words as its row says they were timed, read by `take_words_of`. A
+        turn's words move by its row's lead and by the span of every turn before it, which is the lead,
+        each earlier take to its sound end and the gap after it, as its take index rows hold them, so
+        they land where the joined narration plays them whatever the settings say now.
         """
         found = self.document.section(number)
         index = self.takes()
@@ -449,8 +442,7 @@ class Inputs:
         out: list[TurnWords] = []
         at = 0.0
         for row in rows:
-            # A section of one turn is moved by the lead its settings name today, as it always has been.
-            offset = self.lead_seconds(number) if len(rows) == 1 else round(at + row.lead_seconds, 3)
+            offset = round(at + row.lead_seconds, 3)
             said = on_section_clock(self.take_words_of(row), offset)
             out.append(TurnWords(turn=row.turn, voice=row.voice, spoken=row.spoken, words=said, start=offset))
             at += row.span_seconds
@@ -504,7 +496,7 @@ class Inputs:
         `NOT_BUILT`, naming the command that writes it. The index is a cache over the takes on disk, so
         narrate builds one that does not read again for nothing and never buys a take for it.
         """
-        found = self._take_index.get()
+        found = self._held_takes.get()
         if isinstance(found, NotBuiltError):
             if required:
                 raise found.with_traceback(None)
@@ -514,9 +506,14 @@ class Inputs:
         return found
 
     @cached_property
-    def _take_index(self) -> _TakeIndex:
+    def _held_takes(self) -> _Held[Takes | NotBuiltError]:
         """The take index held against its file's stat, which one instance serves for this value's whole life."""
-        return _TakeIndex(self.workspace.takes_path)
+        return _Held(self.workspace.takes_path, _take_index)
+
+    @cached_property
+    def _held_logs(self) -> dict[Path, _Held[RecordingLog]]:
+        """Each recording log held against its file's stat, so a stage that reads one log many times parses it once."""
+        return {}
 
     def cue_times(self) -> CueTimes | None:
         return CueTimes.read(self.workspace.cue_times_path)
@@ -525,8 +522,9 @@ class Inputs:
         return Placements.read(self.workspace.placements_path)
 
     def recording_log(self, key: str) -> RecordingLog | None:
-        """One section's recording log, or None when that section was never recorded."""
-        return RecordingLog.read(self.workspace.recording_log(key))
+        """One section's recording log, or None when it was never recorded, read once while its file is unchanged."""
+        path = self.workspace.recording_log(key)
+        return self._held_logs.setdefault(path, _Held(path, RecordingLog.read)).get()
 
     def preview_cues(self) -> dict[str, Any]:
         """What the origin answers the preview alias with, which is the resolved cues by scene.
@@ -648,40 +646,48 @@ def _words_kind(digest: str) -> type[ProviderWords] | type[EstimatedWords]:
     return EstimatedWords if is_placeholder(digest) else ProviderWords
 
 
-class _TakeIndex:
-    """The take index as last read, held while its file keeps the inode, size and times it was read at.
+class _Held[T]:
+    """One file as last read, held while it keeps the inode, size and times it was read at.
 
-    Narrate replaces the index in one atomic rename, which gives it a new inode, so a run that narrates
-    and then cues reads the new index without being told to. A file that does not read is held as the
-    refusal it earns, so its one "built again" record is written once while it stays as it is.
+    Every writer replaces such a file in one atomic rename, which gives it a new inode, so a run that
+    writes one and then reads it reads the new file without being told to.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, read: Callable[[Path], T | None]) -> None:
         self._path = path
+        self._read = read
         self._lock = threading.Lock()
-        self._held: tuple[tuple[int, int, int, int], Takes | NotBuiltError] | None = None
+        self._held: tuple[tuple[int, int, int, int], T] | None = None
 
-    def get(self) -> Takes | NotBuiltError | None:
-        """The index, the refusal its unreadable file earns, or None when there is no file."""
+    def get(self) -> T | None:
+        """What the file reads as, or None when there is no file."""
         try:
             stat = self._path.stat()
-        except FileNotFoundError:  # silent: no index is narrate not having run, which None says
+        except FileNotFoundError:  # silent: no file is the writer not having run, which None says
             return None
         key = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
         with self._lock:
             held = self._held
         if held is not None and held[0] == key:
             return held[1]
-        try:
-            found: Takes | NotBuiltError | None = Takes.read(self._path)
-        except NotBuiltError as unread:
-            log.info("%s It will be built again.", unread, extra={"data": {"file": self._path.name}})
-            found = unread
+        found = self._read(self._path)
         if found is None:
             return None
         with self._lock:
             self._held = (key, found)
         return found
+
+
+def _take_index(path: Path) -> Takes | NotBuiltError | None:
+    """The take index at `path`, or the refusal its unreadable file earns, which says it will be built again.
+
+    A file that does not read is held as that refusal, so the record is written once while it stays as it is.
+    """
+    try:
+        return Takes.read(path)
+    except NotBuiltError as unread:
+        log.info("%s It will be built again.", unread, extra={"data": {"file": path.name}})
+        return unread
 
 
 __all__ = [

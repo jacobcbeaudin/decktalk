@@ -36,17 +36,15 @@ LOUDNESS_TOLERANCE_LU = 1.0
 """Calibration: how far the measured result may sit from the integrated target and still be on target."""
 
 
-def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> tuple[audio.Loudness, audio.Loudness]:
-    """Gain to the integrated target, then a true-peak limiter at the ceiling, measured either side.
+def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> audio.Loudness:
+    """Gain to the integrated target, then a true-peak limiter at the ceiling, and what the result measures.
 
     A plain gain keeps the mix's dynamics intact, and the limiter only touches peaks that would cross
     the ceiling. It runs oversampled so inter-sample peaks are caught, which is what a true-peak
     ceiling promises.
     """
     loudness = inputs.settings.audio
-    before = audio.measure_loudness(
-        src, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
-    )
+    before = audio.measure_loudness(src, loudness)
     # A silent mix has no loudness to lift, so it is encoded at unity gain and the finding says so.
     lift = loudness.target_lufs - before.i if math.isfinite(before.i) else 0.0
     ceiling = gain(loudness.true_peak_max_dbtp - LIMITER_HEADROOM_DB)
@@ -56,12 +54,9 @@ def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> tuple[audio.Loud
         dst,
         filters=f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
         f"alimiter=limit={ceiling:.4f}:attack={LIMITER_ATTACK_MS}:release={LIMITER_RELEASE_MS}:level=false,"
-        f"aresample={inputs.settings.audio.sample_rate}",
+        f"aresample={loudness.sample_rate}",
     )
-    after = audio.measure_loudness(
-        dst, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
-    )
-    return before, after
+    return audio.measure_loudness(dst, loudness)
 
 
 def measured(inputs: Inputs, after: audio.Loudness) -> Loudness | None:

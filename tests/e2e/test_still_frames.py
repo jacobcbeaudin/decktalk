@@ -17,31 +17,21 @@ hold each change signal on its own on every pull request.
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from decktalk.errors import Exit
 from decktalk.inputs import Inputs
-from decktalk.media import ffmpeg
-from decktalk.template import EXAMPLES, STARTER
-from support.commands import HOSTILE_DIRECTORY, clean_environ
+from support.commands import HOSTILE_DIRECTORY, PACKAGED, decktalk, frame_digests, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
-from support.tools import machine_tools
 
 BUILDS_BUDGET_SECONDS = budget(2 * EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
 """How long one project may take here, which is two builds of it."""
 
 pytestmark = [pytest.mark.scaffold, pytest.mark.timeout(BUILDS_BUDGET_SECONDS)]
 
-PACKAGED = [STARTER, *(example.name for example in EXAMPLES if example.shipped)]
-"""Every project `decktalk init` writes today, which is the starter and each shipped example."""
-
-AUDIT_EVERY = 0
+NO_AUDIT = 0
 """How often the skipping build captures a frame it skipped anyway, which is never here.
 
 An audited frame is stepped, so an audit cuts every still stretch short, and the skipping build has
@@ -49,43 +39,18 @@ to be the path a production build takes, with each stretch as long as the page a
 compares every frame with the capturing build's, which is a stricter audit than any interval.
 """
 
-SKIPPING = ("--set", "record.skip_still=true", "--set", f"record.skip_audit_every={AUDIT_EVERY}")
+SKIPPING = ("--set", "record.skip_still=true")
 CAPTURING = ("--set", "record.skip_still=false")
 
 RUN_ONLY = ("run", "elapsed_seconds")
 """What verify answers about its own run rather than about the film, which two builds never share."""
 
 
-def decktalk(*args: str, cwd: Path) -> dict[str, Any]:
-    """One `decktalk` command under `--json`, with no key, no voice variable and no machine file in reach."""
-    ran = subprocess.run(
-        [sys.executable, "-m", "decktalk", *args, "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=clean_environ(cwd),
-        cwd=cwd,
-    )
-    assert ran.stdout.strip(), ran.stderr
-    return json.loads(ran.stdout)
-
-
-def frame_digests(video: Path) -> list[str]:
-    """One digest per decoded frame of `video`, taken over its rgb24 pixels."""
-    with machine_tools():
-        rows = ffmpeg.raw(*ffmpeg.source(video), "-f", "framemd5", "-pix_fmt", "rgb24", "-").decode()
-    return [line.rsplit(",", 1)[1].strip() for line in rows.splitlines() if line and not line.startswith("#")]
-
-
-def built(home: Path, name: str, chosen: tuple[str, ...], overrides: tuple[str, ...]) -> tuple[Path, dict[str, Any]]:
+def built(home: Path, name: str, overrides: tuple[str, ...]) -> tuple[Path, dict[str, Any]]:
     """One packaged project written by `init` into its own folder, built with `overrides`, and what verify measured."""
-    root = home / name
-    made = subprocess.run(
-        [sys.executable, "-m", "decktalk", "init", str(root), "--no-skills", *chosen, "--json"],
-        capture_output=True, text=True, check=False, env=clean_environ(home), cwd=home,
-    )  # fmt: skip
-    assert made.returncode == Exit.FOUND_NOTHING, made.stderr
-    done = decktalk("--project", str(root), "build", "--no-spend", *overrides, cwd=home)
+    home.mkdir(parents=True)
+    root = written(home, name)
+    done = decktalk("--project", str(root), "build", "--no-spend", *overrides, cwd=home, audit_every=NO_AUDIT)
     assert done.get("film"), done
     measured = decktalk("--project", str(root), "verify", cwd=home)
     for spent in RUN_ONLY:
@@ -96,12 +61,8 @@ def built(home: Path, name: str, chosen: tuple[str, ...], overrides: tuple[str, 
 @pytest.mark.parametrize("name", PACKAGED)
 def test_every_page_section_records_the_same_frames_with_still_frames_skipped(tmp_path, name):
     """Skipping still frames changes how long a recording takes and nothing in it: every frame and every number."""
-    chosen = () if name == STARTER else ("--example", name)
-    skipping_home, capturing_home = (tmp_path / side / HOSTILE_DIRECTORY for side in ("skip", "capture"))
-    for home in (skipping_home, capturing_home):
-        home.mkdir(parents=True)
-    skipping, skipping_verify = built(skipping_home, name, chosen, SKIPPING)
-    capturing, capturing_verify = built(capturing_home, name, chosen, CAPTURING)
+    skipping, skipping_verify = built(tmp_path / "skip" / HOSTILE_DIRECTORY, name, SKIPPING)
+    capturing, capturing_verify = built(tmp_path / "capture" / HOSTILE_DIRECTORY, name, CAPTURING)
     inputs = Inputs.load(skipping, environ={})
     pages = [section.key for section in inputs.document.page_sections if not section.rendered]
     assert pages, "a packaged project records at least one page section"

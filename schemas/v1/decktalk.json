@@ -313,7 +313,7 @@
           "x-environment": "DECKTALK_NARRATION_CONTEXT_CHARACTERS"
         },
         "timeout_seconds": {
-          "description": "Seconds before a speech or alignment request times out.",
+          "description": "Seconds before a speech or alignment request times out. With `retries` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request, every attempt this long with the waits between them, before it is refused as locked.",
           "type": "integer",
           "default": 180,
           "minimum": 10,
@@ -324,25 +324,6 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_TIMEOUT_SECONDS"
-        },
-        "store_wait_seconds": {
-          "description": "Seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus one, with the waits between them. The default covers that at the default `timeout_seconds` and `retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
-          "type": "integer",
-          "default": 900,
-          "minimum": 1,
-          "maximum": 36000,
-          "x-range": "must be between 1 and 36000",
-          "x-unit": "seconds",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-hazard": "Below the length of one take request, a run is refused while another run's healthy request is still being answered.",
-          "x-see-also": [
-            "narration.store_dir",
-            "narration.timeout_seconds",
-            "narration.retries"
-          ],
-          "x-environment": "DECKTALK_NARRATION_STORE_WAIT_SECONDS"
         },
         "sound_end_noise_dbfs": {
           "description": "Level under which the tail of a take counts as silence, which is where the take's sound ends.",
@@ -493,44 +474,6 @@
           ],
           "x-environment": "DECKTALK_RECORD_STEP_SECONDS"
         },
-        "capture_switches": {
-          "description": "Chromium switches `record` launches its browser with, which stop it holding its frames to the display's refresh rate, so a recorded frame takes about half the time. A recording with them decodes to the same frames as one without them. An empty list launches Chromium with none.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "disable-frame-rate-limit",
-              "disable-gpu-vsync"
-            ]
-          },
-          "default": [
-            "disable-frame-rate-limit",
-            "disable-gpu-vsync"
-          ],
-          "x-range": "must hold values that each must be one of disable-frame-rate-limit, disable-gpu-vsync",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-hazard": "With the switches no frame waits for a display refresh, so each recording keeps more of the CPU busy, and a `record.concurrency` set by hand above the machine's share makes the sections wait on each other.",
-          "x-see-also": [
-            "record.concurrency"
-          ],
-          "x-environment": "DECKTALK_RECORD_CAPTURE_SWITCHES"
-        },
-        "frame_wait_seconds": {
-          "description": "Longest `record` waits for a page to draw one stepped frame, with every font it shows loaded, every image decoded and the step laid out and painted, before it fails the section rather than capture the frame half drawn.",
-          "type": "number",
-          "default": 15.0,
-          "exclusiveMinimum": 0,
-          "maximum": 120,
-          "x-range": "must be above 0 and must be at most 120",
-          "x-unit": "seconds",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-hazard": "A wait too short for this machine fails sections whose pages are only slow to fetch a font or decode an image. It never shortens a recording that succeeds, because a page that has drawn its frame is captured at once.",
-          "x-environment": "DECKTALK_RECORD_FRAME_WAIT_SECONDS"
-        },
         "skip_still": {
           "description": "Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes.",
           "type": "boolean",
@@ -540,27 +483,7 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-hazard": "A page that changes its picture outside what DeckTalk knows of, such as through its style sheet's object model or inside a shadow root, records the frame before until something it knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off.",
-          "x-see-also": [
-            "record.skip_audit_every"
-          ],
           "x-environment": "DECKTALK_RECORD_SKIP_STILL"
-        },
-        "skip_audit_every": {
-          "description": "Step to and capture every this many frames `record` writes again anyway, and stop the section if one differs from the frame before. Zero audits none, which is the fast path, and the test suite sets it to prove the frames written again.",
-          "type": "integer",
-          "default": 0,
-          "minimum": 0,
-          "maximum": 10000,
-          "x-range": "must be between 0 and 10000",
-          "x-unit": "frames",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-hazard": "Every audited frame costs one step and one capture, so one audits every skipped frame and saves no time.",
-          "x-see-also": [
-            "record.skip_still"
-          ],
-          "x-environment": "DECKTALK_RECORD_SKIP_AUDIT_EVERY"
         }
       },
       "additionalProperties": false

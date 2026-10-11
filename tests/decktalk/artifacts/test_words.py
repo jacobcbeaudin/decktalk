@@ -36,6 +36,24 @@ def test_the_end_is_where_the_last_word_ends() -> None:
     assert SPOKEN.end == 0.9
 
 
+def test_words_cut_at_a_sound_end_are_heard_as_the_join_plays_the_take() -> None:
+    """A word past the cut ends there, a word after it keeps its place with no length, and the record is kept."""
+    said = ProviderWords(
+        words=(
+            Word(word="before", start=0.0, end=0.4),
+            Word(word="across", start=0.5, end=0.9),
+            Word(word="after", start=0.9, end=1.0),
+        )
+    )
+    heard = said.cut_at(0.6)
+    assert heard.words == (
+        Word(word="before", start=0.0, end=0.4),
+        Word(word="across", start=0.5, end=0.6),
+        Word(word="after", start=0.6, end=0.6),
+    )
+    assert said.words[1].end == 0.9
+
+
 def test_shifting_moves_every_word_and_keeps_its_length() -> None:
     moved = SPOKEN.shifted(0.5)
     assert [(w.start, w.end) for w in moved] == [(0.5, 0.9), (0.9, 1.4)]
@@ -129,13 +147,10 @@ def test_a_providers_words_file_without_the_new_fields_reads_as_timed_by_an_unna
     assert said.model_digest is None
 
 
-def test_an_older_empty_providers_words_file_reads_as_a_take_with_no_word_times(tmp_path: Path) -> None:
-    """A take that says nothing would leave every cue unresolved, so an empty older file goes to the aligner."""
-    path = tmp_path / words_file("abc123")
-    path.write_text('{"words": [], "audio": null}', encoding="utf-8")
-    said = ProviderWords.read(path)
-    assert said is not None
-    assert said.timed is False
+def test_an_audio_print_names_the_suffix_its_take_was_written_under():
+    """Narrate writes the suffix with every print, so a print without one is no file narrate wrote."""
+    with pytest.raises(ValueError, match="suffix"):
+        AudioPrint.model_validate({"bytes": 4, "blake3": "0" * 64})
 
 
 def test_a_words_file_that_says_its_voice_sent_no_times_holds_no_words() -> None:

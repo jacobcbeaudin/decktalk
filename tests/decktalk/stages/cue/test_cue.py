@@ -53,7 +53,8 @@ def a_project(
 ) -> Inputs:
     """A project with one take for section one speaking `words`, and the cue file the case asks for."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, cues=cues)
-    narrated(inputs, a_take(1, seconds=2.0, voiced=voiced, sound_end_seconds=1.7), words={1: words})
+    take = a_take(1, seconds=2.0, voiced=voiced, sound_end_seconds=1.7, lead_seconds=inputs.lead_seconds(1))
+    narrated(inputs, take, words={1: words})
     return inputs
 
 

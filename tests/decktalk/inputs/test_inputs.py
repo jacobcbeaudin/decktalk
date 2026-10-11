@@ -15,6 +15,7 @@ from decktalk.artifacts import (
     CueTimes,
     EstimatedWords,
     ProviderWords,
+    RecordingLog,
     SpokenWord,
     Take,
     Takes,
@@ -29,7 +30,8 @@ from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.script import estimated_words, parse_script, spoken_words
 from decktalk.pipeline import Artifact
 from decktalk.results import BillingBasis, CueTime, SectionCues, Word
-from decktalk.speech import VoiceInForce
+from decktalk.speech import VoiceInForce, http
+from support.pages import write_log
 from support.paths import SRC
 from support.projects import MINIMAL_TOML, write_project
 from support.takes import (
@@ -110,7 +112,7 @@ def test_project_loads_sections_in_order(tmp_path):
             "'lead_seconds' must be 0 or more, got -1",
         ),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
-        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nrecord_margin_seconds = 'lots'\n", "must be"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = 'lots'\n", "must be"),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[bogus]\nx = 1\n", "unknown table"),
         (
@@ -372,19 +374,21 @@ HELLO = (Word(word="hello", start=0.0, end=0.4),)
 """One word on its take's own clock, before any lead moves it."""
 
 
-def test_a_voiced_take_answers_the_words_its_provider_sent_moved_by_the_section_lead(tmp_path):
+def test_a_voiced_take_answers_the_words_its_provider_sent_moved_by_its_lead(tmp_path):
     """A cue resolves against the section clock, which starts before the first word rather than on it."""
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    narrated(inputs, a_take(1), words={1: HELLO})
+    take = a_take(1, lead_seconds=0.5)
+    narrated(inputs, take, words={1: HELLO})
+    read = inputs.take_words_of(take)
+    assert type(read) is ProviderWords and read.audio is not None
     heard = inputs.words(1)
-    assert type(heard) is ProviderWords and heard.audio is not None
     assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
     assert heard.estimated is False
 
 
 def test_a_placeholder_answers_the_words_decktalk_estimated_and_says_so(tmp_path):
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    narrated(inputs, a_take(1, voiced=False), words={1: HELLO})
+    narrated(inputs, a_take(1, voiced=False, lead_seconds=0.5), words={1: HELLO})
     heard = inputs.words(1)
     assert type(heard) is EstimatedWords and heard.estimated is True
     assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
@@ -426,9 +430,11 @@ def test_a_section_with_no_take_answers_no_words(tmp_path, missing):
 def test_a_take_whose_words_file_is_gone_answers_no_words_of_its_own_kind(tmp_path, paid, kind):
     """A placeholder whose estimated words were deleted still says its times are estimates."""
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    write_takes(inputs, a_take(1, voiced=paid))
+    take = a_take(1, voiced=paid)
+    write_takes(inputs, take)
+    assert type(inputs.take_words_of(take)) is kind
     heard = inputs.words(1)
-    assert type(heard) is kind and heard.words == () and heard.estimated is not paid
+    assert heard.words == () and heard.estimated is not paid
 
 
 @pytest.mark.parametrize(
@@ -484,6 +490,16 @@ def test_an_index_whose_row_disagrees_with_its_digest_is_a_cache_to_build_again(
         Takes.read(path)
 
 
+def test_an_index_whose_row_records_no_audio_print_is_a_cache_to_build_again(tmp_path):
+    """Every row narrate writes says which audio it was measured on, or null, so a row that says neither is no index."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    path = inputs.workspace.takes_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    row = {key: value for key, value in a_take(1).model_dump(mode="json").items() if key != "audio_blake3"}
+    path.write_text(json.dumps({"script": "script.md", "model": "m", "output_format": "f", "sections": [row]}))
+    assert inputs.takes() is None
+
+
 def test_the_take_index_is_read_once_while_its_file_is_unchanged(tmp_path, monkeypatch):
     """Every stage asks for the index per section, so one unchanged file is parsed once for all of them."""
     inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
@@ -503,6 +519,28 @@ def test_the_take_index_is_read_once_while_its_file_is_unchanged(tmp_path, monke
     write_takes(inputs, a_take(1), a_take(2))
     found = inputs.takes()
     assert found is not None and found.of(2) is not None
+    assert len(reads) == 2
+
+
+def test_a_recording_log_is_read_once_while_its_file_is_unchanged(tmp_path, monkeypatch):
+    """Verify asks for a section's log for every measurement it makes, so one unchanged file is parsed once."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    write_log(inputs, 1)
+    reads: list[Path] = []
+    real = RecordingLog.parse.__func__
+
+    def counted(cls: type[RecordingLog], path: Path) -> RecordingLog | None:
+        reads.append(path)
+        return real(cls, path)
+
+    monkeypatch.setattr(RecordingLog, "parse", classmethod(counted))
+    for _ in range(3):
+        assert inputs.recording_log("01") is not None
+    assert inputs.recording_log("02") is None
+    assert len(reads) == 1
+    write_log(inputs, 1, requested_seconds=3.0)
+    found = inputs.recording_log("01")
+    assert found is not None and found.recording.requested_seconds == 3.0
     assert len(reads) == 2
 
 
@@ -875,15 +913,19 @@ def an_alignment(inputs: Inputs, *, audio: str = "0123456789abcdef") -> AlignedW
 def test_a_section_timed_by_an_aligner_reads_the_aligned_words_its_row_names(tmp_path):
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
     aligned = an_alignment(inputs)
-    write_takes(inputs, a_take(1, seconds=2.0, spoken=SPOKEN, timed_by=TimedBy.ALIGNED, alignment=aligned.inputs.key))
+    take = a_take(
+        1, seconds=2.0, spoken=SPOKEN, timed_by=TimedBy.ALIGNED, alignment=aligned.inputs.key, lead_seconds=0.5
+    )
+    write_takes(inputs, take)
+    assert type(inputs.take_words_of(take)) is AlignedWords
     heard = inputs.words(1)
-    assert type(heard) is AlignedWords and heard.estimated is False
+    assert heard.estimated is False
     assert heard.words == aligned.shifted(0.5)
 
 
 def test_a_voiced_section_no_aligner_timed_reads_estimated_words_over_its_sound(tmp_path):
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    write_takes(inputs, a_take(1, seconds=3.0, spoken=SPOKEN, timed_by=TimedBy.ESTIMATED))
+    write_takes(inputs, a_take(1, seconds=3.0, spoken=SPOKEN, timed_by=TimedBy.ESTIMATED, lead_seconds=0.5))
     heard = inputs.words(1)
     assert type(heard) is EstimatedWords and heard.estimated is True
     assert heard.words == EstimatedWords(words=tuple(estimated_words(SPOKEN, 3.0))).shifted(0.5)
@@ -935,44 +977,21 @@ def test_a_provider_take_last_word_ends_where_its_sound_ends(tmp_path):
     """The provider gave "was" to the end of the file, 0.565 s past the take's sound, which the join cuts away."""
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
     said = tail_take_words()
-    narrated(inputs, a_tail_take(), words={1: said.words})
+    take = a_tail_take(lead_seconds=0.5)
+    narrated(inputs, take, words={1: said.words})
+    assert type(inputs.take_words_of(take)) is ProviderWords
     heard = inputs.words(1)
-    assert type(heard) is ProviderWords
     assert heard.words[-1] == Word(word="was", start=round(4.063 + 0.5, 3), end=round(TAIL_TAKE_SOUND_END + 0.5, 3))
     assert heard.words[:-1] == said.shifted(0.5)[:-1]
     (turn,) = inputs.turn_words(1)
     assert turn.words.words == heard.words
 
 
-def test_an_aligned_take_last_word_ends_where_its_sound_ends(tmp_path):
-    """An aligner's words are held to the same sound end, because the join cuts every take there."""
-    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    said = tail_take_words()
-    keyed = AlignmentInputs(
-        audio="a" * 16, words=spoken_words(TAIL_TAKE_SPOKEN), aligner="a", revision="1", model_digest="m"
-    )
-    aligned = AlignedWords(words=said.words, inputs=keyed, generation=1)
-    inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
-    aligned.write(inputs.workspace.aligned_words(keyed.key))
-    write_takes(inputs, a_tail_take(timed_by=TimedBy.ALIGNED, alignment=keyed.key))
-    heard = inputs.words(1)
-    assert type(heard) is AlignedWords
-    assert heard.words[-1].end == round(TAIL_TAKE_SOUND_END + 0.5, 3)
-
-
-def test_a_word_that_starts_past_the_sound_end_is_heard_as_none_at_the_sound_end(tmp_path):
-    """A word the join cuts away entirely keeps its place in the order and no length."""
-    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    words = (Word(word="hello", start=0.0, end=0.4), Word(word="there", start=0.9, end=1.0))
-    narrated(inputs, a_take(1, seconds=1.0, sound_end_seconds=0.6), words={1: words})
-    heard = inputs.words(1)
-    assert heard.words == (Word(word="hello", start=0.5, end=0.9), Word(word="there", start=1.1, end=1.1))
-
-
 TAKE_WORDS_READERS = {
     "inputs/__init__.py",
     "stages/narrate/align.py",
     "stages/narrate/state.py",
+    "stages/narrate/takes.py",
     "stages/status.py",
 }
 """The modules that know a take's own words file may say its voice sent no times, which alone may read one."""
@@ -1009,12 +1028,22 @@ def test_a_dialogue_sections_words_run_on_one_clock_across_its_turns(tmp_path):
     assert type(inputs.words(1)) is EstimatedWords
 
 
-def test_a_section_of_one_turn_answers_todays_words(tmp_path):
-    """One turn answers the kind its take was timed by, moved by the lead, as a section always has."""
-    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    narrated(inputs, a_take(1), words={1: HELLO})
+@pytest.mark.parametrize(("timeout", "retries"), [(180, 3), (1800, 3), (1800, 10), (10, 0)])
+def test_a_run_waits_on_another_run_s_take_for_as_long_as_one_whole_take_request_can_run(tmp_path, timeout, retries):
+    """The wait was a setting of its own at 900 seconds, so a healthy request at a longer timeout was called locked."""
+    machine = {"narration": {"timeout_seconds": timeout, "retries": retries}}
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={}, machine=machine)
+    longest = timeout * (retries + 1) + retries * http.LONGEST_WAIT_SECONDS
+    assert inputs.take_places.wait_seconds >= longest
+
+
+def test_a_section_of_one_turn_answers_its_words_where_the_joined_narration_plays_them(tmp_path):
+    """One turn took the lead the settings name today, so a lead edit before narrate ran again moved its cues and
+    its recording off the narration, which is joined with the lead its take index row holds."""
+    edited = LEAD_TOML.replace("lead_seconds = 0.5", "lead_seconds = 1.0")
+    inputs = Inputs.load(write_project(tmp_path, edited), environ={})
+    narrated(inputs, a_take(1, lead_seconds=0.5), words={1: HELLO})
     heard = inputs.words(1)
-    assert type(heard) is ProviderWords
-    assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
+    assert type(heard) is Words and heard.words == (Word(word="hello", start=0.5, end=0.9),)
     (turn,) = inputs.turn_words(1)
-    assert (turn.turn, turn.voice, turn.words.words) == (1, "narrator", heard.words)
+    assert (turn.turn, turn.voice, turn.start, turn.words.words) == (1, "narrator", 0.5, heard.words)

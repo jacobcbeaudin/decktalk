@@ -29,7 +29,7 @@ import { MILLISECONDS } from "./contract.ts";
  * A signature reads the progress and the iteration. The next second an animation moves is read from
  * its delay and its active duration, both in milliseconds of its own time.
  */
-export type Standing = {
+type Standing = {
   readonly progress?: number | null;
   readonly currentIteration?: number | null;
   readonly delay?: number;

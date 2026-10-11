@@ -7,17 +7,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import tomlkit
 
 from decktalk.errors import ErrorCode, InputError
 from decktalk.results import Layer, Scope
-from decktalk.settings import BY_ID, KEYS, STANDALONE_ENV, TEMPLATES, Settings, VoiceConfig
+from decktalk.settings import BY_ID, KEYS, STANDALONE_ENV, TEMPLATES, VoiceConfig
 from decktalk.settings.layers import (
     env_warnings,
-    key_warnings,
     load,
     machine_config_path,
-    merge_tables,
     named_file,
     read_machine_toml,
     refuse_off_scope,
@@ -26,7 +23,6 @@ from decktalk.settings.layers import (
     value_of,
 )
 from decktalk.tomlmap import Key
-from support.projects import MINIMAL_TOML, load_project
 
 
 class TestTheFiveLayers:
@@ -328,108 +324,8 @@ class TestCrossTableRelations:
         assert BY_ID["video.fps"].requires == "video.fps >= SLOWEST_FPS"
 
 
-MOVED: list[tuple[str, str, Any]] = [
-    ("narration.model", "elevenlabs.model", "eleven_flash_v2_5"),
-    ("audio.duck_ramp_seconds", "mix.duck_ramp_seconds", 0.25),
-    ("audio.ambience_ramp_seconds", "mix.ambience_ramp_seconds", 2.0),
-    ("audio.ambience_pad_seconds", "mix.ambience_pad_seconds", 1.0),
-    ("audio.marker_mute_ramp_seconds", "mix.marker_mute_ramp_seconds", 0.08),
-    ("audio.marker_boost_ramp_seconds", "mix.marker_boost_ramp_seconds", 0.6),
-    ("video.audio_bitrate", "audio.bitrate", "256k"),
-    ("video.sample_rate", "audio.sample_rate", 44100),
-    ("video.channels", "audio.channels", 1),
-    ("mix.loudness.target_lufs", "audio.target_lufs", -14.0),
-    ("mix.loudness.true_peak_max_dbtp", "audio.true_peak_max_dbtp", -2.0),
-    ("mix.loudness.range_max_lu", "audio.range_max_lu", 9.0),
-    ("elevenlabs.timeout_seconds", "score.timeout_seconds", 300),
-    ("elevenlabs.music_model", "score.music.model", "music_v3"),
-    ("elevenlabs.music_bitrate", "score.music.bitrate", "256k"),
-    ("elevenlabs.max_music_chunk_seconds", "score.music.chunk_max_seconds", 120),
-    ("elevenlabs.music_crossfade_seconds", "score.music.crossfade_seconds", 4),
-    ("elevenlabs.ambience_seconds", "score.ambience.duration_seconds", 30.0),
-    ("elevenlabs.ambience_prompt_influence", "score.ambience.prompt_influence", 0.4),
-    ("elevenlabs.effect_seconds", "score.effects.duration_seconds", 1.0),
-    ("elevenlabs.effect_prompt_influence", "score.effects.prompt_influence", 0.6),
-    ("score.music.seconds", "score.music.duration_seconds", 120),
-]
-"""Every key the regroup moved, as (where it was, where it is, a value other than its default)."""
-
-GUESSED = {"elevenlabs.ambience_seconds", "elevenlabs.timeout_seconds", "narration.model"}
-"""The old spellings whose words name several keys equally well, so the warning offers one of them.
-
-There is no table of old names, because a key is read under its own name alone, so a warning finds
-the key it offers from the words of the one it was given. `ambience_seconds` names the bed's length
-and the mix's ambience ramps alike, `timeout_seconds` names three timeouts, and `model` names each
-adapter's model and each sound's, so for these the warning is held to offering a key
-rather than to offering the one that moved.
-"""
-
-CONTENT = {"score.music": {"prompt": "calm"}}
-"""The content a shared table needs beside a setting before the document will read it."""
-
-
-def tables_of(dotted: str, value: object) -> dict[str, Any]:
-    """One dotted key as the nested tables a TOML file spells it in."""
-    *tables, name = dotted.split(".")
-    out: dict[str, Any] = {name: value}
-    for table in reversed(tables):
-        out = {table: out}
-    return out
-
-
-class TestTheRegroup:
-    """Each provider owns its table, a voice keeps three keys of its own, and a moved key has no alias."""
-
-    @pytest.mark.parametrize(("old", "new", "value"), MOVED, ids=[new for _old, new, _value in MOVED])
-    def test_a_moved_key_is_read_from_its_new_table(self, old: str, new: str, value: object) -> None:
-        del old
-        assert value_of(load(machine={}, project=tables_of(new, value), environ={}).settings, new) == value
-
-    @pytest.mark.parametrize(("old", "new", "value"), MOVED, ids=[old for old, _new, _value in MOVED])
-    def test_the_old_spelling_is_not_read_and_warns_with_the_key_it_meant(
-        self, tmp_path: Path, old: str, new: str, value: object
-    ) -> None:
-        """A tuning table warns through the settings loader and a shared one through the document, alike."""
-        table, name = old.split(".", 1)
-        while name.count(".") and f"{table}.{name.split('.', 1)[0]}" in {key.table for key in KEYS}:
-            head, name = name.split(".", 1)
-            table = f"{table}.{head}"
-        written = merge_tables(tables_of(table, CONTENT.get(table, {})), tables_of(old, value))
-        project = load_project(tmp_path, MINIMAL_TOML + "\n" + tomlkit.dumps(written), environ={})
-        assert value_of(project.settings, new) == value_of(Settings(), new)
-        meant = new.rsplit(".", 1)[-1] if new.rsplit(".", 1)[0] == table else new
-        (said,) = [note for note in project.notes if f"'{name}'" in note]
-        if old in GUESSED:
-            assert said.startswith(f"decktalk.toml: [{table}]: ignoring unknown key '{name}' (did you mean '")
-        else:
-            assert said == f"decktalk.toml: [{table}]: ignoring unknown key '{name}' (did you mean '{meant}'?)."
-
-    def test_the_sound_models_moved_beside_the_items_they_default(self) -> None:
-        """One old key named the model of the ambience and of every effect, and each now has its own."""
-        loaded = load(machine={}, project={"score": {"effects": {"model": "s2"}}}, environ={}).settings
-        assert loaded.score.effects.model == "s2"
-        assert loaded.score.ambience.model == Settings().score.ambience.model
-        (said,) = key_warnings({"elevenlabs": {"sound_model": "s2"}}, "decktalk.toml")
-        assert said.startswith("decktalk.toml: [elevenlabs]: ignoring unknown key 'sound_model'")
-
-    @pytest.mark.parametrize(
-        ("variable", "meant"),
-        [
-            ("DECKTALK_ELEVENLABS_MUSIC_MODEL", "DECKTALK_SCORE_MUSIC_MODEL"),
-            ("DECKTALK_VIDEO_SAMPLE_RATE", "DECKTALK_AUDIO_SAMPLE_RATE"),
-            ("DECKTALK_VIDEO_CRV", "DECKTALK_VIDEO_CRF"),
-        ],
-    )
-    def test_an_old_variable_names_the_variable_of_the_key_that_moved(self, variable: str, meant: str) -> None:
-        """The music model's old variable must never point at the speech model's, which re-voices every take."""
-        (said,) = env_warnings({variable: "x"})
-        assert said == f"environment: ignoring unknown key '{variable}' (did you mean '{meant}'?)."
-
-    def test_the_old_speech_model_variable_offers_a_speech_model_and_never_the_musics(self) -> None:
-        """`model` names each speech adapter's model, so either of them is a fair offer."""
-        (said,) = env_warnings({"DECKTALK_NARRATION_MODEL": "x"})
-        offered = said.split("did you mean '", 1)[1].split("'", 1)[0]
-        assert offered in {BY_ID[key].environment for key in ("elevenlabs.model", "dtsp.model")}
+class TestTheVoiceKeys:
+    """A voice keeps three keys of its own, before the chosen keys of its provider."""
 
     def test_a_voice_holds_the_three_keys_every_voice_has_and_the_chosen_keys_of_its_provider(self) -> None:
         own = sorted(field for field in VoiceConfig.__dataclass_fields__)

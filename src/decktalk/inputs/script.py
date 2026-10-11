@@ -184,11 +184,6 @@ def slugify(title: str) -> str:
     return slug or "section"
 
 
-def strip_markdown(text: str) -> tuple[Piece, ...]:
-    """Prose ready for speech, as paragraphs. Every direction becomes the pause after the paragraph before it."""
-    return _read(text)[1]
-
-
 def _read(text: str) -> tuple[float | None, tuple[Piece, ...], float | None]:
     """The pause written before the first prose, the paragraphs, and the pause written after the last.
 

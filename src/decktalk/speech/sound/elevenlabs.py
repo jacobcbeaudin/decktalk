@@ -14,7 +14,7 @@ from typing import Any, cast
 from ...results import SoundKind
 from ...secret import Secret
 from ..elevenlabs import NAME
-from ..http import post_bytes
+from ..http import send
 from . import SOUND_DECLARED, SoundContext
 
 PUBLISHED_BASE = "https://api.elevenlabs.io/v1"
@@ -68,10 +68,11 @@ class ElevenLabsSound:
         return self._buy(MUSIC_PATH, body, output_format)
 
     def _buy(self, path: str, body: Mapping[str, Any], output_format: str) -> bytes:
-        return post_bytes(
+        return send(
             f"{self.context.base_url.rstrip('/')}{path}?output_format={output_format}",
             dict(body),
             self._headers(),
+            parse=bytes,
             secrets=(self.api_key,),
             timeout=self.context.timeout_seconds,
             retries=self.context.retries,

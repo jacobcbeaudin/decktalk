@@ -1,13 +1,11 @@
-"""How many page sections record at once, which is the size of the pool `record` hands them to.
+"""How many recorders work at once, which is the size of the pool `record` hands chunks to, and the chunks.
 
-A recording waits for its section's whole span in real time, so recording one section at a time would
-take as long as the film, and the sections of one film share nothing but the project they read. Several of them are
-therefore recorded at once, each by a worker of `decktalk.stages.pool` with a Chromium of its own.
-
-A recording is also the one stage that needs its CPU on time. A reveal that lands a frame late is a
-finding, so the number at once is chosen from the CPU this process may really use, which inside a
-container is its quota and not the host's core count. `[record] concurrency` names the number, and
-zero chooses it here.
+Frame `k` of a section is the page at second `k / fps` however it was reached, so a section's frames
+split into chunks that several recorders record at once, each a worker of `decktalk.stages.pool`
+with a Chromium of its own. A recorder keeps several cores busy, so the number at once is chosen from
+the CPU this process may really use, which inside a container is its quota and not the host's core
+count. A recorder that gets fewer cores than it would keep busy records slower and never differently.
+`[record] concurrency` names the number, and zero chooses it here.
 """
 
 from __future__ import annotations
@@ -15,7 +13,6 @@ from __future__ import annotations
 import logging
 import math
 import os
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,11 +24,11 @@ log = logging.getLogger(__name__)
 CPUS_PER_RECORDING = 3
 """Calibration: the CPUs one recorder keeps busy, rounded up so recorders at once do not starve each other.
 
-With `[record] capture_switches` on, no frame waits for a display refresh, so the page, the compositor
-and the encoder of one recording rarely rest. Recording the lesson's 114 second section on an 18 core
-Mac took 124 CPU seconds in 53 seconds, about 2.3 cores, where the same recording without the
-switches took 79 CPU seconds in 97 seconds. A recording that has fewer cores than it would keep busy
-records slower and never differently, because the recorder steps the clock.
+With the capture switches every Chromium is launched with, no frame waits for a display refresh, so
+the page, the compositor and the encoder of one recording rarely rest. Recording the lesson's 114
+second section on an 18 core Mac took 124 CPU seconds in 53 seconds, about 2.3 cores, where the same
+recording without the switches took 79 CPU seconds in 97 seconds. A recording that has fewer cores
+than it would keep busy records slower and never differently, because the recorder steps the clock.
 """
 
 MOST_AT_ONCE = 4
@@ -40,9 +37,6 @@ MOST_AT_ONCE = 4
 Four recordings held about 900 MB beside each other, which is what a small render worker can spare,
 and a machine with more to give says so through `[record] concurrency`.
 """
-
-WINDOWS_AT_ONCE = 1
-"""Calibration: Windows runs one recorder at a time until its capture is measured under load."""
 
 CGROUP_V2_MAX = Path("/sys/fs/cgroup/cpu.max")
 """Truth: where a cgroup v2 container states its CPU quota and period, or `max` for none."""
@@ -89,28 +83,22 @@ def available_cpus() -> float:
     return min(cores, stated) if stated is not None else cores
 
 
-def at_once(requested: int, *, cpus: float, windows: bool) -> int:
+def at_once(requested: int, *, cpus: float) -> int:
     """How many recorders to run at once: what the machine asked for, or one per `CPUS_PER_RECORDING`, at least one.
 
     `requested` is `[record] concurrency`, and zero asks this function to choose.
     """
-    if requested:
-        chosen = requested
-    elif windows:
-        chosen = WINDOWS_AT_ONCE
-    else:
-        chosen = min(MOST_AT_ONCE, int(cpus // CPUS_PER_RECORDING))
-    return max(1, chosen)
+    return max(1, requested or min(MOST_AT_ONCE, int(cpus // CPUS_PER_RECORDING)))
 
 
 def automatic(requested: int) -> int:
-    """`at_once` for this machine, which reads its own CPUs and platform, and records what it chose.
+    """`at_once` for this machine, which reads its own CPUs, and records what it chose.
 
     How many recorders ran is the first thing an operator asks about a slow container, so the choice
     is recorded beside the CPUs it was made from.
     """
     cpus = available_cpus()
-    chosen = at_once(requested, cpus=cpus, windows=sys.platform == "win32")
+    chosen = at_once(requested, cpus=cpus)
     log.debug(
         "%d recorders run at once.",
         chosen,

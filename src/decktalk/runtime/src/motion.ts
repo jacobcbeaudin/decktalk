@@ -18,6 +18,7 @@ import {
   ATTRS,
   CLIP_FRAMES,
   cueId,
+  DUE_SLACK_SECONDS,
   type Ease,
   MEASURABLE_SPAN_SECONDS,
   MILLISECONDS,
@@ -26,10 +27,8 @@ import {
   SPRING_SETTLE_RADIANS,
 } from "./contract.ts";
 import { ATTR, easeOf, loopSeconds, MOVING_SELECTOR, type Slide, written } from "./scene.ts";
+import type { Undeclared } from "./telemetry.ts";
 import { warn } from "./warn.ts";
-
-/** Truth: the slack two stepped seconds need to compare equal, far under one frame at any rate. */
-const DUE = 1e-6;
 
 /** Calibration: how many points the spring's CSS `linear()` curve is drawn through, smooth at every frame rate. */
 const SPRING_POINTS = 32;
@@ -47,7 +46,7 @@ const HALVINGS = 50;
 export type Region = Element | string;
 
 /** What the timeline asks about an animation it has not seen before, so undeclared motion is caught where it starts. */
-export type Born = { readonly target: Element | null; readonly endSeconds: number };
+type Born = { readonly target: Element | null; readonly endSeconds: number };
 
 // ---- the eases --------------------------------------------------------------------------------------
 
@@ -84,7 +83,7 @@ export function eased(ease: Ease, u: number): number {
 }
 
 /** The CSS timing function an ease is played with, so a stylesheet motion and a script motion agree. */
-export function cssTiming(ease: Ease): string {
+function cssTiming(ease: Ease): string {
   const curve = MOTION_EASES[ease].curve;
   if (curve) return `cubic-bezier(${curve.join(", ")})`;
   const points = Array.from({ length: SPRING_POINTS + 1 }, (_, k) => spring(k / SPRING_POINTS).toFixed(SPRING_DIGITS));
@@ -94,7 +93,7 @@ export function cssTiming(ease: Ease): string {
 // ---- the lanes --------------------------------------------------------------------------------------
 
 /** One thing the page declared as moving, which is what verify masks and what a landing is measured on. */
-export type Lane = {
+type Lane = {
   readonly id: string;
   readonly kind: "motion" | "loop" | "region" | "clip";
   readonly region: Region;
@@ -152,8 +151,9 @@ function regionOf(one: Lane): Element | null {
  * and anything else while it is on the page.
  */
 function alive(one: Lane, seconds: number): boolean {
-  if (one.kind === "clip") return one.from !== null && seconds >= one.from - DUE;
-  if (one.from !== null && one.to !== null) return seconds >= one.from - DUE && seconds <= one.to + DUE;
+  if (one.kind === "clip") return one.from !== null && seconds >= one.from - DUE_SLACK_SECONDS;
+  if (one.from !== null && one.to !== null)
+    return seconds >= one.from - DUE_SLACK_SECONDS && seconds <= one.to + DUE_SLACK_SECONDS;
   return true;
 }
 
@@ -172,7 +172,8 @@ export function sample(seconds: number): void {
     if (el) note(one.id, el, seconds);
   }
   for (const one of revealed) {
-    if (seconds < one.at - DUE || seconds > one.at + MEASURABLE_SPAN_SECONDS + DUE) continue;
+    if (seconds < one.at - DUE_SLACK_SECONDS || seconds > one.at + MEASURABLE_SPAN_SECONDS + DUE_SLACK_SECONDS)
+      continue;
     for (const el of one.els) if (el.isConnected) note(one.id, el, seconds);
   }
 }
@@ -228,13 +229,14 @@ export function stillUntil(seconds: number): number | null {
   for (const one of lanes) {
     if (one.kind === "region") continue;
     if (alive(one, seconds) && regionOf(one) !== null) return seconds;
-    if (one.from !== null && one.from - DUE > seconds) next = earliest(next, one.from - DUE);
+    if (one.from !== null && one.from - DUE_SLACK_SECONDS > seconds)
+      next = earliest(next, one.from - DUE_SLACK_SECONDS);
   }
   return next;
 }
 
 /** One lane as the recording log keeps it: what moved, the box it swept, when it moved and where it lands. */
-export type LaneRow = {
+type LaneRow = {
   id: string;
   kind: Lane["kind"] | "reveal";
   box: { x: number; y: number; w: number; h: number } | null;
@@ -264,13 +266,24 @@ export function report(): LaneRow[] {
  * Verify measures a reveal of the film it is in as a step in the whole frame, so these are never
  * masked or measured there. They are what the film carries beside itself, so a pane that plays it in
  * another film measures each reveal on the box it was drawn in.
+ *
+ * A reveal departs on its cue and may move for the half second a cue may, which is the span it is
+ * sampled over, so those are its seconds. The seconds a page happened to step inside that span are
+ * not: a build crosses still frames in one step, and a section recorded in pieces steps the first
+ * second of every piece, so a sampled last second would say where the steps fell rather than what
+ * the reveal did.
  */
 export function reveals(): LaneRow[] {
-  return revealed.map((one) => ({
-    ...row(one.id, "reveal", swept.get(one.id)),
-    landings: [{ cue: one.cue, kind: "depart", at: round(one.at) }],
-    clip: null,
-  }));
+  return revealed.map((one) => {
+    const seen = swept.get(one.id);
+    return {
+      ...row(one.id, "reveal", seen),
+      departs: seen ? round(one.at) : null,
+      arrives: seen ? round(one.at + MEASURABLE_SPAN_SECONDS) : null,
+      landings: [{ cue: one.cue, kind: "depart", at: round(one.at) }],
+      clip: null,
+    };
+  });
 }
 
 /** What the recorder saw of one lane or reveal, its box rounded to the recording's pixels and its rest kept whole. */
@@ -343,20 +356,44 @@ function describe(el: Element | null): string {
   return `<${el.localName}${id}${classes}>`;
 }
 
+/** Every box an element and what it holds are laid out in, in viewport pixels, of which a change paints inside. */
+function laidOut(el: Element): DOMRect[] {
+  return [el, ...el.querySelectorAll("*")]
+    .flatMap((one) => [...one.getClientRects()])
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+}
+
+/** The smallest box in the viewport that holds every rect, or null when none of them is in it. */
+function enclosing(rects: readonly DOMRect[]): Undeclared["box"] {
+  const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)));
+  const top = Math.max(0, Math.min(...rects.map((rect) => rect.top)));
+  const right = Math.min(window.innerWidth, Math.max(...rects.map((rect) => rect.right)));
+  const bottom = Math.min(window.innerHeight, Math.max(...rects.map((rect) => rect.bottom)));
+  if (!rects.length || right <= left || bottom <= top) return null;
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
 /**
- * The first of some changed nodes on the page that nothing declared as moving, named, or null when every one is.
+ * Those of some changed nodes on the page that nothing declared as moving, or null when every one is.
  *
  * The probe hands over every node the page changed between two steps, which is a change no cue, no
  * frame hook and no animation the runtime holds made. A text node stands for the element holding it,
- * and a node no longer on the page shows nothing.
+ * and a node no longer on the page shows nothing. The answer names the first and places them all, so
+ * the recorder blames them for a frame that differs only where they are, and a frame that differs
+ * only where a cue drew is not theirs. An element laid out nowhere is placed nowhere, and the recorder
+ * then reads the whole frame.
  */
-export function undeclaredChange(nodes: readonly Node[]): string | null {
-  for (const node of nodes) {
-    const el = node instanceof Element ? node : node.parentElement;
-    if (!el?.isConnected || covered(el)) continue;
-    return describe(el);
-  }
-  return null;
+export function undeclaredChange(nodes: readonly Node[]): Undeclared | null {
+  const changed = [
+    ...new Set(
+      nodes
+        .map((node) => (node instanceof Element ? node : node.parentElement))
+        .filter((el): el is Element => !!el?.isConnected && !covered(el)),
+    ),
+  ];
+  if (!changed.length) return null;
+  const rects = changed.map(laidOut);
+  return { what: describe(changed[0] ?? null), box: rects.some((one) => !one.length) ? null : enclosing(rects.flat()) };
 }
 
 /**
@@ -387,7 +424,7 @@ export function undeclaredIn(slideEl: Element, slideId: string): void {
 // ---- the stylesheet's own motions -----------------------------------------------------------------
 
 /** What a mounted slide tells the motions about the clock, which is when each of its cues is due. */
-export type Timing = {
+type Timing = {
   readonly frozen: boolean;
   /** Whether the recorder steps the clock, which is the one driver a pane clip is drawn frame by frame under. */
   readonly recorded: boolean;
@@ -462,12 +499,12 @@ const PANE_FILL = "display:block;width:100%;height:100%;object-fit:fill;pointer-
  * It is written to the millisecond, the precision every second a page reports carries, so the origin
  * reads the frame showing at that second from the clip's frame rate and nothing else.
  */
-export function clipSecond(seconds: number, start: number): number {
+function clipSecond(seconds: number, start: number): number {
   return round(Math.max(0, seconds - start));
 }
 
 /** The origin path of the frame of a pane clip showing at one second on its own clock. */
-export function clipFrameUrl(clip: string, second: number): string {
+function clipFrameUrl(clip: string, second: number): string {
   return `${CLIP_FRAMES}${second}/${clip.split("/").map(encodeURIComponent).join("/")}`;
 }
 

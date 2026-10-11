@@ -13,7 +13,6 @@ number = 1
 chapter = "How a model learns"
 page = "deck/lesson.html"
 scene = "1"
-record_margin_seconds = 0.3   # recorded past the narration, so the cut never lands on a frame that was never drawn
 hold_seconds = 1.5
 
 [narration]

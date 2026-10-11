@@ -34,7 +34,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from decktalk.artifacts import Takes
 from decktalk.inputs import Inputs
+from decktalk.inputs.document import PageSection
+from decktalk.page import SECOND_DIGITS
 from decktalk.speech import SpeechContext, VoiceInForce
 
 SECTION_START_SECONDS = 0.0
@@ -73,3 +76,23 @@ __all__ = [
     "selects",
     "speech_context",
 ]
+
+
+def section_targets(takes: Takes, fps: int) -> dict[int, float]:
+    """Frame-exact video length per spoken section, from cumulative frame boundaries.
+
+    Each length is the difference between two rounded cumulative boundaries rather than one rounded
+    length, so the sections add up to the narration exactly and the picture never drifts off it.
+    """
+    return {section: (round(at.end * fps) - round(at.start * fps)) / fps for section, at in takes.placed.items()}
+
+
+def page_seconds(takes: Takes, section: PageSection, fps: int) -> float:
+    """How long one page section runs in the film, its frames in the narration and its hold, or zero with no take.
+
+    `record` records exactly this long and `assemble` cuts exactly this long from the recording, so
+    no frame is recorded that the film never plays. The narration pauses for a hold exactly as it
+    pauses for a clip, so the hold is picture alone.
+    """
+    span = section_targets(takes, fps).get(section.number, 0.0)
+    return round(span + section.hold_seconds, SECOND_DIGITS) if span > 0 else 0.0

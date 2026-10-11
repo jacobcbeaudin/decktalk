@@ -311,7 +311,9 @@ by hand.
 
 The report also keeps `recording.report.reveals`, a lane of kind `reveal` for each cue that revealed
 or changed an element: every such element, sampled from the cue's second for as long as a cue may
-move, with one `depart` landing on the cue. Verify measures a reveal of its own film as a step in the
+move, with one `depart` landing on the cue. Its `departs` is the cue's second and its `arrives` half a
+second later, the span it is sampled over, whichever seconds the recorder stepped inside it, so a section
+recorded in pieces reports it as one pass does. Verify measures a reveal of its own film as a step in the
 whole frame, so it never masks or measures these. The `<name>.landings.json` a build writes beside its
 film carries them, so a pane that plays the film in another film measures each reveal on its box.
 
@@ -408,12 +410,12 @@ sequenceDiagram
     R->>P: install Playwright's clock and add the probe as an init script
     R->>P: open page.html?scene=N&cues=…&words=…&t0=signal
     Note over P: the runtime picks its mode and mounts the first cued slide
-    R->>P: await document.fonts.ready, window.__decktalk.ready and two painted frames
-    R->>P: await window.__decktalkProbe.started(frame_wait_seconds), every animation started
+    R->>P: await document.fonts.ready and window.__decktalk.ready
+    R->>P: await window.__decktalkProbe.started(15), every animation started
     R->>P: hold the page clock still
-    loop for each frame k of the section span plus record_margin_seconds
+    loop for each frame k of the section's frames in the film, its hold included
         R->>P: run the page's timers and animation frames on to frame k
-        R->>P: window.__decktalkProbe.step(k / fps, frame_wait_seconds)
+        R->>P: window.__decktalkProbe.step(k / fps, 15)
         Note over P: every cue due by k / fps fires, every frame hook draws, every animation is held
         P-->>R: answer once the step is laid out, painted and committed, with its fonts and images in
         alt a step since the last capture changed the picture

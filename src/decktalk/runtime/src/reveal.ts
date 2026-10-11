@@ -54,7 +54,7 @@ type Action = {
 };
 
 /** What a mounted slide needs from the mode that mounted it, which is the state no element can read. */
-export type Playing = {
+type Playing = {
   readonly frozen: boolean;
   /** Whether the recorder steps the clock, which a pane clip draws frame by frame under. */
   readonly recorded: boolean;

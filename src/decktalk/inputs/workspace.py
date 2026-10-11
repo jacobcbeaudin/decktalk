@@ -3,7 +3,7 @@
     build/narrate/      the take index, the joined narration and every placeholder take,
                         while every take a voice spoke sits in the takes directory
     build/cue-times.json  every cue resolved against those words
-    build/recordings/   one webm and one recording log per page section
+    build/recordings/   one mp4 and one recording log per page section
     build/score/        the music joined from the parts the score bought,
                         while every bought sound and its ledger sit in the score directory
     build/sections/     one mp4 per section, cut to its span, and the key it was cut from

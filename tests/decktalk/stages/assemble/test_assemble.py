@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.artifacts import SpokenWord
+from decktalk.captions import CaptionCue
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import StageProgress
 from decktalk.media import audio
@@ -13,7 +15,7 @@ from decktalk.results import AssembleResult, Substitute, Word
 from decktalk.stages.assemble import assemble, slate
 from support.takes import a_take, narrated
 
-from .conftest import TITLED_TOML, draw_slate, open_run, spoken, take_index, write_project
+from .conftest import PAGES_TOML, TITLED_TOML, draw_slate, open_run, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("rendering")
 
@@ -194,3 +196,56 @@ def test_the_work_files_never_survive_the_run(tmp_path):
     assemble(inputs, opened.run)
     left = [path.name for path in inputs.workspace.final_dir.iterdir() if path.name.startswith(".")]
     assert left == []
+
+
+CAPTIONED = "\n[output]\ncaptioned = true\n"
+"""What a project adds to ask for the captioned copy beside the clean film."""
+
+
+def test_a_captioned_pass_that_fails_leaves_no_copy_from_the_last_build_beside_the_new_film(tmp_path, monkeypatch):
+    """The copy was removed only when the key was off, so a failed draw left last build's copy beside a new film."""
+    inputs = write_project(tmp_path, PAGES_TOML + CAPTIONED)
+    a_film(inputs, voiced=False)
+    inputs.workspace.final_dir.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.captioned_film.write_bytes(b"last build's captioned copy")
+
+    def failing(*_args: object) -> Path:
+        raise ToolError("the caption page did not load")
+
+    monkeypatch.setattr("decktalk.stages.assemble.write_captioned", failing)
+    with pytest.raises(ToolError, match="caption page"):
+        assemble(inputs, open_run(tmp_path).run)
+    assert inputs.workspace.film.read_bytes() == b"one frame"
+    assert not inputs.workspace.captioned_film.exists()
+
+
+CLIP_ALONE = '[project]\nname = "t"\n\n[[section]]\nnumber = 1\nclip = "media/broll.mp4"\n' + CAPTIONED
+"""A film of one clip that asks for the captioned copy, which no page of its own could draw."""
+
+
+def test_a_captioned_copy_no_page_can_draw_is_refused_before_anything_is_cut(tmp_path, rendering, monkeypatch):
+    """The refusal came after every section was cut, the soundtrack mixed and the film published."""
+    inputs = write_project(tmp_path, CLIP_ALONE)
+    take_index(inputs, {})
+    # The film has a caption, so the copy has something no page can draw.
+    said = CaptionCue(start=0.0, end=1.0, lines=("Hello.",))
+    monkeypatch.setattr("decktalk.stages.assemble.build_captions", lambda *_args: [said])
+    with pytest.raises(InputError, match=r"\[output\] captioned"):
+        assemble(inputs, open_run(tmp_path).run, loudness=False)
+    assert rendering.calls == []
+    assert not inputs.workspace.film.exists()
+
+
+def test_the_transcript_carries_a_pane_clip_s_speech_where_the_film_plays_it_and_names_nobody(tmp_path, monkeypatch):
+    """A pane clip's speech reached the captions and the captioned copy, and the transcript left it out."""
+    inputs = write_project(tmp_path)
+    a_film(inputs, voiced=False)
+    inside = (
+        SpokenWord(word="Hello", start=1.0, end=1.3, voice="guest", turn=1),
+        SpokenWord(word="there.", start=1.3, end=1.6, voice="guest", turn=1),
+    )
+    monkeypatch.setattr("decktalk.stages.assemble.clip_words", lambda *_args: [inside])
+    assemble(inputs, open_run(tmp_path).run)
+    page = inputs.workspace.deliverables()["transcript"].read_text(encoding="utf-8")
+    assert "<p>Hello there.</p>" in page
+    assert page.index("alpha beta") < page.index("Hello there.") < page.index("gamma delta")

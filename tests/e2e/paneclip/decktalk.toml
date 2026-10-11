@@ -11,7 +11,6 @@ number = 1
 chapter = "A film in a pane"
 page = "deck/index.html"
 scene = "1"
-record_margin_seconds = 0.3
 
 # The clip the pane plays, made at build time, because a test ships no video.
 [[clip]]

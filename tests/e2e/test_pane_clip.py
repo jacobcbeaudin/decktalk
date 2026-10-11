@@ -15,8 +15,6 @@ from __future__ import annotations
 import json
 import math
 import shutil
-import subprocess
-import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -28,7 +26,7 @@ from decktalk.findings import Code
 from decktalk.media import ffmpeg
 from decktalk.results import SkipReason
 from decktalk.settings import AudioConfig, VideoConfig
-from support.commands import HOSTILE_DIRECTORY, clean_environ
+from support.commands import HOSTILE_DIRECTORY, decktalk
 from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget
 from support.tools import machine_tools
 
@@ -65,27 +63,14 @@ RATE = AudioConfig().sample_rate
 TONE_HZ = 1000
 """The clip's tone, which nothing else in the film plays."""
 
-SKIPPING = ("--set", "record.skip_still=true", "--set", "record.skip_audit_every=1")
-"""The build every test reads, which writes still frames again and captures every one of them anyway to compare."""
+SKIPPING = ("--set", "record.skip_still=true")
+"""The build every test reads, which writes still frames again."""
 
-CAPTURING = ("--set", "record.skip_still=false")
-"""A second build that captures every frame, which the skipping build has to match frame for frame."""
+EVERY_FRAME = 1
+"""How often that build captures a frame it writes again anyway to compare, which is every one of them."""
 
 LOUDNESS_TOLERANCE_LU = 1.5
 """How far the clip's loudness in the film may sit from the narration's level it was matched to."""
-
-
-def decktalk(*args: str, cwd: Path) -> dict[str, Any]:
-    ran = subprocess.run(
-        [sys.executable, "-m", "decktalk", *args, "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=clean_environ(cwd),
-        cwd=cwd,
-    )
-    assert ran.stdout.strip(), ran.stderr
-    return json.loads(ran.stdout)
 
 
 @pytest.fixture(scope="module")
@@ -93,7 +78,7 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[Path, dict
     home = tmp_path_factory.mktemp("paneclip") / HOSTILE_DIRECTORY
     root = home / "paneclip"
     shutil.copytree(FIXTURE, root)
-    made = decktalk("--project", str(root), "build", "--no-spend", *SKIPPING, cwd=home)
+    made = decktalk("--project", str(root), "build", "--no-spend", *SKIPPING, cwd=home, audit_every=EVERY_FRAME)
     verified = decktalk("--project", str(root), "verify", cwd=home)
     with machine_tools():
         yield root, made, verified
@@ -206,22 +191,3 @@ def test_the_recording_log_names_the_clip_it_played_and_keys_the_section_on_it(b
     assert lane["clip"] == CLIP
     assert CLIP in log["recording"]["assets"]
     assert f"file:{CLIP}" in log["made_from"]
-
-
-def frame_digests(video: Path) -> list[str]:
-    """One digest per decoded frame of `video`, taken over its rgb24 pixels."""
-    rows = ffmpeg.raw(*ffmpeg.source(video), "-f", "framemd5", "-pix_fmt", "rgb24", "-").decode()
-    return [line.rsplit(",", 1)[1].strip() for line in rows.splitlines() if line and not line.startswith("#")]
-
-
-def test_the_pane_records_the_same_frames_whether_still_frames_are_skipped_or_captured(built, tmp_path: Path) -> None:
-    """A playing clip is a change on every frame it shows, so the skipping build, audited on every frame, matches."""
-    root, made, _verified = built
-    assert made["ok"], made["error"]
-    home = tmp_path / HOSTILE_DIRECTORY
-    again = home / "paneclip"
-    shutil.copytree(FIXTURE, again)
-    captured = decktalk("--project", str(again), "build", "--no-spend", "--to", "record", *CAPTURING, cwd=home)
-    assert captured["ok"], captured["error"]
-    recording = Path("build") / "recordings" / "01.mp4"
-    assert frame_digests(root / recording) == frame_digests(again / recording)

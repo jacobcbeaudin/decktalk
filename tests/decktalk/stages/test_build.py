@@ -445,6 +445,28 @@ def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stag
         assert calls.names == ["narrate"]
 
 
+CLIP_CAPTIONED = (
+    '[project]\nname = "t"\n\n[output]\ncaptioned = true\n\n[[section]]\nnumber = 1\nclip = "media/b.mp4"\n'
+)
+"""A film of one clip that asks for the captioned copy, which no page of its own could draw."""
+
+
+@pytest.mark.parametrize(("stages", "refused"), [(None, True), ((Stage.NARRATE,), False)])
+def test_a_captioned_copy_no_page_can_draw_is_refused_before_the_first_stage(
+    tmp_path: Path, make_run: Callable[..., Watched], calls: Calls, stages: tuple[Stage, ...] | None, refused: bool
+) -> None:
+    """Assemble refused it after narrate had bought, record had recorded and the film was cut and published."""
+    clip = load_project(tmp_path / "clip", CLIP_CAPTIONED, script="## 1. Open\n\nA bowl.\n")
+    run = make_run(clip).run
+    if refused:
+        with pytest.raises(InputError, match=r"\[output\] captioned"):
+            build(clip, run, stages=stages)
+        assert calls.names == []
+    else:
+        build(clip, run, stages=stages)
+        assert calls.names == ["narrate"]
+
+
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A stage handed a flag it does not read would accept a switch that changes nothing."""
     build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False)

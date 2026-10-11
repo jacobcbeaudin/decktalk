@@ -22,16 +22,11 @@ from support.logs import data_of
 )
 def test_an_automatic_choice_is_one_recorder_per_three_cpus_and_never_more_than_four(cpus, want):
     """A recording with the capture switches keeps between two and three cores busy, so it is given three."""
-    assert at_once(0, cpus=cpus, windows=False) == want
-
-
-def test_windows_runs_one_recorder_unless_the_machine_says_otherwise():
-    assert at_once(0, cpus=64.0, windows=True) == 1
-    assert at_once(3, cpus=64.0, windows=True) == 3
+    assert at_once(0, cpus=cpus) == want
 
 
 def test_a_number_the_machine_names_wins_over_its_cpus():
-    assert at_once(8, cpus=2.0, windows=False) == 8
+    assert at_once(8, cpus=2.0) == 8
 
 
 @pytest.mark.parametrize(
@@ -67,11 +62,17 @@ def test_a_cgroup_v1_quota_is_read_when_there_is_no_v2_file(tmp_path, monkeypatc
 def test_the_number_of_recorders_chosen_is_recorded_beside_the_cpus_it_was_chosen_from(monkeypatch, caplog):
     """How many recorders ran is the first question about a slow container."""
     monkeypatch.setattr(pool, "available_cpus", lambda: 9.0)
-    monkeypatch.setattr(pool.sys, "platform", "linux")
     with caplog.at_level("DEBUG", logger="decktalk"):
         assert pool.automatic(0) == 3
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.pool"]
     assert data_of(record) == {"workers": 3, "cpus": 9.0, "requested": 0}
+
+
+def test_windows_chooses_its_recorders_as_every_other_machine_does(monkeypatch):
+    """The recorder steps the clock, so a loaded machine records the same frames and Windows needs no rule."""
+    monkeypatch.setattr(pool, "available_cpus", lambda: 9.0)
+    monkeypatch.setattr("sys.platform", "win32")
+    assert pool.automatic(0) == 3
 
 
 # ---- how a section is split into chunks ----------------------------------------------------------

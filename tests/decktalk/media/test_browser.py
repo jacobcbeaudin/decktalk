@@ -6,7 +6,6 @@ import inspect
 import socket
 import threading
 import time
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, get_args
 
@@ -16,8 +15,7 @@ from decktalk.errors import ApprovalRequired, ErrorCode, InputError, ToolError
 from decktalk.media import browser, pages
 from decktalk.media.environment import child_environment
 from decktalk.media.origin import Allowed, page_url
-from decktalk.settings import CAPTURE_SWITCHES, PAGE_POLICIES
-from decktalk.settings.layers import load
+from decktalk.settings import PAGE_POLICIES
 from decktalk.toolchain.cache import caching_in
 from support.fakes import FakeChromium
 
@@ -31,36 +29,17 @@ def test_the_page_policies_this_module_accepts_are_the_ones_the_setting_publishe
 INSTALLED = Path(__file__)
 """A file that is on disk, which is all a fake launch asks of the executable it would run."""
 
+CAPTURE = ["--disable-frame-rate-limit", "--disable-gpu-vsync"]
+"""The two switches every Chromium is launched with, which stop it holding its frames to a display refresh."""
 
-def test_every_capture_switch_the_setting_names_reaches_chromium_after_the_raster_switch():
+
+@pytest.mark.parametrize("policy", [browser.TRUSTED, browser.UNTRUSTED])
+def test_every_launch_carries_the_capture_switches_after_every_other_switch(policy):
+    """A switch that changes no pixel is no choice, so every browser DeckTalk opens takes it."""
     chromium = FakeChromium(INSTALLED)
-    browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False, switches=CAPTURE_SWITCHES)
-    assert chromium.asked[0]["args"] == [*browser.RASTER_ARGS, *(f"--{name}" for name in CAPTURE_SWITCHES)]
-
-
-def test_an_untrusted_page_keeps_its_own_switches_beside_the_capture_switches():
-    chromium = FakeChromium(INSTALLED)
-    browser.launch(chromium.driver(), policy=browser.UNTRUSTED, spend=False, switches=CAPTURE_SWITCHES)
-    switches = [f"--{name}" for name in CAPTURE_SWITCHES]
-    assert chromium.asked[0]["args"] == [*browser.RASTER_ARGS, *browser.UNTRUSTED_ARGS, *switches]
-
-
-def test_a_launch_that_names_no_capture_switch_passes_only_the_raster_switch():
-    chromium = FakeChromium(INSTALLED)
-    browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False, switches=())
-    assert chromium.asked[0]["args"] == list(browser.RASTER_ARGS)
-
-
-@pytest.mark.parametrize("named", ["disable-web-security", "--disable-frame-rate-limit"])
-def test_a_capture_switch_outside_the_closed_set_is_refused_before_any_browser_starts(named):
-    """The setting names switches from a closed set, so no project or variable hands Chromium a free switch."""
-    with pytest.raises(InputError, match="capture_switches"):
-        load(machine={}, project={}, environ={"DECKTALK_RECORD_CAPTURE_SWITCHES": named})
-
-
-def test_an_empty_variable_turns_every_capture_switch_off():
-    off = load(machine={}, project={}, environ={"DECKTALK_RECORD_CAPTURE_SWITCHES": ""})
-    assert off.settings.record.capture_switches == ()
+    browser.launch(chromium.driver(), policy=policy, spend=False)
+    sealing = list(browser.UNTRUSTED_ARGS) if policy == browser.UNTRUSTED else []
+    assert chromium.asked[0]["args"] == [*browser.RASTER_ARGS, *sealing, *CAPTURE]
 
 
 def test_an_untrusted_page_gets_the_sandbox_a_proxy_that_answers_nothing_and_no_webrtc_udp():
@@ -171,8 +150,8 @@ def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_p
     """
     launched = browser.launch_options
 
-    def unchecked(chosen: browser.PagePolicy, switches: Sequence[str] = ()) -> dict[str, Any]:
-        options = launched(chosen, switches)
+    def unchecked(chosen: browser.PagePolicy) -> dict[str, Any]:
+        options = launched(chosen)
         return options | {"args": [*options.get("args", []), LOCAL_NETWORK_ACCESS_OFF]}
 
     monkeypatch.setattr(browser, "launch_options", unchecked)

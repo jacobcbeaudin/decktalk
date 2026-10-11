@@ -24,22 +24,22 @@ LUMA_POINTS = (0.1, 0.5, 0.9)
 """Derived: a tenth, a half and nine tenths of a recording, which is where its brightness is read."""
 
 
-def measure_luma(webm: Path, duration: float) -> Luma:
+def measure_luma(video: Path, duration: float) -> Luma:
     """The recording's brightness at a tenth, a half and nine tenths of its length.
 
     One read of each frame gives both its mean and its peak, so the middle frame is decoded once.
     """
-    (tenth, _), (half, peak), (nine_tenths, _) = (frames.luma_at(webm, duration * point) for point in LUMA_POINTS)
+    (tenth, _), (half, peak), (nine_tenths, _) = (frames.luma_at(video, duration * point) for point in LUMA_POINTS)
     return Luma(at_tenth=tenth, at_half=half, at_nine_tenths=nine_tenths, peak_at_half=peak)
 
 
-def check_recording(webm: Path, recording: Recording) -> RecordingChecks:
+def check_recording(video: Path, recording: Recording) -> RecordingChecks:
     """What the frames of one finished recording measure, against what the recorder asked for."""
-    duration = ffmpeg.probe_duration(webm)
+    duration = ffmpeg.probe_duration(video)
     return RecordingChecks(
         duration_seconds=duration,
         wanted_seconds=recording.requested_seconds,
-        luma=measure_luma(webm, duration),
+        luma=measure_luma(video, duration),
     )
 
 

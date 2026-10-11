@@ -110,7 +110,7 @@ export type Context = {
 export type Handler = (slide: HTMLElement | null, ctx: Context) => void;
 
 /** A slide that builds its own markup in script rather than declaring a template. */
-export type Render = (ctx: { scene: Scene; slide: Slide; frozen: boolean }) => string;
+type Render = (ctx: { scene: Scene; slide: Slide; frozen: boolean }) => string;
 
 /** One slide, as the markup declared it or as a script registered it. */
 export type Slide = {
@@ -248,7 +248,7 @@ function previewSeconds(el: Element): number {
 // ---- moments -------------------------------------------------------------------------------------
 
 /** One moment an element declares, as the author wrote it and as its cue id spells it. */
-export type Moment = { readonly attr: Attr; readonly local: string; readonly cue: string };
+type Moment = { readonly attr: Attr; readonly local: string; readonly cue: string };
 
 /**
  * Every moment one element declares, in the order the registry lists the moment attributes.
@@ -289,7 +289,7 @@ export function classDescriptionOf(el: Element, local: string): string | null {
  * because it turns for as long as its slide is on screen. A pane clip names the project file it plays
  * and the one cue it starts on, and plays to its own end.
  */
-export function motionOf(el: Element, slideId: string): MotionRow | null {
+function motionOf(el: Element, slideId: string): MotionRow | null {
   const clip = written(el, ATTR.clip);
   if (clip) {
     const from = written(el, ATTR.clipFrom);
@@ -314,7 +314,7 @@ export function motionOf(el: Element, slideId: string): MotionRow | null {
 }
 
 /** Every motion, loop and pane clip a slide's markup declares, in document order. */
-export function motionsOf(slide: Slide): MotionRow[] {
+function motionsOf(slide: Slide): MotionRow[] {
   if (!slide.markup) return [];
   return [...slide.markup.content.querySelectorAll(MOVING_SELECTOR)]
     .map((el) => motionOf(el, slide.id))
@@ -496,7 +496,7 @@ export function catalog(): CatalogEntry[] {
 // ---- declaring a scene in script --------------------------------------------------------------------
 
 /** One slide of a scene a script declares, in the shape a page writes it. */
-export type SlideInput = {
+type SlideInput = {
   id?: string | number;
   previewSeconds?: number;
   enter?: SlideEntrance;

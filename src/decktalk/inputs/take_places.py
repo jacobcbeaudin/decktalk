@@ -19,8 +19,9 @@ A voiced take is written to the take store first and the takes directory second,
 store that holds a good copy keeps it, so a take voiced again on request changes this project's
 takes directory and never the take another project plays. Voicing holds the store's lock on that
 take, the operating system's own through `filelock`, so two runs on one machine voice one take once:
-the second waits up to `[narration] store_wait_seconds` for the lock and keeps the copy the first
-left, and it is refused when the wait runs out. Before the voice is asked, each place the take will
+the second waits for the lock as long as one whole take request can run, every attempt
+`[narration] timeout_seconds` long and `[narration] retries` waits between them, and keeps the copy
+the first left, and it is refused when the wait runs out. Before the voice is asked, each place the take will
 be written is made and proved writable, so a place that cannot hold it is refused before anything is
 paid.
 
@@ -153,7 +154,8 @@ class TakePlaces:
 
     def __init__(self, workspace: Workspace, *, wait_seconds: float) -> None:
         self._workspace = workspace
-        self._wait_seconds = wait_seconds
+        self.wait_seconds = wait_seconds
+        """How long a run waits for another run voicing the same take, which is one whole take request."""
         self._judged: dict[tuple[object, ...], str | None] = {}
         self._judging = threading.Lock()
 
@@ -384,7 +386,7 @@ class TakePlaces:
         except OSError as failed:
             raise self._store_unwritable(digest, failed) from failed
         lock = FileLock(store / f"{digest}{STORE_LOCK_SUFFIX}")
-        deadline = time.monotonic() + self._wait_seconds
+        deadline = time.monotonic() + self.wait_seconds
         while True:
             try:
                 lock.acquire(timeout=STORE_POLL_SECONDS)
@@ -394,8 +396,9 @@ class TakePlaces:
                 if time.monotonic() > deadline:
                     raise ProjectLocked(
                         f"another run has been voicing take {digest} into the take store at {store} for longer "
-                        f"than the {self._wait_seconds:g} seconds [narration] store_wait_seconds allows, so this "
-                        "run voiced nothing.",
+                        f"than the {self.wait_seconds:g} seconds one whole take request can run, every attempt "
+                        "[narration] timeout_seconds long with the waits between [narration] retries, so this run "
+                        "voiced nothing.",
                         hint="Let the other run finish, or stop it, then run this again. If no run is voicing it, "
                         f"delete {store / (digest + STORE_LOCK_SUFFIX)}.",
                     ) from None

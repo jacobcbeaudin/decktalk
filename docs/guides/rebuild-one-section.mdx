@@ -107,8 +107,9 @@ and agree. It looks in two places, in this order:
    directory and never the take another project plays. It holds the spoken words of every script
    voiced on this machine, so keep it out of a synced or shared folder. Two projects that need the
    same take buy it once: a run that finds a good copy in the store once its turn comes copies it in
-   rather than buying it again, and one that finds another run still buying waits up to
-   [`narration.store_wait_seconds`](/reference/configuration#narration). A run told to replace that take
+   rather than buying it again, and one that finds another run still buying waits as long as one whole
+   take request can run, every attempt [`narration.timeout_seconds`](/reference/configuration#narration)
+   long with the waits between `narration.retries`. A run told to replace that take
    with `--replace-voiced` buys it anyway. A take bought while the takes directory cannot be written
    is kept in the take store first, and the run stops and says so, so the next run copies it in for
    nothing.
@@ -138,7 +139,7 @@ held. Together they are everything that decides what those pixels look like:
 - the content of every project file the page loaded when it was last recorded, which its log lists
   under `assets`, each as `file:` and its path
 - the scene and the section's own `params`, every cue resolved to its second, and how long the
-  section runs, which is the take's span plus the section's `record_margin_seconds`
+  section runs, which is its frames in the narration plus its `hold_seconds`
 - the frame width, the frame height and the output frame rate, `[record] color_scheme`, the page
   policy, and `motion.reduce` and `motion.scale`, so a reduced render never reuses a full-motion
   recording
@@ -192,7 +193,7 @@ refused over them.
 | A slide inside the scene section N plays | nothing | every section that plays that scene |
 | The head, a style or a script of a page | nothing | every section of that page |
 | An image or a stylesheet the page loads | nothing | every section whose log lists that file |
-| `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
+| `hold_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
 | The voice id, the model, the output format, `[voices.NAME] speed` or a voice field of the provider's table | every turn that voice reads | every section that voice reads in, because its word times move |
 | `[narration] voice`, or a `[voice NAME]` line handing a turn to another voice | every turn whose voice changed | every section whose voice changed |
 | A voice's name, renamed with its `[voice NAME]` lines | nothing | nothing |

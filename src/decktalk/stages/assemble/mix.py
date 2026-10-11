@@ -290,9 +290,7 @@ def matched_gains(inputs: Inputs, takes: Takes, sounds: Sequence[Embedded]) -> d
     settings = inputs.settings.audio
 
     def integrated(path: Path) -> float:
-        return audio.measure_loudness(
-            path, i=settings.target_lufs, tp=settings.true_peak_max_dbtp, lra=settings.range_max_lu
-        ).i
+        return audio.measure_loudness(path, settings).i
 
     narration = inputs.workspace.narration_path
     level = integrated(narration) if sounds and not takes.estimated and narration.is_file() else math.nan

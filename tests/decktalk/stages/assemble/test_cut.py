@@ -25,7 +25,6 @@ from decktalk.stages.assemble.cut import (
     render_sections,
     rendered_starts,
     section_slate,
-    section_targets,
     vfades,
 )
 from support.fakes import FakeFfmpeg
@@ -53,17 +52,6 @@ def test_a_path_with_an_apostrophe_in_it_survives_the_concat_list(tmp_path, monk
     # The list is what the one escaper writes, so the join has no second spelling of a quoted path.
     assert written == [ffmpeg.concat_list(files)]
     assert "jacob'\\''s films" in written[0]
-
-
-def test_section_targets_are_frame_exact(tmp_path):
-    """A section is cut to a whole number of frames, so the film never drifts off the narration."""
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {1: ("a", 1.02, 1.0, spoken("one")), 2: ("b", 1.48, 1.4, spoken("two"))})
-    targets = section_targets(takes, 30)
-    assert abs(targets[1] - 1.0333) < 1e-3
-    assert abs(targets[2] - 1.4667) < 1e-3
-    # The boundaries are cumulative, so the two lengths add up to the whole of the narration.
-    assert abs(targets[1] + targets[2] - takes.total_seconds) < 1 / 30
 
 
 def test_a_page_section_with_no_recording_plays_black_and_is_an_error(tmp_path):

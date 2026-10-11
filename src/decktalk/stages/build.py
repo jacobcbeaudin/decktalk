@@ -53,6 +53,7 @@ from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import BuildResult, Cost, CostState, Result, StageRun, counted
 from decktalk.stages import narrate
 from decktalk.stages import score as score_stage
+from decktalk.stages.assemble.captioned import require_a_drawing_page
 from decktalk.stages.cost import cost_of, total
 from decktalk.stages.kept import (
     BUILT,
@@ -123,6 +124,8 @@ def build(
             "strict": strict,
         }
         _refuse_a_key_beside_a_page(inputs, run, plan)
+        if Stage.ASSEMBLE in plan:
+            require_a_drawing_page(inputs)
         _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
         film, stopped_at = _stages(inputs, run, plan, options, going, force=force)
         return run.result(

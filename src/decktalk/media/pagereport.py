@@ -98,7 +98,9 @@ class MotionLane(Model):
     """One declared motion, loop, region or pane clip as the recorder saw it, which verify masks and measures on.
 
     A reveal is a lane of kind `reveal`: every element one cue revealed or changed, sampled from the
-    cue for as long as a cue may move, departing on the cue. The report keeps reveals apart from the
+    cue for as long as a cue may move, departing on the cue. Its `departs` and `arrives` are the cue's
+    second and the end of that span, never the seconds a page happened to step, so pieces join to the
+    one pass. The report keeps reveals apart from the
     lanes, because verify measures a reveal as a step in the whole frame and never masks it. A film's
     landings file carries them, so a pane that plays the film measures each reveal on its box.
 

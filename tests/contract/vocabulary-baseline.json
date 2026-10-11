@@ -13,7 +13,6 @@
     "tests/decktalk/stages/check/test_scan.py": 1,
     "tests/decktalk/stages/record/test_checks.py": 2,
     "tests/decktalk/stages/record/test_record.py": 1,
-    "tests/decktalk/stages/test_status.py": 1,
-    "tests/support/recorder.py": 1
+    "tests/decktalk/stages/test_status.py": 1
   }
 }

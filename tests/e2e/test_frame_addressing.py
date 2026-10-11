@@ -8,7 +8,8 @@ workers and a re-record from the middle of a section stand on. That holds only i
 second is a function of that second and not of which seconds were shown before it. This golden builds
 the starter and each shipped example with no voice, splits every page section at every cue, at a few
 frames drawn from a seed and at the frames a path dependence was once seen on, records each piece in
-a fresh page, and requires every decoded frame to equal the one pass `build` recorded. It then records
+a fresh page of a Chromium launched without the capture switches, and requires every decoded frame to
+equal the one pass `build` recorded with them, so it holds the switches to the same pixels as well. It then records
 every project again the way `record` splits a section across its workers, in many chunks joined into
 one file, and requires the same decoded frames, the same report from the page and the same verify
 numbers as the one pass.
@@ -20,24 +21,19 @@ it guards each have a fixture test in `tests/decktalk/media/test_stepping.py` th
 
 from __future__ import annotations
 
-import json
 import random
 import shutil
-import subprocess
-import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from decktalk.artifacts import RecordingLog
-from decktalk.errors import Exit
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg, stepping
+from decktalk.media import browser, stepping
 from decktalk.media.origin import Allowed
 from decktalk.page import Q
-from decktalk.template import EXAMPLES, STARTER
-from support.commands import HOSTILE_DIRECTORY, clean_environ
+from support.commands import HOSTILE_DIRECTORY, PACKAGED, decktalk, frame_digests, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 from support.tools import machine_tools
 
@@ -45,9 +41,6 @@ PIECES_BUDGET_SECONDS = budget(2 * EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_
 """How long one project may take here, which is its build and a second recording of every frame it holds."""
 
 pytestmark = [pytest.mark.scaffold, pytest.mark.timeout(PIECES_BUDGET_SECONDS)]
-
-PACKAGED = [STARTER, *(example.name for example in EXAMPLES if example.shipped)]
-"""Every project `decktalk init` writes today, which is the starter and each shipped example."""
 
 SEEDED_SPLITS = 3
 """How many frames drawn from a seed each section is also split at, besides its cues."""
@@ -60,9 +53,6 @@ a full raster of every redrawn tile settled. Starter frame 439 started a word's 
 first frame, because a word on the voice was revealed only on the seconds a step drew, which a
 task at each word's own second settled.
 """
-
-STALE_SPAN = 150
-"""How many frames from lesson frame 1072 the stale outline lasted, plus a margin, which its own test records."""
 
 ONE_PASS = ("--set", "record.concurrency=1", "--set", "record.skip_still=false")
 """What records every section in one chunk and captures every frame of it.
@@ -79,18 +69,6 @@ VERIFY_RUN_FIELDS = ("run", "elapsed_seconds")
 """The fields of verify's answer that name its own run rather than measure the film."""
 
 
-def decktalk(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
-    """One `decktalk` command, with no key, no voice variable and no machine file in reach."""
-    return subprocess.run(
-        [sys.executable, "-m", "decktalk", *args, "--json"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=clean_environ(cwd),
-        cwd=cwd,
-    )
-
-
 class Built(dict[str, Path]):
     """Each packaged project, written by `init` and built with no voice the first time a test asks for it."""
 
@@ -101,12 +79,9 @@ class Built(dict[str, Path]):
     def __missing__(self, name: str) -> Path:
         home = self.factory.mktemp(name) / HOSTILE_DIRECTORY
         home.mkdir(parents=True)
-        root = home / name
-        chosen = () if name == STARTER else ("--example", name)
-        made = decktalk("init", str(root), "--no-skills", *chosen, cwd=home)
-        assert made.returncode == Exit.FOUND_NOTHING, made.stderr
+        root = written(home, name)
         done = decktalk("--project", str(root), "build", "--no-spend", *ONE_PASS, cwd=home)
-        assert json.loads(done.stdout)["film"], done.stderr
+        assert done["film"], done
         self[name] = root
         return root
 
@@ -123,17 +98,12 @@ def cue_seconds(url: str) -> list[float]:
     return [float(pair.rsplit("@", 1)[1]) for pair in pairs.split(",") if "@" in pair]
 
 
-def frame_digests(video: Path) -> list[str]:
-    """One digest per decoded frame of `video`, taken over its rgb24 pixels."""
-    rows = ffmpeg.raw(*ffmpeg.source(video), "-f", "framemd5", "-pix_fmt", "rgb24", "-").decode()
-    return [line.rsplit(",", 1)[1].strip() for line in rows.splitlines() if line and not line.startswith("#")]
-
-
 def record_pieces(root: Path, section: str, starts: list[int], end: int, into: Path) -> list[str]:
     """Record `[starts[i], starts[i + 1])` of one section, each piece in a fresh page, and digest every frame.
 
-    Each piece is recorded the way `record` records a chunk, with every frame captured, so nothing is
-    written again that the piece did not draw.
+    Each piece is recorded the way `record` records a chunk, with every frame captured, so a pane clip
+    is decoded for it and nothing is written again that the piece did not draw. The Chromium is
+    launched without the capture switches, which the one pass was recorded with.
     """
     inputs = Inputs.load(root, environ={})
     log = RecordingLog.read(root / "build" / "recordings" / f"{section}.json")
@@ -141,28 +111,25 @@ def record_pieces(root: Path, section: str, starts: list[int], end: int, into: P
     video, recorder = inputs.settings.video, inputs.settings.record
     bounds = [*starts, end]
     digests: list[str] = []
-    with (
-        machine_tools(),
-        browser.chromium(policy=browser.TRUSTED, spend=False, switches=recorder.capture_switches) as real,
-    ):
-        for first, stop in zip(bounds, bounds[1:], strict=False):
-            piece = stepping.record_piece(
-                real,
-                log.recording.url,
-                range(first, stop),
-                into / f"{section}-{first}.mp4",
-                allowed=Allowed.of(inputs.root, inputs.served_paths()),
-                width=video.width,
-                height=video.height,
-                fps=video.fps,
-                frame_wait_seconds=recorder.frame_wait_seconds,
-                skip_still=False,
-                skip_audit_every=0,
-                color_scheme=recorder.color_scheme,
-                motion=inputs.settings.motion,
-                documents=inputs.documents(),
-            )
-            digests += frame_digests(piece.path)
+    with pytest.MonkeyPatch.context() as patch, machine_tools():
+        patch.setattr(browser, "CAPTURE_ARGS", ())
+        with browser.chromium(policy=browser.TRUSTED, spend=False) as plain:
+            for first, stop in zip(bounds, bounds[1:], strict=False):
+                piece = stepping.record_piece(
+                    plain,
+                    log.recording.url,
+                    range(first, stop),
+                    into / f"{section}-{first}.mp4",
+                    allowed=Allowed.of(inputs.root, inputs.served_paths()),
+                    width=video.width,
+                    height=video.height,
+                    fps=video.fps,
+                    skip_still=False,
+                    color_scheme=recorder.color_scheme,
+                    motion=inputs.settings.motion,
+                    documents=inputs.documents(),
+                )
+                digests += frame_digests(piece.path)
     return digests
 
 
@@ -177,15 +144,6 @@ def differing(expected: list[str], got: list[str], offset: int) -> list[int]:
     """The frame numbers whose digests differ, counted from `offset`."""
     assert len(got) == len(expected), (len(got), len(expected))
     return [offset + at for at, (one, other) in enumerate(zip(expected, got, strict=True)) if one != other]
-
-
-def test_the_lesson_from_frame_1072_draws_the_frames_its_one_pass_recording_holds(built, tmp_path):
-    """The piece that once drew a dial's outline from a partly redrawn tile for 140 frames draws every one of them."""
-    root = built["lesson"]
-    first = SEEN_SPLITS[("lesson", "01")][0]
-    whole = frame_digests(root / "build" / "recordings" / "01.mp4")
-    got = record_pieces(root, "01", [first], first + STALE_SPAN, tmp_path)
-    assert differing(whole[first : first + STALE_SPAN], got, first) == []
 
 
 @pytest.mark.parametrize("name", PACKAGED)
@@ -208,9 +166,8 @@ def test_every_section_split_anywhere_records_the_frames_of_one_pass(built, tmp_
 
 def measured(root: Path) -> dict[str, object]:
     """What `verify` measures of the project's film, without the fields that name its own run."""
-    done = decktalk("--project", str(root), "verify", cwd=root.parent)
-    answer = json.loads(done.stdout)
-    assert answer["film"], done.stderr
+    answer = decktalk("--project", str(root), "verify", cwd=root.parent)
+    assert answer["film"], answer
     return {key: value for key, value in answer.items() if key not in VERIFY_RUN_FIELDS}
 
 
@@ -227,9 +184,9 @@ def test_every_section_recorded_in_many_chunks_is_the_one_pass_in_frames_report_
     copy = tmp_path / name
     shutil.copytree(root, copy)
     redone = decktalk("--project", str(copy), "record", "--force", *MANY_CHUNKS, cwd=tmp_path)
-    assert json.loads(redone.stdout).get("sections"), redone.stdout
+    assert redone.get("sections"), redone
     built_again = decktalk("--project", str(copy), "build", "--no-spend", *MANY_CHUNKS, cwd=tmp_path)
-    assert json.loads(built_again.stdout).get("film"), built_again.stdout
+    assert built_again.get("film"), built_again
     inputs = Inputs.load(root, environ={})
     for section in inputs.document.page_sections:
         if section.rendered:

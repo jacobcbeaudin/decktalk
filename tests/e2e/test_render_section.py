@@ -11,15 +11,13 @@ and once with the landings left out, where verify measures none of the section's
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from decktalk.results import SkipReason
-from support.commands import HOSTILE_DIRECTORY, clean_environ
+from support.commands import HOSTILE_DIRECTORY, run, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS))]
@@ -30,14 +28,8 @@ RENDERED = 3
 
 
 def decktalk(*args: str, cwd: Path) -> tuple[dict[str, Any], str]:
-    ran = subprocess.run(
-        [sys.executable, "-m", "decktalk", *args, "--json", "--events"],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=clean_environ(cwd),
-        cwd=cwd,
-    )
+    """One command under `--json` with its events on stderr, and both."""
+    ran = run(*args, "--json", "--events", cwd=cwd)
     assert ran.stdout.strip(), ran.stderr
     return json.loads(ran.stdout), ran.stderr
 
@@ -45,8 +37,7 @@ def decktalk(*args: str, cwd: Path) -> tuple[dict[str, Any], str]:
 def built(tmp_path: Path, *, landings: bool) -> tuple[Path, dict[str, Any], str]:
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
-    root = home / EXAMPLE
-    decktalk("init", str(root), "--example", EXAMPLE, "--no-skills", cwd=home)
+    root = written(home, EXAMPLE)
     if not landings:
         toml = root / "decktalk.toml"
         toml.write_text(

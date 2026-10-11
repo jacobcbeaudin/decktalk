@@ -22,7 +22,7 @@ import pytest
 
 from decktalk.artifacts.stored import DIGEST_DIGITS, engine_digest
 from decktalk.artifacts.takes import Take, TakeInputs, Takes, TimedBy
-from decktalk.files import json_text, replace_all
+from decktalk.files import drafted, json_text, replace_all
 from decktalk.inputs import Inputs
 from decktalk.results import SoundKind
 from decktalk.settings import Settings
@@ -86,6 +86,19 @@ PARTING: dict[str, Any] = {"voice": "Zoë", "style": 1e-07, "nested": {"b": 1, "
 """A value with every trait on which the two spellings part: key order, spacing, a small float and non-ASCII."""
 
 
+def test_a_drafted_file_is_replaced_only_once_its_writer_has_finished(tmp_path: Path) -> None:
+    """A recording, a clip and a drawn section were each replaced by a rule of their own, and one deleted first."""
+    final = tmp_path / "recordings" / "01.mp4"
+    with drafted(final) as draft:
+        draft.write_bytes(b"first")
+    assert final.read_bytes() == b"first"
+    with pytest.raises(RuntimeError), drafted(final) as draft:
+        draft.write_bytes(b"half")
+        raise RuntimeError
+    assert final.read_bytes() == b"first"
+    assert sorted(path.name for path in final.parent.iterdir()) == ["01.mp4"]
+
+
 def test_the_helper_is_not_the_spelling_a_digest_reads() -> None:
     """If this ever passes the other way, the helper could stand in for a key, and every test below is moot."""
     assert json_text(PARTING) != json.dumps(PARTING)
@@ -133,6 +146,7 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
         timed_by=TimedBy.PROVIDER,
         alignment=None,
         model_digest=None,
+        audio_blake3=None,
     )
     index = Takes(script="script.md", model="m", output_format="f", sections=(row,))
     written = index.write(tmp_path / "takes.json").read_text(encoding="utf-8")

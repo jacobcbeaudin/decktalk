@@ -1,11 +1,13 @@
 """The caption, chapter and transcript files `assemble` writes beside the final mp4.
 
 build/final/<name>.srt              the caption cues as SubRip, each named voice before its line
-build/final/<name>.vtt              the same cues as WebVTT, each named voice in a <v> span
+build/final/<name>.vtt              the same cues as WebVTT, each named voice in a <v> span and
+                                    every &, < and > in the text written as its escape
 build/final/<name>.chapters.txt     an ffmetadata file with one [CHAPTER] per section
 build/final/<name>-transcript.html  the whole film as a page: one heading per chapter, the spoken
                                     text under it, each turn named by its voice where a section
-                                    speaks in more than one, and the description of each reveal
+                                    speaks in more than one, the speech inside every clip naming
+                                    nobody, and the description of each reveal
 
 The transcript is the media alternative a viewer who cannot see or cannot hear the film reads
 instead. Captions carry speech alone, so the transcript is the only place the picture is written
@@ -43,13 +45,28 @@ def _srt_lines(cue: CaptionCue) -> str:
     return "\n".join(lines)
 
 
+VTT_ESCAPES = (("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"))
+"""The characters WebVTT cue text may not carry bare and the references it writes them as, `&` first."""
+
+
+def vtt_escape(text: str) -> str:
+    """Text as WebVTT cue text or a voice's annotation carries it, so a player reads no tag or escape into it.
+
+    `&` and `<` would open an escape and a tag, and `>` is escaped as well, which also keeps `-->`
+    out of a cue.
+    """
+    for bare, escaped in VTT_ESCAPES:
+        text = text.replace(bare, escaped)
+    return text
+
+
 def _vtt_lines(cue: CaptionCue) -> str:
     """One cue's text as WebVTT writes it, with the lines a named voice speaks inside a `<v>` span that names it."""
+    lines = [vtt_escape(line) for line in cue.lines]
     if not cue.named or cue.voice is None:
-        return cue.text
+        return "\n".join(lines)
     first, after = cue.speech
-    lines = list(cue.lines)
-    lines[first] = f"<v {cue.voice}>" + lines[first]
+    lines[first] = f"<v {vtt_escape(cue.voice)}>" + lines[first]
     lines[after - 1] += "</v>"
     return "\n".join(lines)
 

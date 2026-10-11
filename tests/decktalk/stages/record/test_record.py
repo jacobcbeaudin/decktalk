@@ -1,9 +1,10 @@
 """Recording every page section, and the order the recorder writes in.
 
-The rule these tests exist for is the pair on disk. The log of the recording being replaced goes
-before anything is captured and the log of what was recorded is written last, so a run that stops in
-between leaves a video with no log or a log with no checks, and the next run records the
-section again rather than assembling a picture nobody judged.
+The rule these tests exist for is the pair on disk. A new video is drafted beside the old one, so a
+recording that fails leaves the old video and its log. Once the draft is whole the old log goes, the
+draft takes the video's place and the log of what was recorded is written last, so a run that stops
+in between leaves a video with no log or a log with no checks, and the next run records the section
+again rather than assembling a picture nobody judged.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts import RecordingLog
-from decktalk.errors import InputError, NotBuiltError
+from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Event, Level, RunLog, SectionDone, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -26,7 +27,7 @@ from decktalk.media.pagereport import PageReport, Recording
 from decktalk.page import Q
 from decktalk.pipeline import Outcome
 from decktalk.results import Word
-from decktalk.settings import Settings
+from decktalk.settings import PROJECT_FILE, Settings
 from decktalk.stages.cue import cue
 from decktalk.stages.narrate import narrate
 from decktalk.stages.record import LogSink, plan, pool, record, stale_recording
@@ -81,7 +82,6 @@ class Driven:
         self.order: list[str] = []
         self.launched = 0
         self.policies: list[str] = []
-        self.switches: list[tuple[str, ...]] = []
         self.missing: tuple[str, ...] = ()
         # Each file runs the requested span rounded to whole frames, which is what the stepped recorder writes.
         self.lengths: dict[Path, float] = {}
@@ -90,27 +90,22 @@ class Driven:
         # The frames of each piece a section was joined from, in the order they were handed to the join.
         self.joined: list[list[range]] = []
         self.real_join = stepping.join
+        self.real_clear = LogSink.clear
         self.real_write = LogSink.write
         # Launches released together count at once, and an unguarded increment could lose one.
         self.counting = threading.Lock()
 
     @contextmanager
-    def chromium(
-        self, _executable: str = "", *, policy: str = "trusted", switches: tuple[str, ...] = (), **_launch: object
-    ) -> Iterator[object]:
+    def chromium(self, _executable: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
         if self.launches_together is not None:
             self.launches_together.wait()
         with self.counting:
             self.launched += 1
         self.policies.append(policy)
-        self.switches.append(switches)
         yield object()
 
     def record_piece(self, _browser: object, url: str, frames: range, out: Path, **_kwargs: object) -> stepping.Piece:
-        section = out.with_name(out.name.removeprefix(".").split(".piece")[0] + out.suffix)
         self.urls.append(url)
-        if not section.with_suffix(".json").exists():
-            self.order.append(f"cleared {section.name}")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"mp4")
         return stepping.Piece(
@@ -130,13 +125,19 @@ class Driven:
             steps=len(frames),
         )
 
-    def join(self, pieces: list[stepping.Piece], out: Path, *, seconds: float) -> Recording:
+    def join(self, pieces: list[stepping.Piece], out: Path, *, seconds: float, name: str) -> Recording:
         self.joined.append([piece.frames for piece in pieces])
         # The joined file runs every frame its pieces were asked for, which is what the stepped recorder writes.
-        self.lengths[out] = sum(len(piece.frames) for piece in pieces) / FPS
-        recording = self.real_join(pieces, out, seconds=seconds)
-        self.order.append(f"placed {out.name}")
+        self.lengths[out.with_name(name + out.suffix)] = sum(len(piece.frames) for piece in pieces) / FPS
+        recording = self.real_join(pieces, out, seconds=seconds, name=name)
+        self.order.append(f"drafted {name}{out.suffix}")
         return recording
+
+    def clear_log(self, sink: LogSink) -> None:
+        self.real_clear(sink)
+        out = sink.job.out
+        waiting = out.with_name(f".{out.stem}.part{out.suffix}").exists()
+        self.order.append(f"cleared {out.name}" if waiting else f"cleared {out.name} with no draft waiting")
 
     def write_log(self, sink: LogSink, recording: Recording) -> None:
         self.real_write(sink, recording)
@@ -152,6 +153,7 @@ def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
     monkeypatch.setattr(browser, "chromium", fake.chromium)
     monkeypatch.setattr(stepping, "record_piece", fake.record_piece)
     monkeypatch.setattr(stepping, "join", fake.join)
+    monkeypatch.setattr(LogSink, "clear", lambda sink: fake.clear_log(sink))
     monkeypatch.setattr(LogSink, "write", lambda sink, recording: fake.write_log(sink, recording))
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda path: fake.lengths[path])
     # The one ffmpeg run the recorder makes is the join of a section's pieces, which writes its last argument.
@@ -175,16 +177,6 @@ def test_a_host_that_marks_the_page_untrusted_records_it_under_that_policy(tmp_p
     assert driven.policies == ["untrusted"]
 
 
-def test_the_recorder_launches_chromium_with_the_capture_switches_this_machine_names(
-    tmp_path: Path, driven: Driven
-) -> None:
-    inputs = a_project(tmp_path, machine={"record": {"capture_switches": []}})
-    record(inputs, a_run(inputs.root))
-    record(a_project(tmp_path), a_run(inputs.root), force=True)
-    assert driven.switches == [(), Settings().record.capture_switches]
-    assert driven.switches[-1], "the recorder launches with its capture switches unless a machine turns them off"
-
-
 @pytest.mark.usefixtures("driven")
 def test_a_row_carries_the_length_and_the_frame_count_of_its_recording(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
@@ -195,10 +187,10 @@ def test_a_row_carries_the_length_and_the_frame_count_of_its_recording(tmp_path:
     assert row.seconds == pytest.approx(row.frames / FPS)
 
 
-def test_the_log_is_cleared_before_the_capture_and_written_after_it(tmp_path: Path, driven: Driven) -> None:
+def test_the_log_is_cleared_as_the_draft_is_placed_and_written_after_it(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
     record(inputs, a_run(inputs.root))
-    assert driven.order[:3] == ["cleared 01.mp4", "placed 01.mp4", "logged 01.mp4"]
+    assert driven.order[:3] == ["drafted 01.mp4", "cleared 01.mp4", "logged 01.mp4"]
 
 
 @pytest.mark.usefixtures("driven")
@@ -209,7 +201,7 @@ def test_the_finished_log_carries_the_frames_and_the_judgements(tmp_path: Path) 
     assert log is not None
     assert log.section == 1
     assert log.checks is not None
-    assert log.checks.wanted_seconds == pytest.approx(SPAN_SECONDS + 0.3)
+    assert log.checks.wanted_seconds == pytest.approx(SPAN_SECONDS)
 
 
 def test_a_run_stopped_before_it_measured_leaves_a_log_the_next_run_records_again(
@@ -225,6 +217,53 @@ def test_a_run_stopped_before_it_measured_leaves_a_log_the_next_run_records_agai
     assert "cleared 01.mp4" in driven.order
 
 
+def recorded_pair(inputs: Inputs, key: str) -> tuple[bytes | None, RecordingLog | None]:
+    """The video and the log of one section as they are on disk, either of them None when it is not there."""
+    video = inputs.workspace.recording(key)
+    return (video.read_bytes() if video.is_file() else None), RecordingLog.read(inputs.workspace.recording_log(key))
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_record_again_that_fails_keeps_the_recording_it_was_replacing_with_its_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed record again left the old video with no log, so assemble cut it and dropped its pane clips' sound."""
+    inputs = a_project(tmp_path)
+    record(inputs, a_run(inputs.root))
+    before = recorded_pair(inputs, "01")
+
+    def failing(*_args: object, **_kwargs: object) -> stepping.Piece:
+        raise ToolError("the page stopped answering")
+
+    monkeypatch.setattr(stepping, "record_piece", failing)
+    with pytest.raises(ToolError):
+        record(inputs, a_run(inputs.root), only=[1])
+    video, log = recorded_pair(inputs, "01")
+    assert video == before[0]
+    assert log is not None and log.checks is not None, "the video on disk still has the log that judged it"
+    assert log == before[1]
+    assert list(inputs.workspace.recording("01").parent.glob(".*")) == []
+
+
+def test_a_rendered_section_whose_command_fails_keeps_the_video_it_drew_before(tmp_path: Path, driven: Driven) -> None:
+    """The command's video was deleted before it ran, so a failed draw lost the picture the last one made."""
+    load_project(tmp_path, RENDERED_TOML)
+    inputs = Inputs.load(tmp_path, environ={})
+    write_takes(inputs, a_take(1, seconds=SPAN_SECONDS, voiced=False))
+    [job] = plan(Inputs.load(tmp_path, environ={}), a_run(inputs.root), None)
+    driven.lengths[job.out] = stepping.frame_count(job.seconds, FPS) / FPS
+    record(inputs, a_run(inputs.root))
+    before = recorded_pair(inputs, "01")
+    (tmp_path / PROJECT_FILE).write_text(
+        RENDERED_TOML.replace("pathlib.Path(sys.argv[1]).write_bytes(b'video')", "sys.exit(4)"), encoding="utf-8"
+    )
+    failing = Inputs.load(tmp_path, environ={})
+    with pytest.raises(ToolError, match="failed with exit 4"):
+        record(failing, a_run(inputs.root), only=[1])
+    assert recorded_pair(inputs, "01") == before
+    assert list(inputs.workspace.recording("01").parent.glob(".*")) == []
+
+
 def test_a_section_nothing_moved_under_is_kept_and_no_browser_opens(tmp_path: Path, driven: Driven) -> None:
     inputs = a_project(tmp_path)
     record(inputs, a_run(inputs.root))
@@ -232,6 +271,21 @@ def test_a_section_nothing_moved_under_is_kept_and_no_browser_opens(tmp_path: Pa
     again = record(inputs, a_run(inputs.root))
     assert [row.kept for row in again.sections] == [True, True]
     assert driven.launched == launched
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_section_a_run_passed_over_out_of_date_is_named_in_a_sentence(tmp_path: Path) -> None:
+    """The reason opened in lower case, so record's own line began `section 2: ...` where status's began `Section`."""
+    inputs = a_project(tmp_path)
+    record(inputs, a_run(inputs.root))
+    (tmp_path / "deck" / "index.html").write_text(TWO_SCENE_PAGE.replace("two</p>", "two more</p>"), encoding="utf-8")
+    lines: list[Event] = []
+    record(Inputs.load(tmp_path, environ={}), a_run(inputs.root, lines=lines), only=[1])
+    said = [line.message for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING]
+    assert said == [
+        "Section 2: the markup of its scene changed since it was recorded, and this run did not name it, so the "
+        "film keeps the picture recorded before."
+    ]
 
 
 @pytest.mark.usefixtures("driven")
@@ -395,7 +449,7 @@ def test_a_project_with_no_take_index_is_not_built_yet(tmp_path: Path) -> None:
 def test_one_rule_decides_whether_a_recording_still_stands(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     section = inputs.document.page_sections[0]
-    assert stale_recording(inputs, section) == "section 1 has no recording"
+    assert stale_recording(inputs, section) == "Section 1 has no recording"
     record(inputs, a_run(inputs.root))
     assert stale_recording(inputs, section) is None
     (tmp_path / "deck" / "index.html").write_text(TWO_SCENE_PAGE.replace("one</p>", "one more</p>"), encoding="utf-8")
@@ -431,10 +485,10 @@ def test_a_section_split_across_recorders_is_recorded_in_chunks_and_joined_in_fr
     inputs = a_project(tmp_path, machine=CHUNKED)
     lines: list[Event] = []
     result = record(inputs, a_run(inputs.root, lines=lines))
-    frames = stepping.frame_count(SPAN_SECONDS + 0.3, FPS)
+    frames = stepping.frame_count(SPAN_SECONDS, FPS)
     assert [row.section for row in result.sections] == [1, 2]
     assert [sorted((one.start, one.stop) for one in pieces) for pieces in driven.joined] == [
-        [(0, 27), (27, 54), (54, 81), (81, frames)]
+        [(0, 25), (25, 50), (50, 75), (75, frames)]
     ] * 2
     for number in (1, 2):
         paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
@@ -443,7 +497,7 @@ def test_a_section_split_across_recorders_is_recorded_in_chunks_and_joined_in_fr
         assert done[0].outcome is Outcome.RAN
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None and log.checks is not None
-    assert log.recording.pieces == (0, 27, 54, 81)
+    assert log.recording.pieces == (0, 25, 50, 75)
     assert log.checks.duration_seconds == pytest.approx(frames / FPS)
     assert list(inputs.workspace.recording("01").parent.glob(".*")) == []
 
@@ -481,8 +535,7 @@ def test_a_dialogue_section_is_recorded_for_its_whole_span(tmp_path: Path) -> No
     write_takes(inputs, *turns)
     loaded = Inputs.load(tmp_path, environ={})
     jobs = plan(loaded, a_run(tmp_path), None)
-    margin = loaded.document.page_sections[0].record_margin_seconds
-    assert [job.seconds for job in jobs] == [round(2 * SPAN_SECONDS + 1.0, 3) + margin, SPAN_SECONDS + margin]
+    assert [job.seconds for job in jobs] == [round(2 * SPAN_SECONDS + 1.0, 3), SPAN_SECONDS]
 
 
 def test_a_held_section_is_recorded_through_its_hold(tmp_path: Path) -> None:
@@ -492,8 +545,20 @@ def test_a_held_section_is_recorded_through_its_hold(tmp_path: Path) -> None:
     write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (1, 2)))
     loaded = Inputs.load(tmp_path, environ={})
     jobs = plan(loaded, a_run(tmp_path), None)
-    margin = loaded.document.page_sections[0].record_margin_seconds
-    assert [job.seconds for job in jobs] == [SPAN_SECONDS + 2.0 + margin, SPAN_SECONDS + margin]
+    assert [job.seconds for job in jobs] == [SPAN_SECONDS + 2.0, SPAN_SECONDS]
+
+
+def test_a_page_section_is_recorded_for_exactly_the_frames_the_film_cuts_from_it(tmp_path: Path) -> None:
+    """Each section runs whole frames between rounded boundaries, so a recording that long needs no margin and no pad.
+
+    Two spans of 1.02 s at 25 fps round to boundaries at frames 26 and 51, so the second section plays
+    25 frames although its own span rounds to 26.
+    """
+    inputs = load_project(tmp_path, TOML, page=TWO_SCENE_PAGE)
+    write_takes(inputs, *(a_take(section, seconds=1.02, voiced=False) for section in (1, 2)))
+    loaded = Inputs.load(tmp_path, environ={})
+    assert loaded.settings.video.fps == 25
+    assert [job.seconds for job in plan(loaded, a_run(tmp_path), None)] == [1.04, 1.0]
 
 
 # ---- one turn edited in a two-section deck that shares one page ---------------------------------

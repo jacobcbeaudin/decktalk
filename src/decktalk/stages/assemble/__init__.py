@@ -10,8 +10,10 @@ The order is fixed. Each section is cut to its span and the sections are joined 
 soundtrack is mixed over a silent anchor of the picture's length. The mix is normalized to the EBU
 R128 target unless any take is a placeholder, whose clicks the a/v check listens for, or the run
 asks for no loudness pass. Then the captions, the chapters, the placements and the transcript are
-written, the finished film is renamed into place in one step, and the poster is drawn. When
-`[output] captioned` asks for it, the captioned copy is drawn over the finished film last.
+written, the captioned copy of the film being replaced is removed, the finished film is renamed into
+place in one step, and the poster is drawn. When `[output] captioned` asks for it, the captioned copy
+is drawn over the finished film last, and a project with no page to draw it is refused before
+anything is cut.
 """
 
 from __future__ import annotations
@@ -31,14 +33,13 @@ from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
-from decktalk.stages.assemble.captioned import remove_captioned, write_captioned
+from decktalk.stages.assemble.captioned import remove_captioned, require_a_drawing_page, write_captioned
 from decktalk.stages.assemble.cut import Rendered, placements_of, remove_stray_videos, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
 from decktalk.stages.assemble.publish import (
     build_captions,
     build_chapters,
-    caption_texts,
     clip_words,
     film_words,
     narrated_turns,
@@ -52,19 +53,21 @@ from decktalk.stages.assemble.publish import (
     write_transcript_page,
 )
 
-DELIVERY_PASSES: tuple[str, ...] = (
-    "mix the soundtrack",
-    "encode the soundtrack",
-    "write the captions",
-    "publish the film",
-)
-CAPTIONED_PASS = "draw the captioned copy"
-"""Truth: the pass that follows the others when `[output] captioned` asks for the captioned copy."""
+ENCODE_PASS = "encode the soundtrack"
+CAPTIONS_PASS = "write the captions"
+PUBLISH_PASS = "publish the film"
+"""Truth: the passes after the mix, each named by the label a renderer prints beside its count."""
+
+DELIVERY_PASSES: tuple[str, ...] = ("mix the soundtrack", ENCODE_PASS, CAPTIONS_PASS, PUBLISH_PASS)
 """Truth: the passes that follow the section videos, in the order the encoder and the writers run them.
 
 They are named rather than counted, so the count a renderer reads and the label it prints beside it
-come from one list and a pass added here reaches both.
+come from one list and a pass added here reaches both. The mix is labelled with how many layers it
+mixed.
 """
+
+CAPTIONED_PASS = "draw the captioned copy"
+"""Truth: the pass that follows the others when `[output] captioned` asks for the captioned copy."""
 
 
 class Passes:
@@ -96,6 +99,7 @@ def assemble(
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
     takes = inputs.takes(required=True)
+    require_a_drawing_page(inputs)
     remove_stray_videos(inputs)
     captioned = inputs.settings.output.captioned
     passes = Passes(run, len(inputs.document.sections), captioned=captioned)
@@ -114,10 +118,11 @@ def assemble(
         after = _deliver(inputs, run, mixed, work, takes, loudness=loudness, strict=strict)
     finally:
         mixed.unlink(missing_ok=True)
-    passes.finished(DELIVERY_PASSES[1])
+    passes.finished(ENCODE_PASS)
 
     placements, cues = _write_deliverables(inputs, run, rows, takes)
-    passes.finished(DELIVERY_PASSES[2])
+    passes.finished(CAPTIONS_PASS)
+    remove_captioned(inputs)
     stamped = publish(inputs, work, inputs.workspace.deliverables())
     run.wrote(inputs.workspace.film)
     if stamped is not None:
@@ -126,12 +131,10 @@ def assemble(
     poster = render_poster(inputs, run, inputs.workspace.deliverables()["poster"])
     if poster is not None:
         run.wrote(poster)
-    passes.finished(DELIVERY_PASSES[3])
+    passes.finished(PUBLISH_PASS)
     if captioned:
         run.wrote(write_captioned(inputs, run, cues, placements))
         passes.finished(CAPTIONED_PASS)
-    else:
-        remove_captioned(inputs)
 
     return run.result(
         AssembleResult,
@@ -156,7 +159,7 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
         run.note(f"The loudness pass is skipped because {why}, so the soundtrack is encoded as it was mixed.")
         encode_soundtrack(inputs, mixed, work)
         return None
-    _before, after = normalize_loudness(inputs, mixed, work)
+    after = normalize_loudness(inputs, mixed, work)
     missed = loudness_findings(inputs, run, after)
     if missed and strict:
         raise ToolError(
@@ -171,10 +174,9 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     """The captions, the chapters, the placements and the transcript, and the placements and captions written."""
     paths = inputs.workspace.deliverables()
     starts = rendered_starts(rows)
-    texts = caption_texts(inputs, takes)
     offsets = narration_offsets([row.section for row in rows], takes, starts)
     uncaptioned_sounds(inputs, run)
-    narrated = narrated_turns(inputs, takes, offsets, texts)
+    narrated = narrated_turns(inputs, takes, offsets)
     inside = clip_words(inputs, run, rows)
     clips = [cue for words in inside for cue in spoken_cues(words)]
     spoken = sorted(build_captions(inputs, narrated) + clips, key=lambda cue: cue.start)
@@ -183,7 +185,7 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     write_caption_files(paths, cues, chapters)
     placements = placements_of(inputs, rows)
     placements.write(paths["placements"])
-    write_transcript_page(inputs, paths["transcript"], placements, texts, takes)
+    write_transcript_page(inputs, paths["transcript"], placements, takes, narrated=narrated, inside=inside)
     write_landings(inputs, rows, paths["landings"])
     film_words(narrated, inside).write(paths["words"])
     for name in ("srt", "vtt", "chapters", "placements", "transcript", "landings", "words"):

@@ -1,11 +1,11 @@
 """`dtsp`, the DeckTalk speech protocol: a voice served by a separate local server, with a time for every word.
 
 `decktalk-voice` is a separate local server that is not part of this repository. It loads the local
-speech models in a process of its own and answers one request per section, by default on a loopback address, so
+speech models in a process of its own and answers one request per turn, by default on a loopback address, so
 no model, no GPU runtime and no model weights ever load inside DeckTalk, and a model that crashes
 ends the server rather than the build. This module is the one client of it the engine has.
 
-One section is one POST to `/v1/speech/timed`:
+One turn is one POST to `/v1/speech/timed`:
 
     {"pieces": [{"text": "A bowl.", "pause": 0.7}, {"text": "A ball.", "pause": null}],
      "voice": "af_heart", "model": "kokoro-82m", "speed": 1.0, "format": "mp3"}
@@ -180,7 +180,7 @@ def _words(reply: Mapping[str, Any]) -> tuple[Word, ...] | None:
 SERVER = DECLARED[NAME].server
 """The service the local server must name itself as, which tells it apart from anything else on its port."""
 
-START = f"Start {SERVER} at the address [dtsp] base_url names"
+START = DECLARED[NAME].start_hint
 """The advice beside a handshake nothing answered as the local server, which is the voice's own start hint."""
 
 STARTING = f"Run decktalk narrate again once {SERVER} answers."

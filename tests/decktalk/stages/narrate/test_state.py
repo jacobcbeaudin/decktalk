@@ -21,6 +21,7 @@ from decktalk.artifacts import (
     ProviderWords,
     Take,
     TimedBy,
+    Words,
     is_placeholder,
     take_file,
 )
@@ -139,7 +140,7 @@ def test_a_voiced_take_of_the_current_inputs_the_index_plays_is_voiced_and_settl
     states = take_states(bought(inputs))
     assert [state.state for state in states.values()] == [TakeState.VOICED] * 3
     assert states[1].reason == HELD
-    assert states[1].digest == digest_of(inputs, 1)
+    assert states[1].turns[0].digest == digest_of(inputs, 1)
     assert states.settled is True
 
 
@@ -147,9 +148,9 @@ def test_the_take_state_names_takes_by_the_voice_in_force(inputs: Inputs) -> Non
     """The state reads the voice the project is read in, so another voice in force names other takes."""
     voices = {"narrator": replace(inputs.voices["narrator"], id="someone-else")}
     other = replace(inputs, voices=voices)
-    named = [state.digest for state in take_states(other).values()]
+    named = [state.turns[0].digest for state in take_states(other).values()]
     assert named == [digest_of(inputs, number, voice="someone-else") for number in (1, 2, 3)]
-    assert named != [state.digest for state in take_states(inputs).values()]
+    assert named != [state.turns[0].digest for state in take_states(inputs).values()]
 
 
 def test_a_held_voiced_take_the_index_does_not_play_is_voiced_and_not_settled(inputs: Inputs) -> None:
@@ -216,7 +217,7 @@ def test_two_sections_with_the_same_held_words_are_both_voiced(make_inputs: Call
     states = take_states(doubled)
     assert states[1].state is states[3].state is TakeState.VOICED
     assert states[1].reason == states[3].reason == HELD
-    assert states[1].digest == states[3].digest
+    assert states[1].turns[0].digest == states[3].turns[0].digest
     for spend in (False, True):
         plan = states.plan(spend=spend)
         assert [p.outcome for p in plan.takes] == [TakeOutcome.KEPT] * 3
@@ -243,7 +244,7 @@ def test_a_placeholder_under_a_free_voice_nobody_named_is_settled(make_inputs: C
     inputs = make_inputs(toml=FREE_TOML)
     states = take_states(stood_in(reload(inputs, NAMELESS)))
     assert states[1].state is TakeState.PLACEHOLDER
-    assert states[1].digest is None
+    assert states[1].turns[0].digest is None
     assert states.settled is True
 
 
@@ -260,7 +261,7 @@ def test_with_no_voice_named_a_held_take_of_this_text_is_unchecked_and_kept(inpu
     assert states[1].state is TakeState.UNCHECKED
     assert states[1].reason == without_a_voice(inputs.voices["narrator"])
     assert NARRATOR_ID in states[1].reason
-    assert states[1].digest is None
+    assert states[1].turns[0].digest is None
     plan = states.plan(spend=False)
     assert [p.outcome for p in plan.takes] == [TakeOutcome.KEPT] * 3
     assert [p.digest for p in plan.takes] == [digest_of(inputs, number) for number in (1, 2, 3)]
@@ -592,7 +593,7 @@ def test_planned_words_of_a_voiced_take_are_its_provider_words_from_the_section_
     hold_take(inputs, digest_of(inputs, 1), words=SAID)
     write_takes(inputs, row(inputs, 1, digest_of(inputs, 1)))
     words = take_states(inputs).planned_words(1)
-    assert type(words) is ProviderWords
+    assert type(words) is Words
     lead = inputs.lead_seconds(1)
     assert words.words == tuple(replace_start(word, lead) for word in SAID)
 
@@ -616,7 +617,7 @@ def test_planned_words_of_an_unchecked_take_are_the_matched_take_s_words(inputs:
     states = take_states(reload(inputs, NAMELESS))
     assert states[1].state is TakeState.UNCHECKED
     words = states.planned_words(1)
-    assert type(words) is ProviderWords
+    assert type(words) is Words
     assert [word.word for word in words.words] == ["A", "bowl"]
 
 
@@ -671,7 +672,7 @@ def test_planned_words_of_a_take_with_no_words_are_its_kept_alignment_with_no_ta
     inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
     aligned.write(inputs.workspace.aligned_words(keyed.key))
     words = take_states(inputs).planned_words(1)
-    assert type(words) is AlignedWords
+    assert type(words) is Words
     assert words.words == aligned.shifted(inputs.lead_seconds(1))
 
 

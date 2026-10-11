@@ -8,7 +8,15 @@ import pytest
 
 from decktalk.captions import CaptionCue
 from decktalk.errors import InputError
-from decktalk.stages.assemble.captioned import MICROSECONDS, Shown, drawing_page, layer_listing, page_caption, shown
+from decktalk.stages.assemble.captioned import (
+    MICROSECONDS,
+    Shown,
+    drawing_page,
+    layer_listing,
+    page_caption,
+    require_a_drawing_page,
+    shown,
+)
 from decktalk.stages.assemble.cut import placements_of
 
 from .conftest import MID_CLIP_TOML, rendered, write_project
@@ -47,11 +55,17 @@ def test_a_page_is_handed_who_says_a_caption_and_never_a_name_in_its_lines():
     assert page_caption(cue) == {"lines": ["Says who?"], "voice": "guest", "turn": 3, "spoken": [0, 1]}
 
 
-def test_a_film_with_captions_and_no_page_to_draw_them_is_refused(tmp_path):
-    inputs = write_project(tmp_path, '[project]\nname = "t"\n\n[[section]]\nnumber = 1\nclip = "media/broll.mp4"\n')
-    placements = placements_of(inputs, rendered(inputs, {1: 2.0}))
-    with pytest.raises(InputError, match="captioned"):
-        shown(inputs, placements, [CaptionCue(start=0.0, end=1.0, lines=("Hi.",))], FPS, 2 * FPS)
+@pytest.mark.parametrize("captioned", ["true", "false"])
+def test_a_captioned_copy_with_no_page_to_draw_it_is_refused_and_a_film_without_one_is_not(tmp_path, captioned):
+    toml = (
+        f'[project]\nname = "t"\n\n[output]\ncaptioned = {captioned}\n\n[[section]]\nnumber = 1\nclip = "media/b.mp4"\n'
+    )
+    inputs = write_project(tmp_path, toml)
+    if captioned == "true":
+        with pytest.raises(InputError, match=r"\[output\] captioned"):
+            require_a_drawing_page(inputs)
+    else:
+        require_a_drawing_page(inputs)
 
 
 def test_the_list_plays_each_still_on_its_frames_and_the_clear_frame_everywhere_else():

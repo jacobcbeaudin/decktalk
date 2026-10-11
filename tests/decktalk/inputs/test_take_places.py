@@ -592,7 +592,7 @@ def test_a_second_voicing_of_one_take_waits_its_turn_and_keeps_the_first_ones_co
     assert (b.takes / take_file(DIGEST, TAKE_SUFFIX)).read_bytes() == b"FIRST"
 
 
-def test_voice_refuses_after_the_wait_naming_store_wait_seconds_and_never_speaks(
+def test_voice_refuses_after_the_wait_naming_the_request_settings_and_never_speaks(
     tmp_path: Path, pool: ThreadPoolExecutor
 ) -> None:
     store = tmp_path / "store"
@@ -602,7 +602,7 @@ def test_voice_refuses_after_the_wait_naming_store_wait_seconds_and_never_speaks
     voicing = pool.submit(voice, places(a), first, Witnessed())
     try:
         assert first.speaking.wait(timeout=MEET)
-        with pytest.raises(ProjectLocked, match=r"\[narration\] store_wait_seconds") as refused:
+        with pytest.raises(ProjectLocked, match=r"\[narration\] timeout_seconds") as refused:
             voice(places(b, wait_seconds=SHORT_WAIT), second, Witnessed())
         assert refused.value.hint is not None
         assert str(store / f"{DIGEST}.lock") in refused.value.hint

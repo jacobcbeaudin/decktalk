@@ -10,6 +10,7 @@ import pytest
 
 from decktalk.errors import ToolError
 from decktalk.media import audio, ffmpeg
+from decktalk.settings import AudioConfig
 from support.media_cards import write_tone_with_tail
 
 # What `[narration] sound_end_noise_dbfs` and `sound_end_min_run_seconds` default to, which is what
@@ -98,21 +99,21 @@ LOUDNORM = """[Parsed_loudnorm_0 @ 0x1]
 
 def test_a_loudness_measurement_reads_every_number_loudnorm_printed(monkeypatch):
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: LOUDNORM.format(i="-21.75", tp="-18.06", offset="0.01"))
-    read = audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+    read = audio.measure_loudness(Path("mix.mov"), AudioConfig())
     assert (read.i, read.tp, read.lra, read.thresh, read.offset) == (-21.75, -18.06, 0.0, -70.0, 0.01)
 
 
 def test_a_silent_file_measures_as_no_loudness_rather_than_as_zero_lufs(monkeypatch):
     """loudnorm spells silence as -inf, which a pattern for digits read as 0.0 LUFS, the loudest film there is."""
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: LOUDNORM.format(i="-inf", tp="-inf", offset="inf"))
-    read = audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+    read = audio.measure_loudness(Path("mix.mov"), AudioConfig())
     assert read.i == read.tp == float("-inf")
 
 
 def test_a_pass_that_printed_no_measurement_is_a_tool_error(monkeypatch):
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: "size=N/A time=00:00:02.00\n")
     with pytest.raises(ToolError, match="no measurement"):
-        audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+        audio.measure_loudness(Path("mix.mov"), AudioConfig())
 
 
 def test_a_level_becomes_the_factor_that_plays_it() -> None:

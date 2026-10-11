@@ -25,6 +25,7 @@
    */
   var MILLISECONDS = 1e3;
   var SECOND_DIGITS = 3;
+  var DUE_SLACK_SECONDS = 1e-6;
   var FRAME_STEP_MS = 40;
   var MEASURABLE_SPAN_SECONDS = 0.5;
   var PLAYABLE_SPAN_SECONDS = 0.46;
@@ -871,7 +872,6 @@
    */
   var MOUNT_FIRST = 0;
   var AFTER_THE_MOUNT = 1;
-  var DUE_SLACK = 1e-9;
   var driver = "realtime";
   var origin = null;
   var current = 0;
@@ -916,7 +916,7 @@
   }
   function drain(seconds2) {
     let ran = false;
-    while (queue.length && queue[0].at <= seconds2 + DUE_SLACK) {
+    while (queue.length && queue[0].at <= seconds2 + DUE_SLACK_SECONDS) {
       const task = queue.shift();
       observer?.running(task.at);
       task.run();
@@ -1504,7 +1504,6 @@
    * Anything that keeps moving past the half second a cue may still move and declares none of these is
    * undeclared motion, which is exactly what makes verify's control dishonest, so the page reports it.
    */
-  var DUE = 1e-6;
   var SPRING_POINTS = 32;
   var SPRING_DIGITS = 4;
   var BERNSTEIN = 3;
@@ -1554,8 +1553,9 @@
     return resolve(one.region);
   }
   function alive(one, seconds2) {
-    if (one.kind === "clip") return one.from !== null && seconds2 >= one.from - DUE;
-    if (one.from !== null && one.to !== null) return seconds2 >= one.from - DUE && seconds2 <= one.to + DUE;
+    if (one.kind === "clip") return one.from !== null && seconds2 >= one.from - DUE_SLACK_SECONDS;
+    if (one.from !== null && one.to !== null)
+      return seconds2 >= one.from - DUE_SLACK_SECONDS && seconds2 <= one.to + DUE_SLACK_SECONDS;
     return true;
   }
   function sample(seconds2) {
@@ -1565,7 +1565,8 @@
       if (el) note(one.id, el, seconds2);
     }
     for (const one of revealed) {
-      if (seconds2 < one.at - DUE || seconds2 > one.at + MEASURABLE_SPAN_SECONDS + DUE) continue;
+      if (seconds2 < one.at - DUE_SLACK_SECONDS || seconds2 > one.at + MEASURABLE_SPAN_SECONDS + DUE_SLACK_SECONDS)
+        continue;
       for (const el of one.els) if (el.isConnected) note(one.id, el, seconds2);
     }
   }
@@ -1603,7 +1604,8 @@
     for (const one of lanes) {
       if (one.kind === "region") continue;
       if (alive(one, seconds2) && regionOf(one) !== null) return seconds2;
-      if (one.from !== null && one.from - DUE > seconds2) next = earliest(next, one.from - DUE);
+      if (one.from !== null && one.from - DUE_SLACK_SECONDS > seconds2)
+        next = earliest(next, one.from - DUE_SLACK_SECONDS);
     }
     return next;
   }
@@ -1618,11 +1620,16 @@
     });
   }
   function reveals() {
-    return revealed.map((one) => ({
-      ...row(one.id, "reveal", swept.get(one.id)),
-      landings: [{ cue: one.cue, kind: "depart", at: round(one.at) }],
-      clip: null,
-    }));
+    return revealed.map((one) => {
+      const seen = swept.get(one.id);
+      return {
+        ...row(one.id, "reveal", seen),
+        departs: seen ? round(one.at) : null,
+        arrives: seen ? round(one.at + MEASURABLE_SPAN_SECONDS) : null,
+        landings: [{ cue: one.cue, kind: "depart", at: round(one.at) }],
+        clip: null,
+      };
+    });
   }
   function row(id, kind, seen) {
     const box = seen
@@ -1670,13 +1677,33 @@
     const classes = [...el.classList].map((name) => `.${name}`).join("");
     return `<${el.localName}${id}${classes}>`;
   }
+  function laidOut(el) {
+    return [el, ...el.querySelectorAll("*")]
+      .flatMap((one) => [...one.getClientRects()])
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+  function enclosing(rects) {
+    const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)));
+    const top = Math.max(0, Math.min(...rects.map((rect) => rect.top)));
+    const right = Math.min(window.innerWidth, Math.max(...rects.map((rect) => rect.right)));
+    const bottom = Math.min(window.innerHeight, Math.max(...rects.map((rect) => rect.bottom)));
+    if (!rects.length || right <= left || bottom <= top) return null;
+    return { x: left, y: top, w: right - left, h: bottom - top };
+  }
   function undeclaredChange(nodes) {
-    for (const node of nodes) {
-      const el = node instanceof Element ? node : node.parentElement;
-      if (!el?.isConnected || covered(el)) continue;
-      return describe(el);
-    }
-    return null;
+    const changed = [
+      ...new Set(
+        nodes
+          .map((node) => (node instanceof Element ? node : node.parentElement))
+          .filter((el) => !!el?.isConnected && !covered(el)),
+      ),
+    ];
+    if (!changed.length) return null;
+    const rects = changed.map(laidOut);
+    return {
+      what: describe(changed[0] ?? null),
+      box: rects.some((one) => !one.length) ? null : enclosing(rects.flat()),
+    };
   }
   function born(animation, slideId) {
     if (animation.endSeconds <= PLAYABLE_SPAN_SECONDS || covered(animation.target)) return;

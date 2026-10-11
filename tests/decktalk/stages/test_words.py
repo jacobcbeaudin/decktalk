@@ -18,12 +18,8 @@ from decktalk.stages.words import words
 from support.projects import write_project
 from support.runs import a_run
 from support.takes import (
-    TAIL_TAKE_DURATION,
-    TAIL_TAKE_SOUND_END,
-    TAIL_TAKE_SPOKEN,
     a_take,
     narrated,
-    tail_take_words,
 )
 
 TOML = """
@@ -56,7 +52,11 @@ def an_inputs(root: Path, *, numbers: tuple[int, ...] = (1, 2), voiced: bool = T
         ]
         for number in numbers
     }
-    narrated(inputs, *(a_take(number, voiced=voiced, spoken=SPOKEN[number]) for number in numbers), words=said)
+    takes = (
+        a_take(number, voiced=voiced, spoken=SPOKEN[number], lead_seconds=inputs.lead_seconds(number))
+        for number in numbers
+    )
+    narrated(inputs, *takes, words=said)
     return inputs
 
 
@@ -129,16 +129,3 @@ def test_words_labels_each_turn_with_its_voice(tmp_path: Path) -> None:
         (1, "narrator", 2, False),
         (2, "guest", 1, False),
     ]
-
-
-def test_a_last_word_the_provider_ran_into_the_trailing_silence_is_listed_ending_at_the_sound_end(
-    tmp_path: Path,
-) -> None:
-    """The real take's provider gave its last word to the end of the file, and the words list it as it is heard."""
-    write_project(tmp_path, TOML)
-    inputs = Inputs.load(tmp_path, environ={})
-    row = a_take(1, seconds=TAIL_TAKE_DURATION, sound_end_seconds=TAIL_TAKE_SOUND_END, spoken=TAIL_TAKE_SPOKEN)
-    narrated(inputs, row, words={1: tail_take_words().words})
-    (section,) = words(inputs, a_run(tmp_path), only=[1]).sections
-    heard = round(inputs.lead_seconds(1) + TAIL_TAKE_SOUND_END, 3)
-    assert (section.words[-1].word, section.words[-1].end) == ("was.", heard)

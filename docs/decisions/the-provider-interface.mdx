@@ -87,7 +87,7 @@ refused on a script with pauses until their adapter renders those pauses STITCHE
 ### Credentials
 
 Every credential is a `Secret`, and only the adapter's header builder reveals it to send it. Every
-request names the secrets it carries, which is the `secrets` argument of `post`, and scrubbing works
+request names the secrets it carries, which is the `secrets` argument of `send`, and scrubbing works
 on their values, not on a list of header names: every such value, in whatever header, query parameter
 or body field it travelled, and the token after an `Authorization` scheme, is replaced in any reply
 body or error text before it is quoted. A redirect that leaves the request's origin, its scheme, host
