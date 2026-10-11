@@ -37,7 +37,7 @@ from pathlib import Path
 
 from decktalk.artifacts import PanePlay, Takes
 from decktalk.inputs import Inputs
-from decktalk.inputs.document import PageSection
+from decktalk.inputs.document import RecordedSection
 from decktalk.inputs.paths import contained
 from decktalk.media import ffmpeg
 from decktalk.media.pagereport import Recording
@@ -92,7 +92,7 @@ def section_targets(takes: Takes, fps: int) -> dict[int, float]:
     return {section: (round(at.end * fps) - round(at.start * fps)) / fps for section, at in takes.placed.items()}
 
 
-def page_seconds(takes: Takes, section: PageSection, fps: int) -> float:
+def page_seconds(takes: Takes, section: RecordedSection, fps: int) -> float:
     """How long one page section runs in the film, its frames in the narration and its hold, or zero with no take.
 
     `record` records exactly this long and `assemble` cuts exactly this long from the recording, so

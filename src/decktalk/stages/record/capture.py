@@ -1,8 +1,8 @@
-"""The URL a page section is opened at, and what its recording is made from, part by part.
+"""What a section's recording is made from, part by part, and the job of recording it.
 
-The page is opened on the local origin with the section's scene, the cues `cue` resolved and the
-section's words, and its clock is stepped through its span in the narration plus its record margin,
-one frame at a time.
+A page section is opened at the address `decktalk.pictures.address` builds, with the section's
+scene, the cues `cue` resolved and the section's words, and its clock is stepped through its span in
+the narration one frame at a time. A render section's program is handed its motion document instead.
 
 A recording is kept as a list of parts, each with the digest of what it held: every turn's text and
 voice as the script has them and the word times its take plays, the markup of the scene the section
@@ -33,95 +33,13 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from decktalk.artifacts import CueTimes, RecordingLog, content_digest, file_digest, stored
-from decktalk.errors import InputError
-from decktalk.inputs import Inputs, PageSection, TurnWords
+from decktalk.inputs import Inputs, PageSection, RecordedSection, RenderSection
 from decktalk.inputs.programs import project_files
-from decktalk.media.origin import page_url
-from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, T0_SIGNAL, TIME_MARK, Q
-from decktalk.results import Word
-from decktalk.stages.record import render
+from decktalk.page import SECOND_DIGITS, Q
+from decktalk.pictures import Canvas, Shot, motion_document
+from decktalk.pictures.address import as_query, scene_params, scene_url, section_address, words_param
 
 log = logging.getLogger(__name__)
-
-
-def as_query(params: dict[str, str]) -> dict[Q, str]:
-    """A section's own params as contract keys, refusing a key no page reads.
-
-    The query vocabulary has one home, so a param that names a key outside it is a project file
-    asking the page for something it cannot answer, which is worth refusing at load rather than
-    sending and watching nothing happen.
-    """
-    known = {key.value: key for key in Q}
-    unknown = sorted(name for name in params if name not in known)
-    if unknown:
-        raise InputError(
-            f"a section's params name {', '.join(unknown)}, which no DeckTalk page reads.",
-            hint=f"The query keys a page reads are {', '.join(sorted(known))}.",
-        )
-    return {known[name]: value for name, value in params.items()}
-
-
-def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[Q, str]:
-    """The section's own query parameters, plus its resolved cues unless the section sets `cues` itself."""
-    params = as_query(dict(section.params))
-    if cue_times is not None and Q.CUES not in params:
-        query = cue_times.query(section.number)
-        if query:
-            params[Q.CUES] = query
-    return params
-
-
-def words_param(words: tuple[Word, ...]) -> str | None:
-    """A section's words as word@seconds pairs, in seconds after that section starts.
-
-    The contract's list separator divides two pairs and its time mark divides a word from its
-    second, so neither may appear inside a word that is written into the value. Each second is
-    written to `SECOND_DIGITS`, as every word time is kept, so rounding never moves a word onto the
-    second the next turn begins.
-    """
-    if not words:
-        return None
-    pairs = ((word.word.replace(LIST_SEPARATOR, "").replace(TIME_MARK, ""), max(0.0, word.start)) for word in words)
-    return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{SECOND_DIGITS}f}" for said, start in pairs)
-
-
-def turns_param(turns: Sequence[TurnWords]) -> str | None:
-    """A section's turns as voice@seconds pairs in turn order, each the second on the section clock the turn begins.
-
-    The page numbers the turns by their place in the list, so a turn that says no word is still
-    written, and a word belongs to the last turn that began at or before its own second. The second
-    is written as a word's is, so the first word of a turn is never written before its turn begins, and
-    a last word that starts before the next turn begins is never written at or after it.
-    """
-    if not turns:
-        return None
-    return LIST_SEPARATOR.join(f"{turn.voice}{TIME_MARK}{max(0.0, turn.start):.{SECOND_DIGITS}f}" for turn in turns)
-
-
-def spoken_query(inputs: Inputs, section: PageSection) -> dict[Q, str]:
-    """The section's spoken words with their seconds and the turns that say them, as the page reads them.
-
-    The words are what a word-synced line is drawn on, and the turns are what `DeckTalk.words` reads
-    the voice and the turn of each word from. A key with nothing to carry is left out.
-    """
-    found = {
-        Q.WORDS: words_param(inputs.words(section.number).words),
-        Q.TURNS: turns_param(inputs.turn_words(section.number)),
-    }
-    return {key: value for key, value in found.items() if value}
-
-
-def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str:
-    """The local origin URL the recorder and the frozen frames open for one page section."""
-    page = inputs.path(section.page)
-    if not page.exists():
-        raise InputError(
-            f"section {section.number} plays {section.page}, which is not there.",
-            hint="Write the page, or point the section at the file you meant.",
-        )
-    query: dict[Q, str] = {Q.SCENE: section.scene, **spoken_query(inputs, section), **params}
-    query[Q.T0] = T0_SIGNAL
-    return page_url(section.page, query)
 
 
 # ---- the page, cut into the scene one section plays and the part every scene shares -----------
@@ -319,7 +237,7 @@ class TurnText:
     voice: str
 
 
-def turn_parts(inputs: Inputs, section: PageSection, script: Sequence[TurnText] | None = None) -> dict[str, str]:
+def turn_parts(inputs: Inputs, section: RecordedSection, script: Sequence[TurnText] | None = None) -> dict[str, str]:
     """Each turn a section speaks: its text, its voice's name and the word times its take plays.
 
     The text and the voice are the take's, which is what the page is handed, unless `script` gives
@@ -359,7 +277,7 @@ def page_made_from(
     already here. `script` is what `turn_parts` reads the turns' text from in place of their takes.
     """
     settings = inputs.settings
-    video, record, motion = settings.video, settings.record, settings.motion
+    record, motion = settings.record, settings.motion
     page = inputs.path(section.page)
     pieces = page_parts(page_source(page), section.scene)
     own = as_query(dict(section.params))
@@ -370,10 +288,10 @@ def page_made_from(
         part_key(Part.SCENE): _digest(pieces.scene),
         part_key(Part.PAGE, Path(section.page).as_posix()): _digest(pieces.shared),
         **{part_key(Part.FILE, rel): file_digest(found) for rel in named if (found := inputs.path(rel)) != page},
-        part_key(Part.ADDRESS): _digest(page_url(section.page, {Q.SCENE: section.scene, **own})),
+        part_key(Part.ADDRESS): _digest(section_address(section)),
         part_key(Part.CUES): _digest(cues or ""),
         part_key(Part.LENGTH): _digest(f"{seconds:.{SECOND_DIGITS}f}"),
-        part_key(Part.FRAME): _digest(f"{video.width}x{video.height}@{video.fps}"),
+        part_key(Part.FRAME): _digest(Canvas.of(settings).size),
         part_key(Part.COLOUR): _digest(record.color_scheme),
         part_key(Part.POLICY): _digest(record.page_policy),
         part_key(Part.MOTION): _digest(f"{motion.reduce}:{motion.scale:g}"),
@@ -382,7 +300,7 @@ def page_made_from(
 
 
 def rendered_made_from(
-    inputs: Inputs, section: PageSection, document: dict[str, object], script: Sequence[TurnText] | None = None
+    inputs: Inputs, section: RenderSection, document: dict[str, object], script: Sequence[TurnText] | None = None
 ) -> dict[str, str]:
     """Every part a rendered section's video is drawn from: its turns, its command, its files and its document.
 
@@ -422,7 +340,7 @@ def said(keys: Sequence[str]) -> str:
 class Job:
     """One section the recorder is about to open, what it would be recorded from, and what is there now."""
 
-    section: PageSection
+    section: RecordedSection
     url: str
     seconds: float
     out: Path
@@ -442,9 +360,14 @@ class Job:
         The page may have asked for a file the last run never saw, and a key that did not count it
         would call the section unchanged on the next run.
         """
-        if self.document is not None:
+        if not isinstance(self.section, PageSection):
             return self.made_from
         return page_made_from(inputs, self.section, self.cue_times, self.seconds, assets)
+
+    @property
+    def shot(self) -> Shot:
+        """What the section's video is drawn from, which the pictures choose its source by."""
+        return Shot(self.section, self.seconds, self.url, self.document)
 
     @property
     def moved(self) -> tuple[str, ...]:
@@ -468,26 +391,13 @@ class Job:
         )
 
 
-def motion_of(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, seconds: float) -> dict[str, object]:
-    """The motion document a rendered section's command reads, from its take's words and its cue seconds."""
-    video = inputs.settings.video
-    return render.motion_document(
-        fps=video.fps,
-        width=video.width,
-        height=video.height,
-        seconds=seconds,
-        words=inputs.words(section.number).words,
-        cues=cue_times.times(section.number) if cue_times is not None else {},
-    )
-
-
 RENDERED_MARK = "render"
 """What a rendered section's URL opens with, so it can never be taken for a page's."""
 
 
 def plan_job(
     inputs: Inputs,
-    section: PageSection,
+    section: RecordedSection,
     cue_times: CueTimes | None,
     seconds: float,
     script: Sequence[TurnText] | None = None,
@@ -500,8 +410,10 @@ def plan_job(
     workspace = inputs.workspace
     previous = RecordingLog.previous(workspace.recording_log(section.key))
     out, log_path = workspace.recording(section.key), workspace.recording_log(section.key)
-    if section.rendered:
-        document = motion_of(inputs, section, cue_times, seconds)
+    if isinstance(section, RenderSection):
+        document = motion_document(
+            inputs, section, cue_times.times(section.number) if cue_times is not None else {}, seconds
+        )
         return Job(
             section=section,
             url=f"{RENDERED_MARK}:{' '.join(section.render_command)}",
@@ -534,7 +446,6 @@ __all__ = [
     "Part",
     "SceneSpans",
     "TurnText",
-    "as_query",
     "moved",
     "page_made_from",
     "page_parts",
@@ -544,10 +455,5 @@ __all__ = [
     "plan_job",
     "rendered_made_from",
     "said",
-    "scene_params",
-    "scene_url",
     "turn_parts",
-    "words_param",
-    "spoken_query",
-    "turns_param",
 ]

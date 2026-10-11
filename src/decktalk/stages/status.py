@@ -58,7 +58,7 @@ from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
 from decktalk.events import AnyEvent, Level, StageStart
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import ClipSection, Inputs, PageSection, Section
+from decktalk.inputs import ClipSection, Inputs, PageSection, RecordedSection, RenderSection, Section
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import spoken_words
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -126,7 +126,7 @@ def source_of(section: Section) -> str:
     else, and the word for that is the query key the runtime publishes rather than a second spelling
     of it here.
     """
-    if isinstance(section, PageSection) and section.rendered:
+    if isinstance(section, RenderSection):
         return " ".join(section.render_command)
     if isinstance(section, PageSection):
         return f"{section.page}?{Q.SCENE.value}={section.scene}"
@@ -173,7 +173,7 @@ def section_rows(
     rows: list[SectionStatus] = []
     for section in inputs.document.sections:
         state = states.get(section.number) if states is not None else None
-        recorded = isinstance(section, PageSection) and inputs.workspace.recording(section.key).is_file()
+        recorded = isinstance(section, RecordedSection) and inputs.workspace.recording(section.key).is_file()
         rows.append(
             SectionStatus(
                 section=section.number,
@@ -210,7 +210,7 @@ def _stale(
     says nothing stale rather than ending the report. `said` is true when the take's own refusal is
     already a line, which then stands for this one.
     """
-    if not recorded or not isinstance(section, PageSection):
+    if not recorded or not isinstance(section, RecordedSection):
         return False
     script = (
         [TurnText(one.turn.number, one.turn.spoken, one.voice.name) for one in state.turns]
@@ -240,7 +240,7 @@ def judgements(inputs: Inputs, run: Run) -> None:
     _judge_input(inputs, run, inputs.script_path, inputs.script, missing=True)
     _judge_input(inputs, run, inputs.cues_path, inputs.cues, missing=False)
     for section in inputs.document.sections:
-        if isinstance(section, PageSection) and section.rendered:
+        if isinstance(section, RenderSection):
             continue
         named = section.page if isinstance(section, PageSection) else section.clip
         optional = isinstance(section, ClipSection) and section.optional

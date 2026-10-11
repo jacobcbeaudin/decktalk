@@ -69,16 +69,45 @@ FREEZE_QUERY_KEYS = frozenset(key.value for key in (Q.CUES, Q.T0, Q.FREEZE, Q.AF
 """The query keys DeckTalk sets itself on a still, so a section's own params never override them."""
 
 
+def hold_seconds_key() -> float:
+    """The `hold_seconds` a page section and a render section both read, declared once."""
+    return tune(
+        0.0,
+        "Seconds the page keeps playing after its narration, while the narration pauses for it.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=60),
+        hazard="The narration pauses for the hold, so a hold past a minute is a minute of film with nothing said.",
+    )
+
+
+def lead_seconds_key() -> float | None:
+    """The `lead_seconds` a page section and a render section both read, declared once."""
+    return tune(
+        None,
+        "The silence before this section's first word, in place of `[narration] lead_seconds`.",
+        unit="seconds",
+        bounds=BY_ID["narration.lead_seconds"].bounds,
+        see_also=("narration.lead_seconds",),
+    )
+
+
+def tail_seconds_key() -> float | None:
+    """The `tail_seconds` a page section and a render section both read, declared once."""
+    return tune(
+        None,
+        "The silence after this section's last word, in place of `[narration] tail_seconds`.",
+        unit="seconds",
+        bounds=BY_ID["narration.tail_seconds"].bounds,
+        see_also=("narration.tail_seconds",),
+    )
+
+
 @dataclass(frozen=True)
 class PageSection:
     """A section recorded from an HTML page, cut to the narration.
 
     `seamless` says the page opens on the previous section's last picture, so the cut
     into it should not show. verify compares the two frames.
-
-    `render_command`, when it is given, is the command that draws the section's picture instead of a
-    page: the section is narrated exactly as a page section is, and `record` hands the command the
-    section's words and cue seconds and takes the video it writes. Such a section has no page.
 
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
     section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
@@ -91,31 +120,12 @@ class PageSection:
     page: str
     scene: str
     chapter: str = ""
-    hold_seconds: float = tune(
-        0.0,
-        "Seconds the page keeps playing after its narration, while the narration pauses for it.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=60),
-        hazard="The narration pauses for the hold, so a hold past a minute is a minute of film with nothing said.",
-    )
+    hold_seconds: float = hold_seconds_key()
     with_ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
     seamless: bool = False
-    lead_seconds: float | None = tune(
-        None,
-        "The silence before this section's first word, in place of `[narration] lead_seconds`.",
-        unit="seconds",
-        bounds=BY_ID["narration.lead_seconds"].bounds,
-        see_also=("narration.lead_seconds",),
-    )
-    tail_seconds: float | None = tune(
-        None,
-        "The silence after this section's last word, in place of `[narration] tail_seconds`.",
-        unit="seconds",
-        bounds=BY_ID["narration.tail_seconds"].bounds,
-        see_also=("narration.tail_seconds",),
-    )
-    render_command: tuple[str, ...] = ()
+    lead_seconds: float | None = lead_seconds_key()
+    tail_seconds: float | None = tail_seconds_key()
 
     @property
     def key(self) -> str:
@@ -124,11 +134,6 @@ class PageSection:
     @property
     def is_clip(self) -> bool:
         return False
-
-    @property
-    def rendered(self) -> bool:
-        """Whether a command draws this section's picture rather than a page."""
-        return bool(self.render_command)
 
     @property
     def freeze_params(self) -> dict[str, str]:
@@ -140,7 +145,38 @@ class PageSection:
         return {k: v for k, v in self.params.items() if k not in FREEZE_QUERY_KEYS}
 
 
-Section = ClipSection | PageSection
+@dataclass(frozen=True)
+class RenderSection:
+    """A section whose picture a command draws, narrated exactly as a page section is and naming no page.
+
+    `record` hands `render_command` the section's words and cue seconds and takes the video it writes.
+    The section has no page and no scene, so a key only a page reads is a note rather than a value
+    nothing would ever play. `hold_seconds`, `lead_seconds`, `tail_seconds`, `with_ambience` and
+    `seamless` mean what they mean on a page section.
+    """
+
+    number: int
+    render_command: tuple[str, ...]
+    chapter: str = ""
+    hold_seconds: float = hold_seconds_key()
+    with_ambience: bool = False
+    seamless: bool = False
+    lead_seconds: float | None = lead_seconds_key()
+    tail_seconds: float | None = tail_seconds_key()
+
+    @property
+    def key(self) -> str:
+        return section_key(self.number)
+
+    @property
+    def is_clip(self) -> bool:
+        return False
+
+
+Section = ClipSection | PageSection | RenderSection
+
+RecordedSection = PageSection | RenderSection
+"""A section `record` makes the picture of, from a page or from a command, which the narration runs through."""
 
 
 @dataclass(frozen=True)
@@ -284,6 +320,9 @@ PROJECT_KEYS = frozenset({"name", "script", "cues", "build", "language"})
 # The keys each kind of section reads, which are the fields of its own class and nothing else.
 CLIP_KEYS = frozenset(ClipSection.__dataclass_fields__)
 PAGE_KEYS = frozenset(PageSection.__dataclass_fields__)
+RENDER_KEYS = frozenset(RenderSection.__dataclass_fields__)
+KIND_KEYS = {SectionKind.PAGE: PAGE_KEYS, SectionKind.CLIP: CLIP_KEYS}
+"""The keys each kind a misplaced key is named for reads, the page's first, which a note names that kind by."""
 CLIP_TABLE = "clip"
 """The array of tables that declares a clip the project makes, in the singular like `[[section]]`."""
 TOP_TABLES = frozenset({"project", "section", CLIP_TABLE, "transition", "mix", "score"})
@@ -343,13 +382,14 @@ class Document:
         return next((s for s in self.sections if s.number == number), None)
 
     @property
-    def page_sections(self) -> list[PageSection]:
-        return [s for s in self.sections if isinstance(s, PageSection)]
+    def recorded_sections(self) -> list[RecordedSection]:
+        """Every section `record` makes the picture of, a page's or a command's, in section order."""
+        return [s for s in self.sections if isinstance(s, (PageSection, RenderSection))]
 
     @property
-    def drawn_sections(self) -> list[PageSection]:
-        """Every section a page draws, which is every narrated section a command does not render."""
-        return [s for s in self.page_sections if not s.rendered]
+    def page_sections(self) -> list[PageSection]:
+        """Every section a page draws."""
+        return [s for s in self.sections if isinstance(s, PageSection)]
 
     @property
     def clip_sections(self) -> list[ClipSection]:
@@ -378,7 +418,7 @@ class Document:
     @property
     def page_files(self) -> list[str]:
         """Each page file once, in section order."""
-        return list(dict.fromkeys(s.page for s in self.drawn_sections))
+        return list(dict.fromkeys(s.page for s in self.page_sections))
 
 
 def tuning_keys(table: str) -> set[str]:
@@ -416,15 +456,14 @@ def fill[T](t: Table, cls: type[T], **given: object) -> T:
     return cls(**values)
 
 
-def section_key_notes(t: Table, *, clip: bool) -> list[str]:
-    """One note per key a section does not read, naming the section kind a misplaced key belongs to."""
-    own, other, kind = (CLIP_KEYS, PAGE_KEYS, SectionKind.PAGE) if clip else (PAGE_KEYS, CLIP_KEYS, SectionKind.CLIP)
-    return [
-        f"{t.where}: ignoring '{key}', which applies only to a {kind.value} section"
-        if key in other
-        else unknown_key_message(key, own, t.where)
-        for key in sorted(set(t.data) - own)
-    ]
+def section_key_notes(t: Table, own: frozenset[str]) -> list[str]:
+    """One note per key a section does not read among `own`, naming the section kind a misplaced key belongs to."""
+    notes: list[str] = []
+    for key in sorted(set(t.data) - own):
+        kind = next((kind for kind, keys in KIND_KEYS.items() if key in keys), None)
+        said = f"{t.where}: ignoring '{key}', which applies only to a {kind.value} section" if kind else None
+        notes.append(said or unknown_key_message(key, own, t.where))
+    return notes
 
 
 def parse_section(top: Table, raw: dict[str, Any], index: int, notes: list[str]) -> Section:
@@ -436,11 +475,11 @@ def parse_section(top: Table, raw: dict[str, Any], index: int, notes: list[str])
     if "render_command" in raw:
         return render_section(raw, t, number, notes)
     if "clip" in raw:
-        notes += section_key_notes(t, clip=True)
+        notes += section_key_notes(t, CLIP_KEYS)
         return fill(t, ClipSection, number=number)
     if "page" not in raw:
         raise InputError(f"{t.where}: needs 'page' (an HTML file) or 'clip' (a video file)")
-    notes += section_key_notes(t, clip=False)
+    notes += section_key_notes(t, PAGE_KEYS)
     page = t.get_path("page", "")
     # The origin serves a page's whole directory, so a page at the root would be handed the
     # script, the cue file, the build directory and everything else the project holds.
@@ -464,13 +503,13 @@ def command_words(raw: object, where: str, key: str) -> tuple[str, ...]:
     return tuple(raw)
 
 
-def render_section(raw: dict[str, Any], t: Table, number: int, notes: list[str]) -> PageSection:
+def render_section(raw: dict[str, Any], t: Table, number: int, notes: list[str]) -> RenderSection:
     """A narrated section whose picture a command draws, which names no page and no scene."""
     if "page" in raw or "clip" in raw:
         raise InputError(f"{t.where}: give one of 'page', 'clip' or 'render_command', not two")
     command = command_words(raw["render_command"], t.where, "render_command")
-    notes += section_key_notes(t, clip=False)
-    return fill(t, PageSection, number=number, page="", scene="", params={}, render_command=command)
+    notes += section_key_notes(t, RENDER_KEYS)
+    return fill(t, RenderSection, number=number, render_command=command)
 
 
 def parse_clips(top: Table, notes: list[str]) -> tuple[MadeClip, ...]:
@@ -533,7 +572,7 @@ EFFECT_TABLE = SoundKind.EFFECT.value
 singular like `[[section]]`."""
 
 CONTENT_TABLES: dict[str, tuple[type, ...]] = {
-    "section": (ClipSection, PageSection),
+    "section": (ClipSection, PageSection, RenderSection),
     "transition": (Transition,),
     "mix": (Mix,),
     f"mix.{EFFECT_TABLE}": (MixEffect,),

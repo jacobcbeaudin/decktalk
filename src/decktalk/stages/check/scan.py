@@ -24,11 +24,12 @@ from decktalk.media import frames
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
 from decktalk.pagescan import Slides, ease_findings, measured_rows, slide_findings
+from decktalk.pictures.address import Freeze
+from decktalk.pictures.sheet import Sheet
 from decktalk.results import SkipReason
 from decktalk.settings import Settings
 from decktalk.stages import SECTION_START_SECONDS
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
-from decktalk.stages.storyboard import Freeze, Sheet
 from decktalk.stages.verify import thin_change
 from decktalk.stages.verify.plan import frame_size
 

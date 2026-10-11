@@ -41,16 +41,15 @@ from decktalk.events import Level
 from decktalk.files import replace_all
 from decktalk.inputs import ClipSection, Inputs, PageSection
 from decktalk.machine.run import Run
-from decktalk.media import browser, ffmpeg, pages
+from decktalk.media import ffmpeg
 from decktalk.media.encode import iso_639_2
-from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import scene_entry, slide_cues
+from decktalk.pictures import pictures
 from decktalk.results import SectionKind, Substitute, section_key
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
 from decktalk.stages.assemble.mix import effect_second
-from decktalk.stages.storyboard import open_project_page
 
 SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
@@ -468,7 +467,7 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     here may cost a film that is already written, so every refusal the media layer raises is one
     sentence on the stream and no poster.
     """
-    section = next(iter(inputs.document.drawn_sections), None)
+    section = next(iter(inputs.document.page_sections), None)
     if section is None:
         return None
     key = inputs.still_key(section.page, POSTER_MARK, section.scene, documents=inputs.documents())
@@ -478,18 +477,15 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         shutil.copyfile(kept, out)
         return out
     try:
-        record = inputs.settings.record
-        with browser.chromium(inputs.settings.tools.chromium, policy=record.page_policy, spend=run.spend) as chrome:
-            page, assets = open_project_page(chrome, inputs)
-            pages.load(page, page_url(section.page))
-            pages.await_ready(page)
-            query = poster_query(pages.read_report(page, out.stem).catalog, section)
+        with pictures(inputs, run) as made:
+            page = made.page()
+            query = poster_query(page.report(section.page).catalog, section)
             if query is None:
                 run.note(f"{section.page} declares no slide for scene {section.scene}, so no poster is written.",
                          level=Level.WARNING)  # fmt: skip
                 return None
-            pages.screenshot(page, page_url(section.page, query), out)
-            inputs.stills.keep(key, out, assets.paths)
+            page.still(section.page, query, out)
+            inputs.stills.keep(key, out, page.assets.paths)
     except DeckTalkError as refused:
         run.note(f"The poster could not be drawn ({refused}), so the film is published without one.",
                  level=Level.WARNING)  # fmt: skip

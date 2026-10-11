@@ -164,7 +164,7 @@ the machine rather than the film, so they are machine keys like the ones above.
 | `record.chunk_startup_seconds` | `0.2` | How long one chunk takes to start on this machine, which `record` weighs against `step_seconds` when it splits a section. |
 | `record.step_seconds` | `0.014` | How long one recorder takes to step its page once on this machine, the capture of its frame included. |
 | `record.encode_threads` | `0` | Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. The frames are the same whatever it is. |
-| `record.page_deadline_seconds` | `15` | Longest one call into a recorded page may take before `record` closes the page and stops with a TOOL error naming the section and the frame. |
+| `record.page_deadline_seconds` | `15` | Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming where it was stuck. `record` names the section and the frame, and every other command that opens a page holds it to the same deadline. |
 | `record.deadline_slowdown` | `30` | How many times slower than `chunk_startup_seconds` and `step_seconds` a chunk, and the whole run, may record before `record` stops it. |
 | `record.renderer_retries` | `1` | How many more times `record` records a chunk in a fresh page when the page's renderer crashed. |
 | `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
@@ -179,8 +179,9 @@ its word.
 A page that stops answering is held to its deadlines instead. A call into it that outlives
 `record.page_deadline_seconds`, such as a step of a page that spins its main thread, closes the page
 and stops the run with a TOOL error naming the section and the frame, and a chunk or a run that takes
-`record.deadline_slowdown` times its expected time is stopped the same way, so no page can hold a
-build open.
+`record.deadline_slowdown` times its expected time is stopped the same way. `check`, `storyboard`,
+`cue` and `assemble` hold every call into the pages they open to the same deadline, so no page can
+hold a build open.
 
 ```console
 decktalk config set record.concurrency 2 --scope machine

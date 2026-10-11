@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -18,7 +15,6 @@ from decktalk.media.pagereport import Box, CueRow, Landing, MeasuredScene, Motio
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.settings import BY_ID
-from decktalk.stages import storyboard
 from decktalk.stages.assemble.cut import placements_of, rendered_starts
 from decktalk.stages.assemble.mix import embedded_sounds
 from decktalk.stages.assemble.publish import (
@@ -42,6 +38,7 @@ from decktalk.stages.assemble.publish import (
     uncaptioned_sounds,
     with_sound_captions,
 )
+from support.fakes import Browsed
 from support.pages import a_report, write_log
 from support.takes import a_take, narrated
 
@@ -407,44 +404,29 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatc
     """A build with nothing changed should not launch Chromium to draw the same picture again."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    launched: list[str] = []
-
-    class Page:
-        def goto(self, _url: str) -> None:
-            return None
-
-    @contextmanager
-    def chromium(_path: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
-        launched.append(policy)
-        yield object()
-
-    def screenshot(_page: object, _url: str, out: Path, **_kwargs: object) -> None:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"poster")
-
+    browsed = Browsed().install(monkeypatch)
     catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1"]}),)
-    monkeypatch.setattr(browser, "chromium", chromium)
+    browsed.reports["deck/index.html"] = PageReport(catalog=catalog)
+    browsed.assets.paths.append("deck/index.html")
     documents: list[object] = []
 
-    def open_page(*_a: object, **named: object) -> tuple[Page, SimpleNamespace]:
+    def open_page(*_a: object, **named: object) -> tuple[object, object]:
         documents.append(named.get("documents"))
-        return Page(), SimpleNamespace(paths=["deck/index.html"])
+        return browsed.page.page(), browsed.assets
 
-    monkeypatch.setattr(storyboard, "open_page", open_page)
-    monkeypatch.setattr(pages, "await_ready", lambda _page: None)
-    monkeypatch.setattr(pages, "read_report", lambda *_a: PageReport(catalog=catalog))
-    monkeypatch.setattr(pages, "screenshot", screenshot)
+    monkeypatch.setattr(pages, "open_page", open_page)
     out = inputs.workspace.deliverables()["poster"]
     assert render_poster(inputs, opened.run, out) == out
     out.unlink()
     assert render_poster(inputs, opened.run, out) == out
-    assert launched == ["trusted"]
-    assert out.read_bytes() == b"poster"
+    assert browsed.policies == ["trusted"]
+    assert out.read_bytes() == b"png"
+    assert browsed.stills == ["http://project.localhost/deck/index.html?freeze=1.1"]
     # The poster page answers the cue-times alias from memory, as every other frozen page does.
     assert documents == [inputs.documents()]
     (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
     render_poster(inputs, opened.run, out)
-    assert launched == ["trusted", "trusted"]
+    assert browsed.policies == ["trusted", "trusted"]
 
 
 def test_a_project_with_no_page_section_draws_no_poster(tmp_path):

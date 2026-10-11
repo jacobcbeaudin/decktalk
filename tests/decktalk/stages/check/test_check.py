@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancelled
+from decktalk.errors import Cancelled, ToolError
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.machine.fixes import apply_fix
@@ -15,7 +15,7 @@ from decktalk.results import CheckResult, CostState, Scope, up_to_the_cent
 from decktalk.settings import BY_ID
 from decktalk.speech import canonical_text
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
-from support.pages import SCRIPT, TOML, a_project, catalog
+from support.pages import SCRIPT, SPIN_CEILING_SECONDS, TOML, a_project, a_spinning_project, catalog
 from support.runs import a_run, notes
 from support.takes import a_take, hold_take, write_takes
 
@@ -377,3 +377,12 @@ def test_every_program_the_project_names_is_listed_before_anything_runs(tmp_path
     assert 'the [[clip]] that makes deck/clips/tone.mp4 runs `["{python}", "clips/make", "{out}"]`' in listed.message
     assert ".env" in listed.message
     assert "record.programs is refuse" in listed.message
+
+
+@pytest.mark.browser
+@pytest.mark.timeout(SPIN_CEILING_SECONDS)
+def test_a_page_that_spins_its_main_thread_stops_the_check_with_a_tool_error(tmp_path: Path) -> None:
+    """A page whose script never yields cannot be raced from inside, so its page is closed from outside."""
+    inputs = a_spinning_project(tmp_path)
+    with pytest.raises(ToolError, match="stopped answering"):
+        check(inputs, a_run(tmp_path))

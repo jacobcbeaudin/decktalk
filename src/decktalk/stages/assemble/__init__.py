@@ -26,7 +26,7 @@ from decktalk.artifacts.recordings import LANDINGS
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.events import Unit
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, RecordedSection
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
@@ -204,7 +204,7 @@ def write_landings(inputs: Inputs, rows: list[Rendered], out: Path) -> None:
     skipped = {(block.number, cue.id) for block in inputs.cues() for cue in block.cues if not cue.verify}
     sections: list[FilmSection] = []
     for row in rows:
-        log = inputs.recording_log(row.key) if isinstance(row.section, PageSection) else None
+        log = inputs.recording_log(row.key) if isinstance(row.section, RecordedSection) else None
         if log is not None:
             off = {cue for number, cue in skipped if number == row.number}
             sections.append(FilmSection(start=starts[row.number], log=log, plays=row.panes, skipped=off))

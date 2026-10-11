@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decktalk.pictures.address import Freeze
 from decktalk.results import SkipReason
 from decktalk.stages.check.freeze import (
     fired_by,
@@ -11,7 +12,6 @@ from decktalk.stages.check.freeze import (
     owner_slide,
     plan_frames,
 )
-from decktalk.stages.storyboard import Freeze
 
 FPS = 25
 """The rate every case here reads a first frame against, which is the rate the recorder captures at."""

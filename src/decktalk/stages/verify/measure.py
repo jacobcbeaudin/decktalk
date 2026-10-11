@@ -17,7 +17,7 @@ from pathlib import Path
 from decktalk.artifacts import CueTimes, PaneLandings, pane_landings
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, RenderSection
 from decktalk.inputs.document import frame_dip
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
@@ -337,7 +337,7 @@ def unmeasured_render(inputs: Inputs, section: int) -> bool:
     could read its own motion as a reveal. Its cues are left unmeasured and said so, never passed.
     """
     found = inputs.document.section(section)
-    if not isinstance(found, PageSection) or not found.rendered:
+    if not isinstance(found, RenderSection):
         return False
     log = inputs.recording_log(section_key(section))
     return log is None or not log.recording.report.motions

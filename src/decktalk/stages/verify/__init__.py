@@ -113,7 +113,7 @@ def _require_recording_logs(inputs: Inputs, kept: dict[int, float]) -> None:
     filled = {row.section for row in placed.sections if row.substitute is not None} if placed is not None else set()
     missing = [
         section
-        for section in inputs.document.page_sections
+        for section in inputs.document.recorded_sections
         if section.number in kept
         and section.number not in filled
         and not inputs.workspace.recording_log(section.key).is_file()
@@ -132,7 +132,7 @@ def _require_recording_logs(inputs: Inputs, kept: dict[int, float]) -> None:
 
 def _repeat_recorded(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
     """Report again what every recording log judged, which this stage repeats and never re-measures."""
-    for section in inputs.document.page_sections:
+    for section in inputs.document.recorded_sections:
         if not wanted(section.number):
             continue
         log = inputs.recording_log(section.key)
@@ -144,7 +144,7 @@ def _repeat_recorded(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) ->
 
 def _unmeasured_renders(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
     """Say, once a section, that a rendered picture with no landings leaves every cue of that section unmeasured."""
-    for section in inputs.document.page_sections:
+    for section in inputs.document.sections:
         if wanted(section.number) and unmeasured_render(inputs, section.number):
             run.note(
                 f"Section {section.number} was drawn by its render_command, which wrote no landings, so verify "

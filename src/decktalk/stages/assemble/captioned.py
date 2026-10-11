@@ -32,18 +32,13 @@ from decktalk.captions import CaptionCue
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.machine.run import Run
-from decktalk.media import browser, ffmpeg, pages
+from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.media.frames import span_indices
-from decktalk.media.origin import page_url
-from decktalk.page import Q
-from decktalk.stages.storyboard import open_project_page
+from decktalk.pictures import pictures
 
 CAPTION_MARK = "caption"
 """What a caption's still is keyed under before the caption itself, so it never shares a key with a frozen state."""
-
-DRAWN = "1"
-"""What `?caption=` says to ask a page for its caption band alone."""
 
 MICROSECONDS = 1_000_000
 """Truth: the concat demuxer counts time in microseconds, so a duration written in them is read exactly."""
@@ -65,7 +60,7 @@ def require_a_drawing_page(inputs: Inputs) -> None:
     It is asked before any work starts, by `assemble` and by a build whose plan reaches it, because
     the copy could show none of the film's captions.
     """
-    if inputs.settings.output.captioned and not inputs.document.drawn_sections:
+    if inputs.settings.output.captioned and not inputs.document.page_sections:
         raise InputError(
             "[output] captioned asks for a captioned copy, and no section plays a page to draw its captions.",
             hint="Add a section that plays a page, or turn [output] captioned off.",
@@ -79,9 +74,9 @@ def drawing_page(inputs: Inputs, placements: Placements, at: float) -> str:
     """
     playing = next((p for p in placements.sections if p.start <= at < p.end), None)
     section = inputs.document.section(playing.section) if playing is not None else None
-    if isinstance(section, PageSection) and not section.rendered:
+    if isinstance(section, PageSection):
         return section.page
-    return inputs.document.drawn_sections[0].page
+    return inputs.document.page_sections[0].page
 
 
 def page_caption(cue: CaptionCue) -> dict[str, object]:
@@ -105,8 +100,8 @@ def shown(inputs: Inputs, placements: Placements, cues: Sequence[CaptionCue], fp
 def caption_stills(inputs: Inputs, run: Run, captions: Sequence[Shown]) -> list[Path]:
     """One kept PNG per caption, drawn by its page over a clear frame, or read back when nothing it is drawn from moved.
 
-    One browser draws every caption that is not kept, and each page is opened once for every caption
-    it draws.
+    One page draws every caption that is not kept, and each page file is loaded once for every caption
+    it draws, so a run whose captions are all kept opens no browser.
     """
     documents = inputs.documents()
     keys = [
@@ -121,20 +116,14 @@ def caption_stills(inputs: Inputs, run: Run, captions: Sequence[Shown]) -> list[
     missing = sorted(unkept, key=lambda item: item[1].page)
     if missing:
         drawing = inputs.workspace.work_file("caption.png")
-        record = inputs.settings.record
         try:
-            with browser.chromium(inputs.settings.tools.chromium, policy=record.page_policy, spend=run.spend) as chrome:
-                page, assets = open_project_page(chrome, inputs)
-                opened: str | None = None
+            with pictures(inputs, run) as made:
+                page = made.page()
                 for key, one in missing:
                     if key in kept:
                         continue
-                    if one.page != opened:
-                        pages.load(page, page_url(one.page, {Q.CAPTION: DRAWN}))
-                        pages.await_ready(page)
-                        opened = one.page
-                    pages.caption_frame(page, one.caption, drawing)
-                    kept[key] = inputs.stills.keep(key, drawing, assets.paths)
+                    page.caption(one.page, one.caption, drawing)
+                    kept[key] = inputs.stills.keep(key, drawing, page.assets.paths)
         finally:
             drawing.unlink(missing_ok=True)
     return [kept[key] for key in keys]

@@ -5,9 +5,8 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
-from decktalk.media.browser import chromium
 from decktalk.media.encode import css_color
-from decktalk.media.pages import await_painted, open_document, write_frame
+from decktalk.pictures import Pictures
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;width:{w}px;height:{h}px;background:{bg};color:#f4f6f8;
@@ -23,35 +22,28 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 
 
 def render_slate(
+    pictures: Pictures,
     out: Path,
     *,
     title: str,
     sub: str = "",
     eyebrow: str,
     foot: str = "",
-    width: int,
-    height: int,
     background: str,
-    executable: str,
-    policy: str,
-    spend: bool,
 ) -> Path:
-    """The slate, which is a titled frame, for a section whose clip is missing.
+    """The slate, which is a titled frame on the run's canvas, for a section whose clip is missing.
 
     `background` is `[video] slate_color`, written as ffmpeg writes a colour, because the plain
     frame this stands in for is drawn by ffmpeg from the same setting.
     """
+    canvas = pictures.canvas
     doc = SLATE_HTML.format(
-        w=width,
-        h=height,
+        w=canvas.width,
+        h=canvas.height,
         bg=css_color(background),
         eyebrow=html.escape(eyebrow),
         title=html.escape(title),
         sub=html.escape(sub),
         foot=html.escape(foot),
     )
-    with chromium(executable, policy=policy, spend=spend) as opened:
-        page = open_document(opened, doc, viewport={"width": width, "height": height})
-        await_painted(page)
-        write_frame(page, out)
-    return out
+    return pictures.slate(doc, out)

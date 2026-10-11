@@ -166,9 +166,9 @@ def test_the_key_holders_are_the_stages_that_pass_the_spend_gate() -> None:
 
 
 def test_the_page_openers_are_the_stages_that_reach_the_browser() -> None:
-    """A stage opens a page exactly when its code reaches the browser: cue for a page that changed since it was
-    recorded, record, and assemble for its poster."""
-    reaches = re.compile(r"from decktalk\.media import [^\n]*\bbrowser\b|from decktalk\.media\.browser import")
+    """A stage opens a page exactly when its code opens the run's pictures: cue for a page that changed since it was
+    recorded, record, and assemble for its poster, its captions and its slates."""
+    reaches = re.compile(r"from decktalk\.pictures import [^\n]*\bpictures\b")
     for stage in Stage:
         assert stage.spec.opens_pages == bool(reaches.search(stage_source(stage))), stage
     assert [stage for stage in Stage if stage.spec.opens_pages] == [Stage.CUE, Stage.RECORD, Stage.ASSEMBLE]

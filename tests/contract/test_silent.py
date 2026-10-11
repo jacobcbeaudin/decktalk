@@ -32,7 +32,7 @@ TRACED = frozenset(
         ("media/ffmpeg.py", "_spawn"),
         ("toolchain/chromium_fetch.py", "fetch_chromium"),
         ("machine/fixes.py", "_run_command"),
-        ("stages/record/render.py", "run_program"),
+        ("pictures/command.py", "run_program"),
     }
 )
 """The four functions that start a child process, each of which traces what it started."""

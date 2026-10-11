@@ -237,7 +237,7 @@ def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bo
     chosen = selects(only)
     document = inputs.document
     played = any(chosen(section.number) for section in document.sections)
-    bedded = any(chosen(section.number) for section in document.page_sections if section.with_ambience)
+    bedded = any(chosen(section.number) for section in document.recorded_sections if section.with_ambience)
     cued = {inputs.path(row.file) for row in document.mix.effects if chosen(row.section)}
 
     def keeps(item: Planned) -> bool:

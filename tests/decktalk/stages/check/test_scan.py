@@ -9,9 +9,10 @@ import pytest
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
-from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import page_findings, slide_cues
+from decktalk.pictures.address import Freeze
+from decktalk.pictures.sheet import Sheet
 from decktalk.settings import Settings
 from decktalk.stages.check.scan import (
     DRAW_STYLE,
@@ -24,9 +25,7 @@ from decktalk.stages.check.scan import (
     share_message,
     static_findings,
 )
-from decktalk.stages.storyboard import Freeze, Sheet
-from support.fakes import FakePage
-from support.pages import BOX, a_project, a_report, catalog
+from support.pages import BOX, a_project, a_project_page, a_report, catalog
 from support.runs import a_run, notes
 
 from .conftest import Drawn
@@ -66,9 +65,7 @@ def entry_of(moments: dict[str, list[str]]) -> MeasuredScene:
 def a_sheet(inputs: Inputs, run: Run | None = None) -> Sheet:
     """The sheet one pass draws on, with the project's one page opened on nothing."""
     run = run or a_run(inputs.root)
-    return Sheet(
-        inputs, run, {"deck/index.html": (FakePage().page(), Assets(inputs.root))}, inputs.workspace.frames_dir
-    )
+    return Sheet(inputs, run, {"deck/index.html": a_project_page(inputs)}, inputs.workspace.frames_dir)
 
 
 FLOOR = Settings().verify.changed_share_min_percent

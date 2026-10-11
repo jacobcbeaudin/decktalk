@@ -27,7 +27,7 @@ from decktalk.stages.assemble.cut import (
     section_slate,
     vfades,
 )
-from support.fakes import FakeFfmpeg
+from support.fakes import Browsed, FakeFfmpeg
 from support.logs import decisions
 
 from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate, open_run, rendered, spoken, take_index, write_project
@@ -299,16 +299,11 @@ def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, monkeypatch):
     toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\noptional = true\n"
     write_project(tmp_path, toml)
     inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
-    asked: list[object] = []
-
-    def draw(out: Path, **named: object) -> Path:
-        asked.append(named["policy"])
-        return draw_slate(out)
-
-    monkeypatch.setattr(slate, "render_slate", draw)
+    browsed = Browsed().install(monkeypatch)
     (slot,) = inputs.document.clip_sections
     section_slate(inputs, open_run(tmp_path).run, slot)
-    assert asked == ["untrusted"]
+    assert browsed.policies == ["untrusted"]
+    assert "Your clip goes here" in browsed.documents[0]
 
 
 def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch):
@@ -319,10 +314,10 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
     """
     drawn: list[str] = []
 
-    def draw(out: Path, **named: object) -> Path:
+    def draw(pictures: object, out: Path, **named: object) -> Path:
         picture = f"{named['title']}|{named['background']}"
         drawn.append(picture)
-        draw_slate(out).write_text(picture, encoding="utf-8")
+        draw_slate(pictures, out).write_text(picture, encoding="utf-8")
         return out
 
     monkeypatch.setattr(slate, "render_slate", draw)

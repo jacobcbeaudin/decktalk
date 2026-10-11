@@ -30,13 +30,14 @@ from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import ClipSection, Inputs, PageSection, Section
+from decktalk.inputs import ClipSection, Inputs, RecordedSection, Section
 from decktalk.inputs.document import frame_dip
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
+from decktalk.pictures import pictures
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages import page_seconds, played_clips, selects
@@ -140,19 +141,10 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
         return kept
     drawing = stills.directory / f".{key}{DRAWING_SUFFIX}"
     try:
-        slate.render_slate(
-            drawing,
-            title=title,
-            sub=sub,
-            eyebrow=eyebrow,
-            foot=foot,
-            width=video.width,
-            height=video.height,
-            background=video.slate_color,
-            executable=inputs.settings.tools.chromium,
-            policy=policy,
-            spend=run.spend,
-        )
+        with pictures(inputs, run) as made:
+            slate.render_slate(
+                made, drawing, title=title, sub=sub, eyebrow=eyebrow, foot=foot, background=video.slate_color
+            )
         return stills.keep(key, drawing, ())
     except ToolError as refused:
         run.note(f"A slate could not be drawn ({refused}), so section {section.number} plays a plain frame.",
@@ -207,8 +199,8 @@ def _render_slate_section(
     )
 
 
-def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, out: Path, dip: float, total: float, *,
-                strict: bool) -> Rendered:  # fmt: skip
+def render_page(inputs: Inputs, run: Run, enc: Encoder, section: RecordedSection, out: Path, dip: float,
+                total: float, *, strict: bool) -> Rendered:  # fmt: skip
     """One page section cut to its span in the narration, from its recording or from black."""
     video = inputs.workspace.recording(section.key)
     source = inputs.relative(video)
@@ -234,7 +226,7 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
     return Rendered(section, out, seconds, source, panes=panes)
 
 
-def page_target(takes: Takes, section: PageSection, fps: int) -> float:
+def page_target(takes: Takes, section: RecordedSection, fps: int) -> float:
     """How long one page section runs in the film, refused when the take index gives it no span."""
     seconds = page_seconds(takes, section, fps)
     if not seconds:

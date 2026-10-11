@@ -203,7 +203,8 @@ A render section names the program that draws its picture in place of a page. It
 exactly as a page section is: its take sets its length, `cue` resolves its cues from its words, and
 the narration runs through it without a pause. It names no `page` and no `scene`, and it takes the
 page section keys `hold_seconds`, `lead_seconds`, `tail_seconds` and `with_ambience` with the same
-meaning. A `scene` or a `params` table written on it is ignored.
+meaning. A `scene` or a `params` table written on it is ignored, and the load warns that the key
+applies only to a page section.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|

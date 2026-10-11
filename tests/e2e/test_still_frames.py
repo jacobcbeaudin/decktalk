@@ -66,7 +66,7 @@ def test_every_page_section_records_the_same_frames_with_still_frames_skipped(tm
     skipping, skipping_verify = built(tmp_path / "skip" / HOSTILE_DIRECTORY, name, SKIPPING)
     capturing, capturing_verify = built(tmp_path / "capture" / HOSTILE_DIRECTORY, name, CAPTURING)
     inputs = Inputs.load(skipping, environ={})
-    pages = [section.key for section in inputs.document.page_sections if not section.rendered]
+    pages = [section.key for section in inputs.document.page_sections]
     assert pages, "a packaged project records at least one page section"
     for key in pages:
         relative = inputs.workspace.recording(key).relative_to(skipping)

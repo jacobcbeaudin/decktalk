@@ -17,20 +17,23 @@ from __future__ import annotations
 import io
 import os
 import wave
-from collections.abc import Callable, Mapping
-from contextlib import AbstractContextManager, nullcontext
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from urllib.parse import unquote, urlsplit
 
 import pytest
 from playwright.sync_api import Browser, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import ProviderError
-from decktalk.media import pages
+from decktalk.media import browser, pages
 from decktalk.media.browser import TRUSTED, Chromium, PagePolicy
+from decktalk.media.origin import Assets
+from decktalk.media.pagereport import PageReport
 from decktalk.results import Word
 from decktalk.speech import (
     ALIGNERS,
@@ -224,6 +227,73 @@ class FakePage:
 
     def close(self) -> None:
         """A page a test opened is closed the way a real one is, and closing it does nothing here."""
+
+
+@dataclass
+class Browsed:
+    """The browser `decktalk.pictures` reaches, replaced so a stage that opens pages runs whole and opens none.
+
+    Every page answers the report `reports` holds for the file it was last pointed at, or an empty
+    one, and every still is written as a few bytes. What the stage asked for is kept: the policy of
+    every launch, every file a page was loaded to read and every still with the URL it was drawn at.
+    """
+
+    reports: dict[str, PageReport] = field(default_factory=dict)
+    assets: Assets = field(default_factory=lambda: Assets(Path()))
+    page: FakePage = field(default_factory=FakePage)
+    policies: list[str] = field(default_factory=list)
+    loaded: list[str] = field(default_factory=list)
+    """Every project file a page was pointed at to be read, in order."""
+    stills: list[str] = field(default_factory=list)
+    """Every URL a still was drawn at, in order."""
+    shots: list[Path] = field(default_factory=list)
+    """Every file a still was written to, in order."""
+    documents: list[str] = field(default_factory=list)
+    """Every page of DeckTalk's own a run opened, such as a slate, as the markup it was handed."""
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> Browsed:
+        """Replace the media layer's browser and page calls with this one's, and give it back."""
+        monkeypatch.setattr(browser, "chromium", self.chromium)
+        monkeypatch.setattr(pages, "open_page", self.open_page)
+        monkeypatch.setattr(pages, "open_document", self.open_document)
+        monkeypatch.setattr(pages, "load", self.load)
+        monkeypatch.setattr(pages, "read_report", self.read_report)
+        monkeypatch.setattr(pages, "screenshot", self.screenshot)
+        return self
+
+    @contextmanager
+    def chromium(self, _executable: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
+        self.policies.append(policy)
+        yield object()
+
+    def open_page(self, *_args: object, **_kwargs: object) -> tuple[Page, Assets]:
+        return self.page.page(), self.assets
+
+    def open_document(self, _chromium: object, html: str, **_options: object) -> Page:
+        self.documents.append(html)
+        page = FakePage()
+        page.set_content(html)
+        return page.page()
+
+    def load(self, page: Page, url: str) -> None:
+        page.goto(url)
+        self.loaded.append(self.file(url))
+
+    def read_report(self, page: Page, _label: str, **_kwargs: object) -> PageReport:
+        return self.reports.get(self.file(cast("FakePage", page).urls[-1]), PageReport())
+
+    def screenshot(self, page: Page, url: str, out: Path) -> PageReport:
+        page.goto(url)
+        self.stills.append(url)
+        self.shots.append(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"png")
+        return self.read_report(page, out.stem)
+
+    @staticmethod
+    def file(url: str) -> str:
+        """The project file a page URL names."""
+        return unquote(urlsplit(url).path).lstrip("/")
 
 
 @dataclass

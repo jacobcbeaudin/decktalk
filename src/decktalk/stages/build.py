@@ -199,7 +199,7 @@ def _stages(
 
 ACTS_ON: dict[Stage, Callable[[Inputs], Collection[int]]] = {
     Stage.NARRATE: lambda inputs: {section.number for section in inputs.spoken()},
-    Stage.RECORD: lambda inputs: {section.number for section in inputs.document.page_sections},
+    Stage.RECORD: lambda inputs: {section.number for section in inputs.document.recorded_sections},
 }
 """The stages that work on one kind of section only, with the section numbers of that kind: narrate speaks the
 spoken sections and record records the page sections. Every other stage acts on any section."""

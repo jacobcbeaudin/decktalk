@@ -790,7 +790,8 @@ def test_a_rendered_section_nothing_moved_under_is_kept(tmp_path: Path, driven: 
     record(inputs, a_run(inputs.root))
     again = record(inputs, a_run(inputs.root))
     assert [row.kept for row in again.sections] == [True]
-    assert stale_recording(inputs, inputs.document.page_sections[0]) is None
+    assert stale_recording(inputs, inputs.document.recorded_sections[0]) is None
+    assert driven.launched == 0, "a section a command draws needs no browser"
 
 
 # ---- the clips a project makes ----------------------------------------------------------------------

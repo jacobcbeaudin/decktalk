@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
@@ -20,6 +18,7 @@ from decktalk.media.pagereport import PageReport
 from decktalk.pipeline import Stage
 from decktalk.results import CueResult, Word
 from decktalk.stages.cue import cue
+from support.fakes import Browsed
 from support.pages import SCENE_ONE, a_report, catalog, elements, write_log
 from support.projects import load_project
 from support.runs import Watched, a_run, notes
@@ -64,12 +63,13 @@ def a_recording(inputs: Inputs, section: int, scene: str, moments: dict[str, lis
     write_log(inputs, section, report=report)
 
 
-@dataclass
-class Live:
+class Live(Browsed):
     """The page as it is now, which the stage reads in a browser, and every page it opened to read it."""
 
-    reports: dict[str, PageReport] = field(default_factory=dict)
-    opened: list[str] = field(default_factory=list)
+    @property
+    def opened(self) -> list[str]:
+        """Every page the stage loaded to read, in order."""
+        return self.loaded
 
     def publishes(self, scene: str, moments: dict[str, list[str]]) -> None:
         """Declare the catalog `deck/index.html` publishes when it is opened now."""
@@ -78,20 +78,9 @@ class Live:
 
 @pytest.fixture
 def live(monkeypatch: pytest.MonkeyPatch) -> Live:
-    """The browser seams the stage reads, replaced so it opens nothing and says what it asked for."""
+    """The browser seams the stage reaches, replaced so it opens nothing and says what it asked for."""
     made = Live()
-
-    @contextmanager
-    def chromium(_executable: str = "", **_launch: object) -> Iterator[object]:
-        yield object()
-
-    def reports_of(_page: object, _inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
-        made.opened += files
-        return {name: made.reports[name] for name in files if name in made.reports}
-
-    monkeypatch.setattr(stage, "chromium", chromium)
-    monkeypatch.setattr(stage, "open_project_page", lambda *_args, **_kwargs: (object(), object()))
-    monkeypatch.setattr(stage, "reports_of", reports_of)
+    made.install(monkeypatch)
     return made
 
 

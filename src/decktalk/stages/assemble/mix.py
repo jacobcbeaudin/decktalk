@@ -28,7 +28,7 @@ from decktalk.artifacts import CueTimes, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, RecordedSection
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Spoken
 from decktalk.inputs.document import MixEffect
 from decktalk.inputs.markers import Marker
@@ -219,7 +219,7 @@ def marker_times(markers: Sequence[Marker], starts: Mapping[int, float], inputs:
 
     def words_of(section: int) -> tuple[Sequence[Word], Spoken] | None:
         if section not in heard:
-            page = isinstance(inputs.document.section(section), PageSection)
+            page = isinstance(inputs.document.section(section), RecordedSection)
             words = inputs.words(section).words if page else None
             heard[section] = None if words is None else (words, Spoken.of(words))
         return heard[section]
@@ -402,7 +402,7 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
               total: float) -> None:  # fmt: skip
     """The ambience bed, under the sections that ask for one and silent everywhere else."""
     mix = inputs.document.mix
-    flagged = [row for row in rows if isinstance(row.section, PageSection) and row.section.with_ambience]
+    flagged = [row for row in rows if isinstance(row.section, RecordedSection) and row.section.with_ambience]
     if not mix.ambience or not flagged:
         return
     path = inputs.path(mix.ambience)

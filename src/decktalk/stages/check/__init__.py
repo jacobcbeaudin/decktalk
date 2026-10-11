@@ -30,8 +30,6 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
 
-from playwright.sync_api import Page
-
 from decktalk.artifacts import TurnKey
 from decktalk.errors import InputError
 from decktalk.files import current_text
@@ -40,10 +38,11 @@ from decktalk.inputs import Inputs, programs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.script import ScriptSection, Turn
 from decktalk.machine.run import Run
-from decktalk.media.browser import UNTRUSTED, chromium
-from decktalk.media.origin import Assets
+from decktalk.media.browser import UNTRUSTED
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
+from decktalk.pictures import ProjectPage, pictures
+from decktalk.pictures.sheet import Sheet, section_voices, write_page
 from decktalk.results import BillingBasis, CheckResult, Panel, SectionCues, counted
 from decktalk.settings import PROJECT_FILE, VOICES_TABLE
 from decktalk.speech import VoiceInForce, canonical_text
@@ -61,7 +60,6 @@ from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakeStates, take_states, turns_to_retake
 from decktalk.stages.narrate.plan import dropped_pauses, no_voice_note
-from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, section_voices, write_page
 from decktalk.stages.verify import opted_out
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
@@ -131,7 +129,7 @@ def check(
     states = _states(inputs, run, spoken, retake)
     cost = states.plan(spend=True).cost
     resolved, times = _resolve(inputs, run, states, wanted)
-    sections = [one for one in inputs.document.drawn_sections if wanted(one.number)]
+    sections = [one for one in inputs.document.page_sections if wanted(one.number)]
 
     looked = _look(inputs, run, sections, extra, times, frames=frames) if pages else _unreached(run, frames=frames)
     if pages:
@@ -331,20 +329,19 @@ def _look(
     frames: bool,
 ) -> Look:
     """Open every page once, keep what it published, and judge as much of it as this run asked for."""
-    cfg = inputs.settings.record
     files = judged_pages(sections, extra)
     looked = Look()
     if not files:
         return looked
-    with chromium(inputs.settings.tools.chromium, policy=cfg.page_policy, spend=run.spend) as browser:
-        opened: dict[str, tuple[Page, Assets]] = {}
+    with pictures(inputs, run) as made:
+        opened: dict[str, ProjectPage] = {}
         for page in files:
             if not inputs.path(page).exists():
                 continue
-            drawn, assets = open_project_page(browser, inputs)
-            opened[page] = (drawn, assets)
-            report = reports_of(drawn, inputs, [page]).get(page)
-            looked.findings += _page_judgements(report, assets.external, where=page)
+            drawn = made.page()
+            opened[page] = drawn
+            report = drawn.reports([page]).get(page)
+            looked.findings += _page_judgements(report, drawn.assets.external, where=page)
             if report is not None and report.catalog:
                 looked.catalogs[page] = report.catalog
         _sections(inputs, run, sections, times, looked=looked, opened=opened, frames=frames)
@@ -364,7 +361,7 @@ def _sections(
     times: Mapping[int, Mapping[str, float]],
     *,
     looked: Look,
-    opened: Mapping[str, tuple[Page, Assets]],
+    opened: Mapping[str, ProjectPage],
     frames: bool,
 ) -> None:
     """Judge every named section from the catalog its page published, and freeze its frames when asked."""

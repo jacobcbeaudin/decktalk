@@ -111,7 +111,7 @@ scene = "4"
 """Four sections where two share one chapter, which is what a shared chapter marker is read from."""
 
 
-def draw_slate(out: Path, **_named: object) -> Path:
+def draw_slate(_pictures: object, out: Path, **_named: object) -> Path:
     """A slate drawn with no browser, which writes an empty picture where the real one would."""
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(b"")

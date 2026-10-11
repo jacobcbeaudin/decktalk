@@ -383,8 +383,9 @@ class RecordConfig:
     )
     page_deadline_seconds: float = tune(
         15.0,
-        "Longest one call into a recorded page may take before `record` closes the page and stops the section "
-        "with a TOOL error naming the frame it was stuck at: a load, a step, a capture or a report. It is many "
+        "Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming "
+        "where it was stuck: a load, a step, a capture, a still or a report. `record` names the section and the "
+        "frame, and `check`, `storyboard`, `cue` and `assemble` hold the pages they open to it too. It is many "
         "times the longest a step measures, so only a page that stopped answering reaches it, such as one that "
         "spins its main thread or waits on a font or an image that never arrives.",
         unit="seconds",

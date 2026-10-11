@@ -24,7 +24,7 @@ from pathlib import Path
 from decktalk.artifacts import ClipWords, SpokenWord, words_beside
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, RecordedSection
 from decktalk.inputs.paths import at
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
@@ -140,7 +140,7 @@ class _Span:
         return round((self.last - self.first + self.hold) / self.fps, SECOND_DIGITS)
 
 
-def _page_section(inputs: Inputs, number: int) -> PageSection:
+def _page_section(inputs: Inputs, number: int) -> RecordedSection:
     """The page section this clip is cut from, or a refusal naming what that section really is."""
     found = inputs.document.section(number)
     if found is None:
@@ -148,7 +148,7 @@ def _page_section(inputs: Inputs, number: int) -> PageSection:
             f"section {number} is not in {inputs.relative(inputs.root / 'decktalk.toml')}.",
             hint=f"The sections are {sorted(section.number for section in inputs.document.sections)}.",
         )
-    if not isinstance(found, PageSection):
+    if not isinstance(found, RecordedSection):
         raise InputError(
             f"section {number} plays a clip the project already has, so there is nothing to cut out of it.",
             hint="Cut a clip from a page section, which is one DeckTalk recorded.",
@@ -156,7 +156,7 @@ def _page_section(inputs: Inputs, number: int) -> PageSection:
     return found
 
 
-def _section_video(inputs: Inputs, section: PageSection) -> Path:
+def _section_video(inputs: Inputs, section: RecordedSection) -> Path:
     """The video of one section, or a refusal naming the command that makes it."""
     video = inputs.workspace.section_video(section.key)
     if not video.is_file():

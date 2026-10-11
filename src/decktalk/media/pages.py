@@ -278,8 +278,8 @@ def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECO
     where a deck's own promises are kept and a call that hangs there hangs this build. That timer is
     neither the page's nor Playwright's clock, so it fires on a held page and leaves the clock no
     timer of the recorder's own to end a still stretch. A page whose script never yields the thread
-    at all cannot be raced from inside itself, so `record` also holds each call to a `Watchdog`,
-    which closes the page from outside.
+    at all cannot be raced from inside itself, so every page a command opens also holds each call to
+    a `Watchdog`, which closes the page from outside.
     """
     raced = f"() => window.__decktalkProbe.within(Promise.resolve().then({script}), {deadline_seconds:g})"
     with driving("the page could not answer"):

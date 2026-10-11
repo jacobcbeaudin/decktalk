@@ -154,7 +154,7 @@ def test_every_section_split_anywhere_records_the_frames_of_one_pass(built, tmp_
     """Each page section, cut at every cue and at seeded frames and recorded piece by piece, is the one pass."""
     root = built[name]
     inputs = Inputs.load(root, environ={})
-    pages = [section.key for section in inputs.document.page_sections if not section.rendered]
+    pages = [section.key for section in inputs.document.page_sections]
     assert pages, "a packaged project records at least one page section"
     for key in pages:
         path = inputs.workspace.recording(key).with_suffix(".json")
@@ -192,8 +192,6 @@ def test_every_section_recorded_in_many_chunks_is_the_one_pass_in_frames_report_
     assert built_again.get("film"), built_again
     inputs = Inputs.load(root, environ={})
     for section in inputs.document.page_sections:
-        if section.rendered:
-            continue
         path = inputs.workspace.recording(section.key)
         whole = RecordingLog.read(path.with_suffix(".json"))
         split = RecordingLog.read(copy / path.relative_to(root).with_suffix(".json"))

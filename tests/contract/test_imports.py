@@ -39,8 +39,8 @@ LAYERS: dict[str, tuple[str, ...]] = {
     "models": ("results", "events", "logs", "tomlmap", "settings"),
     # One job each, and no knowledge of a project.
     "leaves": ("toolchain", "captions", "speech", "media", "pagescan", "template", "artifacts"),
-    # The object a caller drives, and the stages it drives.
-    "sdk": ("inputs", "machine", "explain", "stages", "project"),
+    # The object a caller drives, the pictures every stage draws through, and the stages it drives.
+    "sdk": ("inputs", "machine", "pictures", "explain", "stages", "project"),
     # The first client, and the package's public surface.
     "cli": ("cli", "__init__", "__main__"),
 }
@@ -73,19 +73,12 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",
     ("stages.check", "stages.cue"): "by design",
-    ("stages.check", "stages.storyboard"): "by design",
     ("stages.check", "stages.verify"): "by design",
-    # The storyboard owns how a frozen page is opened, so the poster is drawn from a page opened the same way.
-    ("stages.assemble", "stages.storyboard"): "the one way a frozen page is opened",
     ("stages.assemble", "stages.score"): "which sound files are the score's to buy, so an absent one is a warning",
-    # The recorder owns the query a page section is opened at, so the storyboard opens the same page
-    # by reading that one rule rather than spelling it a second time.
-    ("stages.storyboard", "stages.record"): "the page URL the recorder owns",
     # One rule decides whether a recording still matches the project, and the report that names a
     # stale one asks the stage that wrote it rather than comparing file times of its own.
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",
     ("stages.cue", "stages.record"): "the rule that decides a recording's catalog is still the page's",
-    ("stages.cue", "stages.storyboard"): "the one way a page that changed since its recording is opened and read",
     # A take is named by narrate's digest alone, so the report that lists the takes no section plays
     # names each section's take the way narrate does rather than spelling a digest of its own.
     ("stages.status", "stages.narrate"): "the take state of every section, which narrate plans by",

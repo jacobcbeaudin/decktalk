@@ -133,7 +133,7 @@ def read(name: str) -> Project:
     raw = (root / "decktalk.toml").read_text(encoding="utf-8")
     document = Document.from_toml(tomllib.loads(filled(raw)), default_name=name)
     decks: dict[str, Deck] = {}
-    for page in sorted({section.page for section in document.drawn_sections}):
+    for page in sorted({section.page for section in document.page_sections}):
         deck = Deck()
         deck.feed(filled((root / page).read_text(encoding="utf-8")))
         decks[page] = deck
@@ -220,7 +220,7 @@ def test_the_project_file_opens_with_the_line_an_editor_binds_a_schema_by(projec
 
 @pytest.mark.parametrize("project", PARSED.values(), ids=lambda p: p.name)
 def test_every_section_names_a_scene_the_page_it_names_declares(project: Project) -> None:
-    for section in project.document.drawn_sections:
+    for section in project.document.page_sections:
         scenes = project.decks[section.page].scenes
         assert section.scene in scenes, (
             f"section {section.number} names scene {section.scene}, and {section.page} declares {sorted(scenes)}"
@@ -235,7 +235,7 @@ def test_the_page_and_the_cue_file_name_the_same_moments(project: Project) -> No
             project.root / project.document.cues, project.root, {s.number for s in project.document.sections}
         )
         # A section a program draws declares its cues in the program, which no page parse can read.
-        if section.number in {one.number for one in project.document.drawn_sections}
+        if section.number in {one.number for one in project.document.page_sections}
         for cue in section.cues
     }
     assert listed == project.cue_ids, (

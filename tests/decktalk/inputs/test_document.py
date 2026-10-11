@@ -14,6 +14,7 @@ from decktalk.inputs.document import (
     Document,
     Mix,
     PageSection,
+    RenderSection,
     Transition,
     content_keys,
     frame_dip,
@@ -109,11 +110,28 @@ def test_a_render_section_is_narrated_and_names_the_command_that_draws_its_pictu
         default_name="t",
     )
     rendered = doc.section(2)
-    assert isinstance(rendered, PageSection)
+    assert isinstance(rendered, RenderSection)
     assert rendered.render_command == ("{python}", "render/bars.py", "{motion}", "{out}")
-    assert rendered.rendered and not rendered.is_clip
-    assert [one.number for one in doc.page_sections] == [1, 2]
-    assert [one.number for one in doc.drawn_sections] == [1]
+    assert not rendered.is_clip
+    assert [one.number for one in doc.recorded_sections] == [1, 2]
+    assert [one.number for one in doc.page_sections] == [1]
+
+
+def test_a_render_section_refuses_the_page_keys_it_cannot_play() -> None:
+    """A render section has no page, so a scene or params written on it would vanish, and each is a note instead."""
+    doc = Document.from_toml(
+        {
+            "section": [
+                {"number": 1, "render_command": ["make"], "scene": "intro", "params": {"theme": "dark"}},
+            ]
+        },
+        default_name="t",
+    )
+    assert isinstance(doc.section(1), RenderSection)
+    assert doc.notes == (
+        "decktalk.toml: [[section]] number=1: ignoring 'params', which applies only to a page section",
+        "decktalk.toml: [[section]] number=1: ignoring 'scene', which applies only to a page section",
+    )
 
 
 def test_a_render_command_that_is_not_a_list_of_words_is_refused() -> None:

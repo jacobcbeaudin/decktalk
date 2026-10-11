@@ -34,16 +34,15 @@ from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs, PageSection
 from decktalk.machine.run import Run
-from decktalk.media.browser import chromium
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
+from decktalk.pictures import pictures
 from decktalk.pipeline import Stage
 from decktalk.results import CueResult, SectionCues, Word
 from decktalk.stages import selects
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections, short_section
 from decktalk.stages.record import stale_recording
-from decktalk.stages.storyboard import open_project_page, reports_of
 
 __all__ = ["cue"]
 
@@ -147,9 +146,8 @@ def _catalogs(inputs: Inputs, run: Run) -> dict[int, tuple[MeasuredScene, ...]]:
         return out
     pages = list(dict.fromkeys(section.page for section in changed))
     run.note(f"Read {', '.join(pages)} as it is now, because it changed since it was recorded.")
-    with chromium(inputs.settings.tools.chromium, policy=inputs.settings.record.page_policy, spend=run.spend) as opened:
-        page, _assets = open_project_page(opened, inputs)
-        reports = reports_of(page, inputs, pages)
+    with pictures(inputs, run) as made:
+        reports = made.page().reports(pages)
     for section in changed:
         report = reports.get(section.page)
         if report is not None and report.catalog:

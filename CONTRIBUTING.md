@@ -175,6 +175,10 @@ src/decktalk/
     machine/             This computer and this process, as one value, and the run every call opens on it.
       fixes.py           The fix applier: every fix a finding offers, carried out or refused in one sentence.
       run.py             One call in progress, and the threshold its caller judges what it found by.
+    pictures/            Every picture a run makes of a project: a section's video, a frozen state, a caption, a poster and a slate.
+      address.py         Where a page section is opened: the address the recorder plays, the address of each frozen state of it.
+      command.py         The command renderer: a section whose picture a program draws, handed its motion document.
+      sheet.py           Frozen states drawn under one directory, the frames the project keeps, and the contact sheet that lays them out.
     explain.py           One setting explained: what set it, what it feeds, and what a candidate value would do to this project.
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
@@ -206,11 +210,11 @@ src/decktalk/
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
         state.py         The take state: what the disk holds for each turn of each spoken section, and what one narrate run does about it.
         takes.py         Writing a placeholder take, charging a voiced one, placing each, and joining every take into one narration track.
-      record/            Stage 3: record each page section in a headless browser, one frame at a time, and judge the result.
-        capture.py       The URL a page section is opened at, and what its recording is made from, part by part.
+      record/            Stage 3: make each recorded section's picture, a page's one frame at a time, and judge the result.
+        capture.py       What a section's recording is made from, part by part, and the job of recording it.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
         pool.py          How many recorders work at once, which is the size of the pool `record` hands chunks to, and the chunks.
-        render.py        Programs a project names: the command that draws a narrated section, and the commands that make its clips.
+        render.py        The clips a project makes: a `[[clip]]` names a project file and the program that writes it.
       score/             Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.
       verify/            Stage six: the one read-only stage, over the finished film and the logs that made it.

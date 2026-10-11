@@ -63,6 +63,8 @@ from decktalk.inputs.document import (
     MixEffect,
     MusicSpec,
     PageSection,
+    RecordedSection,
+    RenderSection,
     Score,
     Section,
     SoundSpec,
@@ -279,8 +281,8 @@ class Inputs:
         ]
         drawn = [
             section_program(section.number, section.render_command)
-            for section in self.document.page_sections
-            if section.rendered and (only is None or section.number in only)
+            for section in self.document.sections
+            if isinstance(section, RenderSection) and (only is None or section.number in only)
         ]
         return (*clips, *drawn)
 
@@ -403,7 +405,7 @@ class Inputs:
         lets a take serve whatever section number it ends up under. A clip has no take and no lead.
         """
         found = self.document.section(section)
-        if not isinstance(found, PageSection):
+        if not isinstance(found, RecordedSection):
             return 0.0
         own = found.lead_seconds
         return round(self.settings.narration.lead_seconds if own is None else own, 3)
@@ -415,7 +417,7 @@ class Inputs:
         sets none, and like the lead it is placement rather than take content.
         """
         found = self.document.section(section)
-        if not isinstance(found, PageSection):
+        if not isinstance(found, RecordedSection):
             return 0.0
         own = found.tail_seconds
         return round(self.settings.narration.tail_seconds if own is None else own, 3)
@@ -458,7 +460,7 @@ class Inputs:
         """
         found = self.document.section(number)
         index = self.takes()
-        if not isinstance(found, PageSection) or index is None:
+        if not isinstance(found, RecordedSection) or index is None:
             return ()
         rows = index.turns_of(number)
         out: list[TurnWords] = []
@@ -638,7 +640,8 @@ class Inputs:
         return tuple(
             section.number
             for section in self.document.sections
-            if (section.page if isinstance(section, PageSection) else section.clip) == wanted
+            if (isinstance(section, ClipSection) and section.clip == wanted)
+            or (isinstance(section, PageSection) and section.page == wanted)
         )
 
 
@@ -720,6 +723,8 @@ __all__ = [
     "MixEffect",
     "MusicSpec",
     "PageSection",
+    "RecordedSection",
+    "RenderSection",
     "Section",
     "ScriptSection",
     "SoundSpec",
