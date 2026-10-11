@@ -25,6 +25,7 @@ rather than by a hand-written strip in every test.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from datetime import datetime
@@ -559,6 +560,19 @@ class Word(Model):
         description="When the word ends, in seconds: on the take's own clock in a words file, on the section clock "
         "in a result.",
     )
+
+
+class Program(Model):
+    """One program a project names, which `[record] programs` decides whether `record` starts."""
+
+    named_by: str = Field(description="What names the program, such as section 3's render_command.")
+    command: tuple[str, ...] = Field(description="The words as decktalk.toml writes them, placeholders and all.")
+    section: int | None = Field(None, ge=0, description="The section a render_command draws, or null for a clip's.")
+
+    @property
+    def shown(self) -> str:
+        """The words as the TOML array that names them, so a reader sees the exact argv, one string per word."""
+        return json.dumps(self.command, ensure_ascii=False)
 
 
 class Result(Model):
@@ -1256,6 +1270,7 @@ module loads, so a result declared anywhere else never joins it.
 
 
 __all__ = [
+    "Program",
     "ApiKeyState",
     "ApplyResult",
     "AssembleResult",

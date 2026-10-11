@@ -86,7 +86,8 @@
         "CUT_POP",
         "MIX_LOUDNESS",
         "SOUND_MISSING",
-        "FILE_MISSING"
+        "FILE_MISSING",
+        "PROGRAM_NAMED"
       ],
       "title": "Code",
       "type": "string"

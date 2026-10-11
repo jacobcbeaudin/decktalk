@@ -9,8 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import InputError, ToolError
+from decktalk.errors import ToolError
 from decktalk.inputs.document import MadeClip
+from decktalk.media.environment import children_see
 from decktalk.results import Word
 from decktalk.stages.record import render
 
@@ -79,12 +80,34 @@ def test_a_command_that_writes_no_video_is_a_tool_error(tmp_path: Path) -> None:
         run(tmp_path, script="pass")
 
 
-def test_a_host_that_does_not_trust_the_project_refuses_to_run_its_command() -> None:
-    """A command is a program the project names, which a service rendering a stranger's project never runs."""
-    with pytest.raises(InputError, match="untrusted") as refused:
-        render.admitted("untrusted", what="section 3 names a render_command")
-    assert str(refused.value).startswith("section 3 names a render_command")
-    render.admitted("trusted", what="section 3 names a render_command")
+WHERE = """
+import json, os, pathlib, sys
+named, out, seen = sys.argv[1:4]
+pathlib.Path(seen).write_text(json.dumps({"cwd": os.getcwd(), "named": named, "env": dict(os.environ)}))
+pathlib.Path(out).write_bytes(b"video")
+"""
+
+
+def test_a_program_runs_in_a_scratch_folder_with_project_files_named_absolutely_and_no_proxy(tmp_path: Path) -> None:
+    """A program that runs in the project finds its .env by a relative path, and a proxy URL can carry a password."""
+    root = tmp_path / "project"
+    (root / "render").mkdir(parents=True)
+    (root / "render" / "draw").write_text("print()")
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sentinel")
+    seen = tmp_path / "seen.json"
+    machine = {"PATH": "/usr/bin", "HTTPS_PROXY": "http://user:pass@proxy:3128", "no_proxy": "localhost"}
+    with children_see(machine):
+        render.run_program(
+            (sys.executable, "-c", WHERE, "render/draw", "{out}", str(seen)),
+            root=root, out=tmp_path / "out.mp4", words={"out": lambda: str(tmp_path / "out.mp4")}, timeout=30.0,
+            what="section 3",
+        )  # fmt: skip
+    ran = json.loads(seen.read_text())
+    assert Path(ran["cwd"]).resolve() != root.resolve()
+    assert not (Path(ran["cwd"]) / ".env").exists()
+    assert ran["named"] == str((root / "render" / "draw").absolute())
+    assert ran["env"]["PATH"] == "/usr/bin"
+    assert not {"HTTPS_PROXY", "NO_PROXY"} & {name.upper() for name in ran["env"]}
 
 
 MAKER = """

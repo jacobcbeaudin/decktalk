@@ -77,6 +77,9 @@ HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 PAGE_POLICIES = ("trusted", "untrusted")
 """The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
+PROGRAM_POLICIES = ("refuse", "ask", "run")
+"""What `record` does with a program a project names: refuse it, ask a person at a terminal first, or run it."""
+
 # The three constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
 # one with its unit and its reason, so the reason is written there alone.
 BLOCK_PX = 8
@@ -308,6 +311,24 @@ class RecordConfig:
             "trusted page can reach anything the machine can, including a cloud metadata endpoint."
         ),
     )
+    programs: str = tune(
+        "refuse",
+        "Whether `record` runs the programs a project names, which are a section's `render_command` and a "
+        "`[[clip]]` table's `command`. A program runs with your user's rights and can read every file you "
+        "can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run "
+        "would start and runs them only when a person at a terminal answers yes, and refuses without a "
+        "terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the "
+        "`untrusted` page policy no program runs whatever this says. It is the machine's to set, so a "
+        "project cannot allow its own programs.",
+        bounds=Bounds(enum=PROGRAM_POLICIES),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "`run` executes whatever a project's decktalk.toml names as soon as `record` or `build` reaches "
+            "it, so set it only on a machine that builds projects whose programs you have read."
+        ),
+        see_also=("record.page_policy",),
+    )
     concurrency: int = tune(
         0,
         "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a "
@@ -359,6 +380,44 @@ class RecordConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         see_also=("record.chunk_startup_seconds", "record.chunk_frames_min"),
+    )
+    page_deadline_seconds: float = tune(
+        15.0,
+        "Longest one call into a recorded page may take before `record` closes the page and stops the section "
+        "with a TOOL error naming the frame it was stuck at: a load, a step, a capture or a report. It is many "
+        "times the longest a step measures, so only a page that stopped answering reaches it, such as one that "
+        "spins its main thread or waits on a font or an image that never arrives.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=600),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A deadline set near the time a frame takes stops healthy recordings on a busy machine.",
+        see_also=("record.deadline_slowdown",),
+    )
+    deadline_slowdown: float = tune(
+        30.0,
+        "How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may "
+        "run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times "
+        "chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks "
+        "take spread over the recorders, plus its longest chunk, so a page that answers every call and never "
+        "gets on still ends with a TOOL error.",
+        bounds=Bounds(ge=1, le=10_000),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "A value near one stops a recording that a loaded machine is merely slow to make, because the two "
+            "calibrations are this machine's speed when it is idle."
+        ),
+        see_also=("record.page_deadline_seconds", "record.step_seconds", "record.chunk_startup_seconds"),
+    )
+    renderer_retries: int = tune(
+        1,
+        "How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or "
+        "its page was closed under it. A frame is a function of its index, so a chunk recorded again is the "
+        "same frames.",
+        bounds=Bounds(ge=0, le=5),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
     )
     skip_still: bool = tune(
         True,

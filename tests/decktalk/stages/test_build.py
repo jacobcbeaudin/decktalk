@@ -445,6 +445,31 @@ def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stag
         assert calls.names == ["narrate"]
 
 
+@pytest.mark.parametrize(
+    ("stages", "refused"),
+    [(None, True), ((Stage.NARRATE, Stage.CUE), False)],
+    ids=["a plan that records", "a plan that stops before record"],
+)
+def test_a_program_the_machine_refuses_is_refused_before_the_first_stage(
+    tmp_path: Path,
+    make_run: Callable[..., Watched],
+    calls: Calls,
+    stages: tuple[Stage, ...] | None,
+    refused: bool,
+) -> None:
+    """A take is made for nothing when the record stage then refuses the program, so the build asks first."""
+    clip = '\n[[clip]]\nfile = "media/made.mp4"\ncommand = ["{python}", "-c", "pass", "{out}"]\n'
+    inputs = load_project(tmp_path, TOML + clip, script=SCRIPT)
+    run = make_run(inputs).run
+    if refused:
+        with pytest.raises(InputError, match="record.programs is refuse"):
+            build(inputs, run, stages=stages)
+        assert calls.names == []
+    else:
+        build(inputs, run, stages=stages)
+        assert calls.names == ["narrate", "cue"]
+
+
 CLIP_CAPTIONED = (
     '[project]\nname = "t"\n\n[output]\ncaptioned = true\n\n[[section]]\nnumber = 1\nclip = "media/b.mp4"\n'
 )

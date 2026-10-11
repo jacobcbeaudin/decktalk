@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from decktalk.media.stepping import expected_seconds
 from decktalk.settings import RecordConfig
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ MOST_AT_ONCE = 4
 Four recordings held about 900 MB beside each other, which is what a small render worker can spare,
 and a machine with more to give says so through `[record] concurrency`.
 """
+
 
 CGROUP_V2_MAX = Path("/sys/fs/cgroup/cpu.max")
 """Truth: where a cgroup v2 container states its CPU quota and period, or `max` for none."""
@@ -173,4 +175,25 @@ def chunked(spans: Sequence[Span], workers: int, record: RecordConfig) -> list[C
     return sorted(chunks, key=lambda chunk: (-chunk.steps, chunk.section, chunk.first))
 
 
-__all__ = ["Chunk", "Span", "at_once", "automatic", "available_cpus", "chunk_count", "chunked"]
+def run_deadline(chunks: Sequence[Chunk], workers: int, record: RecordConfig) -> float:
+    """The longest a whole `record` run of `chunks` on `workers` recorders may take before it is stopped.
+
+    Handed out longest first, the chunks finish within their expected time spread over the recorders
+    plus the longest of them, and the run may take `[record] deadline_slowdown` times that, plus one
+    page deadline for the call in flight when it runs out.
+    """
+    costs = [expected_seconds(record, chunk.stop - chunk.first) for chunk in chunks]
+    spread = sum(costs) / max(1, workers) + max(costs, default=0.0)
+    return record.page_deadline_seconds + record.deadline_slowdown * spread
+
+
+__all__ = [
+    "Chunk",
+    "Span",
+    "at_once",
+    "automatic",
+    "available_cpus",
+    "chunk_count",
+    "chunked",
+    "run_deadline",
+]

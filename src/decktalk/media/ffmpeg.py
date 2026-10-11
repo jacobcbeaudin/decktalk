@@ -427,6 +427,11 @@ def fed(*args: str, what: str) -> Iterator[Sink]:
             into.close()
         except BaseException:
             _stop(proc, readers)
+            try:
+                into.close()
+            except OSError:
+                # silent: the tool was killed, so what its input still held has nowhere to go.
+                pass
             raise
         bound = TOOLS.get()
         _watch(proc, readers, cmd, what, bound.cancel if bound else None, bound_tools().timeout_seconds, None)

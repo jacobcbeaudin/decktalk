@@ -363,3 +363,17 @@ def test_check_says_which_voice_reads_how_many_turns_on_which_bill(tmp_path: Pat
     check(inputs, run, pages=False)
     assert "The voice narrator reads 1 turn of 18 characters on elevenlabs, at $0.30 per 1,000 characters." in said
     assert "The voice guest reads 1 turn of 30 characters on dtsp, which bills nothing." in said
+
+
+def test_every_program_the_project_names_is_listed_before_anything_runs(tmp_path: Path) -> None:
+    """A reviewer reads what a project would start before a build starts it, a made clip's command included."""
+    clip = '\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{python}", "clips/make", "{out}"]\n'
+    inputs = a_project(tmp_path, toml=TOML + clip, cues=CUES)
+    (tmp_path / "deck" / "clips").mkdir(parents=True)
+    (tmp_path / "deck" / "clips" / "tone.mp4").write_bytes(b"made")
+    result = check(inputs, a_run(tmp_path), pages=False)
+    [listed] = [found for found in result.findings if found.code is Code.PROGRAM_NAMED]
+    assert listed.severity is Severity.WARNING
+    assert 'the [[clip]] that makes deck/clips/tone.mp4 runs `["{python}", "clips/make", "{out}"]`' in listed.message
+    assert ".env" in listed.message
+    assert "record.programs is refuse" in listed.message

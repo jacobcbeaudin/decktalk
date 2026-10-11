@@ -190,9 +190,15 @@ command = ["{python}", "render/make_film", "{out}", "{landings}", "{ffmpeg}", "{
 | `{ffmpeg}` | The ffmpeg this run encodes with. |
 | `{fps}`, `{width}` and `{height}` | The film's rate and frame size, so the clip can be made to match them. |
 
-- The command runs from the project root with the scrubbed environment every tool gets, and a command
-  that fails, outruns `tools.timeout_seconds` or writes nothing stops the run with its own words. It
-  never leaves a half-written clip behind.
+- The command is a program the project names, so it runs only on a machine that allows it through
+  `record.programs`, which refuses it by default. It runs with your user's rights and can read every
+  file you can, `.env` included.
+  [Programs a project names](/requirements#programs-a-project-names) says how to allow it, and
+  `decktalk check` lists it before anything runs.
+- The command runs in an empty scratch folder, with every word that names a project file by a relative
+  path handed over as that file's absolute path, and with the scrubbed environment and no proxy, so a
+  credential in your shell does not reach it. A command that fails, outruns `tools.timeout_seconds`
+  or writes nothing stops the run with its own words. It never leaves a half-written clip behind.
 - A clip already there is kept. Delete it, or run `decktalk record --force`, to make it again.
 - A machine whose `record.page_policy` is `untrusted` runs no program a project names, so it refuses a
   `[[clip]]` whose file is not there.

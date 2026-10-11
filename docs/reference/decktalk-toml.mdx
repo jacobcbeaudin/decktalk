@@ -223,10 +223,14 @@ render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landing
 hold_seconds = 1.0
 ```
 
-The program runs with the scrubbed environment every tool DeckTalk starts gets, so a credential in
-the shell never reaches it. A machine whose `record.page_policy` is `untrusted` runs no program a
-project names, so `record` refuses a render section there. A section whose program writes no
-landings is drawn and played, and verify measures none of its cues.
+The program runs only on a machine that allows a project's programs through `record.programs`, which
+refuses them by default, and never under `record.page_policy = "untrusted"`. It runs with your user's
+rights and can read every file you can, `.env` included: the scrubbed environment it is given keeps a
+credential in the shell from it, and nothing keeps a file on disk from it. It runs in an empty
+scratch folder, and a word that names a project file by a relative path is handed over as that
+file's absolute path. [Programs a project names](/requirements#programs-a-project-names) says how to
+allow them. A section whose program writes no landings is drawn and played, and verify measures none
+of its cues.
 [A render section](/guides/motion#a-render-section) shows the whole contract.
 
 ### A clip section

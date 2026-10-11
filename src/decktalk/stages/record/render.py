@@ -37,6 +37,7 @@ import json
 import logging
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -45,13 +46,13 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from decktalk.artifacts import words_beside
-from decktalk.errors import InputError, ToolError
+from decktalk.errors import ToolError
 from decktalk.files import drafted
 from decktalk.inputs.document import MadeClip
+from decktalk.inputs.programs import project_files
 from decktalk.media import ffmpeg
-from decktalk.media.browser import UNTRUSTED
 from decktalk.media.clipframes import landings_of
-from decktalk.media.environment import child_environment
+from decktalk.media.environment import program_environment
 from decktalk.media.pagereport import MotionLane
 from decktalk.results import Word
 from decktalk.toolchain import tail, traced
@@ -74,15 +75,6 @@ class Rendered:
 
     seconds: float
     motions: tuple[MotionLane, ...]
-
-
-def admitted(policy: str, *, what: str) -> None:
-    """Refuse a command a project names on a host that does not trust the project, naming what named it."""
-    if policy == UNTRUSTED:
-        raise InputError(
-            f"{what}, and this machine treats every page as untrusted, so it runs no program a project names.",
-            hint="Build on a machine that trusts the project, or give it the file the command would have made.",
-        )
 
 
 def motion_document(
@@ -119,23 +111,29 @@ def filled(command: Sequence[str], words: Mapping[str, Callable[[], str]]) -> li
 def run_program(
     command: Sequence[str], *, root: Path, out: Path, words: Mapping[str, Callable[[], str]], timeout: float, what: str
 ) -> float:
-    """Run one command a project names from its root, and answer how many seconds it took to write `out`.
+    """Run one command a project names in a scratch folder, and answer how many seconds it took to write `out`.
 
-    The command runs with the scrubbed environment every tool gets, never the process's own, so a
-    credential a host left in its environment does not reach it. A command that fails, outlives the
+    Every word that names a project file by a relative path is handed over as that file's absolute
+    path, and every placeholder as its own, so the command finds what it was named while it runs in
+    an empty folder of its own rather than in the project. It is given the scrubbed environment
+    `program_environment` builds, never the process's own, so a credential or a proxy's password a
+    host left in its environment does not reach it. Neither keeps it from reading a file by its
+    absolute path: a program runs with the user's rights. A command that fails, outlives the
     machine's tool limit or writes no video is a `ToolError` naming `what`. `out` is the draft a
     caller moves onto the file once this has answered, so no file is there before the command runs.
     """
-    argv = filled(command, words)
+    files = project_files(root, command)
+    argv = filled([str(files[word].absolute()) if word in files else word for word in command], words)
     began = time.monotonic()
-    try:
-        done = subprocess.run(
-            argv, cwd=root, env=child_environment(), capture_output=True, timeout=timeout, check=False
-        )
-    except subprocess.TimeoutExpired:
-        raise ToolError(f"{what} ran past the {timeout:g} seconds tools.timeout_seconds allows.") from None
-    except OSError as cannot:
-        raise ToolError(f"{what} could not start ({cannot}).") from None
+    with tempfile.TemporaryDirectory(prefix="decktalk-program-") as scratch:
+        try:
+            done = subprocess.run(
+                argv, cwd=scratch, env=program_environment(), capture_output=True, timeout=timeout, check=False
+            )
+        except subprocess.TimeoutExpired:
+            raise ToolError(f"{what} ran past the {timeout:g} seconds tools.timeout_seconds allows.") from None
+        except OSError as cannot:
+            raise ToolError(f"{what} could not start ({cannot}).") from None
     traced(log, what, argv, code=done.returncode, seconds=time.monotonic() - began, said=done.stderr)
     if done.returncode != 0:
         raise ToolError(f"{what} failed with exit {done.returncode}: {tail(done.stderr)}")
@@ -154,7 +152,7 @@ def run_command(
     timeout: float,
     label: str,
 ) -> Rendered:
-    """Write the motion document, run a section's command from the project's root, and read what it left."""
+    """Write the motion document, run a section's command, and read what it left."""
     work.mkdir(parents=True, exist_ok=True)
     motion = work / MOTION_FILE
     landings = work / LANDINGS_FILE
@@ -216,7 +214,6 @@ __all__ = [
     "LANES",
     "MOTION_FILE",
     "Rendered",
-    "admitted",
     "filled",
     "make_clip",
     "motion_document",

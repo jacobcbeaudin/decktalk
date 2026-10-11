@@ -29,7 +29,7 @@ from decktalk.findings import Code
 from decktalk.results import SkipReason
 from decktalk.settings import Settings
 from decktalk.template import STARTER
-from support.commands import HOSTILE_DIRECTORY, PACKAGED, decktalk, written
+from support.commands import HOSTILE_DIRECTORY, PACKAGED, RUNS_PROGRAMS, decktalk, written
 from support.timing_policy import (
     ENTRANCE_READ_FRAMES,
     EVERY_PACKAGED_PROJECT_SECONDS,
@@ -50,7 +50,7 @@ def test_a_packaged_project_verifies_clean_with_every_cue_on_its_frame(tmp_path:
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir(parents=True)
     root = written(home, example)
-    built = decktalk("--project", str(root), "build", "--no-spend", cwd=home)
+    built = decktalk("--project", str(root), "build", "--no-spend", *RUNS_PROGRAMS, cwd=home)
     assert {row["code"] for row in built["findings"]} <= PLACEHOLDER, built["findings"]
     for log_path in sorted((root / "build" / "recordings").glob("*.json")):
         log = RecordingLog.read(log_path)

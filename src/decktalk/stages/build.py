@@ -45,7 +45,7 @@ from pydantic import JsonValue, TypeAdapter
 from decktalk.errors import HALTS, Cancelled, DeckTalkError, ErrorInfo, InputError, NotBuiltError, as_refusal
 from decktalk.events import Level, StageDone
 from decktalk.findings import Finding
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, programs
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.media import browser
@@ -124,6 +124,10 @@ def build(
             "strict": strict,
         }
         _refuse_a_key_beside_a_page(inputs, run, plan)
+        if Stage.RECORD in plan:
+            # A refused program is refused before narrate makes a take, as `record` refuses it before
+            # the first program starts.
+            programs.admitted(inputs.settings.record, inputs.programs(only, force=force))
         if Stage.ASSEMBLE in plan:
             require_a_drawing_page(inputs)
         _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)

@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 
 from decktalk.inputs import Inputs
-from support.commands import HOSTILE_DIRECTORY, PACKAGED, decktalk, frame_digests, written
+from support.commands import HOSTILE_DIRECTORY, PACKAGED, RUNS_PROGRAMS, decktalk, frame_digests, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
 BUILDS_BUDGET_SECONDS = budget(2 * EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS)
@@ -50,7 +50,9 @@ def built(home: Path, name: str, overrides: tuple[str, ...]) -> tuple[Path, dict
     """One packaged project written by `init` into its own folder, built with `overrides`, and what verify measured."""
     home.mkdir(parents=True)
     root = written(home, name)
-    done = decktalk("--project", str(root), "build", "--no-spend", *overrides, cwd=home, audit_every=NO_AUDIT)
+    done = decktalk(
+        "--project", str(root), "build", "--no-spend", *RUNS_PROGRAMS, *overrides, cwd=home, audit_every=NO_AUDIT
+    )
     assert done.get("film"), done
     measured = decktalk("--project", str(root), "verify", cwd=home)
     for spent in RUN_ONLY:

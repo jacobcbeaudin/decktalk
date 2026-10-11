@@ -3,7 +3,8 @@
 #
 #     {python} deck/make_film {out} {landings} {words}
 #
-# The build runs with a machine file that is not there, so it reads no settings of the machine running it.
+# The build runs with a machine file that is not there, so it reads no settings of the machine running it. It
+# finds film/ beside its own file, because a program runs in a scratch folder rather than in the project.
 
 import os
 import shutil
@@ -12,7 +13,7 @@ import sys
 from pathlib import Path
 
 out, landings, words = sys.argv[1:4]
-film = Path("film")
+film = Path(__file__).resolve().parent.parent / "film"
 environ = {**os.environ, "DECKTALK_MACHINE_FILE": str(film.resolve() / "no-machine.toml")}
 subprocess.run([sys.executable, "-m", "decktalk", "--project", str(film), "build", "--no-spend"], check=True,
                env=environ, stdout=subprocess.DEVNULL)

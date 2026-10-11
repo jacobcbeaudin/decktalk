@@ -543,6 +543,14 @@ class Code(Enum):
         RaisedBy.PYTHON,
         (CHECK, STATUS, DOCTOR, Stage.ASSEMBLE.value),
     )
+    PROGRAM_NAMED = (
+        "PROGRAM_NAMED",
+        "The project names a program that recording starts with your user's rights, so it can read every file "
+        "you can, .env included.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+        Severity.WARNING,
+    )
 
 
 class Applicability(Enum):

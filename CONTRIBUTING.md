@@ -167,6 +167,7 @@ src/decktalk/
       env.py             The project's secrets: `.env` read once, from a path the caller names, and never printed.
       markers.py         `media/markers.json` parsed into typed `Marker` rows, which shape the music under the video.
       paths.py           Where a file is, said the one way every result and every finding says it.
+      programs.py        The programs a project names, and the machine's word on whether `record` starts them.
       script.py          `script.md` parsed into the sections the voice reads.
       take_places.py     Every place a voiced take is kept, and every rule about its copies there.
       timeline.py        Where the narration plays in the final film: the joined narration track placed on the film's clock.

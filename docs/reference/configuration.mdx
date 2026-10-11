@@ -50,7 +50,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.page_policy`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.page_policy`, `record.programs`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `record.page_deadline_seconds`, `record.deadline_slowdown`, `record.renderer_retries`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -139,20 +139,30 @@ These keys tune how `record` opens each page section in headless Chromium and st
 |---|---|---|---|---|---|---|---|
 | `color_scheme` | string | `"light"` | must be one of light, dark, no-preference |  | project |  | Color scheme that Chromium reports to the page. |
 | `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | machine |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page. |
+| `programs` | string | `"refuse"` | must be one of refuse, ask, run |  | machine |  | Whether `record` runs the programs a project names, which are a section's `render_command` and a `[[clip]]` table's `command`. A program runs with your user's rights and can read every file you can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run would start and runs them only when a person at a terminal answers yes, and refuses without a terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the `untrusted` page policy no program runs whatever this says. It is the machine's to set, so a project cannot allow its own programs. |
 | `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a section after another. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
 | `chunk_frames_min` | integer | `50` | must be between 1 and 100000 | frames | machine |  | Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section shorter than two chunks of this length is recorded whole by one recorder. |
 | `chunk_startup_seconds` | number | `0.2` | must be above 0 and must be at most 60 | seconds | machine |  | How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps * recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its last recording took. |
 | `step_seconds` | number | `0.014` | must be above 0 and must be at most 10 | seconds | machine |  | How long one recorder takes to step its page once on this machine, the capture of the frame it lands on included, which `record` weighs against `chunk_startup_seconds` when it splits a section. |
+| `page_deadline_seconds` | number | `15.0` | must be between 1 and 600 | seconds | machine |  | Longest one call into a recorded page may take before `record` closes the page and stops the section with a TOOL error naming the frame it was stuck at: a load, a step, a capture or a report. It is many times the longest a step measures, so only a page that stopped answering reaches it, such as one that spins its main thread or waits on a font or an image that never arrives. |
+| `deadline_slowdown` | number | `30.0` | must be between 1 and 10000 |  | machine |  | How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks take spread over the recorders, plus its longest chunk, so a page that answers every call and never gets on still ends with a TOOL error. |
+| `renderer_retries` | integer | `1` | must be between 0 and 5 |  | machine |  | How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or its page was closed under it. A frame is a function of its index, so a chunk recorded again is the same frames. |
 | `skip_still` | boolean | `true` | takes any value of its type |  | project |  | Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes. |
 
 <Warning>
 **`record.page_policy`** A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
+
+**`record.programs`** `run` executes whatever a project's decktalk.toml names as soon as `record` or `build` reaches it, so set it only on a machine that builds projects whose programs you have read.
 
 **`record.concurrency`** Each recorder steps its own Chromium and its own encode, so a number above the machine's share makes every chunk wait on the others and the run slower rather than faster.
 
 **`record.chunk_frames_min`** Every chunk loads the page again, so chunks much shorter than a page load spend the machine on loading rather than on frames.
 
 **`record.chunk_startup_seconds`** A start-up stated far too low splits short sections into chunks that each spend more loading the page than recording it.
+
+**`record.page_deadline_seconds`** A deadline set near the time a frame takes stops healthy recordings on a busy machine.
+
+**`record.deadline_slowdown`** A value near one stops a recording that a loaded machine is merely slow to make, because the two calibrations are this machine's speed when it is idle.
 
 **`record.skip_still`** A page that changes its picture outside what DeckTalk knows of, such as through its style sheet's object model or inside a shadow root, records the frame before until something it knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off.
 

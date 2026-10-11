@@ -154,12 +154,18 @@ machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTal
 
 ### How hard a machine is driven
 
-Five keys say how much work this machine takes on at once and how long it waits. They describe the
-machine rather than the film, so they are machine keys like the ones above.
+The keys below say how much work this machine takes on at once and how long it waits. They describe
+the machine rather than the film, so they are machine keys like the ones above.
 
 | Key | Default | What it decides |
 |---|---|---|
-| `record.concurrency` | `0` | How many recorders `record` runs at once, each a Chromium of its own. Zero chooses from the CPU this process may use: one recorder per three CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
+| `record.concurrency` | `0` | How many recorders `record` runs at once, each a Chromium of its own. Zero chooses from the CPU this process may use: one recorder per three CPUs, at most four. Inside a container that is the container's CPU quota, not the host's core count. |
+| `record.chunk_frames_min` | `50` | Fewest frames `record` puts in one chunk when it splits a section across its recorders. |
+| `record.chunk_startup_seconds` | `0.2` | How long one chunk takes to start on this machine, which `record` weighs against `step_seconds` when it splits a section. |
+| `record.step_seconds` | `0.014` | How long one recorder takes to step its page once on this machine, the capture of its frame included. |
+| `record.page_deadline_seconds` | `15` | Longest one call into a recorded page may take before `record` closes the page and stops with a TOOL error naming the section and the frame. |
+| `record.deadline_slowdown` | `30` | How many times slower than `chunk_startup_seconds` and `step_seconds` a chunk, and the whole run, may record before `record` stops it. |
+| `record.renderer_retries` | `1` | How many more times `record` records a chunk in a fresh page when the page's renderer crashed. |
 | `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
 | `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. With `narration.timeout_seconds` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request. |
 | `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
@@ -169,11 +175,17 @@ run and never on the clock of the film. `record.concurrency` set above this mach
 costs speed and never correctness: a starved machine records slower, and every reveal still lands on
 its word.
 
+A page that stops answering is held to its deadlines instead. A call into it that outlives
+`record.page_deadline_seconds`, such as a step of a page that spins its main thread, closes the page
+and stops the run with a TOOL error naming the section and the frame, and a chunk or a run that takes
+`record.deadline_slowdown` times its expected time is stopped the same way, so no page can hold a
+build open.
+
 ```console
 decktalk config set record.concurrency 2 --scope machine
 ```
 
-A `decktalk.toml` that sets any of the five is refused by name, because a project travels and a
+A `decktalk.toml` that sets any of them is refused by name, because a project travels and a
 limit that suits one machine is wrong on the next:
 
 {/* sample: machine-key-in-project, decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
@@ -222,6 +234,39 @@ Under `untrusted`, three things hold at once.
 
 The policy is read by every launch that opens a project's page, which is `record`, `check`,
 `storyboard` and the poster `assemble` draws.
+
+## Programs a project names
+
+A project can name programs as well as pages: a section's `render_command` draws its picture, and a
+`[[clip]]` table's `command` writes a clip at build time. A program runs with your user's rights and
+can read every file you can, the project's `.env` included. So cloning someone else's deck and
+building it would run their code as you, and `[record] programs` decides whether it does.
+
+| Value | What `record` and `build` do with a project's programs |
+|---|---|
+| `refuse` | The default. Nothing runs, and the run stops with an `INPUT` error that names each program, the key and how to allow it. |
+| `ask` | On a terminal the run lists every program it would start, word for word, and asks once. A yes runs them for that run alone. Without a terminal, under `--no-input` or under `--json`, the run refuses. |
+| `run` | Every program runs without asking. |
+
+The key is the machine's to set, so a project file that names it is refused. `untrusted` refuses
+every program whatever `programs` says. A refusal comes before any program starts and, in a build,
+before the first stage.
+
+```console
+decktalk check                                          # lists every program as PROGRAM_NAMED
+decktalk build --set record.programs=run                # allow them for this one run
+decktalk config set record.programs ask --scope machine # ask on every run on this machine
+```
+
+`DECKTALK_RECORD_PROGRAMS=run` allows them for every command a job runs. Read the programs that
+[`PROGRAM_NAMED`](/reference/findings/PROGRAM_NAMED) lists before you allow them.
+
+A program runs in an empty scratch folder rather than in the project, and a word of its command that
+names a project file by a relative path is handed over as that file's absolute path. It gets the
+scrubbed environment with no proxy variable, because a proxy URL can carry a password. None of that
+keeps it from a file: DeckTalk hides no file from a program on any platform, `.env` included, so a
+machine that allows a project's programs trusts that project's author with every file the user can
+read.
 
 ### The sandbox in a Linux container
 

@@ -35,6 +35,7 @@ from pathlib import Path
 from decktalk.artifacts import CueTimes, RecordingLog, content_digest, file_digest, stored
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection, TurnWords
+from decktalk.inputs.programs import project_files
 from decktalk.media.origin import page_url
 from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, T0_SIGNAL, TIME_MARK, Q
 from decktalk.results import Word
@@ -385,14 +386,15 @@ def rendered_made_from(
 ) -> dict[str, str]:
     """Every part a rendered section's video is drawn from: its turns, its command, its files and its document.
 
-    Every word of the command that names a project file is a part by its content, so editing the
-    script the command runs records the section again, as editing a page does.
+    Every word of the command that names a project file by a relative path is a part by its content,
+    so editing the script the command runs records the section again, as editing a page does. Every
+    other word, such as an absolute program or a flag, is a part through the command's own words.
     """
-    named = {word: inputs.path(word) for word in section.render_command if not word.startswith("{")}
+    named = project_files(inputs.root, section.render_command)
     return {
         **turn_parts(inputs, section, script),
         part_key(Part.COMMAND): _digest(json.dumps(section.render_command)),
-        **{part_key(Part.FILE, word): file_digest(path) for word, path in sorted(named.items()) if path.is_file()},
+        **{part_key(Part.FILE, word): file_digest(path) for word, path in sorted(named.items())},
         part_key(Part.DOCUMENT): _digest(json.dumps(document, sort_keys=True)),
         part_key(Part.ENGINE): _digest(stored.ENGINE_VERSION),
     }

@@ -68,6 +68,13 @@ def clean_environ(config_dir: Path) -> dict[str, str]:
     return env
 
 
+RUNS_PROGRAMS = ("--set", "record.programs=run")
+"""What a build of a project that names a program passes, since a machine refuses a project's programs by default.
+
+The motion example and the pane fixtures name programs this suite wrote, so the build that runs them
+says so on its own command line rather than the suite allowing every project's programs.
+"""
+
 PACKAGED = [STARTER, *(example.name for example in EXAMPLES if example.shipped)]
 """Every project `decktalk init` writes today, which is the starter and each shipped example."""
 

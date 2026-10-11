@@ -407,6 +407,25 @@
           "x-hazard": "A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.",
           "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
         },
+        "programs": {
+          "description": "Whether `record` runs the programs a project names, which are a section's `render_command` and a `[[clip]]` table's `command`. A program runs with your user's rights and can read every file you can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run would start and runs them only when a person at a terminal answers yes, and refuses without a terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the `untrusted` page policy no program runs whatever this says. It is the machine's to set, so a project cannot allow its own programs.",
+          "type": "string",
+          "default": "refuse",
+          "enum": [
+            "refuse",
+            "ask",
+            "run"
+          ],
+          "x-range": "must be one of refuse, ask, run",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "`run` executes whatever a project's decktalk.toml names as soon as `record` or `build` reaches it, so set it only on a machine that builds projects whose programs you have read.",
+          "x-see-also": [
+            "record.page_policy"
+          ],
+          "x-environment": "DECKTALK_RECORD_PROGRAMS"
+        },
         "concurrency": {
           "description": "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a section after another. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
           "type": "integer",
@@ -475,6 +494,53 @@
             "record.chunk_frames_min"
           ],
           "x-environment": "DECKTALK_RECORD_STEP_SECONDS"
+        },
+        "page_deadline_seconds": {
+          "description": "Longest one call into a recorded page may take before `record` closes the page and stops the section with a TOOL error naming the frame it was stuck at: a load, a step, a capture or a report. It is many times the longest a step measures, so only a page that stopped answering reaches it, such as one that spins its main thread or waits on a font or an image that never arrives.",
+          "type": "number",
+          "default": 15.0,
+          "minimum": 1,
+          "maximum": 600,
+          "x-range": "must be between 1 and 600",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A deadline set near the time a frame takes stops healthy recordings on a busy machine.",
+          "x-see-also": [
+            "record.deadline_slowdown"
+          ],
+          "x-environment": "DECKTALK_RECORD_PAGE_DEADLINE_SECONDS"
+        },
+        "deadline_slowdown": {
+          "description": "How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks take spread over the recorders, plus its longest chunk, so a page that answers every call and never gets on still ends with a TOOL error.",
+          "type": "number",
+          "default": 30.0,
+          "minimum": 1,
+          "maximum": 10000,
+          "x-range": "must be between 1 and 10000",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A value near one stops a recording that a loaded machine is merely slow to make, because the two calibrations are this machine's speed when it is idle.",
+          "x-see-also": [
+            "record.page_deadline_seconds",
+            "record.step_seconds",
+            "record.chunk_startup_seconds"
+          ],
+          "x-environment": "DECKTALK_RECORD_DEADLINE_SLOWDOWN"
+        },
+        "renderer_retries": {
+          "description": "How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or its page was closed under it. A frame is a function of its index, so a chunk recorded again is the same frames.",
+          "type": "integer",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5,
+          "x-range": "must be between 0 and 5",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_RECORD_RENDERER_RETRIES"
         },
         "skip_still": {
           "description": "Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes.",

@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path, PurePosixPath
@@ -70,11 +70,13 @@ from decktalk.inputs.document import (
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
+from decktalk.inputs.programs import clip_program, section_program
 from decktalk.inputs.script import VOICE_HINT, ScriptSection, Turn, estimated_words, read_script
 from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Artifact
+from decktalk.results import Program
 from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
 from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
 from decktalk.speech import VoiceInForce, http
@@ -259,6 +261,25 @@ class Inputs:
         sound that links out of the project is refused with `INPUT` before anything reads it.
         """
         return contained(self.root, named)
+
+    def programs(self, only: Sequence[int] | None = None, *, force: bool = False) -> tuple[Program, ...]:
+        """Every program a `record` over `only` would start, each clip's before every section's.
+
+        A clip's command runs when its file is not there, or for every clip when `force` is true. A
+        section's `render_command` is counted whenever the section is in `only`, whether or not its
+        recording still stands, so the answer never depends on what a run finds on disk later.
+        """
+        clips = [
+            clip_program(clip.file, clip.command)
+            for clip in self.document.clips
+            if force or not self.path(clip.file).is_file()
+        ]
+        drawn = [
+            section_program(section.number, section.render_command)
+            for section in self.document.page_sections
+            if section.rendered and (only is None or section.number in only)
+        ]
+        return (*clips, *drawn)
 
     def relative(self, path: Path) -> Path:
         """One path as every result and every finding publishes it, which is relative to the project."""

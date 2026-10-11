@@ -18,6 +18,18 @@ page. Its first section moves a packet across the frame, turns a ring and spring
 second fills a bar from script. Its third is drawn by a Python script rather than a page. Its fourth
 plays a film with its own sound in a pane, made at build time by another short script.
 
+Those two scripts are programs the project names, and a machine refuses a project's programs until
+you allow them, because a program runs with your user's rights and can read every file you can, your
+`.env` included. Read `render/draw_bars` and `render/make_film`, then build the example with them
+allowed for that one run:
+
+```console
+decktalk build --set record.programs=run
+```
+
+[Programs a project names](/requirements#programs-a-project-names) says how to allow them on a
+machine instead.
+
 ## Choose the noun
 
 | You want | Write | What verify does with it |
@@ -278,9 +290,13 @@ in it is on the section clock.
 The numbers above show the shape and are not from a real run. A renderer keys a change on a cue at
 frame `round(cue * fps)`.
 
-The command runs with the same scrubbed environment every tool DeckTalk starts gets, so a credential
-in your shell does not reach it, and it may run for `tools.timeout_seconds`. It fails the section when
-it exits with an error or writes no video. The section is recorded again when the command, the
+The command is a program the project names, so it runs only on a machine that allows it through
+`record.programs`, as [programs a project names](/requirements#programs-a-project-names) says. It
+runs with your user's rights and can read every file you can, `.env` included. It runs in an empty
+scratch folder rather than the project, a word that names a project file by a relative path such as
+`render/draw_bars` is handed to it as that file's absolute path, and it is given the scrubbed
+environment with no proxy, so a credential in your shell does not reach it. It may run for
+`tools.timeout_seconds`. It fails the section when it exits with an error or writes no video. The section is recorded again when the command, the
 motion document or a project file the command names changes, so editing `render/draw_bars` draws
 the section again.
 

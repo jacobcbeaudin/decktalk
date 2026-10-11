@@ -36,11 +36,11 @@ from decktalk.artifacts import TurnKey
 from decktalk.errors import InputError
 from decktalk.files import current_text
 from decktalk.findings import Code, Finding, Location, ProjectPath, Severity, judge
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, programs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.script import ScriptSection, Turn
 from decktalk.machine.run import Run
-from decktalk.media.browser import chromium
+from decktalk.media.browser import UNTRUSTED, chromium
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
@@ -110,6 +110,8 @@ def check(
     `turns` and `takes` name turns to make again, as `narrate` reads them: the check then judges their
     sections and prices those turns alone, which is what that `narrate` would buy.
     """
+    for found in program_findings(inputs):
+        run.found(found)
     retake = turns_to_retake(inputs, only, replace_voiced=False, turns=turns, takes=takes)
     if retake:
         only = sorted({key.section for key in retake})
@@ -150,6 +152,38 @@ def check(
         cost=cost,
         storyboard=None if sheet is None else inputs.relative(sheet),
     )
+
+
+# ---- the programs the project names --------------------------------------------------------------
+
+DOES = {
+    programs.REFUSE: "so record refuses it",
+    programs.ASK: "so record asks at a terminal before it starts and refuses without one",
+    programs.RUN: "so record starts it",
+}
+"""What `record` does with a program under each answer `[record] programs` takes, as a finding says it."""
+
+
+def program_findings(inputs: Inputs) -> list[Finding]:
+    """One warning per program the project names, said before anything else is judged and before any of them runs.
+
+    Every program is listed, a clip's whether or not its file is there, because a reviewer reads what
+    the project can start rather than what this checkout happens to lack.
+    """
+    record = inputs.settings.record
+    does = "so record refuses it" if record.page_policy == UNTRUSTED else DOES[record.programs]
+    return [
+        judge(
+            code=Code.PROGRAM_NAMED,
+            message=(
+                f"{program.named_by} runs `{program.shown}` with your user's rights, and it can read every file "
+                f"you can, .env included. {programs.KEY} is {record.programs} and record.page_policy is "
+                f"{record.page_policy} on this machine, {does}."
+            ),
+            location=Location(where=program.named_by, file=Path(PROJECT_FILE), section=program.section),
+        )
+        for program in inputs.programs(force=True)
+    ]
 
 
 # ---- the files the author writes ---------------------------------------------------------------

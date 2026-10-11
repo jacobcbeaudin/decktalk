@@ -38,7 +38,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -48,7 +48,7 @@ from playwright.sync_api import CDPSession, Page
 from ..errors import ToolError
 from ..files import drafted
 from ..page import SECOND_DIGITS
-from ..settings import MotionConfig
+from ..settings import MotionConfig, RecordConfig
 from . import ffmpeg
 from .browser import Chromium
 from .clipframes import ClipFrames
@@ -57,7 +57,10 @@ from .pagereport import PageReport, Recording, UndeclaredChange, joined
 from .pages import (
     CONSOLE_KINDS,
     DEADLINE_SECONDS,
+    Watchdog,
     await_ready,
+    close_soon,
+    devtools,
     driving,
     instrument,
     motion_scripts,
@@ -246,6 +249,17 @@ class LosslessPipe:
         pipe.raise_failed()
 
 
+def finite(said: object) -> float | None:
+    """A number a page answered, or None when it answered no number or one that is not finite.
+
+    Playwright hands `Infinity` and `NaN` through from a page, and a stranger's page may answer either
+    anywhere it answers a number, so neither is ever read as a second or a pixel.
+    """
+    if isinstance(said, bool) or not isinstance(said, (int, float)) or not math.isfinite(said):
+        return None
+    return float(said)
+
+
 Area = tuple[int, int, int, int]
 """A rectangle of a captured frame in its own pixels, as its left, top, right and bottom edges."""
 
@@ -269,10 +283,11 @@ class Unexplained:
         if not isinstance(said, dict) or not isinstance(said.get("what"), str):
             return None
         box = said.get("box")
-        if not isinstance(box, dict) or not all(isinstance(box.get(k), (int, float)) for k in "xywh"):
+        edges = [finite(box.get(k)) for k in "xywh"] if isinstance(box, dict) else [None]
+        if any(edge is None for edge in edges):
             return cls(seconds, said["what"], None)
-        left, top = math.floor(box["x"]), math.floor(box["y"])
-        return cls(seconds, said["what"], (left, top, math.ceil(box["x"] + box["w"]), math.ceil(box["y"] + box["h"])))
+        x, y, w, h = (float(edge or 0) for edge in edges)
+        return cls(seconds, said["what"], (math.floor(x), math.floor(y), math.ceil(x + w), math.ceil(y + h)))
 
     def joined(self, later: Unexplained) -> Unexplained:
         """This change and one a later step named before the same capture, first named first, in one area."""
@@ -314,8 +329,12 @@ class Stepper:
 
     A step answers only once the page has drawn it, so nothing the browser does on its own time, a
     rendering update, a font fetch or an image decode, decides what a captured frame shows. A page
-    that has not drawn a step within `pages.DEADLINE_SECONDS`, the deadline every call into a page
-    has, stops the recording at that frame.
+    that has not drawn a step within `deadline_seconds`, the deadline every call into a page has,
+    stops the recording at that frame, and `watch` closes a page that cannot even say so.
+
+    A page answers the second its next task is due, and the stepper steps to it. A page whose answer
+    does not move its section clock past the second it last stepped to would be stepped to the same
+    second for ever, so it is refused.
 
     Every step also answers whether the picture may have changed, and the stepper keeps whether any
     step has since the last capture, so `record` can write a frame where none did again rather than
@@ -330,6 +349,12 @@ class Stepper:
 
     page: Page
     fps: int
+    deadline_seconds: float = DEADLINE_SECONDS
+    """`[record] page_deadline_seconds`, which the page is told to answer each step within."""
+    watch: Watchdog | None = None
+    """What holds each call into the page to its deadline from outside the page, when anything does."""
+    name: str = "the section"
+    """What the recording is called in a refusal, such as `section 2`."""
     ticked: int = 0
     """How many milliseconds the page's timers have moved since the clock was held."""
     due: float | None = 0.0
@@ -346,10 +371,18 @@ class Stepper:
     """How many frames this stepper wrote again without a capture."""
     steps: int = 0
     """How many times this stepper moved the page, a task's own second included."""
+    doing: str = "its first step"
+    """The frame the stepper is moving the page to, which a call stuck on the way is named by."""
+    stood: float | None = None
+    """The section second the page was last stepped to, or None before its first step since the hold."""
     unexplained: Unexplained | None = None
     """The undeclared change every step since the last capture named, with the second the first one named it."""
     undeclared: dict[str, UndeclaredChange] = field(default_factory=dict)
     """Every element undeclared change was seen in, keyed by how the page names it, in the order first seen."""
+
+    def held(self, doing: str) -> AbstractContextManager[None]:
+        """Hold one call into the page, which is `doing`, to the watchdog's deadline when there is one."""
+        return self.watch.call(doing) if self.watch is not None else nullcontext()
 
     def millisecond(self, seconds: float) -> int:
         """The whole millisecond a section second sits at on the page's timers.
@@ -365,12 +398,13 @@ class Stepper:
         The clock is held only once every animation the page has set playing has started, so the first
         step pauses each one where it is sought rather than where the browser was about to start it.
         """
-        with driving("could not hold the page's clock"):
-            self.page.evaluate(STARTED_JS, DEADLINE_SECONDS)
+        with driving("could not hold the page's clock"), self.held("the hold before its first frame"):
+            self.page.evaluate(STARTED_JS, self.deadline_seconds)
             ahead = float(self.page.evaluate(NOW_JS)) + HOLD_LEAD_MS
             # Playwright reads a number handed to `pause_at` as seconds, and the page counts milliseconds.
             self.page.clock.pause_at(ahead / MILLISECONDS)
         self.ticked = 0
+        self.stood = None
         self.due = 0.0
         self.changed = True
         self.still_until = 0.0
@@ -382,40 +416,55 @@ class Stepper:
         at = self.millisecond(seconds)
         if at < self.ticked:
             raise ToolError(f"second {seconds:g} is behind the page, which has already shown {self.ticked} ms.")
-        if at > self.ticked:
-            self.page.clock.run_for(at - self.ticked)
-            self.ticked = at
-        answer = self.page.evaluate(STEP_JS, [seconds, DEADLINE_SECONDS])
+        with self.held(self.doing):
+            if at > self.ticked:
+                self.page.clock.run_for(at - self.ticked)
+                self.ticked = at
+            answer = self.page.evaluate(STEP_JS, [seconds, self.deadline_seconds])
         self.steps += 1
-        due = answer.get("due") if isinstance(answer, dict) else None
-        self.due = float(due) if isinstance(due, (int, float)) else None
+        self.stood = seconds
+        # A number that is not finite is no answer, so a page answering one owes nothing.
+        self.due = finite(answer.get("due")) if isinstance(answer, dict) else None
         # Anything but an answer that plainly says nothing changed is a change, so a page cannot skip by accident.
         self.changed = self.changed or not isinstance(answer, dict) or answer.get("changed") is not False
-        # Likewise anything but a second or a plain null is no still stretch at all.
+        # Likewise anything but a finite second or a plain null is no still stretch at all.
         still = answer.get("stillUntil", seconds) if isinstance(answer, dict) else seconds
-        self.still_until = None if still is None else float(still) if isinstance(still, (int, float)) else seconds
+        self.still_until = None if still is None else (finite(still) if finite(still) is not None else seconds)
         seen = Unexplained.of(seconds, answer.get("undeclared") if isinstance(answer, dict) else None)
         if seen is not None:
             self.unexplained = seen if self.unexplained is None else self.unexplained.joined(seen)
 
-    def advance(self, k: int) -> bool:
+    def advance(self, k: int, check: Callable[[], None] = lambda: None) -> bool:
         """Step the page to frame `k`, and answer whether its picture may have changed since the last capture.
 
         Every task due before the frame's second is stepped to on its own second first, so a timer a
         cue sets runs from the cue and not from the frame after it, whichever frame came before. A frame
-        before one already shown cannot be reached, because a timer that fired stays fired.
+        before one already shown cannot be reached, because a timer that fired stays fired. `check` is
+        asked before each of those seconds, so a run stopped while a page owes many tasks stops.
+
+        The runtime runs every task due by the second it is stepped to, so the next one it answers is
+        always later. A page that answers a second it already stood on is refused, because stepping to
+        it would answer it again for ever.
         """
         seconds = k / self.fps
+        self.doing = f"frame {k} (second {seconds:g})"
         with driving(f"the page stopped at frame {k}"):
             while self.due is not None and self.due < seconds:
+                check()
+                if self.stood is not None and self.due <= self.stood:
+                    raise ToolError(
+                        f"{self.name} answered that a task is due at second {self.due:g}, which it already stood "
+                        f"on at frame {k}, so stepping to it would never end.",
+                        hint="The page's script changed what DeckTalk.stepTo answers. Leave the runtime's step alone.",
+                    )
                 self.step(self.due)
             self.step(seconds)
         return self.changed
 
     def capture(self, k: int) -> bytes:
         """What the page shows now as a PNG, which is frame `k` once the page has been advanced to it."""
-        with driving(f"the page stopped at frame {k}"):
-            shot = self.cdp().send("Page.captureScreenshot", CAPTURE)
+        with driving(f"the page stopped at frame {k}"), self.held(f"the capture of frame {k}"):
+            shot = devtools(self.page, self.cdp(), "Page.captureScreenshot", CAPTURE)
         before, self.shown = self.shown, base64.b64decode(shot["data"])
         unexplained = self.unexplained
         if unexplained is not None and before is not None and unexplained.shown(before, self.shown):
@@ -487,7 +536,7 @@ class Stepper:
             self.frame(k - 1)
         while k < count:
             check()
-            if self.advance(k) or not skip_still or self.shown is None or k == frames.start:
+            if self.advance(k, check) or not skip_still or self.shown is None or k == frames.start:
                 sink.write(self.capture(k))
             else:
                 skipped += 1
@@ -522,11 +571,6 @@ def frame_count(seconds: float, fps: int) -> int:
     return round(seconds * fps)
 
 
-def encoding(out: Path, fps: int) -> list[str]:
-    """The arguments of the one encode the frames of `out` are piped into."""
-    return ["-f", "image2pipe", "-framerate", str(fps), "-c:v", "png", "-i", "-", *LOSSLESS, str(out)]
-
-
 @contextmanager
 def stepping(
     chromium: Chromium,
@@ -541,10 +585,13 @@ def stepping(
 ) -> Iterator[tuple[Page, Assets]]:
     """A page on Playwright's clock in a context of its own, and what it loads, closed however this ends.
 
-    `clips` decodes every pane clip the page plays, and is stopped with the context.
+    `clips` decodes every pane clip the page plays, and is stopped with the context. A context that
+    cannot close after the block failed leaves the block's own error to say why: a renderer that
+    crashed under a capture can take its browser with it as its page closes.
     """
     with driving("could not open a recording context"):
         context = chromium.browser.new_context(**view(width, height, color_scheme, motion))
+    failed = False
     try:
         assets = route_pages(context, allowed, documents, trusted=chromium.trusted, clips=clips)
         instrument(context, *motion_scripts(motion))
@@ -552,9 +599,17 @@ def stepping(
             page = context.new_page()
             page.clock.install()
         yield page, assets
+    except BaseException:
+        failed = True
+        raise
     finally:
-        with driving("could not close the recording context"):
-            context.close()
+        try:
+            with driving("could not close the recording context"):
+                context.close()
+        except ToolError:
+            if not failed:
+                raise
+            # silent: the block's own error is the one that says why the recording ended.
         if clips is not None:
             clips.close()
 
@@ -581,6 +636,36 @@ class Piece:
     """How many times the piece's page was moved, the seconds stepped before its first frame included."""
 
 
+def expected_seconds(record: RecordConfig, frames: int) -> float:
+    """How long recording `frames` frames in one page takes this machine when it is idle, by its own calibrations.
+
+    That is one chunk's start-up and one step a frame, which is the most a frame steps outside the
+    seconds tasks are due at, and what a chunk's deadline and the run's are reckoned from.
+    """
+    return record.chunk_startup_seconds + record.step_seconds * frames
+
+
+def piece_deadline(record: RecordConfig, frames: int) -> float:
+    """The longest recording `frames` frames in one page may take before it is stopped.
+
+    One page deadline covers the call in flight when the rest runs out, and the rest is the piece's
+    expected time `[record] deadline_slowdown` times over.
+    """
+    return record.page_deadline_seconds + record.deadline_slowdown * expected_seconds(record, frames)
+
+
+def encoding(out: Path, fps: int) -> list[str]:
+    """The arguments of the one encode the frames of `out` are piped into."""
+    return ["-f", "image2pipe", "-framerate", str(fps), "-c:v", "png", "-i", "-", *LOSSLESS, str(out)]
+
+
+class RendererCrashed(ToolError):
+    """The page's renderer crashed, or its page was closed under the recorder, while a piece was being recorded.
+
+    A frame is a function of its index, so the piece can be recorded again in a fresh page.
+    """
+
+
 def record_piece(
     chromium: Chromium,
     url: str,
@@ -591,9 +676,9 @@ def record_piece(
     width: int,
     height: int,
     fps: int,
-    skip_still: bool,
-    color_scheme: str,
+    record: RecordConfig,
     motion: MotionConfig,
+    name: str,
     documents: Mapping[str, bytes] | None = None,
     check: Callable[[], None] = lambda: None,
 ) -> Piece:
@@ -603,15 +688,58 @@ def record_piece(
     can name every one of them, and a page reaching for the script or for `.env` is turned away. The
     page is stepped to the first frame through the seconds work is due alone, so a piece that starts
     late in a section costs its page load and those steps, not every frame before it.
-    `skip_still` is `[record] skip_still`, which decides whether a frame nothing changed on is written
+    `record` is the `[record]` table: `skip_still` decides whether a frame nothing changed on is written
     again rather than captured, and `SKIP_AUDIT_EVERY` how often one is captured anyway to prove it.
     The page is held once it says it is ready, which is once its fonts, the promises its author
     handed the runtime and its scene are in place, and every step after that waits for the page to
-    draw it.
+    draw it. `name` is what an error calls the recording, such as `section 2`.
+
+    Every call into the page is held to `[record] page_deadline_seconds` and the piece as a whole to
+    `piece_deadline`, by a `Watchdog` that closes the page when either passes, so a page cannot hold a
+    recording open. A piece whose renderer crashed is recorded again in a fresh page, up to
+    `[record] renderer_retries` more times, unless the crash took the browser with it, and a piece the
+    watchdog stopped is never recorded again.
 
     The video is drafted beside `out` and moved onto it once the page has been read, so a piece on
     disk is always whole.
     """
+    attempts = record.renderer_retries + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return _record_once(
+                chromium, url, frames, out, allowed=allowed, width=width, height=height, fps=fps, record=record,
+                motion=motion, name=name, documents=documents, check=check,
+            )  # fmt: skip
+        except RendererCrashed as crashed:
+            if attempt == attempts or not chromium.browser.is_connected():
+                tries = "once" if attempts == 1 else f"on all {attempts} tries"
+                said = f"crashed {tries}" if chromium.browser.is_connected() else "crashed and took the browser with it"
+                raise ToolError(
+                    f"{name}: the page's renderer {said} ({crashed}).",
+                    hint="A renderer is most often killed for memory, so record fewer at once with record.concurrency.",
+                ) from crashed
+            log.warning("[page] %s  the page's renderer crashed (%s), so the piece is recorded again.", name, crashed)
+    raise AssertionError("unreachable: every attempt returns or raises")  # pragma: no cover
+
+
+def _record_once(
+    chromium: Chromium,
+    url: str,
+    frames: range,
+    out: Path,
+    *,
+    allowed: Allowed,
+    width: int,
+    height: int,
+    fps: int,
+    record: RecordConfig,
+    motion: MotionConfig,
+    name: str,
+    documents: Mapping[str, bytes] | None,
+    check: Callable[[], None],
+) -> Piece:
+    """One attempt of `record_piece`, which raises `RendererCrashed` when the page's renderer crashed under it."""
+    deadline = record.page_deadline_seconds
     with (
         drafted(out) as partial,
         stepping(
@@ -619,29 +747,52 @@ def record_piece(
             allowed,
             width=width,
             height=height,
-            color_scheme=color_scheme,
+            color_scheme=record.color_scheme,
             motion=motion,
             documents=documents,
             # Every pane clip is decoded at the film's rate and no larger than its frame, by the ffmpeg the encode runs.
             clips=ClipFrames(fps=fps, executable=ffmpeg.ffmpeg(), width=width, height=height),
         ) as (page, assets),
+        Watchdog.watching(
+            lambda: close_soon(page.context),
+            name=name,
+            call_seconds=deadline,
+            # The frame before a piece's first is captured too.
+            whole_seconds=piece_deadline(record, len(frames) + 1),
+        ) as watch,
     ):
+        crashed: list[bool] = []
         caught: list[str] = []
         console: list[tuple[str, str]] = []
+        page.on("crash", lambda _page: crashed.append(True))
         page.on("pageerror", lambda err: caught.append(page_error_text(err)))
         page.on("console", lambda said: console.append((said.type, said.text)) if said.type in CONSOLE_KINDS else None)
-        opened = time.monotonic()
-        with driving(f"could not load {url}"):
-            page.goto(url, wait_until="load")
-        await_ready(page)
-        loaded = time.monotonic()
-        stepper = Stepper(page, fps)
-        stepper.hold()
-        with (
-            ffmpeg.fed(*encoding(partial, fps), what=f"the encode of {out.name}") as write,
-            LosslessPipe.feeding(write) as sink,
-        ):
-            stepper.record(frames, sink, check, skip_still=skip_still, audit_every=SKIP_AUDIT_EVERY)
+
+        def checked() -> None:
+            check()
+            watch.check()
+
+        try:
+            opened = time.monotonic()
+            with driving(f"could not load {url}"), watch.call("its load"):
+                page.goto(url, wait_until="load", timeout=deadline * MILLISECONDS)
+            with watch.call("its wait to be ready"):
+                await_ready(page, deadline_seconds=deadline)
+            loaded = time.monotonic()
+            stepper = Stepper(page, fps, deadline_seconds=deadline, watch=watch, name=name)
+            stepper.hold()
+            with (
+                ffmpeg.fed(*encoding(partial, fps), what=f"the encode of {out.name}") as write,
+                LosslessPipe.feeding(write) as sink,
+            ):
+                stepper.record(frames, sink, checked, skip_still=record.skip_still, audit_every=SKIP_AUDIT_EVERY)
+            with watch.call("its report"):
+                report = read_report(page, out.stem, deadline_seconds=deadline)
+                errors = page_errors(page, caught, out.stem, deadline_seconds=deadline)
+        except ToolError as failed:
+            if watch.fired is None and (crashed or page.is_closed()):
+                raise RendererCrashed(str(failed).rstrip(".")) from failed
+            raise
         log.debug(
             "[page] %s  %d frames captured, %d written again, %d steps",
             out.stem,
@@ -650,8 +801,6 @@ def record_piece(
             stepper.steps,
             extra={"data": {"captured": stepper.captured, "repeated": stepper.repeated, "steps": stepper.steps}},
         )
-        report = read_report(page, out.stem)
-        errors = page_errors(page, caught, out.stem)
         if not partial.exists():
             raise ToolError(f"the encode of {out.name} wrote no file.")
     return Piece(
@@ -754,10 +903,13 @@ __all__ = [
     "FrameSink",
     "LosslessPipe",
     "Piece",
+    "RendererCrashed",
     "Stepper",
     "encoding",
+    "expected_seconds",
     "frame_count",
     "join",
+    "piece_deadline",
     "record_piece",
     "stepping",
 ]

@@ -134,3 +134,14 @@ def test_chunks_are_handed_out_dearest_first_across_every_section():
     assert [chunk.first for chunk in order if chunk.section == 2] == [0, 500, 1000, 1500]
     assert order[-1] == Chunk(3, 0, 40, 40.0)
     assert [chunk.steps for chunk in order if chunk.section == 5] == [75.0] * 4, "a still section is cheap a frame"
+
+
+def test_the_run_deadline_is_its_chunks_spread_over_the_recorders_plus_the_longest_times_the_slowdown():
+    """Handed out longest first, the chunks end within their spread plus the longest, which the deadline scales."""
+    record = replace(
+        RecordConfig(), page_deadline_seconds=10.0, deadline_slowdown=2.0, chunk_startup_seconds=1.0, step_seconds=0.5
+    )
+    chunks = [Chunk(1, 0, 10, 10.0), Chunk(1, 10, 14, 4.0), Chunk(2, 0, 2, 2.0)]
+    # Expected seconds: 1 + 5 = 6, 1 + 2 = 3 and 1 + 1 = 2, so 11 spread over two recorders, plus 6.
+    assert pool.run_deadline(chunks, 2, record) == pytest.approx(10.0 + 2.0 * (11 / 2 + 6))
+    assert pool.run_deadline([], 2, record) == pytest.approx(10.0)

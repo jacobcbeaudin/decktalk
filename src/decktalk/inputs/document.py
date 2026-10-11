@@ -125,8 +125,8 @@ class MadeClip:
 
     A pane plays a clip from a project file and so does a clip section, and a clip that is drawn from
     the film's own sources, or that a package cannot ship, is written by a command instead. `record`
-    runs the command when the file is not there, from the project root and with the placeholders a
-    render command is given, and the file is then a project file like any other.
+    runs the command when the file is not there, in a scratch folder of its own and with the
+    placeholders a render command is given, and the file is then a project file like any other.
     """
 
     file: str

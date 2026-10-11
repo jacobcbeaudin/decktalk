@@ -25,8 +25,9 @@ installed, until a whole rendering update has laid out, painted and committed th
 for every font the page shows and every image on it, rendering again after each arrives. A capture
 taken the moment the runtime returned would race the browser's own rendering, so what a frame
 showed would depend on how busy the machine was. A page that
-has not drawn a step within 15 seconds, the deadline every call into a page has, stops the recording
-at that frame, so a frame is never captured half drawn.
+has not drawn a step within `record.page_deadline_seconds`, the deadline every call into a page has,
+stops the recording at that frame, so a frame is never captured half drawn. A page that cannot even
+say so, because it spins its main thread, is closed from outside at the same deadline.
 
 Frame `k` of the recording is therefore the page at section second `k / fps` by construction. A
 person's preview in their own browser still plays in real time, and only the recorder steps.

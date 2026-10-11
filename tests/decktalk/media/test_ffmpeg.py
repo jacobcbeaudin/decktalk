@@ -396,3 +396,13 @@ def test_a_fed_tool_that_fails_is_a_tool_error_naming_what_it_was_making(monkeyp
                 write(b"x" * 65536)
     assert "the encode of 03.mp4" in str(raised.value)
     assert "Unknown encoder x265" in str(raised.value)
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_fed_block_that_raises_is_the_error_it_raised_with_frames_still_unsent(monkeypatch):
+    """A recording a page stopped holds a frame not yet sent, and stopping the encode must not bury why it stopped."""
+    feeding(monkeypatch, "import sys; sys.stdin.buffer.read()")
+    with pytest.raises(LookupError, match="the page stopped"):
+        with ffmpeg.fed("-i", "-", what="the encode of 04.mp4") as write:
+            write(b"x" * 100)
+            raise LookupError("the page stopped")

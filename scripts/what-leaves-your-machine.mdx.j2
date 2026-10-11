@@ -10,10 +10,14 @@ others, and it sends no telemetry, no usage report and no crash report anywhere.
 does not choose is a page's own: a page you record loads what its author wrote it to load, and the
 third table says when that reaches the network and how a machine refuses it.
 
-Hand this page to a reviewer who has to approve DeckTalk on a managed machine. The three facts that
+Hand this page to a reviewer who has to approve DeckTalk on a managed machine. The four facts that
 decide most reviews are that a cloud speech service receives your script, that the first run
-downloads a browser and a media tool, and that a recorded page reaches the network as it would in a
-browser unless the machine sets `record.page_policy = "untrusted"`.
+downloads a browser and a media tool, that a recorded page reaches the network as it would in a
+browser unless the machine sets `record.page_policy = "untrusted"`, and that a program a project
+names runs only when the machine sets `record.programs` to `ask` or `run`. Such a program runs with
+your user's rights and can read every file you can, `.env` included, and it reaches whatever your
+user can reach. The default is `refuse`, and `decktalk check` lists every program a project names, as
+[programs a project names](/requirements#programs-a-project-names) says.
 
 ## Requests that carry your content
 

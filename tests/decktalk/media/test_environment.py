@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tempfile
 
-from decktalk.media.environment import CHILD_KEYS, child_environment, children_see
+from decktalk.media.environment import CHILD_KEYS, child_environment, children_see, program_environment
 
 
 def test_a_browser_sees_the_machines_paths_and_locale_and_nothing_else():
@@ -26,6 +26,21 @@ def test_a_trusted_page_reaches_the_network_through_the_machines_own_proxy():
     """Chromium on Linux reads its proxy from the environment, so scrubbing it cut a trusted deck off."""
     with children_see({"https_proxy": "http://proxy.corp:3128", "NO_PROXY": "localhost"}):
         assert child_environment()["https_proxy"] == "http://proxy.corp:3128"
+
+
+def test_a_project_s_program_is_handed_no_proxy_name_since_its_url_can_carry_a_password():
+    machine = {
+        "HTTPS_PROXY": "http://user:pass@proxy:3128",
+        "all_proxy": "socks5://u:p@h",
+        "NO_PROXY": "x",
+        "HOME": "/h",
+    }
+    with children_see(machine):
+        assert program_environment() == {
+            "HOME": "/h",
+            **dict.fromkeys(("TMPDIR", "TMP", "TEMP"), tempfile.gettempdir()),
+        }
+        assert child_environment()["HTTPS_PROXY"] == "http://user:pass@proxy:3128"
 
 
 def test_a_name_windows_spells_its_own_way_is_still_carried():

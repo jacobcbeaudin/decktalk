@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from decktalk.results import SkipReason
-from support.commands import HOSTILE_DIRECTORY, run, written
+from support.commands import HOSTILE_DIRECTORY, RUNS_PROGRAMS, run, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(budget(EVERY_PACKAGED_PROJECT_SECONDS + FIRST_FETCH_SECONDS))]
@@ -41,9 +41,11 @@ def built(tmp_path: Path, *, landings: bool) -> tuple[Path, dict[str, Any], str]
     if not landings:
         toml = root / "decktalk.toml"
         toml.write_text(
-            toml.read_text(encoding="utf-8").replace('"{landings}"', '"render/kept.json"'), encoding="utf-8"
+            # A program runs in a scratch folder, so the file it is sent its landings to is named in full.
+            toml.read_text(encoding="utf-8").replace('"{landings}"', json.dumps(str(tmp_path / "kept.json"))),
+            encoding="utf-8",
         )
-    decktalk("--project", str(root), "build", "--no-spend", cwd=home)
+    decktalk("--project", str(root), "build", "--no-spend", *RUNS_PROGRAMS, cwd=home)
     verified, said = decktalk("--project", str(root), "verify", cwd=home)
     return root, verified, said
 

@@ -21,7 +21,7 @@ from decktalk.artifacts import RecordingLog
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Event, Level, RunLog, SectionDone, StageProgress
 from decktalk.findings import Code
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, programs
 from decktalk.media import audio, browser, ffmpeg, frames, stepping
 from decktalk.media.pagereport import PageReport, Recording
 from decktalk.page import Q
@@ -61,6 +61,9 @@ FPS = Settings().video.fps
 
 BRIGHT_LUMA = 200.0
 """A luma bright enough that no frame of a test recording reads as black."""
+
+RUNS_PROGRAMS = {"record": {"programs": programs.RUN}}
+"""A machine that runs the programs a project names, which a project with one needs, since the default refuses them."""
 
 LAUNCH_WAIT_SECONDS = 10.0
 """How long a launch waits for the other worker's, which only a pool that never starts one runs out."""
@@ -248,7 +251,7 @@ def test_a_record_again_that_fails_keeps_the_recording_it_was_replacing_with_its
 def test_a_rendered_section_whose_command_fails_keeps_the_video_it_drew_before(tmp_path: Path, driven: Driven) -> None:
     """The command's video was deleted before it ran, so a failed draw lost the picture the last one made."""
     load_project(tmp_path, RENDERED_TOML)
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = Inputs.load(tmp_path, environ={}, machine=RUNS_PROGRAMS)
     write_takes(inputs, a_take(1, seconds=SPAN_SECONDS, voiced=False))
     [job] = plan(Inputs.load(tmp_path, environ={}), a_run(inputs.root), None)
     driven.lengths[job.out] = stepping.frame_count(job.seconds, FPS) / FPS
@@ -257,7 +260,7 @@ def test_a_rendered_section_whose_command_fails_keeps_the_video_it_drew_before(t
     (tmp_path / PROJECT_FILE).write_text(
         RENDERED_TOML.replace("pathlib.Path(sys.argv[1]).write_bytes(b'video')", "sys.exit(4)"), encoding="utf-8"
     )
-    failing = Inputs.load(tmp_path, environ={})
+    failing = Inputs.load(tmp_path, environ={}, machine=RUNS_PROGRAMS)
     with pytest.raises(ToolError, match="failed with exit 4"):
         record(failing, a_run(inputs.root), only=[1])
     assert recorded_pair(inputs, "01") == before
@@ -779,7 +782,7 @@ render_command = ["{python}", "-c", "import pathlib, sys; pathlib.Path(sys.argv[
 def test_a_rendered_section_nothing_moved_under_is_kept(tmp_path: Path, driven: Driven) -> None:
     """The log of a drawn section is keyed as the plan keys it, or every run would draw it again."""
     load_project(tmp_path, RENDERED_TOML)
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = Inputs.load(tmp_path, environ={}, machine=RUNS_PROGRAMS)
     write_takes(inputs, a_take(1, seconds=SPAN_SECONDS, voiced=False))
     # The command draws every frame of its span, as a renderer handed the frame count does.
     [job] = plan(Inputs.load(tmp_path, environ={}), a_run(inputs.root), None)
@@ -796,7 +799,7 @@ MAKER = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(b'made at ' 
 """A clip's command that writes its file with the film's rate in it, so a test can tell a made clip from a kept one."""
 
 
-def with_a_made_clip(tmp_path: Path, *, machine: dict[str, Any] | None = None) -> Inputs:
+def with_a_made_clip(tmp_path: Path, *, machine: dict[str, Any] | None = RUNS_PROGRAMS) -> Inputs:
     clip = (
         f'\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{{python}}", "-c", "{MAKER}", "{{out}}", "{{fps}}"]\n'
     )
@@ -824,7 +827,29 @@ def test_a_made_clip_already_there_is_kept_and_a_forced_run_makes_it_again(tmp_p
 
 @pytest.mark.usefixtures("driven")
 def test_a_host_that_does_not_trust_the_project_makes_no_clip_with_its_command(tmp_path: Path) -> None:
-    inputs = with_a_made_clip(tmp_path, machine={"record": {"page_policy": "untrusted"}})
+    inputs = with_a_made_clip(tmp_path, machine={"record": {"page_policy": "untrusted", "programs": programs.RUN}})
     with pytest.raises(InputError, match="deck/clips/tone.mp4"):
         record(inputs, a_run(inputs.root))
+    assert not (tmp_path / "deck" / "clips" / "tone.mp4").exists()
+
+
+MARKER = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_text('started')"
+"""A program that leaves a marker where it is told to, so a test can tell that it never started."""
+
+
+@pytest.mark.usefixtures("driven")
+@pytest.mark.parametrize("machine", [None, {"record": {"programs": programs.ASK}}])
+def test_a_fresh_project_starts_none_of_its_programs_and_names_the_key_that_allows_them(
+    tmp_path: Path, machine: dict[str, Any] | None
+) -> None:
+    """The security seat's p1 ran a clip's command before anything else was judged: it now runs nothing."""
+    marker = tmp_path / "marker"
+    clip = f'\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{{python}}", "-c", "{MARKER}", "{marker}"]\n'
+    drawn = f'\n[[section]]\nnumber = 3\nrender_command = ["{{python}}", "-c", "{MARKER}", "{marker}"]\n'
+    inputs = a_project(tmp_path, extra=drawn + clip, machine=machine)
+    with pytest.raises(InputError, match="record.programs") as refused:
+        record(inputs, a_run(inputs.root))
+    assert "section 3's render_command" in str(refused.value)
+    assert "the [[clip]] that makes deck/clips/tone.mp4" in str(refused.value)
+    assert not marker.exists()
     assert not (tmp_path / "deck" / "clips" / "tone.mp4").exists()

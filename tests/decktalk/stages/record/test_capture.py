@@ -26,6 +26,7 @@ from decktalk.stages.record.capture import (
     page_source,
     part_key,
     plan_job,
+    rendered_made_from,
     said,
     scene_params,
     scene_url,
@@ -275,3 +276,15 @@ def test_a_page_that_could_not_be_read_is_hashed_as_empty_and_says_so(tmp_path: 
         assert page_source(tmp_path / "gone.html") == ""
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.capture"]
     assert "gone.html" in record.getMessage()
+
+
+def test_a_render_command_naming_an_absolute_program_is_digested_by_its_words(tmp_path: Path) -> None:
+    """Only a relative word naming a project file is digested by its content, so /usr/bin/true is not refused."""
+    toml = TOML + '\n[[section]]\nnumber = 4\nrender_command = ["/usr/bin/true", "render/draw", "{out}"]\n'
+    inputs = a_project(tmp_path, toml)
+    (tmp_path / "render").mkdir()
+    (tmp_path / "render" / "draw").write_text("one")
+    before = rendered_made_from(inputs, section_of(inputs, 4), {})
+    assert [key for key in before if key.startswith(Part.FILE.value)] == [part_key(Part.FILE, "render/draw")]
+    (tmp_path / "render" / "draw").write_text("two")
+    assert moved(before, rendered_made_from(inputs, section_of(inputs, 4), {})) == (part_key(Part.FILE, "render/draw"),)

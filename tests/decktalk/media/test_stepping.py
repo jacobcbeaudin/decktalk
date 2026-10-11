@@ -10,14 +10,21 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+import math
+import os
+import signal
+import subprocess
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from importlib import resources
 from pathlib import Path
 from typing import cast
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 
 from decktalk.artifacts.recordings import pane_landings
@@ -44,6 +51,9 @@ def tools() -> Iterator[None]:
 
 WIDTH, HEIGHT, FPS = 320, 180, 25
 """A small frame at the default rate, which is all a test of the clock needs."""
+
+RECORD = RecordConfig(color_scheme="dark")
+"""The `[record]` table every recording here is made under, dark so the fixture's white bar shows."""
 
 SKIP_STILL = RecordConfig().skip_still
 """Whether a frame nothing changed on is written again rather than captured, which is the default."""
@@ -85,6 +95,7 @@ def record(
     starts: tuple[int, ...] = (0,),
     skip_still: bool = SKIP_STILL,
     audit_every: int = AUDIT_EVERY,
+    settings: RecordConfig = RECORD,
 ) -> Recording:
     """Record `seconds` of the page into `out`, in one piece for each of `starts`, each in a page of its own."""
     count = stepping.frame_count(seconds, FPS)
@@ -101,9 +112,9 @@ def record(
                 width=WIDTH,
                 height=HEIGHT,
                 fps=FPS,
-                skip_still=skip_still,
-                color_scheme="dark",
+                record=replace(settings, skip_still=skip_still),
                 motion=MotionConfig(),
+                name="section 1",
             )  # fmt: skip
             for first, stop in itertools.pairwise(bounds)
         ]
@@ -327,8 +338,43 @@ class Answering:
 def test_a_step_waits_for_the_page_as_long_as_every_other_call_into_it():
     """One deadline holds every call into a page, so a step and a report give up on a silent page alike."""
     page = Answering()
-    stepping.Stepper(cast("Page", page), FPS).step(0.2)
-    assert page.handed == [[0.2, pages.DEADLINE_SECONDS]]
+    stepping.Stepper(cast("Page", page), FPS, deadline_seconds=7.0).step(0.2)
+    assert page.handed == [[0.2, 7.0]]
+
+
+class Saying(Answering):
+    """A page on a held clock that answers every step with `said`."""
+
+    def __init__(self, said: dict[str, object]) -> None:
+        super().__init__()
+        self.said = said
+
+    def evaluate(self, _script: str, arg: object = None) -> object:
+        self.handed.append(arg)
+        return self.said
+
+
+NOT_FINITE = [math.inf, -math.inf, math.nan]
+"""Numbers Playwright hands through from a page, which no second and no pixel can be."""
+
+
+@pytest.mark.parametrize("number", NOT_FINITE, ids=["inf", "-inf", "nan"])
+def test_a_due_or_still_second_that_is_not_finite_is_read_as_no_answer(number):
+    """A stranger's page answering Infinity or NaN is a page that said nothing, never a DeckTalk bug."""
+    stepper = stepping.Stepper(
+        cast("Page", Saying({"due": number, "changed": False, "stillUntil": number, "undeclared": None})), FPS
+    )
+    stepper.step(0.2)
+    assert stepper.due is None
+    assert stepper.still_until == 0.2
+    assert stepper.still_through(5, FPS) == 5
+
+
+@pytest.mark.parametrize("number", NOT_FINITE, ids=["inf", "-inf", "nan"])
+def test_a_changed_box_with_an_edge_that_is_not_finite_stands_for_the_whole_frame(number):
+    """A box the page could not lay out anywhere is the whole frame, as a box with no numbers is."""
+    seen = stepping.Unexplained.of(0.4, {"what": "div#x", "box": {"x": 0, "y": 0, "w": number, "h": 10}})
+    assert seen == stepping.Unexplained(0.4, "div#x", None)
 
 
 # ---- a frame is captured only once the page has drawn it ----------------------------------------
@@ -404,14 +450,14 @@ HUNG_PAGE_DEADLINE_SECONDS = 0.5
 """A deadline short enough that a page which never finishes drawing fails this test quickly."""
 
 
-def test_a_page_that_is_never_drawn_within_the_wait_fails_the_frame_rather_than_capturing_it(tmp_path, monkeypatch):
+def test_a_page_that_is_never_drawn_within_the_wait_fails_the_frame_rather_than_capturing_it(tmp_path):
     """A frame whose image never decodes is a ToolError naming the frame, never a frame captured half drawn."""
     script = "DeckTalk.frame((t) => { if (t >= 0.2 && !window.__hung) { window.__hung = true;"
     script += " const img = new Image(); img.src = 'never.png'; img.decode = () => new Promise(() => {});"
     script += " document.body.appendChild(img); } });"
     allowed = fixture_page(tmp_path, script)
     with held(allowed) as stepper:
-        monkeypatch.setattr(stepping, "DEADLINE_SECONDS", HUNG_PAGE_DEADLINE_SECONDS)
+        stepper.deadline_seconds = HUNG_PAGE_DEADLINE_SECONDS
         stepper.frame(4)
         with pytest.raises(ToolError) as raised:
             stepper.frame(5)
@@ -1155,3 +1201,161 @@ def test_a_reveal_recorded_in_pieces_is_the_reveal_one_pass_records_field_for_fi
     once = record(allowed, tmp_path / "01.mp4", 1.0, url=url, skip_still=True, audit_every=0)
     split = record(allowed, tmp_path / "02.mp4", 1.0, url=url, starts=starts, skip_still=True, audit_every=0)
     assert split.report.reveals == once.report.reveals
+
+
+# ---- a page cannot hold a recording open ----------------------------------------------------------
+
+
+QUICK = replace(RECORD, page_deadline_seconds=1.0)
+"""A page deadline short enough that a page which never answers fails its test in about a second."""
+
+STUCK_DUE = "const own = DeckTalk.stepTo; DeckTalk.stepTo = (s) => ({ ...own(s), due: 0.0004 });"
+"""A page that answers the same due second from every step, which a recorder that believes it steps forever."""
+
+NEVER_SETTLES = (
+    "const own = DeckTalk.stepTo; const Native = Promise; DeckTalk.stepTo = (s) => {"
+    " if (s >= 0.2) window.Promise = function () { return new Native(() => {}); };"
+    " return own(s); };"
+)
+"""A page whose step from second 0.2 on never settles, because the probe's own race is built on the page's Promise."""
+
+SPINS_IN_STEP = "const own = DeckTalk.stepTo; DeckTalk.stepTo = (s) => { if (s >= 0.2) for (;;) {} return own(s); };"
+"""A page that spins its main thread in the step to second 0.2, so nothing inside it can answer or race the call."""
+
+SPINS_ON_A_TIMER = "DeckTalk.on('1.1:go', () => setTimeout(() => { for (;;) {} }, 200));"
+"""A page whose timer spins its main thread at second 0.2, which runs while the recorder moves the page's timers."""
+
+
+def test_a_page_that_answers_a_due_second_it_already_stood_on_is_refused_naming_the_section(tmp_path):
+    """A due that does not move the clock would be stepped to again and again, so it is refused at once."""
+    with pytest.raises(ToolError) as raised:
+        record(fixture_page(tmp_path, STUCK_DUE), tmp_path / "a.mp4", 1.0, settings=QUICK)
+    assert "section 1" in str(raised.value)
+    assert "0.0004" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "script",
+    [NEVER_SETTLES, SPINS_IN_STEP, SPINS_ON_A_TIMER],
+    ids=["never-settles", "spins-in-step", "spins-on-a-timer"],
+)
+def test_a_page_that_never_answers_a_step_is_closed_at_its_deadline_naming_the_section_and_frame(tmp_path, script):
+    """A call the page never answers is a TOOL error at the stuck frame once the page deadline passes."""
+    with pytest.raises(ToolError) as raised:
+        record(fixture_page(tmp_path, script), tmp_path / "a.mp4", 1.0, settings=QUICK)
+    said = str(raised.value)
+    assert "section 1 stopped answering at frame 5 (second 0.2)" in said
+    assert "1 seconds" in said
+
+
+def test_a_page_that_keeps_answering_and_never_gets_on_is_stopped_at_the_deadline_of_its_piece(tmp_path):
+    """A page may answer every call in time and owe a task a hair later for ever, so the piece has a deadline."""
+    inching = "const own = DeckTalk.stepTo; DeckTalk.stepTo = (s) => ({ ...own(s), due: s + 1e-9 });"
+    hurried = replace(QUICK, deadline_slowdown=1.0, chunk_startup_seconds=0.5, step_seconds=0.001)
+    with pytest.raises(ToolError) as raised:
+        record(fixture_page(tmp_path, inching), tmp_path / "a.mp4", 1.0, settings=hurried)
+    assert "section 1 ran past its deadline of" in str(raised.value)
+
+
+CRASH_AT = 5
+"""The frame whose capture the renderer is crashed under, on the first try only."""
+
+CRASH_CEILING_SECONDS = 60
+"""A ceiling on a test of a crashed renderer, which ends in moments or hangs where a call is never answered."""
+
+
+def kill_renderer(page: Page) -> None:
+    """Kill the renderer of `page` the way the system kills one for memory, and wait until the page says it crashed.
+
+    Every test here records in a browser of its own, one page at a time, so every renderer the
+    browser runs is that page's.
+    """
+    browser_of = page.context.browser
+    assert browser_of is not None
+    listed = browser_of.new_browser_cdp_session().send("SystemInfo.getProcessInfo")
+    with page.expect_event("crash"):
+        for process in listed["processInfo"]:
+            if process["type"] == "renderer":
+                os.kill(process["id"], signal.SIGKILL)
+
+
+def crashing_once(patch: pytest.MonkeyPatch) -> list[int]:
+    """Kill the page's real renderer the first time frame `CRASH_AT` is about to be captured, and count the crashes."""
+    crashes: list[int] = []
+    capture = stepping.Stepper.capture
+
+    def crashed(stepper: stepping.Stepper, k: int) -> bytes:
+        if k == CRASH_AT and not crashes:
+            crashes.append(k)
+            kill_renderer(stepper.page)
+        return capture(stepper, k)
+
+    patch.setattr(stepping.Stepper, "capture", crashed)
+    return crashes
+
+
+def encodes_left() -> list[str]:
+    """Every ffmpeg this process started that is still running, which a recording that stopped leaves none of."""
+    listed = subprocess.run(["ps", "-A", "-o", "ppid=,pid=,command="], capture_output=True, text=True, check=True)
+    rows = (line.split(None, 2) for line in listed.stdout.splitlines())
+    return [row[2] for row in rows if len(row) == 3 and row[0] == str(os.getpid()) and "ffmpeg" in row[2]]
+
+
+@pytest.mark.timeout(CRASH_CEILING_SECONDS)
+def test_a_devtools_command_in_flight_when_the_renderer_crashes_fails_rather_than_waiting_for_an_answer(tmp_path):
+    """Chromium may never answer a command its renderer dies under, as a capture on Linux, so the page's end ends it.
+
+    Page.crash is the one command no renderer ever answers, so it stands for every one that is not.
+    """
+    with held(fixture_page(tmp_path, GROW)) as stepper:
+        page = stepper.page
+        began = time.monotonic()
+        with pytest.raises(PlaywrightError):
+            pages.devtools(page, page.context.new_cdp_session(page), "Page.crash", {})
+        assert time.monotonic() - began < CRASH_CEILING_SECONDS / 2
+        with pytest.raises(PlaywrightError):
+            pages.devtools(page, stepper.cdp(), "Page.captureScreenshot", stepping.CAPTURE)
+
+
+@pytest.mark.timeout(CRASH_CEILING_SECONDS)
+def test_a_piece_whose_renderer_crashed_is_recorded_again_in_a_fresh_page_with_the_same_frames(tmp_path):
+    """A frame is a function of its index, so a crashed renderer costs one piece again and never the run."""
+    allowed = fixture_page(tmp_path, GROW)
+    whole = record(allowed, tmp_path / "a.mp4", 0.6)
+    with pytest.MonkeyPatch.context() as patch:
+        crashes = crashing_once(patch)
+        again = record(allowed, tmp_path / "b.mp4", 0.6)
+    assert crashes == [CRASH_AT]
+    assert luma_frames(tmp_path / "b.mp4") == luma_frames(tmp_path / "a.mp4")
+    assert again.steps >= whole.steps
+
+
+@pytest.mark.timeout(CRASH_CEILING_SECONDS)
+def test_a_renderer_that_crashes_with_no_retry_left_says_it_crashed_naming_the_section(tmp_path):
+    """With no retry left the run stops, the error says the renderer crashed, and the piece's encode is stopped."""
+    with pytest.MonkeyPatch.context() as patch:
+        crashing_once(patch)
+        with pytest.raises(ToolError) as raised:
+            record(fixture_page(tmp_path, GROW), tmp_path / "a.mp4", 0.6, settings=replace(RECORD, renderer_retries=0))
+    assert "section 1: the page's renderer crashed once" in str(raised.value)
+    assert encodes_left() == []
+
+
+@pytest.mark.timeout(CRASH_CEILING_SECONDS)
+def test_a_crash_that_takes_the_browser_with_it_stops_the_piece_saying_so_and_leaves_no_encode(tmp_path):
+    """A renderer that dies under a capture can take its browser down as its page closes, so no fresh page is left."""
+    capture = stepping.Stepper.capture
+
+    def lost(stepper: stepping.Stepper, k: int) -> bytes:
+        if k == CRASH_AT:
+            browser_of = stepper.page.context.browser
+            assert browser_of is not None
+            browser_of.close()
+        return capture(stepper, k)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(stepping.Stepper, "capture", lost)
+        with pytest.raises(ToolError) as raised:
+            record(fixture_page(tmp_path, GROW), tmp_path / "a.mp4", 0.6)
+    assert "section 1: the page's renderer crashed and took the browser with it" in str(raised.value)
+    assert encodes_left() == []

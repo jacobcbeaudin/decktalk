@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import random
 import shutil
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -33,7 +34,7 @@ from decktalk.inputs import Inputs
 from decktalk.media import browser, stepping
 from decktalk.media.origin import Allowed
 from decktalk.page import Q
-from support.commands import HOSTILE_DIRECTORY, PACKAGED, decktalk, frame_digests, written
+from support.commands import HOSTILE_DIRECTORY, PACKAGED, RUNS_PROGRAMS, decktalk, frame_digests, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 from support.tools import machine_tools
 
@@ -80,7 +81,7 @@ class Built(dict[str, Path]):
         home = self.factory.mktemp(name) / HOSTILE_DIRECTORY
         home.mkdir(parents=True)
         root = written(home, name)
-        done = decktalk("--project", str(root), "build", "--no-spend", *ONE_PASS, cwd=home)
+        done = decktalk("--project", str(root), "build", "--no-spend", *RUNS_PROGRAMS, *ONE_PASS, cwd=home)
         assert done["film"], done
         self[name] = root
         return root
@@ -124,9 +125,9 @@ def record_pieces(root: Path, section: str, starts: list[int], end: int, into: P
                     width=video.width,
                     height=video.height,
                     fps=video.fps,
-                    skip_still=False,
-                    color_scheme=recorder.color_scheme,
+                    record=replace(recorder, skip_still=False),
                     motion=inputs.settings.motion,
+                    name=f"section {section}",
                     documents=inputs.documents(),
                 )
                 digests += frame_digests(piece.path)
@@ -183,9 +184,9 @@ def test_every_section_recorded_in_many_chunks_is_the_one_pass_in_frames_report_
     once = measured(root)
     copy = tmp_path / name
     shutil.copytree(root, copy)
-    redone = decktalk("--project", str(copy), "record", "--force", *MANY_CHUNKS, cwd=tmp_path)
+    redone = decktalk("--project", str(copy), "record", "--force", *RUNS_PROGRAMS, *MANY_CHUNKS, cwd=tmp_path)
     assert redone.get("sections"), redone
-    built_again = decktalk("--project", str(copy), "build", "--no-spend", *MANY_CHUNKS, cwd=tmp_path)
+    built_again = decktalk("--project", str(copy), "build", "--no-spend", *RUNS_PROGRAMS, *MANY_CHUNKS, cwd=tmp_path)
     assert built_again.get("film"), built_again
     inputs = Inputs.load(root, environ={})
     for section in inputs.document.page_sections:

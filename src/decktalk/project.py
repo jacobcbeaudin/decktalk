@@ -57,6 +57,7 @@ from decktalk.results import (
     Cost,
     CueResult,
     NarrateResult,
+    Program,
     RecordResult,
     Result,
     Scope,
@@ -306,6 +307,15 @@ class Project:
             hint=f"The sections are {carried}.",
             location=at(self.root / PROJECT_FILE, self.root),
         )
+
+    def programs(self, *, only: Sequence[int] | None = None, force: bool = False) -> tuple[Program, ...]:
+        """Every program a `record` over `only` would start, which `[record] programs` decides whether it may.
+
+        A clip's command is counted when its file is not there, or always when `force` is true, and a
+        section's `render_command` whenever `only` names the section. Each carries its words as the
+        project file writes them.
+        """
+        return self._inputs.programs(self.select(only), force=force)
 
     def authored_files(self) -> tuple[Path, ...]:
         """Every file under the project an author edits, which is what a watch loop polls for saves.

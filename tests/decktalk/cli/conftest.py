@@ -37,6 +37,7 @@ from decktalk.results import (
     StoryboardResult,
     WordsResult,
 )
+from decktalk.settings import Settings
 from support.costs import a_cost
 
 TTY = "TTY_COMPATIBLE"
@@ -85,6 +86,8 @@ class Fake:
         self.events = Events()
         self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
         self.root = Path.cwd()
+        # The settings a command reads before it calls the project, which are the defaults a fresh machine has.
+        self.settings = Settings()
 
     def project(self) -> Project:
         """This fake as the project it stands in for, for a test that hands it to a function directly."""

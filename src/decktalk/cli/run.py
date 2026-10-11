@@ -180,9 +180,10 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
     anything is cut.
     """
     session = sessions.of(ctx)
-    project = session.opened(set_)
+    only = sections_of(section)
+    project = session.programs(session.opened(set_), only=only, force=force)
     with session.watching(project.events):
-        return project.record(only=sections_of(section), force=force, cancel=session.cancel)
+        return project.record(only=only, force=force, cancel=session.cancel)
 
 
 @command(
@@ -280,8 +281,10 @@ def build(
     --no-spend is passed. A free provider makes its takes without asking once a voice is named.
     """
     session = sessions.of(ctx)
-    project = session.opened(set_)
     only = sections_of(section)
+    project = session.opened(set_)
+    if Stage.RECORD in _planned(_span(from_stage, to_stage), skip):
+        project = session.programs(project, only=only, force=force)
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
     stages = _span(from_stage, to_stage)

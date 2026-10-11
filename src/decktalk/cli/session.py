@@ -30,8 +30,10 @@ from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, 
 from decktalk.events import Events
 from decktalk.files import json_text
 from decktalk.findings import ERRORS_FAIL, Finding, Threshold
+from decktalk.inputs import programs
 from decktalk.machine import Machine
 from decktalk.machine.run import hold_whole, raise_the_ceiling
+from decktalk.media.browser import UNTRUSTED
 from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import Cost, ErrorResult, Result, counted
@@ -256,6 +258,33 @@ class Session:
         """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
         if not self.flags.quiet and not self.flags.events:
             self.err.print(message)
+
+    # ---- the programs a project names --------------------------------------------------------------
+
+    def programs(self, project: Project, *, only: Sequence[int] | None = None, force: bool = False) -> Project:
+        """This run's project, with its programs allowed for this run alone when a person at a terminal said yes.
+
+        Only `[record] programs = "ask"` on a machine that trusts its pages asks. The question lists
+        every program the run would start, word for word, and is asked once. A yes reopens the
+        project with `record.programs=run` among this run's overrides. A no, or a run nobody can be
+        asked in, keeps the project as it was, and `record` then refuses with the key that allows it.
+        """
+        record = project.settings.record
+        if record.programs != programs.ASK or record.page_policy == UNTRUSTED or not self.asks:
+            return project
+        named = project.programs(only=only, force=force)
+        if not named:
+            return project
+        listed = "\n".join(f"  {program.named_by}: {program.shown}" for program in named)
+        question = (
+            f"This project names {counted(len(named), 'program')} that record would start with your user's rights, "
+            f"and each can read every file you can, .env included:\n{listed}\nRun them for this run?"
+        )
+        if not self.confirm(question):
+            return project
+        self._overrides = (*self._overrides, f"{programs.KEY}={programs.RUN}")
+        self.__dict__.pop("machine", None)
+        return self.project()
 
     # ---- the spend gate -----------------------------------------------------------------------
 

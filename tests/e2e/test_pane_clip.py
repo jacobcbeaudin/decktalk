@@ -26,7 +26,7 @@ from decktalk.findings import Code
 from decktalk.media import ffmpeg
 from decktalk.results import SkipReason
 from decktalk.settings import AudioConfig, VideoConfig
-from support.commands import HOSTILE_DIRECTORY, decktalk
+from support.commands import HOSTILE_DIRECTORY, RUNS_PROGRAMS, decktalk
 from support.timing_policy import BASE_BUDGET_SECONDS, FIRST_FETCH_SECONDS, budget
 from support.tools import machine_tools
 
@@ -78,7 +78,9 @@ def built(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple[Path, dict
     home = tmp_path_factory.mktemp("paneclip") / HOSTILE_DIRECTORY
     root = home / "paneclip"
     shutil.copytree(FIXTURE, root)
-    made = decktalk("--project", str(root), "build", "--no-spend", *SKIPPING, cwd=home, audit_every=EVERY_FRAME)
+    made = decktalk(
+        "--project", str(root), "build", "--no-spend", *RUNS_PROGRAMS, *SKIPPING, cwd=home, audit_every=EVERY_FRAME
+    )
     verified = decktalk("--project", str(root), "verify", cwd=home)
     with machine_tools():
         yield root, made, verified

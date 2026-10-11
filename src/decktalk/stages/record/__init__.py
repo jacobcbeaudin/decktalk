@@ -50,20 +50,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from decktalk.artifacts import RecordingChecks, RecordingLog, UnreadableCache, UnreadablePaidRecord
-from decktalk.errors import STOPS, InputError
+from decktalk.errors import STOPS, InputError, ToolError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
 from decktalk.files import drafted
 from decktalk.findings import Finding
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, PageSection, programs
 from decktalk.logs import cache_decision, within
 from decktalk.machine.run import Run
 from decktalk.media import browser, stepping
 from decktalk.media.origin import Allowed
 from decktalk.media.pagereport import PageReport, Recording
+from decktalk.media.pages import STOPPED_HINT
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
-from decktalk.settings import PROJECT_FILE
 from decktalk.stages import page_seconds, selects
 from decktalk.stages.pool import Halt, Pool
 from decktalk.stages.record import render
@@ -74,7 +74,13 @@ from decktalk.stages.record.capture import (
     said,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
-from decktalk.stages.record.pool import Chunk, Span, automatic, chunked
+from decktalk.stages.record.pool import (
+    Chunk,
+    Span,
+    automatic,
+    chunked,
+    run_deadline,
+)
 
 log = logging.getLogger(__name__)
 
@@ -223,7 +229,12 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
 
 
 def piece(
-    inputs: Inputs, opened: browser.Chromium, job: Job, chunk: Chunk, out: Path, check: Callable[[], None]
+    inputs: Inputs,
+    opened: browser.Chromium,
+    job: Job,
+    chunk: Chunk,
+    out: Path,
+    check: Callable[[], None],
 ) -> stepping.Piece:
     """Record one chunk of a page section by stepping its clock through the chunk's frames into `out`."""
     settings = inputs.settings
@@ -238,9 +249,9 @@ def piece(
         width=video.width,
         height=video.height,
         fps=video.fps,
-        skip_still=recorder.skip_still,
-        color_scheme=recorder.color_scheme,
+        record=recorder,
         motion=settings.motion,
+        name=f"section {job.section.number}",
         documents=inputs.documents(),
         check=check,
     )
@@ -253,7 +264,6 @@ def rendered_section(inputs: Inputs, job: Job, out: Path) -> Recording:
     recording a page's is: the video at the section's own path, and a report carrying the lanes it
     said it drew for verify to mask and measure.
     """
-    render.admitted(inputs.settings.record.page_policy, what=f"section {job.section.number} names a render_command")
     done = render.run_command(
         job.section.render_command,
         root=inputs.root,
@@ -437,7 +447,6 @@ def make_clips(inputs: Inputs, run: Run, *, force: bool) -> None:
     for clip in inputs.document.clips:
         if inputs.path(clip.file).is_file() and not force:
             continue
-        render.admitted(inputs.settings.record.page_policy, what=f"{PROJECT_FILE} makes {clip.file} with a command")
         made = render.make_clip(
             clip,
             root=inputs.root,
@@ -498,11 +507,16 @@ def record(
 ) -> RecordResult:
     """Record every page section this run names, and judge each one as soon as it is finished.
 
-    The clips the project makes come first. The sections that must be recorded are split into chunks,
+    Every program this run would start is held to `[record] programs` first, before any of them
+    starts. The clips the project makes come next. The sections that must be recorded are split into chunks,
     which go to a pool of recorders as `[record] concurrency` allows, longest first. The sections that are
     kept are reported by this
     thread, so every row is in section order.
+
+    Each chunk's page is held to its own deadlines, and the run as a whole to `run_deadline`, which
+    every recorder asks before every frame, so no page can hold the run open.
     """
+    programs.admitted(inputs.settings.record, inputs.programs(only, force=force))
     make_clips(inputs, run, force=force)
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
@@ -511,6 +525,8 @@ def record(
     recorder = inputs.settings.record
     workers = automatic(recorder.concurrency)
     sections, chunks = underway(inputs, run, todo, workers)
+    allowed = run_deadline(chunks, workers, recorder)
+    ends = time.monotonic() + allowed
 
     def opening(stack: ExitStack) -> browser.Chromium:
         return stack.enter_context(
@@ -522,7 +538,15 @@ def record(
         )
 
     def one(opened: browser.Chromium, chunk: Chunk, halt: Halt) -> SectionRecording | None:
-        return sections[chunk.section].record(opened, chunk, halt.check)
+        def check() -> None:
+            halt.check()
+            if time.monotonic() >= ends:
+                raise ToolError(
+                    f"record ran past its deadline of {allowed:g} seconds while section {chunk.section} was recorded.",
+                    hint=STOPPED_HINT,
+                )
+
+        return sections[chunk.section].record(opened, chunk, check)
 
     rows: list[SectionRecording] = []
     total = len(planned)

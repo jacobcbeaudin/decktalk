@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from decktalk.findings import ERRORS_FAIL, Code, Severity, Threshold
 from decktalk.pipeline import Stage
 from decktalk.results import BillingBasis, Layer, StatusResult
 from support.costs import a_cost
+from support.projects import MINIMAL_TOML, load_project
 
 from .conftest import ANSWERS, Fake, finding
 
@@ -329,3 +331,39 @@ def test_a_terminal_names_the_storyboard_before_the_price_and_the_question(
     said = " ".join(asked[0].split())
     assert said.index("Storyboard build/storyboard.html") < said.index("$2.14")
     assert [name for name, _, _ in fake.calls].count("storyboard") == 1
+
+
+DRAWN = '\n[[section]]\nnumber = 3\nrender_command = ["/usr/bin/true", "{out}"]\n'
+
+
+def asking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: Globals | None = None) -> tuple[Session, Path]:
+    """A session on a project with one program, on a machine whose `record.programs` is ask."""
+    load_project(tmp_path, MINIMAL_TOML + DRAWN)
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "no-machine.toml"))
+    monkeypatch.setenv("DECKTALK_RECORD_PROGRAMS", "ask")
+    made = Session(replace(flags or Globals(), project=tmp_path), command="record", spend=None, threshold=ERRORS_FAIL)
+    made.terminal = terminal()
+    return made, tmp_path
+
+
+@pytest.mark.parametrize("yes", [True, False])
+def test_ask_lists_every_program_once_and_a_yes_runs_them_for_this_run_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, yes: bool
+) -> None:
+    made, _root = asking(tmp_path, monkeypatch)
+    asked: list[str] = []
+    monkeypatch.setattr(made, "confirm", lambda question, *, default=False: asked.append(question) or yes)
+    project = made.programs(made.opened(None))
+    [question] = asked
+    assert """section 3's render_command: ["/usr/bin/true", "{out}"]""" in question
+    assert ".env" in question
+    assert project.settings.record.programs == ("run" if yes else "ask")
+
+
+@pytest.mark.parametrize("flags", [Globals(no_input=True), Globals(json_out=True)])
+def test_ask_with_nobody_to_ask_asks_nothing_and_leaves_the_refusal_to_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flags: Globals
+) -> None:
+    made, _root = asking(tmp_path, monkeypatch, flags)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    assert made.programs(made.opened(None)).settings.record.programs == "ask"

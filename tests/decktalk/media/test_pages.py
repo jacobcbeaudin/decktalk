@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import get_args
 
@@ -188,3 +189,77 @@ def test_a_call_into_a_page_on_the_held_clock_still_meets_its_deadline(tmp_path)
         with pytest.raises(ToolError, match="did not answer within 1 seconds"):
             pages.evaluate(page, "() => new Promise(() => {})", deadline_seconds=1.0)
         assert time.monotonic() - began < 10
+
+
+# ---- the watchdog holds a call the page cannot race from inside ----------------------------------
+
+
+WATCHED_SECONDS = 0.2
+"""A call deadline short enough that a watchdog test waits a moment, and long enough that a prompt call meets it."""
+
+
+class Closing:
+    """A page's close, which a stuck call waits on and which counts how often the watchdog asked for it."""
+
+    def __init__(self) -> None:
+        self.closed = threading.Event()
+        self.times = 0
+
+    def __call__(self) -> None:
+        self.times += 1
+        self.closed.set()
+
+    def stuck(self) -> None:
+        """A call into the page that answers only once the page is closed under it, as Playwright's does."""
+        assert self.closed.wait(WATCHED_SECONDS * 50), "the watchdog never closed the page"
+        raise PlaywrightError("Target page, context or browser has been closed")
+
+
+def test_a_call_that_outlives_its_deadline_closes_the_page_and_names_the_recording_and_the_frame():
+    """A page spinning its thread answers nothing, so the watchdog closes it and the call says why it ended."""
+    close = Closing()
+    with (
+        pages.Watchdog.watching(close, name="section 3", call_seconds=WATCHED_SECONDS, whole_seconds=60) as dog,
+        pytest.raises(ToolError) as raised,
+        dog.call("frame 7 (second 0.28)"),
+    ):
+        close.stuck()
+    assert close.times == 1
+    assert str(raised.value) == (
+        f"section 3 stopped answering at frame 7 (second 0.28): no answer in {WATCHED_SECONDS:g} seconds, "
+        "so its page was closed."
+    )
+
+
+def test_calls_that_answer_in_time_never_close_the_page():
+    """Each call has its own deadline, so many prompt calls together outlast one deadline and close nothing."""
+    close = Closing()
+    with pages.Watchdog.watching(close, name="section 1", call_seconds=WATCHED_SECONDS, whole_seconds=60) as dog:
+        for _ in range(4):
+            with dog.call("a prompt call"):
+                time.sleep(WATCHED_SECONDS / 4)
+    assert close.times == 0
+
+
+def test_a_recording_past_its_whole_deadline_is_stopped_at_its_next_check():
+    """A page that answers every call can still never get on, so the recording as a whole has a deadline too."""
+    close = Closing()
+    with pages.Watchdog.watching(close, name="section 2", call_seconds=60, whole_seconds=WATCHED_SECONDS) as dog:
+        dog.check()
+        time.sleep(WATCHED_SECONDS * 2)
+        with pytest.raises(ToolError) as raised:
+            dog.check()
+    assert str(raised.value) == f"section 2 ran past its deadline of {WATCHED_SECONDS:g} seconds."
+    assert close.times == 0
+
+
+def test_a_call_in_flight_when_the_recording_runs_out_closes_the_page_naming_the_whole_deadline():
+    """The call's own deadline is cut to the recording's end, which is the sentence it fails with."""
+    close = Closing()
+    with (
+        pages.Watchdog.watching(close, name="section 4", call_seconds=60, whole_seconds=WATCHED_SECONDS) as dog,
+        pytest.raises(ToolError) as raised,
+        dog.call("its load"),
+    ):
+        close.stuck()
+    assert str(raised.value).startswith(f"section 4 ran past its deadline of {WATCHED_SECONDS:g} seconds at its load")
