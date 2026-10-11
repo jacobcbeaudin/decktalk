@@ -72,7 +72,7 @@ group's log opens with its name and the one local command that reproduces it.
 | `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, history | Linux | pr, main |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
 | `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
-| `scaffold` | `uv run pytest -q -rs -m scaffold` | chromium, ffmpeg | Linux | schedule |
+| `scaffold` | `uv run pytest -q -rs -n auto -m scaffold` | chromium, ffmpeg | Linux | schedule |
 | `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | nothing beyond uv | Linux | main, schedule |
 <!-- checks:end -->
 

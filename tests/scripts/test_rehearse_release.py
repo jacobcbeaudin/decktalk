@@ -3,7 +3,7 @@
 The bump itself is release-please's own code, run by `next_version.mjs --bump`, and
 `tests/scripts/next_version.test.mjs` holds it to this repository's config. The whole rehearsal runs
 as its own row in `scripts/check.py`, so nothing here regenerates anything. These tests hold the
-judgement the rehearsal makes before any bump, and the copy it makes the bump in.
+judgement the rehearsal makes before any bump, the copy it makes the bump in, and the commands it runs there.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import check
 import rehearse_release as rehearse
 from support.paths import REPO
 
@@ -72,3 +73,15 @@ def test_the_copy_carries_the_checkout_and_no_repository_to_commit_to(tmp_path: 
     config = "release-please-config.json"
     assert (tmp_path / config).read_bytes() == (REPO / config).read_bytes()
     assert not (tmp_path / ".git").exists()
+
+
+def test_the_bumped_copy_builds_its_wheel_and_holds_it_to_the_tag_release_please_cuts() -> None:
+    """A candidate's wheel is named `0.6.0rc1` and tagged `v0.6.0-rc1`, which only a bumped build can show."""
+    *build, judge = check.BY_NAME["wheel"].commands
+    steps = rehearse.rehearsed("0.6.0-rc1")
+    assert steps[: steps.index(rehearse.GENERATED) + 1] == (
+        ("uv", "lock"),
+        (*rehearse.GENERATED, "--write"),
+        rehearse.GENERATED,
+    )
+    assert steps[-len(build) - 1 :] == (*build, (*judge, "--tag", "v0.6.0-rc1"))

@@ -66,12 +66,16 @@ DIST = REPO / "dist"
 
 @pytest.fixture(scope="module")
 def entries() -> list[str]:
-    """The file entries of the wheel `uv build` wrote for this version, directories left out."""
-    config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    version = config["project"]["version"]
-    wheels = sorted(DIST.glob(f"decktalk-{version}-*.whl"))
-    assert wheels, f"dist/ holds no wheel of decktalk {version}: run `uv build` first, as the wheel row does"
-    with zipfile.ZipFile(wheels[-1]) as wheel:
+    """The file entries of the one wheel `uv build` left in `dist/`, directories left out.
+
+    The wheel is found the way `scripts/check_wheel.py` finds it, as the one `decktalk-*.whl` there,
+    and never by the version text: a candidate is `0.6.0-rc1` in `pyproject.toml` and `0.6.0rc1` in
+    the wheel's name, and which version the wheel carries is check_wheel's `--tag` question.
+    """
+    wheels = sorted(DIST.glob("decktalk-*.whl"))
+    assert wheels, "dist/ holds no wheel of decktalk: run `uv build` first, as the wheel row does"
+    assert len(wheels) == 1, f"dist/ holds more than one wheel, so it is unclear which would ship: {wheels}"
+    with zipfile.ZipFile(wheels[0]) as wheel:
         return [name for name in wheel.namelist() if not name.endswith("/")]
 
 

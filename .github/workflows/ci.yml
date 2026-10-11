@@ -12,7 +12,15 @@ on:
     # The container installer runs and the scaffold build runs once a week, because both judge the
     # world outside this repository and both are too slow to gate a pull request.
     - cron: "0 7 * * 1"
+  # A manual run plans what a push to `main` gates, or the weekly rows when `moment` says
+  # `schedule`, so the slow rows can be run on demand without gating a pull request on them.
   workflow_dispatch:
+    inputs:
+      moment:
+        description: The table's moment to plan, `main` or the weekly `schedule`
+        type: choice
+        options: [main, schedule]
+        default: main
 
 # Every workflow reads the repository and nothing more. A job that needs a write grants it itself.
 permissions:
@@ -21,9 +29,13 @@ permissions:
 # One run per branch, the tip's. A second push supersedes the first rather than racing it, on
 # `main` as well. GitHub keeps one queued run per group and drops the older one when a third
 # arrives, so a queue could drop the tip's run and leave release.yml with no verdict to consume.
-# The tip is the only commit release.yml reads, so its run is the one worth keeping.
+# The tip is the only commit release.yml reads, so its run is the one worth keeping. The weekly
+# rows, on their schedule or chosen by hand, run in a group of their own, so they never cancel the
+# tip's run on `main` and it never cancels them.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: >-
+    ${{ github.workflow }}-${{ github.ref }}${{
+    (github.event_name == 'schedule' || inputs.moment == 'schedule') && '-schedule' || '' }}
   cancel-in-progress: true
 
 jobs:
@@ -46,14 +58,15 @@ jobs:
       - id: table
         name: Read the check table
         env:
-          # A pull request gates on `pr`, the weekly run gates on `schedule`, and a push to `main`
-          # and a manual run gate on `main`. These are the table's `MOMENTS`. A release runs no
+          # A pull request gates on `pr`, the weekly run gates on `schedule`, a push to `main` gates
+          # on `main`, and a manual run gates on the moment it chose. These are the table's
+          # `MOMENTS`. A manual run never releases, because release.yml acts on a push. A release runs no
           # check of its own, because release.yml consumes this run's verdict for the tip of `main`
           # through `workflow_run`, so a release gates on exactly what `main` gates on.
           MOMENT: >-
             ${{ github.event_name == 'pull_request' && 'pr'
             || github.event_name == 'schedule' && 'schedule'
-            || 'main' }}
+            || inputs.moment || 'main' }}
         run: |
           rows="$(uv run scripts/check.py --json --when "$MOMENT")"
           echo "groups=$(printf '%s' "$rows" | jq -c '[.[] | select(.group != "coverage")]')" >> "$GITHUB_OUTPUT"
