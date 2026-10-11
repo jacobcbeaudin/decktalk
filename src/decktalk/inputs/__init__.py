@@ -464,7 +464,7 @@ class Inputs:
             return aligned
         if take.voiced and take.timed_by is not TimedBy.PROVIDER:
             return EstimatedWords(words=tuple(estimated_words(take.spoken, take.sound_seconds)))
-        return self.take_words(take.digest) or _words_kind(take.digest)()
+        return self.take_words(take.digest) or (EstimatedWords() if is_placeholder(take.digest) else Words())
 
     def _aligned(self, key: str) -> AlignedWords | None:
         """The aligned words kept under `key`, or None when there are none that read under that key."""

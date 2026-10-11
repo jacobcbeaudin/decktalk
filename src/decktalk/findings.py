@@ -502,6 +502,14 @@ class Code(Enum):
         (Stage.NARRATE.value,),
         Severity.WARNING,
     )
+    TAKE_SILENT = (
+        "TAKE_SILENT",
+        "A voiced take holds no sound above the level its sound end is measured at, so its turn plays silence. Only "
+        "narrate raises it, on the run that makes the take.",
+        RaisedBy.PYTHON,
+        (Stage.NARRATE.value,),
+        Severity.WARNING,
+    )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",

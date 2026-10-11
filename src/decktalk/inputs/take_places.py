@@ -32,11 +32,14 @@ was told to replace is a rejected take: it is moved into the takes directory's `
 `<digest>.<n>`, with the first number from 1 free for both files, in the same step that the take
 voiced again replaces it, so moving the pair back under its digest plays it again. When no place holds
 a good copy and one holds a damaged copy, the take is refused with the sentence a paid record is
-refused with, because the next step would voice it again.
+refused with, because the next step would voice it again. A pair whose words file records no audio
+print was written before the print and can never be told good, so it counts as no copy: its take is
+bought again as one no place holds is, and the old pair is moved aside when the new one is written.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
@@ -83,6 +86,9 @@ PREFLIGHT_SUFFIX = ".preflight"
 HALF_PAIR = "Only one of its two files is there."
 """Why a place holding the audio or the words of a take, and not both, holds a damaged copy."""
 
+UNPRINTED = "Its words file records no audio print, so it cannot be told from a damaged copy."
+"""Why a pair written before the audio print counts as no copy, which its take is bought again for."""
+
 
 class Witness(Protocol):
     """What the take places tell the run they work for, which `Run` already is."""
@@ -113,6 +119,9 @@ class TakeFiles:
     """Some place holds a good copy, by the size its words recorded."""
     in_takes_directory: bool
     """The takes directory holds both files of the take, whatever they hold."""
+    unprinted: bool = False
+    """No place holds a good copy and some place holds a pair whose words record no audio print, so it is bought
+    again."""
     _fault: tuple[Path, str] | None = field(default=None, repr=False, compare=False)
     _workspace: Workspace | None = field(default=None, repr=False, compare=False)
 
@@ -140,6 +149,11 @@ class _Copy:
     @property
     def good(self) -> bool:
         return self.pair and self.fault is None
+
+    @property
+    def damaged(self) -> bool:
+        """Some file of the copy is there and it is not good, and it was not written before the audio print."""
+        return self.there and not self.good and self.fault != UNPRINTED
 
     def why(self) -> str:
         return self.fault or HALF_PAIR
@@ -171,7 +185,7 @@ class TakePlaces:
         copies = [self._judge(place, digest, whole=False) for place in self._places]
         takes = copies[0]
         good = next((copy for copy in copies if copy.good), None)
-        fault = next(((copy.place, copy.why()) for copy in copies if copy.pair and not copy.good), None)
+        fault = next(((copy.place, copy.why()) for copy in copies if copy.pair and copy.damaged), None)
         shown = good or takes
         return TakeFiles(
             digest,
@@ -179,6 +193,7 @@ class TakePlaces:
             shown.words,
             held=good is not None,
             in_takes_directory=takes.pair,
+            unprinted=good is None and any(copy.fault == UNPRINTED for copy in copies),
             _fault=fault,
             _workspace=workspace,
         )
@@ -310,7 +325,7 @@ class TakePlaces:
         if store is not None and store.good:
             self._copy_in(digest, store, takes, witness)
             return
-        damaged = next((copy for copy in (takes, store) if copy is not None and copy.there), None)
+        damaged = next((copy for copy in (takes, store) if copy is not None and copy.damaged), None)
         if damaged is not None:
             raise _damaged(workspace, section, digest, damaged.place, damaged.why())
 
@@ -573,16 +588,16 @@ def _pair_fault(audio: Path, words: Path, *, whole: bool = False) -> str | None:
     The words must read, and the audio must hold the number of bytes they recorded, which is cheap
     enough to ask on every lookup. `whole` also takes the audio's BLAKE3, which is what tells a
     swapped take of the same length, and which a run asks once per take and before every copy. A words
-    file with no fingerprint vouches only that its audio is not empty.
+    file written before the audio print says `UNPRINTED`.
     """
     try:
         said = ProviderWords.parse(words)
     except Unreadable as unread:
-        return str(unread)
+        return UNPRINTED if _unprinted(words) else str(unread)
+    if said is None:
+        return HALF_PAIR
     size = audio.stat().st_size
-    printed = said.audio if said is not None else None
-    if printed is None:
-        return None if size else f"{audio.name} is empty."
+    printed = said.audio
     if size != printed.bytes:
         return f"{audio.name} holds {size} bytes where {words.name} recorded {printed.bytes}."
     if whole and file_digest(audio) != printed.blake3:
@@ -590,8 +605,17 @@ def _pair_fault(audio: Path, words: Path, *, whole: bool = False) -> str | None:
     return None
 
 
+def _unprinted(words: Path) -> bool:
+    """Whether a words file that does not read is one written before the audio print: an object with no `audio`."""
+    try:
+        said = json.loads(words.read_bytes())
+    except (OSError, ValueError):  # silent: _pair_fault says what is wrong with a file that is not JSON
+        return False
+    return isinstance(said, dict) and "audio" not in said
+
+
 def _recorded_suffix(words: Path) -> str | None:
-    """The suffix a take's words file says its audio was written under, or None when it says none or cannot be read.
+    """The suffix a take's words file says its audio was written under, or None when it is not there or cannot be read.
 
     A words file that cannot be read is judged by `_pair_fault`, which says what is wrong with it, so
     here it only means the take is looked for under `VOICED_SUFFIX`, which every shipped voice writes.
@@ -600,7 +624,7 @@ def _recorded_suffix(words: Path) -> str | None:
         said = ProviderWords.parse(words)
     except Unreadable:  # silent: _pair_fault reads the same file and says what is wrong with it
         return None
-    return said.audio.suffix if said is not None and said.audio is not None else None
+    return said.audio.suffix if said is not None else None
 
 
 def _stamp(audio: Path, words: Path) -> tuple[object, ...]:

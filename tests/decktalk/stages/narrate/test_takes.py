@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -24,7 +25,7 @@ from decktalk.artifacts import (
 )
 from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
-from decktalk.media import audio
+from decktalk.media import audio, ffmpeg
 from decktalk.results import TakeOutcome, Word
 from decktalk.speech import SpeechFactory, canonical_text
 from decktalk.stages.cost import Buy
@@ -88,6 +89,31 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
     (inputs.workspace.takes / take_file("000000000000000d", TAKE_SUFFIX)).write_bytes(b"")
     write_placeholder_take(inputs, section, section.turns[0], "Open", "000000000000000d")
     assert asked == [pytest.approx(section.placeholder_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_placeholder_made_again_and_stopped_while_it_encodes_leaves_the_one_it_had(
+    inputs: Inputs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `--force` remake stopped mid-encode keeps the old audio whole beside its words, rather than a half file that
+    `find` would call held and every later run would play."""
+    inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    digest = placeholder_inputs(inputs, section).digest
+    _row, (made, _words) = write_placeholder_take(inputs, section, section.turns[0], "Open", digest)
+    made.write_bytes(b"the whole placeholder")
+
+    def stopped(*args: str) -> None:
+        Path(args[-1]).write_bytes(b"half")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(ffmpeg, "run", stopped)
+    with pytest.raises(KeyboardInterrupt):
+        write_placeholder_take(inputs, section, section.turns[0], "Open", digest)
+    assert made.read_bytes() == b"the whole placeholder"
+    assert sorted(path.name for path in inputs.workspace.narrate_dir.iterdir()) == sorted(
+        [made.name, words_file(digest)]
+    )
 
 
 def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Watched) -> None:

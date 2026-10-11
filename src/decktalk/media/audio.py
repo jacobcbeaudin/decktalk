@@ -16,8 +16,10 @@ from __future__ import annotations
 import array
 import io
 import math
+import os
 import re
 import shutil
+import tempfile
 import wave
 from dataclasses import dataclass
 from pathlib import Path
@@ -111,7 +113,8 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
     """The audio of a placeholder: silence with a soft click at each word start.
 
     The clicks let `verify` measure the finished file's audio against its picture, and
-    they make a silent draft reviewable for pacing.
+    they make a silent draft reviewable for pacing. The samples are written to a hidden WAV of a name
+    no other writer holds, beside `path`, and removed however the encode ends.
     """
     n = round(duration * sample_rate)
     samples = array.array("h", bytes(PCM_BYTES_PER_SAMPLE * n))
@@ -130,14 +133,18 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
         first, last = max(start, 0), min(start + click, n)
         if first < last:
             samples[first:last] = template[first - start : last - start]
-    wav = path.with_suffix(".clicks.wav")
-    with wave.open(str(wav), "wb") as fh:
-        fh.setnchannels(1)
-        fh.setsampwidth(PCM_BYTES_PER_SAMPLE)
-        fh.setframerate(sample_rate)
-        fh.writeframes(samples.tobytes())
-    ffmpeg.run(*ffmpeg.source(wav), "-c:a", "libmp3lame", "-b:a", bitrate, str(path))
-    wav.unlink()
+    handle, name = tempfile.mkstemp(prefix=f".{path.stem}.", suffix=".clicks.wav", dir=path.parent)
+    os.close(handle)
+    wav = Path(name)
+    try:
+        with wave.open(str(wav), "wb") as fh:
+            fh.setnchannels(1)
+            fh.setsampwidth(PCM_BYTES_PER_SAMPLE)
+            fh.setframerate(sample_rate)
+            fh.writeframes(samples.tobytes())
+        ffmpeg.run(*ffmpeg.source(wav), "-c:a", "libmp3lame", "-b:a", bitrate, str(path))
+    finally:
+        wav.unlink(missing_ok=True)
 
 
 def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int) -> list[int]:
@@ -181,8 +188,9 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     """Join audio files back to back, each placed by its `Placement`.
 
     A file plays for its `play` seconds and is cut there, fading out over its last
-    DECLICK_FADE_SECONDS, and a file shorter than that is followed by silence up to it. Its tail is
-    silence after that, whatever the file holds past the cut. Where every file lands, and what sounds
+    DECLICK_FADE_SECONDS, and a file shorter than that is followed by silence up to it. A file that
+    plays for no samples, such as a take whose sound end measured 0, is silence of its placed length.
+    Its tail is silence after that, whatever the file holds past the cut. Where every file lands, and what sounds
     there, is therefore arithmetic over the placements and never depends on the files around it.
     """
     inputs = [arg for part in parts for arg in ffmpeg.source(part.path)]
@@ -193,12 +201,14 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
             keep = round(part.play * sample_rate)
             fade = min(keep, round(DECLICK_FADE_SECONDS * sample_rate))
             whole = round((part.play + part.tail) * sample_rate)
-            chain += [
-                f"aresample={sample_rate}",
-                f"atrim=end_sample={keep}",
-                f"afade=t=out:ss={keep - fade}:ns={fade}",
-                f"apad=whole_len={whole}",
-            ]
+            # A file that keeps no sample plays nothing, so it is silenced and held to its placed length
+            # rather than faded over no samples, which afade refuses.
+            shape = (
+                [f"atrim=end_sample={keep}", f"afade=t=out:ss={keep - fade}:ns={fade}", f"apad=whole_len={whole}"]
+                if keep
+                else ["volume=0", f"apad=whole_len={whole}", f"atrim=end_sample={whole}"]
+            )
+            chain += [f"aresample={sample_rate}", *shape]
         elif part.tail > 0:
             chain += [f"aresample={sample_rate}", f"apad=pad_len={round(part.tail * sample_rate)}"]
         delay = round(part.lead * 1000)

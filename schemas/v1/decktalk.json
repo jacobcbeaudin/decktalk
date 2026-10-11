@@ -343,7 +343,8 @@
           ],
           "x-decides": [
             "CUT_SPEECH",
-            "TAKE_WORD_CUT"
+            "TAKE_WORD_CUT",
+            "TAKE_SILENT"
           ],
           "x-environment": "DECKTALK_NARRATION_SOUND_END_NOISE_DBFS"
         },
@@ -363,7 +364,8 @@
           ],
           "x-decides": [
             "CUT_SPEECH",
-            "TAKE_WORD_CUT"
+            "TAKE_WORD_CUT",
+            "TAKE_SILENT"
           ],
           "x-environment": "DECKTALK_NARRATION_SOUND_END_MIN_RUN_SECONDS"
         }

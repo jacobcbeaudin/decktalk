@@ -69,8 +69,8 @@ PLACEHOLDER_SUFFIX = ".mp3"
 """What a placeholder is written under, which is the mp3 of click audio DeckTalk writes itself."""
 
 VOICED_SUFFIX = ".mp3"
-"""Truth: what every shipped adapter and a host's provider write a voiced take as, which a take whose words file
-records no suffix is looked for under."""
+"""Truth: what every shipped adapter and a host's provider write a voiced take as, which a take whose words file is
+not there or does not read is looked for under."""
 
 FIELD_SEPARATOR = "\n"
 """What joins the fields of a digest's payload, which no field but the last may hold."""
@@ -257,7 +257,7 @@ class Take(Model):
     )
     audio_blake3: str | None = Field(
         description="The BLAKE3 of the audio this row was measured on, as the take's words file records it, or null "
-        "on a placeholder or a take whose words file records none.",
+        "on a placeholder.",
     )
 
     @model_validator(mode="after")

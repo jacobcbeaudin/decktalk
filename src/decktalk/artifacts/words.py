@@ -22,11 +22,10 @@ because that decides what a broken file costs:
 Only `ProviderWords` is a paid record, refused rather than built again when it does not read. It also
 carries `audio`, the size and BLAKE3 of the take it was sent with, written in the same atomic step as
 that take. A take's name is the digest of what was asked for, so a truncated or swapped audio file
-keeps a valid name forever, and only this fingerprint tells a damaged copy from a good one. A words
-file with no fingerprint is read as it is and never filled in, because that would rewrite a paid
-record. A clip's
-words file is the author's own input once a `[[section]] words` key names it, so `Inputs.clip_words`
-refuses one that does not read as `INPUT`, naming that key, and never asks for it to be deleted.
+keeps a valid name forever, and only this fingerprint tells a damaged copy from a good one, so a
+words file without one does not read. A clip's words file is the author's own input once a
+`[[section]] words` key names it, so `Inputs.clip_words` refuses one that does not read as `INPUT`,
+naming that key, and never asks for it to be deleted.
 
 A take plays to its sound end and is cut there, so every reader of the words a take plays reads
 them `cut_at` that sound end: a word given to the take's trailing silence ends where the sound does.
@@ -120,9 +119,7 @@ class ProviderWords(Words):
     paid: ClassVar[bool] = True
     regained: ClassVar[str] = "only voicing this take again gives these words back"
 
-    audio: AudioPrint | None = Field(
-        None, description="The size and BLAKE3 of the take these words came with, or null when the file carries none."
-    )
+    audio: AudioPrint = Field(description="The size, BLAKE3 and suffix of the take these words came with.")
     timed: bool = Field(
         True,
         description="Whether the provider sent word times with the take. False holds no words, and the take is timed "

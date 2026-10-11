@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import re
 import shutil
 import threading
 import time
@@ -839,6 +841,32 @@ def test_a_damaged_take_is_bought_again_when_the_run_is_told_to_replace_it_and_m
     assert len(counted.voice.requests) == sent + 1
 
 
+def test_takes_whose_words_files_record_no_audio_print_are_bought_again_in_one_run(
+    inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
+) -> None:
+    """Only the audio print tells a good copy of a take from a damaged one, so a pair written before it is no copy:
+    one run names every such take, and one run that may spend buys them all again and moves the old pairs aside."""
+    bought = narrate(inputs, make_run(inputs, spend=True).run)
+    takes = inputs.workspace.takes
+    for row in bought.sections:
+        words = takes / words_file(row.digest)
+        said = json.loads(words.read_text(encoding="utf-8"))
+        del said["audio"]
+        words.write_text(json.dumps(said), encoding="utf-8")
+    sent = len(counted.voice.requests)
+    rehearsed = narrate(inputs, make_run(inputs).run)
+    assert [row.outcome for row in rehearsed.sections] == [TakeOutcome.PLACEHOLDER] * 3
+    told = {found.location.section for found in rehearsed.findings if "no audio print" in found.message}
+    assert told == {1, 2, 3}
+    assert len(counted.voice.requests) == sent
+    result = narrate(inputs, make_run(inputs, spend=True).run)
+    assert [row.outcome for row in result.sections] == [TakeOutcome.VOICED] * 3
+    assert len(counted.voice.requests) == sent + 3
+    assert unreadable(takes) == {f"{words_file(row.digest)}.unreadable" for row in bought.sections} | {
+        f"{take_file(row.digest, TAKE_SUFFIX)}.unreadable" for row in bought.sections
+    }
+
+
 @pytest.mark.usefixtures("counted")
 def test_a_run_reads_the_take_index_twice(
     inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
@@ -857,6 +885,7 @@ def test_a_run_reads_the_take_index_twice(
     assert len(reads) == 2
 
 
+@pytest.mark.usefixtures("quiet_sound_end")
 def test_a_take_bought_again_re_places_every_section_that_plays_it(
     make_inputs: Callable[..., Inputs],
     make_run: Callable[..., Watched],
@@ -1430,7 +1459,7 @@ def test_a_bought_take_records_the_size_and_blake3_of_its_audio_in_its_words_fil
     for row in result.sections:
         audio_file = inputs.workspace.takes / take_file(row.digest, TAKE_SUFFIX)
         words = ProviderWords.read(inputs.workspace.takes / words_file(row.digest))
-        assert words is not None and words.audio is not None
+        assert words is not None
         assert words.audio.bytes == audio_file.stat().st_size
         assert words.audio.blake3 == file_digest(audio_file)
     assert counted.built == 1
@@ -1617,7 +1646,6 @@ def agrees(place: Path, digest: str) -> bool:
     audio_file = place / take_file(digest, TAKE_SUFFIX)
     return (
         words is not None
-        and words.audio is not None
         and words.audio.bytes == audio_file.stat().st_size
         and words.audio.blake3 == file_digest(audio_file)
     )
@@ -2102,6 +2130,60 @@ class Built:
         return self.voice
 
 
+SAME_WORDS = """# Notes
+
+## 1. Open
+
+And it rolls.
+
+## 2. Middle
+
+[voice guest]
+
+And it rolls.
+
+## 3. Close
+
+Every picture waited for its word.
+"""
+"""Section 1 is the paid narrator and section 2 the free guest, and both say the same words."""
+
+
+def test_a_down_free_voice_and_a_paid_placeholder_of_the_same_words_write_their_placeholder_once(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    voices: dict[str, SpeechFactory],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without --spend section 1 plays a placeholder of its words, and section 2's free guest is down, so it stands in
+    with a placeholder of the same words, whose digest is over the text alone. The pool runs the two turns at once.
+
+    Each encode waits a moment for a second encode of its digest, which is a schedule the pool allows, so two writers
+    of one placeholder meet there. One placeholder is written once, by one writer, under a name of its own.
+    """
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = Built(FakeVoice()).factory, Built(Unreachable()).factory
+    project = make_inputs(toml=WITH_A_GUEST, script=SAME_WORDS)
+    written: dict[str, int] = {}
+    meet: dict[str, threading.Barrier] = {}
+    lock = threading.Lock()
+    fake = ffmpeg.run
+
+    def encode(*args: str) -> None:
+        fake(*args)
+        found = re.search(rf"{PLACEHOLDER_PREFIX}[0-9a-f]+", Path(args[-1]).name)
+        if found is None:
+            return
+        with lock:
+            written[found.group()] = written.get(found.group(), 0) + 1
+            both = meet.setdefault(found.group(), threading.Barrier(2, timeout=1))
+        with contextlib.suppress(threading.BrokenBarrierError):
+            both.wait()
+
+    monkeypatch.setattr(ffmpeg, "run", encode)
+    narrate(project, make_run(project).run)
+    assert written and set(written.values()) == {1}, f"a placeholder written more than once: {written}"
+
+
 def test_each_section_is_voiced_by_the_provider_of_its_own_voice(
     make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
@@ -2432,7 +2514,7 @@ def test_each_turn_opens_and_closes_its_own_section_line(
     assert len(fake_voice.requests) == len(keys)
 
 
-@pytest.mark.usefixtures("fake_ffmpeg")
+@pytest.mark.usefixtures("fake_ffmpeg", "quiet_sound_end")
 def test_a_word_its_voice_placed_after_the_take_sound_ends_is_a_finding_and_plays_with_no_length(
     inputs: Inputs, make_run: Callable[..., Watched], fake_voice: FakeVoice
 ) -> None:
@@ -2447,6 +2529,29 @@ def test_a_word_its_voice_placed_after_the_take_sound_ends_is_a_finding_and_play
     lead = inputs.lead_seconds(1)
     assert heard[-1] == Word(word="there", start=round(lead + SOUND_END, 3), end=round(lead + SOUND_END, 3))
     assert inputs.takes(required=True).sections[0].speech_end_seconds == SOUND_END
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_voiced_take_with_no_sound_is_a_finding_naming_its_turn_and_not_a_cut_word(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    fake_voice: FakeVoice,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A voice that answered with silence was paid, and its take is judged as silent when it is made, naming the turn.
+
+    Every word of it falls at or past a sound end of 0, so the take is not also judged as cutting each word.
+    """
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.0)
+    fake_voice.words = [Word(word="And", start=0.0, end=0.2), Word(word="rolls", start=0.3, end=0.6)]
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    result = narrate(project, make_run(project, spend=True).run, only=[2])
+    silent = [found for found in result.findings if found.code is Code.TAKE_SILENT]
+    assert [found.location.section for found in silent] == [2, 2, 2]
+    assert all(found.severity is Severity.WARNING for found in silent)
+    assert "Section 2's take of turn 2" in silent[1].message
+    assert "decktalk narrate --turn 2.2 --spend" in silent[1].message
+    assert not [found for found in result.findings if found.code is Code.TAKE_WORD_CUT]
 
 
 # ---- buying one turn again ------------------------------------------------------------------------
@@ -2732,3 +2837,26 @@ def test_a_rejected_take_moved_back_is_what_the_narration_plays_again_whichever_
     turn = {row.turn_key: row for row in index.sections}[TurnKey(2, 2)]
     assert (turn.duration_seconds, turn.sound_end_seconds) == (1.0, 0.8)
     assert turn.speech_end_seconds == 0.8, "the moved-back take's words are cut at its own sound end, not the other's"
+
+
+REAL_FFMPEG = {name: getattr(ffmpeg, name) for name in ("run", "stderr", "raw", "probe_duration", "has_audio")}
+"""The ffmpeg seam as the module ships it, read before any fixture replaces it, for the tests that join real audio."""
+
+
+@pytest.mark.media
+def test_a_section_with_no_words_joins_into_the_narration_with_the_real_encoder(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A page section the script gives no narration plays a silent placeholder, whose sound ends at 0.
+
+    Its join once asked ffmpeg to fade over no samples, so the whole narration failed with ffmpeg's text.
+    """
+    for name, real in REAL_FFMPEG.items():
+        monkeypatch.setattr(ffmpeg, name, real)
+    project = make_inputs(script=SCRIPT.replace("It steps down the bowl.\n", ""))
+    narrate(project, make_run(project).run)
+    rows = project.takes(required=True).sections
+    assert [(row.section, row.sound_end_seconds) for row in rows][1] == (2, 0.0)
+    assert ffmpeg.probe_duration(project.workspace.narration_path) == pytest.approx(
+        sum(row.lead_seconds + row.sound_seconds + row.tail_seconds for row in rows), abs=0.06
+    )

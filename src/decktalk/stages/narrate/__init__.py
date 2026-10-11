@@ -49,11 +49,14 @@ plays them without asking the server, and `--force` asks again. A take with none
 answering plays estimated words with a `TAKE_UNALIGNED` finding.
 
 A take whose voice or aligner placed a word after the take's sound ends, where the join cuts it,
-plays that word with no length, with a `TAKE_WORD_CUT` finding.
+plays that word with no length, with a `TAKE_WORD_CUT` finding. A voiced take with no sound at all,
+whose sound ends where it starts, plays silence of its placed length, with a `TAKE_SILENT` finding
+that names the turn to buy again.
 
-`TAKE_MISSING`, `TAKE_UNALIGNED` and `TAKE_WORD_CUT` are the three judgements this stage makes. What a script says badly
-is `check`'s to report, because a judgement belongs where an author can act on it before anything is
-bought, and what the voice must not receive at all is refused here before a single request is sent.
+`TAKE_MISSING`, `TAKE_UNALIGNED`, `TAKE_WORD_CUT` and `TAKE_SILENT` are the four judgements this stage
+makes. What a script says badly is `check`'s to report, because a judgement belongs where an author can
+act on it before anything is bought, and what the voice must not receive at all is refused here before
+a single request is sent.
 """
 
 from __future__ import annotations
@@ -61,7 +64,8 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 
 from decktalk.artifacts import Take, Takes, TurnKey, is_placeholder
@@ -109,6 +113,7 @@ from decktalk.stages.narrate.takes import (
     gap_after,
     join_takes,
     place,
+    silent_takes,
     take_row,
     write_placeholder_take,
 )
@@ -176,7 +181,7 @@ def narrate(
         rows, made, unreached = _write_takes(inputs, run, plan.takes, providers, progress)
         rows, unaligned = time_takes(inputs, run, rows, previous, made=set(progress.made), force=force)
         index = _index(inputs, rows)
-        cut = cut_words(inputs, index, set(progress.made))
+        cut = silent_takes(inputs, index, set(progress.made)) + cut_words(inputs, index, set(progress.made))
         run.wrote(index.write(inputs.workspace.takes_path))
         run.wrote(join_takes(inputs, index))
     except HALTS as failure:
@@ -505,6 +510,24 @@ class _Progress:
     lock: threading.Lock = field(default_factory=threading.Lock)
     down: defaultdict[str, threading.Event] = field(default_factory=lambda: defaultdict(threading.Event))
     """Set, by provider, once a free voice did not answer, so no turn after it waits on that provider again."""
+    placeholders: dict[str, threading.Lock] = field(default_factory=dict)
+    """One lock per placeholder digest, held while its placeholder is written, so one digest has one writer."""
+    written: set[str] = field(default_factory=set)
+    """The placeholder digests this run has written, which a second turn of the same words plays as written."""
+
+    @contextmanager
+    def writing(self, digest: str) -> Iterator[bool]:
+        """Hold the one writer's place for a placeholder digest, answering whether this run already wrote it.
+
+        A placeholder's digest is over its words alone, so a planned placeholder and a stand-in for a
+        free voice that did not answer can share one, and the pool may reach both at once.
+        """
+        with self.lock:
+            one = self.placeholders.setdefault(digest, threading.Lock())
+        with one:
+            done = digest in self.written
+            yield done
+            self.written.add(digest)
 
 
 def _one_take(
@@ -547,7 +570,11 @@ def _one_take(
         return _stand_in(inputs, run, plan, chapter, progress)
     if plan.outcome is TakeOutcome.VOICED:
         return _buy(inputs, run, plan, chapter, digest, provider, progress, down=down)
-    row, files = write_placeholder_take(inputs, plan.section, plan.turn, chapter, digest)
+    with progress.writing(digest) as written:
+        if written:
+            # Another turn of this run wrote this placeholder, such as a stand-in with the same words.
+            return take_row(inputs, plan.section, plan.turn, chapter, digest), TakeOutcome.PLACEHOLDER
+        row, files = write_placeholder_take(inputs, plan.section, plan.turn, chapter, digest)
     for path in files:
         run.wrote(path)
     return row, TakeOutcome.PLACEHOLDER

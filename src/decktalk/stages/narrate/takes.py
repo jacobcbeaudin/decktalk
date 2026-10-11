@@ -41,6 +41,7 @@ from decktalk.artifacts import (
     words_file,
 )
 from decktalk.events import TakeCharged
+from decktalk.files import drafted
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection, Turn, estimated_words
@@ -106,7 +107,7 @@ def first_words(inputs: Inputs, spoken: str, digest: str, sound_end: float) -> t
     if own is not None and not own.timed:
         return EstimatedWords(words=tuple(estimated_words(spoken, sound_end))), own
     if said is None:
-        return (EstimatedWords() if is_placeholder(digest) else ProviderWords()), None
+        return (EstimatedWords() if is_placeholder(digest) else Words()), None
     return said, own
 
 
@@ -139,7 +140,7 @@ def take_row(inputs: Inputs, section: ScriptSection, turn: Turn, chapter: str, d
         timed_by=timed_by,
         alignment=alignment,
         model_digest=said.model_digest if said is not None else None,
-        audio_blake3=said.audio.blake3 if said is not None and said.audio is not None else None,
+        audio_blake3=said.audio.blake3 if said is not None else None,
     )
     return retimed(place(inputs, row, gap=gap_after(inputs, section, turn)), words)
 
@@ -161,20 +162,48 @@ def take_label(section: int, turn: int, *, several: bool) -> str:
     return f"Section {section}'s take of turn {turn}" if several else f"Section {section}'s take"
 
 
+def silent_takes(inputs: Inputs, index: Takes, made: Collection[TurnKey]) -> list[Finding]:
+    """A `TAKE_SILENT` finding for every voiced turn this run made whose take's sound ends where it starts.
+
+    Such a take is silence, or speech quieter than `[narration] sound_end_noise_dbfs` all the way
+    through, so the join plays it as silence of its placed length. Its voice was paid, so the finding
+    names the turn to buy again rather than failing the join.
+    """
+    several = Counter(row.section for row in index.sections)
+    found: list[Finding] = []
+    for row in index.sections:
+        if row.turn_key not in made or not row.voiced or row.sound_seconds > 0:
+            continue
+        number = row.section
+        take = take_label(number, row.turn, several=several[number] > 1)
+        found.append(
+            judge(
+                Code.TAKE_SILENT,
+                f"{take}, {row.digest}, holds no sound above [narration] sound_end_noise_dbfs, so its turn plays "
+                f"silence. Run decktalk narrate --turn {number}.{row.turn} --spend to buy it again, or lower "
+                "[narration] sound_end_noise_dbfs if it holds quiet speech.",
+                Location(where=f"section {number}", file=inputs.relative(inputs.script_path), section=number),
+                stage=Stage.NARRATE,
+            )
+        )
+    return found
+
+
 def cut_words(inputs: Inputs, index: Takes, made: Collection[TurnKey]) -> list[Finding]:
     """A `TAKE_WORD_CUT` finding for every turn this run made whose take places a word after its sound ends.
 
     The join cuts each take at its sound end, so a word its provider or its aligner placed there is
     never heard, and its words play it with no length at the sound end. Such a word says the sound end
     was measured early, on speech quieter than `[narration] sound_end_noise_dbfs`. Words DeckTalk
-    estimated are spread over the take's sound, so a take that plays them is never judged.
+    estimated are spread over the take's sound, so a take that plays them is never judged, and a take
+    with no sound at all is `silent_takes`' to judge.
     """
     several = Counter(row.section for row in index.sections)
     found: list[Finding] = []
     for row in index.sections:
-        if row.turn_key not in made or not row.voiced or row.timed_by is TimedBy.ESTIMATED:
-            continue
         end = row.sound_seconds
+        if row.turn_key not in made or not row.voiced or row.timed_by is TimedBy.ESTIMATED or end <= 0:
+            continue
         lost = [word.word for word in inputs.take_words_of(row).words if word.start >= end]
         if not lost:
             continue
@@ -197,20 +226,26 @@ def cut_words(inputs: Inputs, index: Takes, made: Collection[TurnKey]) -> list[F
 def write_placeholder_take(
     inputs: Inputs, section: ScriptSection, turn: Turn, chapter: str, digest: str
 ) -> tuple[Take, list[Path]]:
-    """Write one turn's placeholder click audio and its estimated words, and give back the row and the files."""
+    """Write one turn's placeholder click audio and its estimated words, and give back the row and the files.
+
+    The audio is encoded to a draft and moved into place whole, the way a recording is, so a remake
+    stopped while it encodes leaves the placeholder it had rather than a half file `find` calls held.
+    One digest's placeholder is written by one writer at a time, which is the caller's to arrange.
+    """
     cfg = inputs.settings.narration
     home = inputs.workspace.narrate_dir
     out = home / take_file(digest, PLACEHOLDER_SUFFIX)
     duration = turn.placeholder_seconds(cfg)
     words = turn.estimated_words(duration)
     clicks = [word.start for word in words] + ([words[-1].end] if words else [])
-    audio.write_clicks(
-        out,
-        duration + PLACEHOLDER_CLOSE_SECONDS,
-        clicks,
-        sample_rate=inputs.settings.audio.sample_rate,
-        bitrate=cfg.mp3_bitrate,
-    )
+    with drafted(out) as draft:
+        audio.write_clicks(
+            draft,
+            duration + PLACEHOLDER_CLOSE_SECONDS,
+            clicks,
+            sample_rate=inputs.settings.audio.sample_rate,
+            bitrate=cfg.mp3_bitrate,
+        )
     written = home / words_file(digest)
     estimated = EstimatedWords(words=tuple(words))
     estimated.write(written)
@@ -284,6 +319,7 @@ __all__ = [
     "join_takes",
     "place",
     "retimed",
+    "silent_takes",
     "sound_end_of",
     "take_label",
     "take_row",

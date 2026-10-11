@@ -380,7 +380,7 @@ def test_a_voiced_take_answers_the_words_its_provider_sent_moved_by_its_lead(tmp
     take = a_take(1, lead_seconds=0.5)
     narrated(inputs, take, words={1: HELLO})
     read = inputs.take_words_of(take)
-    assert type(read) is ProviderWords and read.audio is not None
+    assert type(read) is ProviderWords
     heard = inputs.words(1)
     assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
     assert heard.estimated is False
@@ -426,9 +426,10 @@ def test_a_section_with_no_take_answers_no_words(tmp_path, missing):
     assert type(heard) is Words and heard.words == ()
 
 
-@pytest.mark.parametrize(("paid", "kind"), [(True, ProviderWords), (False, EstimatedWords)])
+@pytest.mark.parametrize(("paid", "kind"), [(True, Words), (False, EstimatedWords)])
 def test_a_take_whose_words_file_is_gone_answers_no_words_of_its_own_kind(tmp_path, paid, kind):
-    """A placeholder whose estimated words were deleted still says its times are estimates."""
+    """A placeholder whose estimated words were deleted still says its times are estimates, and a voiced take's say
+    none."""
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
     take = a_take(1, voiced=paid)
     write_takes(inputs, take)

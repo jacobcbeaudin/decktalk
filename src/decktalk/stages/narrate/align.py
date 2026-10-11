@@ -39,7 +39,6 @@ from decktalk.artifacts import (
     Takes,
     TimedBy,
     TurnKey,
-    Words,
     alignment_match,
 )
 from decktalk.artifacts.words import WORDS_SUFFIX
@@ -78,12 +77,6 @@ NO_ALIGNER = Unaligned(
 )
 """Why a take was not aligned on a machine whose host gave it no aligner, which no aligner of DeckTalk's can mend."""
 
-NO_PRINT = Unaligned(
-    "its words file carries no fingerprint to key aligned words by",
-    lambda n: f"Run decktalk narrate --section {n} --replace-voiced to make the take again.",
-)
-"""Why a take whose words file records no audio print is never aligned."""
-
 UNASKED = Unaligned("no aligner has timed it", _then_run(START))
 """Why a take plays estimated words before narrate asks the aligner DeckTalk ships, which is down or not yet asked."""
 
@@ -93,15 +86,12 @@ UNASKED_BY_HOST = Unaligned(
 """The same, on a machine whose host gave it an aligner of its own, which DeckTalk does not start."""
 
 
-def before_narrate(aligners: Mapping[str, object], said: Words | None) -> Unaligned:
+def before_narrate(aligners: Mapping[str, object]) -> Unaligned:
     """Why a voiced take whose voice sent no word times plays estimated words, told without asking any aligner.
 
-    `said` is the take's own words file. A file that records no audio print is never aligned, and
-    otherwise the reason is the machine's: it answers for no aligner, for the one DeckTalk ships, or
-    for its host's own. This is what `status` tells an author, who reads it without a socket opened.
+    The reason is the machine's: it answers for no aligner, for the one DeckTalk ships, or for its
+    host's own. This is what `status` tells an author, who reads it without a socket opened.
     """
-    if isinstance(said, ProviderWords) and not said.timed and said.audio is None:
-        return NO_PRINT
     factory = aligners.get(ALIGNER)
     if factory is None:
         return NO_ALIGNER
@@ -217,10 +207,7 @@ def time_takes(
 
 
 def _untimed(inputs: Inputs, state: _Pass, made: Collection[TurnKey]) -> list[_Untimed]:
-    """The takes this run made whose voice sent no word times, in section and turn order.
-
-    A take whose words file carries no audio print cannot be keyed, so it gets its finding here instead.
-    """
+    """The takes this run made whose voice sent no word times, in section and turn order."""
     untimed: list[_Untimed] = []
     for key in sorted(made):
         row = state.rows.get(key)
@@ -228,9 +215,6 @@ def _untimed(inputs: Inputs, state: _Pass, made: Collection[TurnKey]) -> list[_U
             continue
         said = inputs.take_words(row.digest)
         if not isinstance(said, ProviderWords) or said.timed:
-            continue
-        if said.audio is None:
-            state.found.append(_unaligned(inputs, state, key, NO_PRINT))
             continue
         untimed.append(_Untimed(key, row.digest, said.audio.blake3, spoken_words(row.spoken)))
     return untimed

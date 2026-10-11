@@ -279,7 +279,9 @@ words, from cue times and captions to the word lanes and `decktalk words`, reads
 that ends past the sound end ends at it, and `speech_end_seconds` in the take index is where that cut
 last word ends. The words file itself keeps what its voice sent. A word that starts at or past the sound
 end is never heard, so it plays with no length at the sound end and `narrate` reports it as
-[`TAKE_WORD_CUT`](/reference/findings/TAKE_WORD_CUT).
+[`TAKE_WORD_CUT`](/reference/findings/TAKE_WORD_CUT). A voiced take with no sound at all, whose sound
+end is 0, plays silence of its placed length, and the run that makes it reports it as
+[`TAKE_SILENT`](/reference/findings/TAKE_SILENT), naming the turn to buy again.
 
 {/* sample: words-json, the words file of section 1's take after the same run, cut to its first three words */}
 ```json takes/1e039d03eff9853a.words.json

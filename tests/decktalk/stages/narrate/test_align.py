@@ -16,12 +16,10 @@ import pytest
 
 from decktalk.artifacts import (
     AlignedWords,
-    ProviderWords,
     Take,
     Takes,
     TimedBy,
     TurnKey,
-    words_file,
 )
 from decktalk.errors import Cancelled, ProviderError
 from decktalk.events import RunLog, StageProgress, TakeCharged
@@ -541,19 +539,6 @@ def test_a_machine_with_no_aligner_plays_estimated_words_and_says_so(
     result = narrate(inputs, watched.run)
     assert unaligned(result) == [1, 2, 3]
     assert "this machine answers for no aligner" in result.findings[0].message
-
-
-@pytest.mark.usefixtures("wordless", "aligner")
-def test_a_take_whose_words_file_carries_no_fingerprint_is_never_aligned(
-    inputs: Inputs, make_run: Callable[..., Watched]
-) -> None:
-    narrate(inputs, make_run(inputs).run)
-    digest = rows(inputs)[1].digest
-    ProviderWords(timed=False, model_digest=SERVED).write(inputs.workspace.takes / words_file(digest))
-    result = narrate(inputs, make_run(inputs).run)
-    (found,) = [found for found in result.findings if found.code is Code.TAKE_UNALIGNED]
-    assert found.location.section == 1
-    assert "carries no fingerprint" in found.message and "--replace-voiced" in found.message
 
 
 # ---- one turn of a dialogue ----------------------------------------------------------------------

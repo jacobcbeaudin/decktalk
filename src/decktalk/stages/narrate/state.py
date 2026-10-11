@@ -69,6 +69,9 @@ UNINDEXED = (
 FILES_GONE = "the take or its words file is missing"
 """Why a section has no take when the take index names one that no place holds."""
 
+UNPRINTED = "its take's words file records no audio print, so the take cannot be told from a damaged copy"
+"""Why a take written before the audio print is bought again, as a take no place holds is."""
+
 
 def without_a_voice(voice: VoiceInForce) -> str:
     """Why a voiced take of a section's text is unchecked, which only naming its voice resolves."""
@@ -287,6 +290,8 @@ class _Reading:
             if self.replaces(key):
                 return TakeState.MISSING, REPLACED
             raise refused
+        if self.files(digest).unprinted:
+            return TakeState.MISSING, UNPRINTED
         older = [
             row for row in self.rows.values() if row.voiced and row.spoken == turn.spoken and row.voice == voice.name
         ]
@@ -429,11 +434,10 @@ class TakeStates(Mapping[int, SectionTakeState]):
         row = self._reading.rows.get(key)
         named = row if row is not None and row.digest == digest else None
         heard = named.spoken if named is not None else spoken
-        if said.audio is not None:
-            prefer = named.alignment if named is not None else None
-            aligned = kept_alignment(self._inputs, said.audio.blake3, spoken_words(heard), prefer=prefer)
-            if aligned is not None:
-                return aligned
+        prefer = named.alignment if named is not None else None
+        aligned = kept_alignment(self._inputs, said.audio.blake3, spoken_words(heard), prefer=prefer)
+        if aligned is not None:
+            return aligned
         return EstimatedWords(words=tuple(estimated_words(heard, self._sound_end(key, digest))))
 
     def _sound_end(self, key: TurnKey, digest: str) -> float:
@@ -686,7 +690,7 @@ def sections_off_their_audio(
             said = inputs.take_words(row.digest)
         except (UnreadablePaidRecord, UnreadableCache):  # silent: keeping the take refuses it, naming its section
             continue
-        heard = said.audio.blake3 if isinstance(said, ProviderWords) and said.audio is not None else None
+        heard = said.audio.blake3 if isinstance(said, ProviderWords) else None
         if heard != row.audio_blake3:
             moved.add(row.section)
     return [spoken[number] for number in sorted(moved)]

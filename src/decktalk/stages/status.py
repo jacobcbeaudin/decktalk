@@ -68,7 +68,7 @@ from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Stage
 from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, TurnStatus, UnplayedTakes, VoiceStatus
 from decktalk.stages.kept import BUILT, assembled, read_kept, verify_digest
-from decktalk.stages.narrate import SectionTakeState, TakeStates, Unaligned, before_narrate, take_states
+from decktalk.stages.narrate import SectionTakeState, TakeStates, before_narrate, take_states
 from decktalk.stages.record import TurnText, stale_recording
 
 log = logging.getLogger(__name__)
@@ -371,7 +371,7 @@ def _played_matches(inputs: Inputs, states: TakeStates | None, played: set[str])
         except (UnreadableCache, UnreadablePaidRecord):
             # silent: a words file that does not read is reported by the section's own row, and times nothing.
             continue
-        if isinstance(said, ProviderWords) and not said.timed and said.audio is not None:
+        if isinstance(said, ProviderWords) and not said.timed:
             matches.add(alignment_match(said.audio.blake3, spoken_words(spoken[digest])))
     return matches
 
@@ -408,26 +408,24 @@ def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes |
 
 
 def _note_estimated(inputs: Inputs, run: Run) -> None:
-    """Warn when a voiced take plays estimated words because no aligner timed it, once for each reason why.
+    """Warn when a voiced take plays estimated words because no aligner timed it, naming every such section.
 
-    The reason and what mends it are narrate's own, told without asking any aligner: a take whose
-    words file records no audio print is made again, and any other waits on the aligner this machine
-    answers for.
+    The reason and what mends it are narrate's own, told without asking any aligner: each waits on the
+    aligner this machine answers for.
     """
     index = inputs.takes()
-    why: dict[Unaligned, list[int]] = {}
+    numbers: list[int] = []
     for row in index.sections if index is not None else ():
-        if row.voiced and row.timed_by is TimedBy.ESTIMATED:
-            reason = before_narrate(run.machine.aligners, inputs.take_words(row.digest))
-            numbers = why.setdefault(reason, [])
-            if row.section not in numbers:
-                numbers.append(row.section)
-    for reason, numbers in why.items():
-        run.note(
-            f"Section(s) {numbers} play estimated words over a take that came with no word times, and {reason.why}. "
-            f"{reason.action(','.join(map(str, numbers)))}",
-            level=Level.WARNING,
-        )
+        if row.voiced and row.timed_by is TimedBy.ESTIMATED and row.section not in numbers:
+            numbers.append(row.section)
+    if not numbers:
+        return
+    reason = before_narrate(run.machine.aligners)
+    run.note(
+        f"Section(s) {numbers} play estimated words over a take that came with no word times, and {reason.why}. "
+        f"{reason.action(','.join(map(str, numbers)))}",
+        level=Level.WARNING,
+    )
 
 
 def status(inputs: Inputs, run: Run) -> StatusResult:

@@ -7,6 +7,7 @@ the same way on every platform, and two runs voicing one take are two threads me
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 from collections.abc import Iterator
@@ -16,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import PLACEHOLDER_PREFIX, VOICED_SUFFIX, AudioPrint, ProviderWords, take_file, words_file
+from decktalk.artifacts import PLACEHOLDER_PREFIX, AudioPrint, ProviderWords, take_file, words_file
 from decktalk.errors import InputError, ProjectLocked, ProviderError
 from decktalk.events import Level
 from decktalk.inputs.paths import at
@@ -821,13 +822,37 @@ def test_a_take_is_written_under_its_own_voices_suffix(no_store: Workspace) -> N
     assert voice(take_places, Voice(), Witnessed(), suffix=".wav") is TakeOutcome.VOICED
     assert (no_store.takes / take_file(DIGEST, ".wav")).read_bytes() == Voice().audio
     said = ProviderWords.read(no_store.takes / words_file(DIGEST))
-    assert said is not None and said.audio is not None and said.audio.suffix == ".wav"
+    assert said is not None and said.audio.suffix == ".wav"
     assert take_places.find(DIGEST).audio == no_store.takes / take_file(DIGEST, ".wav")
     assert take_places.find(DIGEST).held
 
 
-def test_a_take_whose_words_name_no_suffix_is_looked_for_as_mp3(no_store: Workspace) -> None:
-    """A words file that records no audio says nothing about its suffix, and every shipped voice writes mp3."""
-    (no_store.takes / take_file(DIGEST, VOICED_SUFFIX)).write_bytes(b"take")
-    ProviderWords(words=WORDS).write(no_store.takes / words_file(DIGEST))
-    assert places(no_store).find(DIGEST).audio == no_store.takes / f"{DIGEST}.mp3"
+# ---- a pair written before the audio print ------------------------------------------------------
+
+
+def _unprinted(place: Path, digest: str) -> None:
+    """Strip the audio print from one place's words file, as a take written before the print has it."""
+    words = place / words_file(digest)
+    said = json.loads(words.read_text(encoding="utf-8"))
+    del said["audio"]
+    words.write_text(json.dumps(said), encoding="utf-8")
+
+
+def test_a_pair_whose_words_record_no_audio_print_is_no_copy_and_refuses_nothing(no_store: Workspace) -> None:
+    """It can never be told good, so its take is bought again as one no place holds is, and never refused."""
+    _pair(no_store.takes, DIGEST, b"OLD")
+    _unprinted(no_store.takes, DIGEST)
+    found = places(no_store).find(DIGEST)
+    assert not found.held and found.unprinted and found.in_takes_directory
+    assert found.refusal(1) is None
+    places(no_store).keep(DIGEST, Witnessed(), section=1)
+    assert unreadable(no_store.takes) == set()
+
+
+def test_a_take_bought_again_over_a_pair_with_no_audio_print_moves_that_pair_aside(no_store: Workspace) -> None:
+    _pair(no_store.takes, DIGEST, b"OLD")
+    _unprinted(no_store.takes, DIGEST)
+    assert voice(places(no_store), Voice(), Witnessed()) is TakeOutcome.VOICED
+    assert places(no_store).find(DIGEST).held
+    aside = {f"{take_file(DIGEST, TAKE_SUFFIX)}.unreadable", f"{words_file(DIGEST)}.unreadable"}
+    assert unreadable(no_store.takes) == aside

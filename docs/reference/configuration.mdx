@@ -74,6 +74,7 @@ have a code and want the candidates before you run anything.
 | `PAGE_STAGGER_OVERRUN` | `motion.scale` |
 | `PAGE_THIN_DRAW` | `video.crf`, `verify.changed_share_min_percent` |
 | `RECORD_BLACK` | `verify.after_dip_seconds`, `verify.black_max_luma` |
+| `TAKE_SILENT` | `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds` |
 | `TAKE_WORD_CUT` | `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds` |
 
 ## `[video]`
@@ -116,8 +117,8 @@ These keys govern how the script is turned into audio.
 | `store_dir` | string | `""` | takes any value of its type | path | machine |  | The take store: a folder outside every project where this machine keeps a second copy of every voiced take it makes and its provider words, each named by its digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS. |
 | `context_characters` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody: the end of the turn before and the start of the turn after. 0 sends no neighbouring text, so each turn is sent on its own. |
 | `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech or alignment request times out. With `retries` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request, every attempt this long with the waits between them, before it is refused as locked. |
-| `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH`, `TAKE_WORD_CUT` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
-| `sound_end_min_run_seconds` | number | `0.05` | must be between 0.02 and 0.5 | seconds | project | `CUT_SPEECH`, `TAKE_WORD_CUT` | Shortest run under the noise level that counts as the end of a take's sound. |
+| `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH`, `TAKE_WORD_CUT`, `TAKE_SILENT` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
+| `sound_end_min_run_seconds` | number | `0.05` | must be between 0.02 and 0.5 | seconds | project | `CUT_SPEECH`, `TAKE_WORD_CUT`, `TAKE_SILENT` | Shortest run under the noise level that counts as the end of a take's sound. |
 
 <Warning>
 **`narration.concurrency`** A voice provider limits requests per account, and a busy answer is retried rather than paid twice.

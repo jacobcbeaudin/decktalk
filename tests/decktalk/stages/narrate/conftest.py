@@ -106,12 +106,13 @@ SOUND_END = 0.8
 """Where every take written here sounds till, as `quiet_sound_end` answers for its bytes."""
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
     """Where a take's sound ends is read from real bytes, which no take written here has.
 
-    The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
-    through, and every placement test measures the arithmetic rather than ffmpeg.
+    The fake encoder writes an empty file, so a test that places a take on a sound end asks for this
+    fixture, which answers the scan at the seam the stage reads it through. It is never autouse,
+    because a scan answered for every test hid the join a silent take breaks.
     """
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: SOUND_END)
 

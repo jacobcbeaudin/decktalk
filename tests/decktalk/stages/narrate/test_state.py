@@ -655,14 +655,14 @@ def held_without_times(inputs: Inputs, number: int) -> ProviderWords:
     digest = digest_of(inputs, number)
     hold_take(inputs, digest)
     said = inputs.take_words(digest)
-    assert isinstance(said, ProviderWords) and said.timed is False and said.audio is not None
+    assert isinstance(said, ProviderWords) and said.timed is False
     return said
 
 
+@pytest.mark.usefixtures("quiet_sound_end")
 def test_planned_words_of_a_take_with_no_words_are_its_kept_alignment_with_no_take_index(inputs: Inputs) -> None:
     """A fresh clone has no take index, and still plays the alignment committed beside the take."""
     said = held_without_times(inputs, 1)
-    assert said.audio is not None
     keyed = AlignmentInputs(
         audio=said.audio.blake3, words=spoken_words(section_of(inputs, 1).spoken), aligner="a", revision="1",
         model_digest="m",
@@ -676,6 +676,7 @@ def test_planned_words_of_a_take_with_no_words_are_its_kept_alignment_with_no_ta
     assert words.words == aligned.shifted(inputs.lead_seconds(1))
 
 
+@pytest.mark.usefixtures("quiet_sound_end")
 def test_planned_words_of_a_take_with_no_words_and_none_kept_are_estimated_over_its_sound(inputs: Inputs) -> None:
     """The row's sound end is read when the row names the take, and the take is measured only when none does."""
     held_without_times(inputs, 1)
@@ -776,6 +777,7 @@ def test_a_section_of_one_turn_keeps_todays_reason_word_for_word(inputs: Inputs)
     assert [turn.reason for turn in states[1].turns] == [NO_VOICED_TAKE]
 
 
+@pytest.mark.usefixtures("quiet_sound_end")
 def test_a_placeholder_turn_among_voiced_turns_makes_its_section_estimated(make_inputs: Callable[..., Inputs]) -> None:
     inputs = hold_turns(make_inputs(toml=BOTH_PAID, script=DIALOGUE), skip=("guest",))
     states = take_states(inputs)

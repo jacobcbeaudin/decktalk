@@ -128,6 +128,7 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
 | [`TAKE_UNALIGNED`](/reference/findings/TAKE_UNALIGNED) | warning | A take came with no word times and no aligner timed them, so its section plays estimated words. Only narrate raises it. |
 | [`TAKE_WORD_CUT`](/reference/findings/TAKE_WORD_CUT) | warning | A take's words place a word after the take's sound ends, where the narration cuts the take, so the word is never heard. Only narrate raises it. |
+| [`TAKE_SILENT`](/reference/findings/TAKE_SILENT) | warning | A voiced take holds no sound above the level its sound end is measured at, so its turn plays silence. Only narrate raises it, on the run that makes the take. |
 | [`CUT_SPEECH`](/reference/findings/CUT_SPEECH) | error | Speech is still sounding at a section cut, so the film slices a word in two. |
 | [`CUT_POP`](/reference/findings/CUT_POP) | error | The picture steps at a section cut, so the film pops on the seam. |
 | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | warning | The mixed film misses the loudness it was mastered to. |

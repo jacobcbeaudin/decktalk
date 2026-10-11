@@ -72,7 +72,8 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     write_takes(inputs, take)
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
     (inputs.workspace.takes / take_file(take.digest, TAKE_SUFFIX)).write_bytes(b"audio")
-    (inputs.workspace.takes / words_file(take.digest)).write_text("{}", encoding="utf-8")
+    said = ProviderWords(audio=AudioPrint.of(b"audio", suffix=TAKE_SUFFIX))
+    said.write(inputs.workspace.takes / words_file(take.digest))
     return take
 
 
@@ -431,12 +432,16 @@ def played_digest_of(inputs: Inputs, number: int) -> str:
     return take_inputs(section, inputs.voice_of(section.turns[0])).digest
 
 
-def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes = b"{}") -> list[Path]:
-    """One take and its words file in the takes directory, which is all the listing reads of them."""
+def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes | None = None) -> list[Path]:
+    """One take and its words file in the takes directory, which is all the listing reads of them.
+
+    The words file records the audio's print unless `words` names other bytes.
+    """
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
     pair = [inputs.workspace.takes / take_file(digest, TAKE_SUFFIX), inputs.workspace.takes / words_file(digest)]
     pair[0].write_bytes(audio)
-    pair[1].write_bytes(words)
+    printed = ProviderWords(audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX)).text.encode("utf-8")
+    pair[1].write_bytes(printed if words is None else words)
     return pair
 
 
@@ -648,7 +653,7 @@ def held_without_times(inputs: Inputs) -> str:
     digest = played_digest(inputs)
     hold_take(inputs, digest)
     said = inputs.take_words(digest)
-    assert isinstance(said, ProviderWords) and said.audio is not None and said.timed is False
+    assert isinstance(said, ProviderWords) and said.timed is False
     return said.audio.blake3
 
 
@@ -676,16 +681,16 @@ def test_aligned_words_of_audio_no_section_plays_are_listed(tmp_path: Path) -> N
     assert unplayed.files == (inputs.relative(gone),)
 
 
-def estimated(tmp_path: Path, *, printed: bool) -> Inputs:
-    """A project whose one voiced take plays estimated words, with or without the audio print aligned words key by."""
+def estimated(tmp_path: Path) -> Inputs:
+    """A project whose one voiced take plays estimated words."""
     inputs = a_project(tmp_path)
     built_up_to(inputs, 1)
     index = inputs.takes()
     assert index is not None
     rows = tuple(row.model_copy(update={"timed_by": TimedBy.ESTIMATED}) for row in index.sections)
     write_takes(inputs, *rows)
-    printed_words = ProviderWords(timed=False, audio=AudioPrint.of(b"audio", suffix=TAKE_SUFFIX) if printed else None)
-    printed_words.write(inputs.workspace.takes / words_file(rows[0].digest))
+    untimed = ProviderWords(timed=False, audio=AudioPrint.of(b"audio", suffix=TAKE_SUFFIX))
+    untimed.write(inputs.workspace.takes / words_file(rows[0].digest))
     return inputs
 
 
@@ -694,7 +699,7 @@ def test_a_take_playing_estimated_words_warns_and_leaves_the_next_step_to_the_pi
     timed = a_project(tmp_path / "timed")
     built_up_to(timed, 1)
     pipeline = status(timed, a_run(tmp_path / "timed")).next
-    inputs = estimated(tmp_path / "untimed", printed=True)
+    inputs = estimated(tmp_path / "untimed")
     # The aligner DeckTalk ships, which status never builds, so no socket is opened.
     run = a_run(tmp_path / "untimed", aligners=dict(ALIGNERS))
     said = notes(run)
@@ -705,24 +710,10 @@ def test_a_take_playing_estimated_words_warns_and_leaves_the_next_step_to_the_pi
     )
 
 
-def test_a_take_whose_words_carry_no_print_is_told_to_be_made_again_and_not_to_start_an_aligner(tmp_path: Path) -> None:
-    """A take whose words file cannot key aligned words is never aligned, which narrate said and status did not."""
-    inputs = estimated(tmp_path, printed=False)
-    run = a_run(tmp_path)
-    said = notes(run)
-    status(inputs, run)
-    assert (
-        "Section(s) [1] play estimated words over a take that came with no word times, and its words file carries "
-        "no fingerprint to key aligned words by. Run decktalk narrate --section 1 --replace-voiced to make the take "
-        "again." in said
-    )
-    assert not any("decktalk-voice" in line for line in said)
-
-
 @pytest.mark.parametrize("host", ["its own aligner", "no aligner"])
 def test_a_host_is_never_told_to_start_the_aligner_decktalk_ships(tmp_path: Path, host: str) -> None:
     """A host's machine answers with its own aligner or with none, and decktalk-voice is neither."""
-    inputs = estimated(tmp_path, printed=True)
+    inputs = estimated(tmp_path)
     aligners = {ALIGNER: lambda _context: pytest.fail("status opens no socket")} if host == "its own aligner" else {}
     run = a_run(tmp_path, aligners=aligners)
     said = notes(run)

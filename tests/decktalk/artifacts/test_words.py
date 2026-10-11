@@ -23,6 +23,9 @@ from decktalk.results import Word
 
 SPOKEN = Words(words=(Word(word="two", start=0.0, end=0.4), Word(word="friends", start=0.4, end=0.9)))
 
+PRINTED = AudioPrint.of(b"the take's own bytes", suffix=".mp3")
+"""The audio print of a take, which every words file its voice sent carries."""
+
 
 def test_a_words_file_is_named_by_the_digest_of_its_take() -> None:
     assert words_file("abc123") == f"abc123{WORDS_SUFFIX}"
@@ -43,7 +46,8 @@ def test_words_cut_at_a_sound_end_are_heard_as_the_join_plays_the_take() -> None
             Word(word="before", start=0.0, end=0.4),
             Word(word="across", start=0.5, end=0.9),
             Word(word="after", start=0.9, end=1.0),
-        )
+        ),
+        audio=PRINTED,
     )
     heard = said.cut_at(0.6)
     assert heard.words == (
@@ -96,11 +100,12 @@ def test_a_providers_words_carry_the_fingerprint_of_the_audio_they_were_sent_wit
     assert ProviderWords.read(path) == ProviderWords(words=SPOKEN.words, audio=printed)
 
 
-def test_a_providers_words_with_no_fingerprint_still_read(tmp_path: Path) -> None:
-    """A words file with no fingerprint is read as it is, because filling one in would rewrite a paid record."""
+def test_a_providers_words_with_no_audio_print_do_not_read(tmp_path: Path) -> None:
+    """Only the audio print tells a good copy of a take from a damaged one, so a words file without it vouches for
+    nothing and is refused as a paid record that does not read."""
     path = SPOKEN.write(tmp_path / words_file("abc123"))
-    read = ProviderWords.read(path)
-    assert read is not None and read.audio is None
+    with pytest.raises(InputError, match="audio is missing"):
+        ProviderWords.read(path)
 
 
 def test_words_moved_onto_a_section_clock_are_never_written_to_any_file(tmp_path: Path) -> None:
@@ -138,15 +143,6 @@ def test_words_on_a_section_clock_equal_the_same_fields_read_from_the_file(tmp_p
     assert on_section_clock(read, 0.5) != read
 
 
-def test_a_providers_words_file_without_the_new_fields_reads_as_timed_by_an_unnamed_model(tmp_path: Path) -> None:
-    path = tmp_path / words_file("abc123")
-    path.write_text('{"words": [{"word": "two", "start": 0.0, "end": 0.4}], "audio": null}', encoding="utf-8")
-    said = ProviderWords.read(path)
-    assert said is not None
-    assert said.timed is True
-    assert said.model_digest is None
-
-
 def test_an_audio_print_names_the_suffix_its_take_was_written_under():
     """Narrate writes the suffix with every print, so a print without one is no file narrate wrote."""
     with pytest.raises(ValueError, match="suffix"):
@@ -155,8 +151,8 @@ def test_an_audio_print_names_the_suffix_its_take_was_written_under():
 
 def test_a_words_file_that_says_its_voice_sent_no_times_holds_no_words() -> None:
     with pytest.raises(ValueError, match="sent no word times"):
-        ProviderWords(words=SPOKEN.words, timed=False)
-    assert ProviderWords(words=(), timed=False).words == ()
+        ProviderWords(words=SPOKEN.words, timed=False, audio=PRINTED)
+    assert ProviderWords(words=(), timed=False, audio=PRINTED).words == ()
 
 
 ALIGNED = AlignmentInputs(
