@@ -28,6 +28,7 @@ from decktalk.page import (
     APPEAR_WORDS_MAX,
     ATTENTION,
     BACK_OPACITY,
+    CLIP_FRAMES,
     COUNTS,
     ENGINE_PATH,
     ENTRANCES,
@@ -475,6 +476,90 @@ def test_a_video_on_a_page_is_refused_because_the_stepped_clock_cannot_hold_it(p
     scene = MOVING_SCENE.replace("<p data-in", '<video src="clip.mp4"></video><p data-in')
     opened(page, write_page(tmp_path, "video.html", scene))
     assert Code.PAGE_REALTIME_MEDIA.value in codes_of(page)
+
+
+PANE_SCENE = """
+<div data-scene="19" data-name="Pane">
+  <template data-slide="19.1">
+    <div class="pane" style="width:320px;height:180px" data-clip="deck/clips/film.mp4" data-clip-from="play"></div>
+    <p class="label">over the clip</p>
+  </template>
+</div>
+"""
+"""A slide that is a pane playing a clip from the cue `play`, with a label after it."""
+
+
+def pane_source(page: Page) -> str | None:
+    """Where the pane's picture comes from now, which is a frame of the clip on the stepped clock."""
+    return page.evaluate("() => document.querySelector('.pane img')?.getAttribute('src') ?? null")
+
+
+def test_the_catalog_publishes_a_pane_clip_with_its_file_and_its_cue(page, tmp_path):
+    opened(page, write_page(tmp_path, "pane.html", PANE_SCENE))
+    motions = page.evaluate("() => window.__decktalk.catalog[0].motions")
+    assert motions == {
+        "19.1": [
+            {
+                "kind": "clip",
+                "name": "deck/clips/film.mp4",
+                "from": "19.1:play",
+                "to": None,
+                "ease": None,
+                "seconds": None,
+            }
+        ]
+    }
+    assert "19.1:play" in page.evaluate("() => window.__decktalk.catalog[0].cues['19.1']")
+
+
+def test_a_pane_clip_shows_its_first_frame_until_its_cue_and_the_frame_of_its_own_second_after(page, tmp_path):
+    """The picture is a frame the origin decodes at the clip's own second, so it is a function of the section second."""
+    url = write_page(tmp_path, "pane-stepped.html", PANE_SCENE)
+    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:play@1.0")
+    page.evaluate("() => window.DeckTalk.stepTo(0.5)")
+    assert pane_source(page) == f"{CLIP_FRAMES}0/deck/clips/film.mp4"
+    page.evaluate("() => window.DeckTalk.stepTo(1.0)")
+    assert pane_source(page) == f"{CLIP_FRAMES}0/deck/clips/film.mp4"
+    page.evaluate("() => window.DeckTalk.stepTo(1.52)")
+    assert pane_source(page) == f"{CLIP_FRAMES}0.52/deck/clips/film.mp4"
+    first = page.evaluate("() => document.querySelector('.pane').firstElementChild.localName")
+    assert first == "img", "the clip is the pane's first child, so everything after it draws over it"
+
+
+def test_a_pane_clip_ends_every_still_stretch_from_its_cue(page, tmp_path):
+    """The recorder crosses a still stretch in one step, so a playing clip has to end it, or its frames are skipped.
+
+    Before its cue the pane holds the clip's first frame, so the page is still until the cue and no
+    later. From the cue every second shows a new frame of the clip, so every step ends the stretch at
+    its own second.
+    """
+    url = write_page(tmp_path, "pane-still.html", PANE_SCENE)
+    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:play@1.0")
+    page.evaluate("() => window.DeckTalk.stepTo(0.04)")
+    before = page.evaluate("() => window.DeckTalk.stepTo(0.08).stillUntil")
+    assert before is not None and 0.08 < before <= 1.0, before
+    page.evaluate("() => window.DeckTalk.stepTo(1.0)")
+    for seconds in (1.04, 1.5, 3.0):
+        assert page.evaluate(f"() => window.DeckTalk.stepTo({seconds}).stillUntil") == seconds
+
+
+def test_a_pane_clip_whose_cue_has_no_second_is_a_cue_it_never_starts_on(page, tmp_path):
+    scene = PANE_SCENE.replace('<template data-slide="19.1">', '<template data-slide="19.1" data-owns="intro">')
+    url = write_page(tmp_path, "pane-uncued.html", scene)
+    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:intro@0.1")
+    page.evaluate("() => window.DeckTalk.stepTo(0.1)")
+    assert Code.PAGE_MOTION_CUE_UNKNOWN.value in codes_of(page)
+
+
+def test_a_pane_clip_plays_as_a_video_in_a_preview_and_shows_its_first_frame_in_a_still(page, tmp_path):
+    """A preview is never recorded, so the one place a page plays at its own rate is where a person watches it."""
+    url = write_page(tmp_path, "pane-preview.html", PANE_SCENE)
+    opened(page, f"{url}?scene=19")
+    played = page.evaluate("() => document.querySelector('.pane video')?.getAttribute('src') ?? null")
+    assert played == "/deck/clips/film.mp4"
+    opened(page, f"{url}?scene=19&freeze=19.1")
+    assert pane_source(page) == f"{CLIP_FRAMES}0/deck/clips/film.mp4"
+    assert Code.PAGE_REALTIME_MEDIA.value not in codes_of(page)
 
 
 def test_a_script_motion_draws_its_eased_progress_between_two_cues_and_refuses_a_cue_nobody_owns(page, tmp_path):

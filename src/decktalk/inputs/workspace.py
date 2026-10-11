@@ -12,7 +12,8 @@
                         and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, placements,
-                        transcript page and poster, and the captioned copy when it is asked for
+                        transcript page, poster and landings, and the captioned copy when it is
+                        asked for
     build/events/       one JSON lines file per run, which is what a run says it is doing
     build/kept.json     what the last build's assemble and verify read, wrote and found
     build/.lock         the lock a writing run holds, and `.lock.owner` beside it naming who
@@ -29,8 +30,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX
+from decktalk.artifacts import WORDS_SUFFIX, words_beside
 from decktalk.inputs.paths import confined
+from decktalk.media.clipframes import landings_of
 from decktalk.pipeline import Artifact
 
 SECTION_CUT = re.compile(r"(\d+)\.(?:mp4|json)")
@@ -229,6 +231,8 @@ class Workspace:
             "placements": self.placements_path,
             "transcript": self.final_dir / f"{self.name}-transcript.html",
             "poster": self.final_dir / f"{self.name}-poster.png",
+            "landings": landings_of(self.film),
+            "words": words_beside(self.film),
         }
 
     def events_path(self, run: str) -> Path:

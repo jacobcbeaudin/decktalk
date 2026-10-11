@@ -164,7 +164,7 @@ export function buildSlide(scene: Scene, slide: Slide): HTMLElement {
 function mount(scene: Scene, slide: Slide, held: ReadonlySet<string> | null, at: number | null): HTMLElement {
   const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
   const el = buildSlide(scene, slide);
-  const mounted = prepare(el, slide, { frozen, held, words: state.words, at: cueAt });
+  const mounted = prepare(el, slide, { frozen, recorded: signalled, held, words: state.words, at: cueAt });
   typeset(el, slide.id);
   state.slide = slide;
   state.mounted = mounted;

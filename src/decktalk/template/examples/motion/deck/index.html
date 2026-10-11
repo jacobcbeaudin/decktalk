@@ -21,7 +21,7 @@
   body { width: 100vw; height: 100vh; overflow: hidden; }
   #dt-canvas { background: var(--ground); }
 
-  .eyebrow, .title, .lane, .packet, .ring, .card, .label, .track { position: absolute; margin: 0; box-sizing: border-box; }
+  .eyebrow, .title, .lane, .packet, .ring, .card, .label, .track, .pane, .tag, .line { position: absolute; margin: 0; box-sizing: border-box; }
   .eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
   .title { left: 120px; top: 140px; width: 1680px; font: 700 88px/1.06 var(--sans); letter-spacing: -.03em; }
 
@@ -49,6 +49,14 @@
      which declares the bar as the region it draws in. */
   .track { left: 120px; top: 520px; width: 1680px; height: 120px; border-radius: 60px; background: #e4e4e7; overflow: hidden; }
   .track i { display: block; height: 100%; width: 0%; background: var(--ink); }
+
+  /* Scene 4. A pane plays a film with its own sound, from the word "play". The pane is 960 by 540,
+     three halves of the 640 by 360 film, so the film fills it at its own shape. The film is drawn
+     under everything the page draws after it, so the tag over its corner sits on top of it, and the
+     line under the pane is the page's own. */
+  .pane { left: 120px; top: 300px; width: 960px; height: 540px; border-radius: 12px; overflow: hidden; background: var(--ink); }
+  .tag { left: 136px; top: 316px; padding: 14px 20px; border-radius: 10px; background: var(--ground); color: var(--ink); font: 600 28px/1 var(--mono); }
+  .line { left: 120px; top: 880px; font: 500 30px/1 var(--mono); color: var(--mute); }
 </style>
 </head>
 
@@ -77,6 +85,19 @@
     <div class="title" data-in="title" data-describe="the title, Every frame is one second">Every frame is one second.</div>
     <div class="track"><i></i></div>
     <div class="label" style="left: 120px; top: 760px" data-in="talk" data-describe="a label, the voice talks over it">the voice talks over it</div>
+  </template>
+</div>
+
+<!-- data-clip names the project file a pane plays, picture and sound, and data-clip-from the cue it
+     starts on. Before the cue the pane shows the film's first frame, and after the film ends its last. -->
+
+<div data-scene="4" data-name="A film in a pane">
+  <template data-slide="4.1" data-preview-seconds="8" data-describe="a film with its own sound in a pane, a tag over it and a line under it">
+    <p class="eyebrow">Motion</p>
+    <div class="title" data-in="title" data-describe="the title, a film in a pane">A film in a pane.</div>
+    <div class="pane" data-clip="deck/clips/film.mp4" data-clip-from="play" data-describe="the film plays in its pane"></div>
+    <p class="tag">film.mp4 · its own sound</p>
+    <p class="line">section 4 · the voice keeps going</p>
   </template>
 </div>
 

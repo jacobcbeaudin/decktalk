@@ -19,7 +19,8 @@ run's cancel token while the tool works and stops a call that outlives `[tools] 
 one stuck encode can hold a worker for no longer than the machine allows.
 
 `audio.py` and `frames.py` build on the calls here: `run`, `stderr`, `raw`, `stream`,
-`probe_duration`, `probe_rate` and `has_audio`.
+`probe_duration`, `probe_rate`, `probe_size` and `has_audio`. `clipframes.py` reads one long decode a frame at a
+time through `pulled`.
 
 A file a project supplies is untrusted input. A clip or a sound the score bought is a container that can name
 other files and other hosts, as an HLS playlist or a concat list does, and ffmpeg follows those names
@@ -437,6 +438,57 @@ def fed(*args: str, what: str) -> Iterator[Sink]:
         raise ToolError(f"{what} failed: {tail(stderr)}")
 
 
+class Pulled:
+    """One running ffmpeg whose output the caller reads as it needs it, for a decode taken a frame at a time.
+
+    Its complaint is read on a thread of its own, so a full pipe can never stall it, and closing it
+    kills whatever is left, so a decode nobody finished reading never outlives what asked for it. It
+    reads no stdin, so it cannot wait on a terminal.
+    """
+
+    def __init__(self, cmd: list[str]) -> None:
+        self.cmd = cmd
+        self.proc = _spawn(cmd)
+        self.err: list[bytes] = []
+        self.reader = _Reader(self.proc.stderr, self.err.append)
+        self.reader.start()
+
+    def read(self, size: int) -> bytes:
+        """The next `size` bytes of its output, or fewer once it has ended."""
+        out = self.proc.stdout
+        if out is None:  # pragma: no cover  (an output is always piped)
+            return b""
+        chunks: list[bytes] = []
+        left = size
+        while left > 0:
+            chunk = out.read(left)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            left -= len(chunk)
+        return b"".join(chunks)
+
+    def said(self) -> str:
+        """The tail of what it has complained about so far, which is the reason a decode ended early."""
+        return tail(b"".join(self.err))
+
+    def close(self) -> None:
+        """Stop it, wait for it and its reader, and close both of its outputs."""
+        _stop(self.proc, (self.reader,))
+        for stream in (self.proc.stdout, self.proc.stderr):
+            if stream is not None:
+                stream.close()
+
+
+def pulled(executable: str, *args: str) -> Pulled:
+    """ffmpeg run with `args` whose stdout the caller reads piece by piece, on the executable a run resolved.
+
+    The executable is passed in rather than resolved here, because the caller reads from a thread or
+    a callback outside the run that bound the machine's tools.
+    """
+    return Pulled([executable, "-hide_banner", "-loglevel", "error", "-nostdin", *args])
+
+
 def concat_line(path: Path | str) -> str:
     """One line of an ffmpeg concat list, quoted so that any path a person can write survives it.
 
@@ -512,6 +564,20 @@ def probe_rate(path: Path | str) -> Fraction:
     if rate <= 0:
         raise ToolError(f"ffprobe could not read the frame rate of {Path(path).name}.", location=_at(path))
     return rate
+
+
+def probe_size(path: Path | str) -> tuple[int, int]:
+    """The width and height of the file's first video stream, in its own pixels."""
+    proc = _probe(path, "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0")
+    text = proc.stdout.decode(errors="replace").strip()
+    try:
+        width, height = (int(part) for part in text.split(",")[:2])
+    except ValueError:
+        # silent: a size that does not read is refused just below.
+        width = height = 0
+    if width <= 0 or height <= 0:
+        raise ToolError(f"ffprobe could not read the frame size of {Path(path).name}.", location=_at(path))
+    return width, height
 
 
 def has_audio(path: Path | str) -> bool:

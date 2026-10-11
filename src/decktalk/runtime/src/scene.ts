@@ -88,10 +88,12 @@ export const ATTR = {
   motionEase: named("motion-ease"),
   loop: named("loop"),
   loopSeconds: named("loop-seconds"),
+  clip: named("clip"),
+  clipFrom: named("clip-from"),
 } as const satisfies Record<string, Attr>;
 
-/** The selector that finds every element declaring a motion or a loop, built from the registry. */
-export const MOVING_SELECTOR = `[${ATTR.motion}],[${ATTR.loop}]`;
+/** The selector that finds every element declaring a motion, a loop or a pane clip, built from the registry. */
+export const MOVING_SELECTOR = `[${ATTR.motion}],[${ATTR.loop}],[${ATTR.clip}]`;
 
 /** The elements no stepped clock can hold, because each plays at its own rate. */
 const REALTIME_MEDIA = ["video", "audio"];
@@ -281,12 +283,18 @@ export function classDescriptionOf(el: Element, local: string): string | null {
 // ---- the declared motions --------------------------------------------------------------------------
 
 /**
- * Every motion and loop one element declares, as the catalog publishes it.
+ * Every motion, loop and pane clip one element declares, as the catalog publishes it.
  *
  * A motion names its two cues in its slide, so the row carries their cue ids. A loop names no cue,
- * because it turns for as long as its slide is on screen.
+ * because it turns for as long as its slide is on screen. A pane clip names the project file it plays
+ * and the one cue it starts on, and plays to its own end.
  */
 export function motionOf(el: Element, slideId: string): MotionRow | null {
+  const clip = written(el, ATTR.clip);
+  if (clip) {
+    const from = written(el, ATTR.clipFrom);
+    return { kind: "clip", name: clip, from: from ? cueId(slideId, from) : null, to: null, ease: null, seconds: null };
+  }
   const name = written(el, ATTR.motion);
   if (name) {
     const from = written(el, ATTR.motionFrom);
@@ -305,7 +313,7 @@ export function motionOf(el: Element, slideId: string): MotionRow | null {
   return { kind: "loop", name: loop, from: null, to: null, ease: null, seconds: loopSeconds(el) };
 }
 
-/** Every motion and loop a slide's markup declares, in document order. */
+/** Every motion, loop and pane clip a slide's markup declares, in document order. */
 export function motionsOf(slide: Slide): MotionRow[] {
   if (!slide.markup) return [];
   return [...slide.markup.content.querySelectorAll(MOVING_SELECTOR)]

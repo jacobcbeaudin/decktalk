@@ -57,8 +57,13 @@ const nativeFrame = window.requestAnimationFrame.bind(window);
 const nativeTimer = window.setTimeout.bind(window);
 const nativeCancel = window.clearTimeout.bind(window);
 
-/** Every image a step has already seen decoded, so each is waited on once and not on every frame. */
-const decoded = new WeakSet<HTMLImageElement>();
+/**
+ * The source each image was last seen decoded with, so each picture is waited on once and not on every frame.
+ *
+ * It is kept by source rather than by element, because a pane clip shows a new frame in the same
+ * image on every step, and each of those frames has to be decoded before the step is captured.
+ */
+const decoded = new WeakMap<HTMLImageElement, string>();
 
 /**
  * What draws on its own, out of the DOM's sight, so a page that holds one is never reported still.
@@ -198,12 +203,13 @@ function outstanding(): Promise<unknown>[] {
   const waits: Promise<unknown>[] = [];
   if (document.fonts && document.fonts.status !== "loaded") waits.push(document.fonts.ready);
   for (const image of Array.from(document.images)) {
-    if (decoded.has(image)) continue;
+    const source = image.currentSrc || image.src;
+    if (decoded.get(image) === source) continue;
     waits.push(
       image
         .decode()
         .catch(() => undefined)
-        .then(() => decoded.add(image)),
+        .then(() => decoded.set(image, source)),
     );
   }
   return waits;
@@ -351,6 +357,7 @@ export function report(): Record<ReportField, unknown> {
     cues,
     words,
     motions: view?.motions ?? [],
+    reveals: view?.reveals ?? [],
   };
 }
 

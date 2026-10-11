@@ -77,7 +77,8 @@ refusal names what it read and would not accept.
   a `DECKTALK_` variable or a `--set`, and it names the file, the variable or the flag that wrote it.
 - Two `[[section]]` tables share a `number`.
 - A section names more than one of `page`, `clip` and `render_command`, or none of them.
-- A `render_command` is not a list of words, or holds an empty word.
+- A `render_command`, or a `[[clip]]` `command`, is not a list of words, or holds an empty word.
+- Two `[[clip]]` tables write one `file`.
 - `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effect]]` row names a section that does not exist.
@@ -240,8 +241,42 @@ A clip whose file is not there plays a titled slate for `slate_seconds`, and `de
 raises `FILE_MISSING` unless the section sets `optional`. The voice never reads a clip section, so it
 needs no heading in the script and it is never voiced. A clip between two page sections pauses the
 narration, which resumes with the next page section. DeckTalk scales and pads the clip to the frame
-size, and the chapters include it.
-[Add a clip section](/guides/clip-section) shows the whole task.
+size, matches its sound to the narration's loudness, and the chapters include it.
+[Play a clip](/guides/clip-section) shows the whole task. To play a clip inside a page section
+instead, with the voice going on over it, name it in a pane with `data-clip`, as
+[A clip in a pane](/guides/clip-section#a-clip-in-a-pane) shows.
+
+## `[[clip]]`
+
+Write one `[[clip]]` per clip the project makes at build time rather than keeps, such as a clip a
+package cannot ship or one drawn from the film's own sources. `record` runs its command before it
+records anything, whenever its file is not there, and a forced `record` runs it again.
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `file` | path | required | The clip the command makes, which a pane or a clip section plays. A pane plays only a file the page may load, so keep it under the deck directory. No two `[[clip]]` tables write one file. |
+| `command` | list of strings | required | The program and its arguments, run once from the project root. Each placeholder in a word is replaced before it runs. |
+
+```toml
+[[clip]]
+file = "deck/clips/film.mp4"
+command = ["{python}", "render/make_film", "{out}", "{landings}", "{ffmpeg}", "{fps}"]
+```
+
+| Placeholder | Replaced by |
+|---|---|
+| `{out}` | Where the command writes the video, beside `file` under a hidden name, moved onto `file` once the command has finished. |
+| `{landings}` | Where the command may write the clip's own landings, `<file>.landings.json` beside it, which verify measures. |
+| `{words}` | Where the command may write the words spoken inside the clip, `<file>.words.json` beside it, which caption the clip in a pane. |
+| `{python}` | The Python this run is. |
+| `{ffmpeg}` | The ffmpeg this run encodes with. |
+| `{fps}`, `{width}`, `{height}` | The film's rate and frame size. |
+
+The command runs with the scrubbed environment every tool gets. A command that fails, outruns
+`tools.timeout_seconds` or writes no video stops `record` with its own words and leaves no file. A
+machine whose `record.page_policy` is `untrusted` runs no program a project names, so `record`
+refuses a `[[clip]]` there whose file is not there yet.
+[A clip the project makes](/guides/clip-section#a-clip-the-project-makes) shows the whole task.
 
 Every media file a project names, which is a clip, the music, the ambience and each effect, is read
 as one file by one of a closed set of formats: MP4, MOV and M4A, WebM and MKV, AVI, MP3, WAV, Ogg,

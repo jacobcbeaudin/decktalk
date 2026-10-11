@@ -1,4 +1,5 @@
-"""A section whose picture an external command draws: what it is handed, what it hands back, and what it may not do."""
+"""The programs a project names: a section's renderer and a clip's maker, what each is handed, what it hands back,
+and what it may not do."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import InputError, ToolError
+from decktalk.inputs.document import MadeClip
 from decktalk.results import Word
 from decktalk.stages.record import render
 
@@ -79,6 +81,39 @@ def test_a_command_that_writes_no_video_is_a_tool_error(tmp_path: Path) -> None:
 
 def test_a_host_that_does_not_trust_the_project_refuses_to_run_its_command() -> None:
     """A command is a program the project names, which a service rendering a stranger's project never runs."""
-    with pytest.raises(InputError, match="untrusted"):
-        render.admitted("untrusted", number=3)
-    render.admitted("trusted", number=3)
+    with pytest.raises(InputError, match="untrusted") as refused:
+        render.admitted("untrusted", what="section 3 names a render_command")
+    assert str(refused.value).startswith("section 3 names a render_command")
+    render.admitted("trusted", what="section 3 names a render_command")
+
+
+MAKER = """
+import pathlib, sys
+out, landings, fps, width, height = sys.argv[1:6]
+pathlib.Path(out).write_bytes(f"{fps} {width}x{height}".encode())
+pathlib.Path(landings).write_text("[]")
+"""
+
+
+def make(tmp_path: Path, script: str = MAKER) -> Path:
+    clip = MadeClip(
+        file="deck/clips/tone.mp4",
+        command=(sys.executable, "-c", script, "{out}", "{landings}", "{fps}", "{width}", "{height}"),
+    )
+    return render.make_clip(clip, root=tmp_path, fps=30, width=1280, height=720, timeout=30.0)
+
+
+def test_a_made_clip_is_handed_the_film_s_rate_and_frame_and_lands_on_its_own_file(tmp_path: Path) -> None:
+    """The command writes beside the clip and the whole file is moved onto it, with its landings beside it."""
+    made = make(tmp_path)
+    assert made == tmp_path / "deck" / "clips" / "tone.mp4"
+    assert made.read_bytes() == b"30 1280x720"
+    assert (tmp_path / "deck" / "clips" / "tone.landings.json").read_text() == "[]"
+    assert sorted(path.name for path in made.parent.iterdir()) == ["tone.landings.json", "tone.mp4"]
+
+
+def test_a_made_clip_whose_command_fails_leaves_no_file_to_be_taken_for_a_clip(tmp_path: Path) -> None:
+    script = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(b'half'); sys.exit(3)"
+    with pytest.raises(ToolError, match=r"the command of deck/clips/tone\.mp4 failed"):
+        make(tmp_path, script)
+    assert list((tmp_path / "deck" / "clips").iterdir()) == []

@@ -19,11 +19,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from decktalk.artifacts import Placements, Takes
+from decktalk.artifacts import FilmSection, Placements, Takes, film_lanes
+from decktalk.artifacts.recordings import LANDINGS
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.events import Unit
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
@@ -38,10 +39,13 @@ from decktalk.stages.assemble.publish import (
     build_captions,
     build_chapters,
     caption_texts,
-    clip_captions,
+    clip_words,
+    film_words,
+    narrated_turns,
     publish,
     render_poster,
     sound_captions,
+    spoken_cues,
     uncaptioned_sounds,
     with_sound_captions,
     write_caption_files,
@@ -170,17 +174,39 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     texts = caption_texts(inputs, takes)
     offsets = narration_offsets([row.section for row in rows], takes, starts)
     uncaptioned_sounds(inputs, run)
-    spoken = sorted(build_captions(inputs, takes, offsets, texts) + clip_captions(inputs, run, rows),
-                    key=lambda cue: cue.start)  # fmt: skip
+    narrated = narrated_turns(inputs, takes, offsets, texts)
+    inside = clip_words(inputs, run, rows)
+    clips = [cue for words in inside for cue in spoken_cues(words)]
+    spoken = sorted(build_captions(inputs, narrated) + clips, key=lambda cue: cue.start)
     cues = with_sound_captions(spoken, sound_captions(inputs, starts))
     chapters = build_chapters(rows, inputs.chapters())
     write_caption_files(paths, cues, chapters)
     placements = placements_of(inputs, rows)
     placements.write(paths["placements"])
     write_transcript_page(inputs, paths["transcript"], placements, texts, takes)
-    for name in ("srt", "vtt", "chapters", "placements", "transcript"):
+    write_landings(inputs, rows, paths["landings"])
+    film_words(narrated, inside).write(paths["words"])
+    for name in ("srt", "vtt", "chapters", "placements", "transcript", "landings", "words"):
         run.wrote(paths[name])
     return placements, cues
+
+
+def write_landings(inputs: Inputs, rows: list[Rendered], out: Path) -> None:
+    """Every landing the film's verify measures, on the film's own clock, beside the film.
+
+    A pane that plays this film in another film reads them there, so its reveals and its motions are
+    measured in that film too. A clip section's own footage declares nothing to this project, so its
+    landings are not here.
+    """
+    starts = rendered_starts(rows)
+    skipped = {(block.number, cue.id) for block in inputs.cues() for cue in block.cues if not cue.verify}
+    sections: list[FilmSection] = []
+    for row in rows:
+        log = inputs.recording_log(row.key) if isinstance(row.section, PageSection) else None
+        if log is not None:
+            off = {cue for number, cue in skipped if number == row.number}
+            sections.append(FilmSection(start=starts[row.number], log=log, skipped=off))
+    out.write_bytes(LANDINGS.dump_json(film_lanes(sections, inputs.root), indent=1))
 
 
 def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:

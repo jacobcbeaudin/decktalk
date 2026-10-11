@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A film in a pane</title>
+<script src="/__decktalk/decktalk-runtime.js"></script>
+<style>
+  html, body { margin: 0; background: #101010; color: #f5f5f5; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { width: 100vw; height: 100vh; overflow: hidden; }
+  #dt-canvas { background: #101010; }
+  .title, .pane, .label, .line { position: absolute; margin: 0; box-sizing: border-box; }
+  .title { left: 400px; top: 40px; font: 700 64px/1 ui-sans-serif, system-ui, sans-serif; }
+  /* The pane is 960 by 540, three halves of the 640 by 360 clip, so the clip fills it at its own shape. */
+  .pane { left: 400px; top: 160px; width: 960px; height: 540px; background: #000; }
+  /* The label sits over the pane's top left corner, drawn above the clip. */
+  .label { left: 400px; top: 160px; width: 300px; height: 80px; background: #ffffff; }
+  .line { left: 400px; top: 740px; font: 500 32px/1 ui-monospace, monospace; color: #8a8a8a; }
+</style>
+</head>
+<body>
+
+<div data-scene="1" data-name="A film in a pane">
+  <template data-slide="1.1" data-preview-seconds="8" data-describe="a film playing in its pane, labelled">
+    <p class="title" data-in="title" data-describe="the title, a film in a pane">A film in a pane</p>
+    <div class="pane" data-clip="deck/clips/tone.mp4" data-clip-from="play" data-describe="the film plays in its pane"></div>
+    <div class="label"></div>
+    <p class="line">section 1 · kept</p>
+  </template>
+</div>
+
+</body>
+</html>

@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes
+from decktalk.artifacts import CueTimes, pane_landings
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, PageSection
@@ -329,15 +329,20 @@ def unmeasured_render(inputs: Inputs, section: int) -> bool:
 
 
 def section_lanes(inputs: Inputs, section: int, sec_start: float) -> list[motion.Lane]:
-    """Every lane one section's recording reported, on the film's clock at the probe's size."""
+    """Every lane one section's recording reported and every landing inside its pane clips, on the film's clock."""
     log = inputs.recording_log(section_key(section))
     if log is None:
         return []
     video = inputs.settings.video
     recorded = Size(video.width, video.height)
-    return motion.lanes_of(
-        log.recording.report.motions, start=sec_start, recorded=recorded, probe=frame_size(inputs.settings)
-    )
+    rows = (*log.recording.report.motions, *pane_landings(log.recording, inputs.root).lanes)
+    return motion.lanes_of(rows, start=sec_start, recorded=recorded, probe=frame_size(inputs.settings))
+
+
+def unplaced_landings(inputs: Inputs, section: int) -> tuple[str, ...]:
+    """Why any pane clip of one section carries landings verify could not place in its pane."""
+    log = inputs.recording_log(section_key(section))
+    return () if log is None else pane_landings(log.recording, inputs.root).unplaced
 
 
 def revealing_cues(inputs: Inputs, section: int) -> set[str]:
@@ -489,7 +494,7 @@ def landing_checks(
                 size=frame_size(settings), settings=settings,
             )  # fmt: skip
             for landed in measured:
-                if (section, landed.cue) in skipped:
+                if landed.inner is None and (section, landed.cue) in skipped:
                     continue
                 judged = motion.finding(
                     landed, settings=settings, fps=settings.video.fps, film=inputs.relative(film), section=section
@@ -504,6 +509,7 @@ def landing_checks(
                         spoken=landed.spoken,
                         shown=landed.shown,
                         offset_seconds=landed.offset_seconds,
+                        clip=landed.inner,
                     )  # fmt: skip
                 )
     return tuple(sorted(rows, key=lambda row: row.spoken))

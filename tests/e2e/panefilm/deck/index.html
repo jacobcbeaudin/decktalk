@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A built film in a pane</title>
+<script src="/__decktalk/decktalk-runtime.js"></script>
+<style>
+  html, body { margin: 0; background: #202020; color: #f5f5f5; font-family: ui-sans-serif, system-ui, sans-serif; }
+  #dt-canvas { background: #202020; }
+  .title, .pane { position: absolute; margin: 0; box-sizing: border-box; }
+  .title { left: 400px; top: 40px; font: 700 64px/1 ui-sans-serif, system-ui, sans-serif; }
+  /* The pane is 960 by 540, three halves of the 640 by 360 film, so the film fills it at its own shape. */
+  .pane { left: 480px; top: 200px; width: 960px; height: 540px; background: #000; }
+</style>
+</head>
+<body>
+
+<div data-scene="1" data-name="A built film in a pane">
+  <template data-slide="1.1" data-describe="a film DeckTalk built, playing in its pane">
+    <p class="title" data-in="title" data-describe="the title, a built film in a pane">A built film in a pane</p>
+    <div class="pane" data-clip="deck/clips/film.mp4" data-clip-from="play" data-describe="the film plays"></div>
+  </template>
+</div>
+
+</body>
+</html>

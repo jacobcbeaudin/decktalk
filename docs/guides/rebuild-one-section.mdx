@@ -197,7 +197,8 @@ refused over them.
 | `[narration] voice`, or a `[voice NAME]` line handing a turn to another voice | every turn whose voice changed | every section whose voice changed |
 | A voice's name, renamed with its `[voice NAME]` lines | nothing | nothing |
 | `motion.reduce` or `motion.scale` | nothing | every section |
-| A clip file, `[transition]` or `[mix]` | nothing | nothing |
+| A pane clip, the file a `data-clip` pane plays | nothing | every section that plays it, because the recording is keyed on the clip's content |
+| A clip section's file, `[transition]` or `[mix]` | nothing | nothing |
 
 ## Read it before you run it
 
@@ -444,7 +445,8 @@ stage, run that stage alone and the two after it that read what it wrote.
 |---|---|
 | A slide moved and the script did not | `decktalk record --section N`, then `decktalk assemble`, then `decktalk verify --section N` |
 | A cue phrase moved | `decktalk cue`, then `decktalk record --section N`, then `decktalk assemble` |
-| A clip file, `[transition]` or a `[mix]` level moved | `decktalk assemble`, then `decktalk verify` |
+| A pane clip moved | `decktalk record --section N` for every section that plays it, then `decktalk assemble`, then `decktalk verify` |
+| A clip section's file, `[transition]` or a `[mix]` level moved | `decktalk assemble`, then `decktalk verify` |
 | A sound effect's prompt moved | `decktalk score --spend`, then `decktalk assemble` |
 
 `--from STAGE` and `--to STAGE` do the same thing through `build`, which is the way to say it when

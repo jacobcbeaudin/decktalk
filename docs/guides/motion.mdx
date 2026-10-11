@@ -1,6 +1,6 @@
 ---
 title: Things that move
-description: Move an element from one word to another, turn a loop, draw every frame from the section second, or hand a section's picture to a program, and let verify measure each of them.
+description: Move an element from one word to another, turn a loop, draw every frame from the section second, play a film in a pane, or hand a section's picture to a program, and let verify measure each of them.
 ---
 
 A moment is a reveal. It is over in 0.46 seconds at most, and verify measures it as one step in the
@@ -15,7 +15,8 @@ it overlaps, and a motion that starts or stops on a cue is measured on its own i
 
 `decktalk init --example motion my-motion` writes a project that does every kind of motion on this
 page. Its first section moves a packet across the frame, turns a ring and springs a card in. Its
-second fills a bar from script. Its third is drawn by a Python script rather than a page.
+second fills a bar from script. Its third is drawn by a Python script rather than a page. Its fourth
+plays a film with its own sound in a pane, made at build time by another short script.
 
 ## Choose the noun
 
@@ -27,12 +28,14 @@ second fills a bar from script. Its third is drawn by a Python script rather tha
 | Script draws the progress of a motion between two words. | `DeckTalk.motion(el, { from, to, ease, draw })`. | The same as a motion in markup. |
 | Script draws every frame from the section second, such as a canvas. | A frame hook: `DeckTalk.frame(fn, { region })`. | Masks its region. |
 | A program other than the page draws the whole section. | A render section: `render_command` on the `[[section]]`. | Masks and measures the landings the program writes, or measures none of the section's cues without them. |
-| Footage you already have plays with its own sound. | A clip section: `clip` on the `[[section]]`. | Checks its start and its seams. [Add a clip section](/guides/clip-section) covers it. |
+| Footage with its own sound plays inside a page, framed and drawn over, while the voice keeps going. | A pane clip: `data-clip` with `data-clip-from`. | Masks the pane from its cue, measures its departure on the cue, and measures the clip's own landings on the film's clock. [Play a clip](/guides/clip-section#a-clip-in-a-pane) covers it. |
+| Footage you already have plays full frame with its own sound, and the voice pauses. | A clip section: `clip` on the `[[section]]`. | Checks its start and its seams. [Play a clip](/guides/clip-section) covers it. |
 
 A `<video>` or an `<audio>` element on a page is
 [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA). It plays at its own rate rather
 than on the stepped clock, so the recording could not say which frame of it shows at which second.
-Footage belongs in a clip section, and a moving picture a program makes belongs in a render section.
+Footage belongs in a pane with `data-clip`, which the recorder draws frame by frame on the stepped
+clock, or in a clip section, and a moving picture a program makes belongs in a render section.
 
 ## The four eases
 
@@ -328,8 +331,8 @@ that, so read [its licence](https://www.remotion.dev/license) before a project d
 
 ## What verify does with each
 
-The recorder samples every declared motion, loop and region on every frame it steps, and the
-recording log keeps one **lane** for each: the box it swept, the size of the element, the first and
+The recorder samples every declared motion, loop, region and pane clip on every frame it steps, and
+the recording log keeps one **lane** for each: the box it swept, the size of the element, the first and
 last second it moved, and the cues it lands on. [The lane report](/concepts/page-contract#the-lane-report)
 gives its fields.
 
@@ -350,29 +353,34 @@ Each landing is a row in a second table, under the cue table.
 | Column | JSON field | Meaning |
 |---|---|---|
 | `Section` | `section` | The section number. |
-| `Motion` | `cue` | The cue id the motion lands on. |
+| `Motion` | `cue` | The cue id the motion lands on, or the clip and its own cue for a landing inside a pane clip. |
 | `Landing` | `kind` | `depart` or `arrive`. |
 | `Spoken` | `spoken` | When the cue's word is spoken in the film. |
 | `Shown` | `shown` | The first or the last moving frame, or null when it never moved. |
 | `Offset` | `offset_seconds` | `Shown` less `Spoken`. |
+
+**Pane clips.** A pane clip is a lane from its cue on, and its cue is a departure measured on the
+pane. The landings a clip carries beside it, in `<clip>.landings.json`, are moved onto the film's
+clock from that cue and into the pane, and each is a row of the same table naming its clip.
 
 A landing on a cue that `cues.json` marks `"verify": false` has no row. [Verify](/reference/verify#motions)
 gives the whole measurement.
 
 ## On a still
 
-`storyboard` and `check` draw stills, and a still has no clock. A loop rests in its own style, and a
-motion whose departure cue has fired is drawn where it ends.
+`storyboard` and `check` draw stills, and a still has no clock. A loop rests in its own style, a
+motion whose departure cue has fired is drawn where it ends, and a pane clip shows its first frame.
 
 ## The findings
 
 | Code | Raised by | What happened | What to do |
 |---|---|---|---|
 | [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | `check` and `record` | Something still moves 0.46 seconds after it starts and declares no motion, loop or region. `check` reads every slide's stylesheet for it, and `record` catches anything a script starts. | Declare it as a motion or a loop, or give its frame hook a region. |
-| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | `record` | A motion names a cue with no second, or arrives no later than it departs. | Correct the cue name, add its row to `cues.json`, or list a script's cue in `data-owns`. |
-| [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) | `record` | A timer or an animation frame of the page's own changed the picture inside no declared motion, loop or region. | Make the change in a cue's handler, draw it from a frame hook with a region, or declare it as a motion. |
+| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | `record` | A motion or a pane clip names a cue with no second, or a motion arrives no later than it departs. | Correct the cue name, add its row to `cues.json`, or list a script's cue in `data-owns`. |
+| [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) | `record` | A timer or an animation frame of the page's own changed the picture inside no declared motion, loop, region or pane clip. | Make the change in a cue's handler, draw it from a frame hook with a region, or declare it as a motion. |
 | [`PAGE_MOTION_UNFINISHED`](/reference/findings/PAGE_MOTION_UNFINISHED) | `record` | A script motion's `draw` still changes its element half a second after the arrival, which is never drawn. | Move the arrival to a later cue, or end the change by the arrival. |
-| [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA) | `check` and `record` | A slide holds a `<video>` or an `<audio>`. | Play the footage as a clip section, or draw the picture in a render section. |
+| [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA) | `check` and `record` | A slide holds a `<video>` or an `<audio>`. | Play the footage in a pane with `data-clip` or as a clip section, or draw the picture in a render section. |
+| [`PAGE_CLIP_UNREADABLE`](/reference/findings/PAGE_CLIP_UNREADABLE) | `record` | A pane clip names a file the origin could not decode into a picture. | Point `data-clip` at a video file the page may load, or check the `[[clip]]` that makes it. |
 | [`PAGE_FRAME_THREW`](/reference/findings/PAGE_FRAME_THREW) | `record` | A frame hook threw, and it draws nothing from that frame on. | Open the browser console under `decktalk serve` and fix the hook. |
 | [`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE) | `check` | A `settle` or `spring` motion arrives on a cue verify would measure. | Make the ease `firm`, or mark the arrival cue `"verify": false`. |
 | [`MOTION_OFF`](/reference/findings/MOTION_OFF) | `verify` | A departure or an arrival landed outside the offset limit of its word, or a departure never moved. | Read the offset in the message, and look at the cue's phrase as you would for `CUE_OFF`. |
@@ -384,4 +392,4 @@ motion whose departure cue has fired is drawn where it ends.
 - **Read the noun beside the moment:** [The page contract](/concepts/page-contract#motion)
 - **Look up every call a page may make:** [Runtime](/reference/runtime#the-decktalk-object)
 - **Read what verify measures:** [Verify](/reference/verify)
-- **Play footage you already have:** [Add a clip section](/guides/clip-section)
+- **Play footage in a pane or full frame:** [Play a clip](/guides/clip-section)

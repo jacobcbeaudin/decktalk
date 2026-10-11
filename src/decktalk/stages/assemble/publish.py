@@ -17,11 +17,11 @@ from __future__ import annotations
 import itertools
 import shutil
 import time
-from collections.abc import Mapping
-from dataclasses import replace
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from decktalk.artifacts import Placement, Placements, Takes
+from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Takes, Unreadable, words_beside
 from decktalk.captions import (
     CAPTION_MAX_CHARS,
     CaptionCue,
@@ -47,7 +47,7 @@ from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import scene_entry, slide_cues
-from decktalk.results import SectionKind, Substitute, Word, section_key
+from decktalk.results import SectionKind, Substitute, section_key
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
 from decktalk.stages.assemble.mix import effect_second
 from decktalk.stages.storyboard import open_project_page
@@ -66,73 +66,161 @@ STAMP_FORMAT = "%Y%m%d-%H%M"
 # ---- captions ---------------------------------------------------------------------------------
 
 
-def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], texts: Mapping[int, str]) -> list[
-    CaptionCue
-]:  # fmt: skip
-    """Cues for every turn of every spoken section, shifted to where its narration sits in the finished film.
+def build_captions(inputs: Inputs, narrated: Mapping[int, Sequence[SpokenTurn]]) -> list[CaptionCue]:
+    """Cues for every turn of every spoken section, `narrated_turns` placing each where the finished film says it.
 
-    `offsets` is what `inputs.timeline.narration_offsets` gives, which is what to add to a time in
-    the joined narration to place it in the film. Each turn is captioned on its own, so a caption
-    never spans two turns, the way it never spans two sections. A turn's captions take the
-    punctuation and the case of the text it was narrated from, and a section of one turn falls back
-    to `texts`, which lends it the script's.
-
-    Every caption knows the voice and the turn that speak it, which a page drawing the captioned copy
-    places it by. The files carry the words alone unless `[output] caption_voices` is on, and then
-    every caption of a section spoken in more than one voice is named. The .srt writes that name
-    before the line, so those turns are wrapped short enough that the name and the line still fit in
-    `CAPTION_MAX_CHARS`.
+    Each turn is captioned on its own, so a caption never spans two turns, the way it never spans two
+    sections. Every caption knows the voice and the turn that speak it, which a page drawing the
+    captioned copy places it by. The files carry the words alone unless `[output] caption_voices` is
+    on, and then every caption of a section spoken in more than one voice is named. The .srt writes
+    that name before the line, so those turns are wrapped short enough that the name and the line still
+    fit in `CAPTION_MAX_CHARS`.
     """
     named = inputs.settings.output.caption_voices
     cues: list[CaptionCue] = []
-    placed = takes.placed
-    for number in takes.numbers:
-        shift = offsets.get(number, 0.0) + placed[number].start
-        turns = inputs.turn_words(number)
+    for turns in narrated.values():
         dialogue = named and len({turn.voice for turn in turns}) > 1
         for turn in turns:
-            words = list(turn.words.shifted(shift))
-            text = turn.spoken or (texts.get(number) if len(turns) == 1 else None)
-            shown = display_words(words, text) if text else words
             room = CAPTION_MAX_CHARS - len(voice_label(turn.voice)) if dialogue else CAPTION_MAX_CHARS
             cues += [
                 replace(cue, voice=turn.voice, turn=turn.turn, named=dialogue)
-                for cue in caption_cues(shown, max_chars=room)
+                for cue in caption_cues(list(turn.words), max_chars=room)
             ]
     return cues
 
 
-def clip_captions(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[CaptionCue]:
-    """Cues for the speech inside each clip section that names a words file.
+def narrated_turns(
+    inputs: Inputs, takes: Takes, offsets: Mapping[int, float], texts: Mapping[int, str]
+) -> dict[int, list[SpokenTurn]]:
+    """Every turn of every spoken section, keyed by its section, its words where the finished film says them.
 
-    The words count from the clip's own start and carry their own punctuation. A word that starts
-    after the clip's picture ends is dropped. A slate, and a clip with no audio, get no captions.
+    `offsets` is what `inputs.timeline.narration_offsets` gives, which is what to add to a time in
+    the joined narration to place it in the film. A turn's words take the punctuation and the case of
+    the text it was narrated from, and a section of one turn falls back to `texts`, which lends it the
+    script's.
+    """
+    out: dict[int, list[SpokenTurn]] = {}
+    placed = takes.placed
+    for number in takes.numbers:
+        shift = offsets.get(number, 0.0) + placed[number].start
+        turns = inputs.turn_words(number)
+        out[number] = []
+        for turn in turns:
+            words = list(turn.words.shifted(shift))
+            text = turn.spoken or (texts.get(number) if len(turns) == 1 else None)
+            shown = display_words(words, text) if text else words
+            said = tuple(
+                SpokenWord(word=w.word, start=w.start, end=w.end, voice=turn.voice, turn=turn.turn) for w in shown
+            )
+            out[number].append(SpokenTurn(voice=turn.voice, turn=turn.turn, words=said))
+    return out
+
+
+@dataclass(frozen=True)
+class SpokenTurn:
+    """One turn of the narration as the film shows it: who says it, and its words on the film's clock."""
+
+    voice: str
+    turn: int
+    words: tuple[SpokenWord, ...]
+
+
+def inner_words(found: ClipWords, shift: float, until: float) -> tuple[SpokenWord, ...]:
+    """The words of a clip played from `shift` on the film's clock, as far as `until` seconds of it play.
+
+    A word that starts once the clip has stopped playing is not heard, and one that runs past it ends there.
+    """
+    return tuple(
+        word.model_copy(
+            update={
+                "start": round(shift + word.start, SECOND_DIGITS),
+                "end": round(shift + min(word.end, until), SECOND_DIGITS),
+            }
+        )
+        for word in found.words
+        if word.start < until
+    )
+
+
+def spoken_cues(words: Sequence[SpokenWord]) -> list[CaptionCue]:
+    """Captions for the words inside one clip, one run per voice and turn, each knowing who says it.
+
+    A clip's captions never name a voice, so a page drawing the captioned copy places them by voice
+    and turn and nothing it draws names anyone.
+    """
+    cues: list[CaptionCue] = []
+    for (voice, turn), run in itertools.groupby(words, key=lambda word: (word.voice, word.turn)):
+        cues += [replace(cue, voice=voice, turn=turn) for cue in caption_cues(list(run))]
+    return cues
+
+
+def clip_words(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[tuple[SpokenWord, ...]]:
+    """The words inside every clip the film plays with sound, one list per clip, on the film's clock.
+
+    A clip section's words are the file its `words` key names. A pane clip's are the words file
+    beside it, `<clip>.words.json`, which `decktalk clip` writes beside every clip it cuts and every
+    build writes beside its film, from the pane's cue for as long as the clip plays there. A slate, a
+    clip with no audio and a pane clip with no words file beside it add nothing.
     """
     starts = rendered_starts(rows)
-    cues: list[CaptionCue] = []
+    found: list[tuple[SpokenWord, ...]] = []
     for row in rows:
         section = row.section
-        if not isinstance(section, ClipSection) or not section.words or row.audio is None:
+        if isinstance(section, ClipSection):
+            if not section.words or row.audio is None:
+                continue
+            words = inputs.clip_words(section)
+            if words is None:
+                run.note(
+                    f"{section.words} is not there, so section {section.number} plays with no captions.",
+                    level=Level.WARNING,
+                )
+                continue
+            found.append(inner_words(words, starts[row.number], row.seconds))
+        elif isinstance(section, PageSection):
+            found += _pane_words(inputs, run, row, starts[row.number])
+    return [words for words in found if words]
+
+
+def _pane_words(inputs: Inputs, run: Run, row: Rendered, start: float) -> list[tuple[SpokenWord, ...]]:
+    """The words of every pane clip one page section played with sound, from each pane's cue."""
+    log = inputs.recording_log(row.key)
+    if log is None:
+        return []
+    played = min(row.seconds, log.recording.requested_seconds)
+    found: list[tuple[SpokenWord, ...]] = []
+    for lane in log.recording.pane_clips():
+        path = inputs.path(lane.clip or "")
+        cue = lane.landings[0].at
+        if cue >= played or not path.is_file() or not ffmpeg.has_audio(path):
             continue
-        found = inputs.clip_words(section)
-        if found is None:
+        try:
+            words = ClipWords.parse(words_beside(path))
+        except Unreadable as unread:
             run.note(
-                f"{section.words} is not there, so section {section.number} plays with no captions.",
+                f"Section {row.number} plays the pane clip {lane.clip}, and {unread}, so its speech has no captions.",
                 level=Level.WARNING,
             )
             continue
-        shift = starts[row.number]
-        inside = [
-            Word(
-                word=word.word,
-                start=round(shift + word.start, SECOND_DIGITS),
-                end=round(shift + min(word.end, row.seconds), SECOND_DIGITS),
-            )
-            for word in found.words
-            if word.start < row.seconds
-        ]
-        cues += caption_cues(inside)
-    return cues
+        if words is not None:
+            found.append(inner_words(words, start + cue, min(ffmpeg.probe_duration(path), played - cue)))
+    return found
+
+
+def clip_captions(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[CaptionCue]:
+    """Cues for the speech inside every clip the film plays, a clip section's and a pane clip's alike."""
+    return [cue for words in clip_words(inputs, run, rows) for cue in spoken_cues(words)]
+
+
+def film_words(narrated: Mapping[int, Sequence[SpokenTurn]], inside: Sequence[Sequence[SpokenWord]]) -> ClipWords:
+    """Every word the film says, the narration's and every clip's, in the order they start, on the film's clock.
+
+    This is what the film carries beside itself as `<name>.words.json`, so a pane that plays it in
+    another film captions its speech there as this film captions it.
+    """
+    words = [word for turns in narrated.values() for turn in turns for word in turn.words]
+    words += [word for clip in inside for word in clip]
+    return ClipWords(words=tuple(sorted(words, key=lambda word: word.start)))
 
 
 def uncaptioned_sounds(inputs: Inputs, run: Run) -> None:
@@ -448,7 +536,13 @@ __all__ = [
     "build_captions",
     "build_chapters",
     "caption_texts",
+    "SpokenTurn",
     "clip_captions",
+    "clip_words",
+    "film_words",
+    "inner_words",
+    "narrated_turns",
+    "spoken_cues",
     "clip_speech",
     "dialogue_turns",
     "placement_note",

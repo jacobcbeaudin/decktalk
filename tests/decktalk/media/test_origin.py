@@ -17,6 +17,7 @@ import pytest
 from decktalk.errors import ToolError
 from decktalk.media import origin
 from decktalk.media.browser import TRUSTED, UNTRUSTED, chromium
+from decktalk.media.clipframes import FRAME_TYPE, ClipFrames
 from decktalk.media.origin import (
     HIDDEN,
     OFF_ORIGIN,
@@ -26,6 +27,7 @@ from decktalk.media.origin import (
     UNDECLARED,
     Allowed,
     Assets,
+    clip_ask,
     content_type,
     local_target,
     open_server,
@@ -34,7 +36,7 @@ from decktalk.media.origin import (
     served_url,
 )
 from decktalk.media.pages import open_page
-from decktalk.page import ENGINE_PATH, Q
+from decktalk.page import CLIP_FRAMES, ENGINE_PATH, Q
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
 from support.fakes import FakeRouter
 from support.logs import data_of
@@ -597,3 +599,77 @@ def test_a_page_with_no_copy_of_the_runtime_gets_the_engines(tmp_path):
         assert page.evaluate("() => typeof window.katex.render") == "function"
         assert assets.paths == ["deck/index.html"] and assets.refused == []
     assert sorted(p.name for p in (tmp_path / "deck").iterdir()) == ["index.html"]
+
+
+# ---- the frames of a pane clip ------------------------------------------------------------------------
+
+
+class Frames(ClipFrames):
+    """A clip decoder that answers each frame with the clip's name and the second it was asked for."""
+
+    def __init__(self) -> None:
+        super().__init__(fps=25)
+        self.asked: list[tuple[str, float]] = []
+
+    def frame(self, path: Path, second: float) -> bytes | None:
+        self.asked.append((path.name, second))
+        return None if path.name == "broken.mp4" else f"{path.name}@{second}".encode()
+
+
+def clip_project(tmp_path: Path) -> Allowed:
+    clips = tmp_path / "deck" / "clips"
+    clips.mkdir(parents=True)
+    for name in ("film.mp4", "broken.mp4"):
+        (clips / name).write_bytes(b"film")
+    (tmp_path / "secret.mp4").write_bytes(b"not the deck's")
+    return Allowed.of(tmp_path, ["deck"])
+
+
+def test_a_pane_clip_s_frame_is_answered_as_a_picture_and_its_clip_is_a_file_the_page_loaded(tmp_path):
+    target, frames = FakeRouter(), Frames()
+    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
+    served = target.request(f"{ORIGIN}{CLIP_FRAMES}1.24/deck/clips/film.mp4")
+    assert served.answer == {"status": 200, "content_type": FRAME_TYPE, "body": b"film.mp4@1.24"}
+    assert frames.asked == [("film.mp4", 1.24)]
+    assert assets.paths == ["deck/clips/film.mp4"]
+
+
+def test_a_pane_clip_is_held_to_the_rule_every_project_file_is(tmp_path):
+    """A frame request is a way to read a file, so it opens only what the page could have fetched itself."""
+    target, frames = FakeRouter(), Frames()
+    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
+    for asked in ("0/secret.mp4", "0/deck/../secret.mp4", "0/.env", "0/deck/clips/../../.env"):
+        refused = target.request(f"{ORIGIN}{CLIP_FRAMES}{asked}")
+        assert refused.answer is not None and refused.answer["status"] == 403, asked
+    assert frames.asked == [] and assets.paths == []
+    assert assets.refused
+
+
+@pytest.mark.parametrize(
+    "asked", ["-1/deck/clips/film.mp4", "soon/deck/clips/film.mp4", "nan/deck/clips/film.mp4", "2"]
+)
+def test_a_frame_asked_for_by_no_second_of_0_or_more_is_refused(tmp_path, asked):
+    target, frames = FakeRouter(), Frames()
+    route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
+    refused = target.request(f"{ORIGIN}{CLIP_FRAMES}{asked}")
+    assert refused.answer is not None and refused.answer["status"] == 403
+    assert frames.asked == []
+
+
+def test_a_pane_clip_that_is_missing_or_does_not_decode_is_no_picture(tmp_path):
+    target, frames = FakeRouter(), Frames()
+    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
+    missing = target.request(f"{ORIGIN}{CLIP_FRAMES}0/deck/clips/gone.mp4")
+    assert missing.answer is not None and missing.answer["status"] == 404
+    assert assets.missing == ["deck/clips/gone.mp4"]
+    broken = target.request(f"{ORIGIN}{CLIP_FRAMES}0/deck/clips/broken.mp4")
+    assert broken.answer is not None and broken.answer["status"] == 422
+
+
+def test_a_clip_ask_reads_the_second_and_the_clip_and_nothing_else_is_one(tmp_path):
+    allowed = clip_project(tmp_path)
+    ask = clip_ask(allowed, "__decktalk/clip/0.5/deck/clips/film.mp4")
+    assert ask is not None and ask.second == 0.5
+    assert ask.target.path == (tmp_path / "deck" / "clips" / "film.mp4").resolve()
+    assert clip_ask(allowed, "deck/clips/film.mp4") is None
+    assert clip_ask(allowed, "__decktalk/decktalk-runtime.js") is None

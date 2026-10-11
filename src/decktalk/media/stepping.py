@@ -49,6 +49,7 @@ from ..page import SECOND_DIGITS
 from ..settings import MotionConfig
 from . import ffmpeg
 from .browser import Chromium
+from .clipframes import ClipFrames
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording, UndeclaredChange, joined
 from .pages import (
@@ -470,12 +471,16 @@ def stepping(
     color_scheme: str,
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
+    clips: ClipFrames | None = None,
 ) -> Iterator[tuple[Page, Assets]]:
-    """A page on Playwright's clock in a context of its own, and what it loads, closed however this ends."""
+    """A page on Playwright's clock in a context of its own, and what it loads, closed however this ends.
+
+    `clips` decodes every pane clip the page plays, and is stopped with the context.
+    """
     with driving("could not open a recording context"):
         context = chromium.browser.new_context(**view(width, height, color_scheme, motion))
     try:
-        assets = route_pages(context, allowed, documents, trusted=chromium.trusted)
+        assets = route_pages(context, allowed, documents, trusted=chromium.trusted, clips=clips)
         instrument(context, *motion_scripts(motion))
         with driving("could not open a page"):
             page = context.new_page()
@@ -484,6 +489,8 @@ def stepping(
     finally:
         with driving("could not close the recording context"):
             context.close()
+        if clips is not None:
+            clips.close()
 
 
 @dataclass(frozen=True)
@@ -542,7 +549,15 @@ def record_piece(
     partial = out.with_name(f".{out.name}.part{out.suffix}")
     out.parent.mkdir(parents=True, exist_ok=True)
     with stepping(
-        chromium, allowed, width=width, height=height, color_scheme=color_scheme, motion=motion, documents=documents
+        chromium,
+        allowed,
+        width=width,
+        height=height,
+        color_scheme=color_scheme,
+        motion=motion,
+        documents=documents,
+        # Every pane clip is decoded at the film's rate and no larger than its frame, by the ffmpeg the encode runs.
+        clips=ClipFrames(fps=fps, executable=ffmpeg.ffmpeg(), width=width, height=height),
     ) as (page, assets):
         caught: list[str] = []
         console: list[tuple[str, str]] = []

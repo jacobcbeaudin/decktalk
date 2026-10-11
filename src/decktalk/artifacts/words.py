@@ -44,6 +44,7 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
+from pathlib import Path
 from typing import ClassVar, Self
 
 from pydantic import Field, model_validator
@@ -162,14 +163,30 @@ class EstimatedWords(Words):
     estimated: ClassVar[bool] = True
 
 
-class ClipWords(Words):
-    """Every word inside one clip, on the clip's own clock, cut from the words of the take it plays.
+class SpokenWord(Word):
+    """One word inside a clip with the voice and the turn that say it, which a caption of it carries and never names."""
 
-    The file lives wherever `decktalk clip` was told to write it, and a section that names it in
-    `decktalk.toml` makes it an input the author owns, which DeckTalk reads and never writes again.
+    voice: str | None = Field(None, description="The voice that says the word, or null when the file does not say.")
+    turn: int | None = Field(None, ge=1, description="The turn of its section the word is said in, or null.")
+
+
+class ClipWords(Words):
+    """Every word inside one clip, on the clip's own clock, as the captions show them.
+
+    `decktalk clip` writes one beside every clip it cuts, and every build writes its film's own beside
+    the film as `<name>.words.json`, each word with its voice and its turn, so a pane that plays either
+    captions its speech. A section that names one in `decktalk.toml` makes it an input the author owns,
+    which DeckTalk reads and never writes again.
     """
 
     label: ClassVar[str] = "the words of one clip"
+
+    words: tuple[SpokenWord, ...] = Field((), description="Every spoken word with its span, in speaking order.")
+
+
+def words_beside(media: Path) -> Path:
+    """Where the words of a clip or a film sit, beside it under its name: `film.words.json` beside `film.mp4`."""
+    return media.with_name(f"{media.stem}{WORDS_SUFFIX}")
 
 
 def _head(text: str) -> str:
@@ -242,6 +259,7 @@ def words_file(digest: str) -> str:
 
 
 __all__ = [
+    "SpokenWord",
     "WORDS_SUFFIX",
     "AlignedWords",
     "AlignmentInputs",
@@ -252,5 +270,6 @@ __all__ = [
     "Words",
     "alignment_match",
     "on_section_clock",
+    "words_beside",
     "words_file",
 ]

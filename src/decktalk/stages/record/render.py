@@ -1,4 +1,4 @@
-"""A narrated section whose picture an external command draws, which is the second source of a section's picture.
+"""Programs a project names: the command that draws a narrated section, and the commands that make its clips.
 
 A page section's picture is the page, stepped one frame at a time. A section that names a
 `render_command` is narrated exactly as a page section is, so the take decides its length, `cue`
@@ -19,6 +19,16 @@ The words a command is given are replaced before it runs:
     {landings}  where it may write its landings
     {python}    the Python this run is
     {ffmpeg}    the ffmpeg this run encodes with
+
+A clip the project makes is the other program a project names. A `[[clip]]` names a project file and
+the command that writes it, and `record` runs the command when the file is not there, before it
+records anything, so a pane or a clip section can play footage a package cannot ship or the film
+draws from its own sources. Its words are `{out}`, `{landings}`, `{python}` and `{ffmpeg}` as above,
+`{words}`, and `{fps}`, `{width}` and `{height}`, the film's rate and frame, so a clip can be made at
+the rate its pane steps at. Its landings and its words are written beside the clip, where verify reads
+a clip's own landings from and `assemble` the speech a pane clip's captions carry. Its video is
+written beside the file under another name and moved onto it once the command has finished, so a
+command that stopped half way leaves no file that would be taken for a clip.
 """
 
 from __future__ import annotations
@@ -34,9 +44,12 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
+from decktalk.artifacts import words_beside
 from decktalk.errors import InputError, ToolError
+from decktalk.inputs.document import MadeClip
 from decktalk.media import ffmpeg
 from decktalk.media.browser import UNTRUSTED
+from decktalk.media.clipframes import landings_of
 from decktalk.media.environment import child_environment
 from decktalk.media.pagereport import MotionLane
 from decktalk.results import Word
@@ -62,13 +75,12 @@ class Rendered:
     motions: tuple[MotionLane, ...]
 
 
-def admitted(policy: str, *, number: int) -> None:
-    """Refuse a section's command on a host that does not trust the project, which names the program it runs."""
+def admitted(policy: str, *, what: str) -> None:
+    """Refuse a command a project names on a host that does not trust the project, naming what named it."""
     if policy == UNTRUSTED:
         raise InputError(
-            f"section {number} names a render_command, and this machine treats every page as untrusted, so it "
-            "runs no program a project names.",
-            hint="Render the section on a machine that trusts the project, or make it a page section.",
+            f"{what}, and this machine treats every page as untrusted, so it runs no program a project names.",
+            hint="Build on a machine that trusts the project, or give it the file the command would have made.",
         )
 
 
@@ -103,6 +115,35 @@ def filled(command: Sequence[str], words: Mapping[str, Callable[[], str]]) -> li
     return out
 
 
+def run_program(
+    command: Sequence[str], *, root: Path, out: Path, words: Mapping[str, Callable[[], str]], timeout: float, what: str
+) -> float:
+    """Run one command a project names from its root, and answer how many seconds it took to write `out`.
+
+    The command runs with the scrubbed environment every tool gets, never the process's own, so a
+    credential a host left in its environment does not reach it. A command that fails, outlives the
+    machine's tool limit or writes no video is a `ToolError` naming `what`.
+    """
+    out.unlink(missing_ok=True)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    argv = filled(command, words)
+    began = time.monotonic()
+    try:
+        done = subprocess.run(
+            argv, cwd=root, env=child_environment(), capture_output=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired:
+        raise ToolError(f"{what} ran past the {timeout:g} seconds tools.timeout_seconds allows.") from None
+    except OSError as cannot:
+        raise ToolError(f"{what} could not start ({cannot}).") from None
+    traced(log, what, argv, code=done.returncode, seconds=time.monotonic() - began, said=done.stderr)
+    if done.returncode != 0:
+        raise ToolError(f"{what} failed with exit {done.returncode}: {tail(done.stderr)}")
+    if not out.is_file():
+        raise ToolError(f"{what} wrote no video at {out.name}.")
+    return round(time.monotonic() - began, 3)
+
+
 def run_command(
     command: Sequence[str],
     *,
@@ -113,19 +154,12 @@ def run_command(
     timeout: float,
     label: str,
 ) -> Rendered:
-    """Write the motion document, run the command from the project's root, and read what it left.
-
-    The command runs with the scrubbed environment every tool gets, never the process's own, so a
-    credential a host left in its environment does not reach it. A command that fails, outlives the
-    machine's tool limit or writes no video is a `ToolError` naming the section.
-    """
+    """Write the motion document, run a section's command from the project's root, and read what it left."""
     work.mkdir(parents=True, exist_ok=True)
     motion = work / MOTION_FILE
     landings = work / LANDINGS_FILE
     motion.write_text(json.dumps(document, indent=1), encoding="utf-8")
     landings.unlink(missing_ok=True)
-    out.unlink(missing_ok=True)
-    out.parent.mkdir(parents=True, exist_ok=True)
     words: dict[str, Callable[[], str]] = {
         "motion": lambda: str(motion),
         "out": lambda: str(out),
@@ -133,31 +167,41 @@ def run_command(
         "python": lambda: sys.executable,
         "ffmpeg": ffmpeg.ffmpeg,
     }
-    began = time.monotonic()
+    what = f"the render_command of {label}"
+    seconds = run_program(command, root=root, out=out, words=words, timeout=timeout, what=what)
+    return Rendered(seconds=seconds, motions=read_landings(landings, label))
+
+
+def make_clip(clip: MadeClip, *, root: Path, fps: int, width: int, height: int, timeout: float) -> Path:
+    """Run the command of one clip the project makes, and move what it wrote onto the clip's own file.
+
+    The video is written beside the clip under a name that opens with a dot, which the origin never
+    serves, and moved onto the clip only once the command has finished, so the clip is whole or absent.
+    """
+    final = root / clip.file
+    partial = final.with_name(f".{final.stem}.part{final.suffix}")
+    landings, said = landings_of(final), words_beside(final)
+    landings.unlink(missing_ok=True)
+    said.unlink(missing_ok=True)
+    words: dict[str, Callable[[], str]] = {
+        "out": lambda: str(partial),
+        "landings": lambda: str(landings),
+        "words": lambda: str(said),
+        "python": lambda: sys.executable,
+        "ffmpeg": ffmpeg.ffmpeg,
+        "fps": lambda: str(fps),
+        "width": lambda: str(width),
+        "height": lambda: str(height),
+    }
     try:
-        done = subprocess.run(
-            filled(command, words), cwd=root, env=child_environment(), capture_output=True, timeout=timeout, check=False
+        run_program(
+            clip.command, root=root, out=partial, words=words, timeout=timeout, what=f"the command of {clip.file}"
         )
-    except subprocess.TimeoutExpired:
-        raise ToolError(
-            f"the render_command of {label} ran past the {timeout:g} seconds tools.timeout_seconds allows."
-        ) from None
-    except OSError as cannot:
-        raise ToolError(f"the render_command of {label} could not start ({cannot}).") from None
-    argv = filled(command, words)
-    traced(
-        log,
-        f"the render_command of {label}",
-        argv,
-        code=done.returncode,
-        seconds=time.monotonic() - began,
-        said=done.stderr,
-    )
-    if done.returncode != 0:
-        raise ToolError(f"the render_command of {label} failed with exit {done.returncode}: {tail(done.stderr)}")
-    if not out.is_file():
-        raise ToolError(f"the render_command of {label} wrote no video at {out.name}.")
-    return Rendered(seconds=round(time.monotonic() - began, 3), motions=read_landings(landings, label))
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    partial.replace(final)
+    return final
 
 
 def read_landings(path: Path, label: str) -> tuple[MotionLane, ...]:
@@ -179,7 +223,9 @@ __all__ = [
     "Rendered",
     "admitted",
     "filled",
+    "make_clip",
     "motion_document",
     "read_landings",
     "run_command",
+    "run_program",
 ]

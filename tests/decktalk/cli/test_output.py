@@ -141,7 +141,7 @@ key10 = value13 (override)
   type type11, default default14, range16
   unit unit15
   hazard hazard42
-  decides PAGE_SPOTLIGHT_EMPTY
+  decides PAGE_STAGGER_EMPTY
   docs docs43
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
@@ -272,9 +272,9 @@ Verifying build/film11, 0:12 long.
  23        cue24   25.25    26.25   +27.25   30.2%
 
 
- Section   Motion   Landing   Spoken   Shown   Offset
- ────────────────────────────────────────────────────
- 31        cue32    depart    33.25    34.25   +35.25
+ Section   Motion         Landing   Spoken   Shown   Offset
+ ──────────────────────────────────────────────────────────
+ 31        clip36 cue32   depart    33.25    34.25   +35.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.

@@ -319,9 +319,9 @@ A whole run that lands a frame or two late is usually a slow machine rather than
 
 ## Motions
 
-A page declares everything that moves for longer than a moment, as a motion, a loop or the region a
-frame hook draws in, and a render section's program may write the same declarations as its
-landings. The recorder keeps one lane for each in the recording log, with the box it swept and the
+A page declares everything that moves for longer than a moment, as a motion, a loop, the region a
+frame hook draws in or a pane clip, and a render section's program may write the same declarations
+as its landings. The recorder keeps one lane for each in the recording log, with the box it swept and the
 seconds it moved, and verify reads the lanes from there.
 [The lane report](/concepts/page-contract#the-lane-report) gives their fields.
 
@@ -358,11 +358,12 @@ The landing table holds one row per landing, in film order.
 | Column | JSON field | Meaning |
 |---|---|---|
 | `Section` | `section` | The section number. |
-| `Motion` | `cue` | The cue id the motion lands on. |
+| `Motion` | `cue` | The cue id the motion lands on. A landing inside a pane clip prints its clip before the clip's own cue. |
 | `Landing` | `kind` | `depart` or `arrive`. |
 | `Spoken` | `spoken` | When the cue's word is spoken in the film, in seconds. |
 | `Shown` | `shown` | The first moving frame for a departure or the last for an arrival, or null when the lane never moved. |
 | `Offset` | `offset_seconds` | `Shown` less `Spoken`, in seconds. |
+| | `clip` | The pane clip the landing is inside, as its project path, or null for a landing of the page. |
 
 ```text
 MOTION_NO_EDGE when an arrival shows earlier than its word by more than the offset limit, or never moved
@@ -375,6 +376,33 @@ the cue: a motion that eases to rest has no edge on its word, and `firm` gives i
 
 A landing on a cue that `cues.json` marks `"verify": false` has no row and no finding, which is how a
 `settle` or `spring` arrival is written.
+
+### A pane clip
+
+A pane clip is a lane from its cue to the end of its section, so every cue after it is measured with
+the pane masked, and its cue is a departure measured on the pane: the first frame after the cue on
+which the clip's own picture moves. The clip's first frame shows from its cue, so its first change
+shows on the frame after, inside the offset limit at every rate. Before its cue the pane holds that
+first frame too, so a clip whose first frames are still has no departure to find, and its cue is
+marked `"verify": false`.
+
+Verify also measures what happens inside the clip. A clip carries its own landings beside it as
+`<clip>.landings.json`, in the shape of a lane, on the clip's own clock and in its own pixels. A film
+DeckTalk built writes them as `<name>.landings.json` in `build/final/`, every reveal and every
+landing its own verify measured, and the command of a `[[clip]]` writes them through `{landings}`.
+Verify moves each one onto the film's clock from the pane's cue and into the pane's box, and
+measures it on its lane like a motion of the page: a reveal as a departure on its cue. Its row
+names the clip in `clip`, and its cue is the clip's own, which is never a cue of this project, so a
+`"verify": false` in `cues.json` never reaches it.
+
+Every landing of a clip falls between its cue and its end, so the pane has to hold still only while
+the clip plays: from its cue for the clip's own length. Still means exactly where the browser laid it
+out on the cue's frame, so a pane on a fraction of a pixel is still. Once the clip has played, the
+camera may carry the pane away in the same section. A pane that moved or changed size before its clip
+ended has no one box to move the clip's lanes into, and a landings file that is not in the shape of
+lanes has nothing to move. Either is said once on the stream, naming the clip and, for a pane that
+moved, the second it moved and the second the clip ended, and none of that clip's landings is
+measured.
 
 ### A render section
 
@@ -471,7 +499,7 @@ of its own.
 | `cuts[]` | array | One object per section with a take, with `section`, `at_seconds` for where its narration ends in the film, `speech_dbfs` for the level in the window before it and `step_dbfs` for the jump across it. |
 | `seams[]` | array | One object per assembled section that sets `seamless`, with `section`, `at_seconds` and `drift_seconds`. |
 | `cues[]` | array | One object per cue, with the columns of the printed table plus `change_percent` and `skipped`. |
-| `motions[]` | array | One object per measured landing, with `section`, `cue`, `kind`, `spoken`, `shown` and `offset_seconds`, in film order. |
+| `motions[]` | array | One object per measured landing, with `section`, `cue`, `kind`, `spoken`, `shown`, `offset_seconds` and `clip`, in film order. |
 | `elapsed_seconds` | number | How long this call took. |
 
 A skipped cue has `null` in `shown`, `offset_seconds` and `change_percent`. A measured cue has `null` in

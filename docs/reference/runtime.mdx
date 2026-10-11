@@ -245,7 +245,7 @@ than save one.
 
 `window.__decktalk` is the live view whoever is reading the page back uses. Every field is a getter,
 so a reader sees the page as it stands: `version`, `ready`, `mode`, `scene`, `slide`, `cues`,
-`fired`, `warnings`, `catalog`, `motions`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
+`fired`, `warnings`, `catalog`, `motions`, `reveals`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
 two functions, which say the second on the section clock and whether the clock has begun.
 `undeclared(nodes)` names the first of some nodes the page changed that is inside nothing declared as
 moving, or answers null, which is how the probe asks about a change it saw between two steps.
@@ -270,7 +270,7 @@ The recorder holds it as `window.__decktalkProbe`.
 
 | Call | What it does |
 |---|---|
-| `step(t, wait)` | Move the section clock to second `t` through `DeckTalk.stepTo(t)`, which is everything one recorded frame is, and answer `{ due, changed, stillUntil, undeclared }` once the page has drawn `t`: a whole rendering update has laid out, painted and committed the step, every font the page shows has loaded and every image has decoded. A page that has not drawn `t` within `wait` seconds is refused, and the recording stops at that frame. The recorder calls it once a frame, after it has moved the page's timers on by one frame, and captures only once it answers. When a task falls due between two frames, the recorder steps to that task's own second first, so a timer a cue sets runs from the cue and not from the frame after it. `due` is the runtime's, and `changed` is the runtime's answer joined with what only the browser knows: the DOM changed or scrolled, a font or an image arrived, or the page holds a `<canvas>`, `<video>`, `<iframe>`, `<embed>` or `<object>`, which always counts as changed. A page with no runtime always changed. `stillUntil` is the runtime's, or the second the page's own next timer is due if that is sooner, and `t` itself when the page holds one of those elements, has no runtime, or heard of a font, an image or a DOM change while the step was drawn. `undeclared` names the first element the page changed since the step before, by a timer or an animation frame of its own rather than anything the step ran, that sits inside no declared motion, loop or region, or is null. [Still frames](/decisions/the-recorder-steps-the-clock#still-frames) says what the recorder does with both. |
+| `step(t, wait)` | Move the section clock to second `t` through `DeckTalk.stepTo(t)`, which is everything one recorded frame is, and answer `{ due, changed, stillUntil, undeclared }` once the page has drawn `t`: a whole rendering update has laid out, painted and committed the step, every font the page shows has loaded and every image has decoded. A page that has not drawn `t` within `wait` seconds is refused, and the recording stops at that frame. The recorder calls it once a frame, after it has moved the page's timers on by one frame, and captures only once it answers. When a task falls due between two frames, the recorder steps to that task's own second first, so a timer a cue sets runs from the cue and not from the frame after it. `due` is the runtime's, and `changed` is the runtime's answer joined with what only the browser knows: the DOM changed or scrolled, a font or an image arrived, or the page holds a `<canvas>`, `<video>`, `<iframe>`, `<embed>` or `<object>`, which always counts as changed. A page with no runtime always changed. `stillUntil` is the runtime's, or the second the page's own next timer is due if that is sooner, and `t` itself when the page holds one of those elements, has no runtime, or heard of a font, an image or a DOM change while the step was drawn. `undeclared` names the first element the page changed since the step before, by a timer or an animation frame of its own rather than anything the step ran, that sits inside no declared motion, loop, region or pane clip, or is null. [Still frames](/decisions/the-recorder-steps-the-clock#still-frames) says what the recorder does with both. |
 | `started(wait)` | Answer once no animation on the page is still waiting for the browser to start it, which the recorder waits on before it holds the clock, so a loop the first slide set turning is paused at second zero rather than where the browser was about to start it. A page whose animations have not started within `wait` seconds is refused. |
 | `ready()` | The page's fonts and `window.__decktalk.ready`, whichever exist. |
 | `report()` | Everything the recorder reads back off the page, in one call. |
@@ -301,6 +301,7 @@ uv run python -c "from decktalk import page; print(page.REPORT)"
 | `cues` | When each cue was due, when it ran, and the second of the frame that showed it. |
 | `words` | Each synced line, when its cue ran, when the voice reaches it and when its first word showed. |
 | `motions` | Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on. |
+| `reveals` | Every cue that revealed or changed an element, the box it was drawn in and the second the cue was due. |
 
 The telemetry the probe keeps is what only the runtime can describe. A cue row carries the second it
 was due, the second it ran, the second of the frame that showed it and the sentence its reveals
@@ -358,8 +359,9 @@ belong to Python, and a page that reported one of those would be a deck judging 
 | `PAGE_SLIDE_HANDLER_THREW` | A slide's own moment handler threw, so that moment did not play. |
 | `PAGE_HANDLER_THREW` | A moment handler threw, so the change it was to make never happened. |
 | `PAGE_MOTION_UNDECLARED` | Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it. |
-| `PAGE_MOTION_CUE_UNKNOWN` | A motion names a cue no slide declares, so it never starts or never lands. |
+| `PAGE_MOTION_CUE_UNKNOWN` | A motion or a pane clip names a cue no slide declares, so it never starts or never lands. |
 | `PAGE_REALTIME_MEDIA` | A page holds a video or an audio element, which plays at its own rate and not on the stepped clock. |
+| `PAGE_CLIP_UNREADABLE` | A pane clip names a file the origin could not decode into a picture, so the pane plays nothing. |
 | `PAGE_FRAME_THREW` | A frame hook threw, so whatever it drew stopped moving from that frame on. |
 | `PAGE_WAIT_REJECTED` | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
 | `PAGE_WAIT_UNSETTLED` | A wait the page declared never settled inside its budget, so the runtime carried on without it. |

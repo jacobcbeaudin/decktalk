@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from decktalk.artifacts import Placement, Placements, Words
+from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Words
 from decktalk.captions import CAPTION_MAX_CHARS, CaptionCue, Said, srt_text, vtt_text
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
@@ -29,12 +29,16 @@ from decktalk.stages.assemble.publish import (
     clip_speech,
     described_cues,
     dialogue_turns,
+    film_words,
+    inner_words,
+    narrated_turns,
     one_at_a_time,
     placement_note,
     poster_query,
     publish,
     render_poster,
     sound_captions,
+    spoken_cues,
     transcript_sections,
     uncaptioned_sounds,
     with_sound_captions,
@@ -144,7 +148,7 @@ def test_captions_name_the_voice_of_a_dialogue_only_when_the_project_asks(tmp_pa
     words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
     narrated(inputs, first, second, alone, words=words)
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes)))
     expected = [True, True, False] if named else [False, False, False]
     assert [cue.named for cue in cues] == expected
     assert ("guest: alpha beta" in srt_text(cues)) is named
@@ -159,7 +163,7 @@ def test_every_spoken_caption_carries_its_voice_and_turn_whether_or_not_the_file
     words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
     narrated(inputs, first, second, alone, words=words)
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes)))
     assert [(cue.voice, cue.turn, cue.named) for cue in cues] == [
         ("guest", 1, False),
         ("narrator", 2, False),
@@ -177,7 +181,7 @@ def test_a_named_voice_leaves_room_on_the_line_for_its_name(tmp_path):
     second = a_take(1, turn=2, seconds=1.0, spoken=near, voice="guest", digest="0000000000000002")
     narrated(inputs, first, second, words={(1, 1): spoken(said), (1, 2): spoken(near)})
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, takes, {1: 0.0}, caption_texts(inputs, takes))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}, caption_texts(inputs, takes)))
     assert all(cue.named and len(f"{cue.voice}: {cue.lines[0]}") <= CAPTION_MAX_CHARS for cue in cues)
     assert len(cues[-1].lines) == 2
 
@@ -219,6 +223,39 @@ def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_
     assert path.read_text(encoding="utf-8") == "{not json"
 
 
+# ---- the speech inside a pane clip ------------------------------------------------------------
+
+
+def said(word: str, start: float, voice: str | None = None, turn: int | None = None) -> SpokenWord:
+    return SpokenWord(word=word, start=start, end=round(start + 0.3, 3), voice=voice, turn=turn)
+
+
+def test_a_clip_s_words_move_to_its_cue_and_stop_where_it_stops_playing() -> None:
+    """A word that starts once the clip has stopped is not heard, and one running past its stop ends there."""
+    words = ClipWords(words=(said("One.", 0.2, "a", 1), said("Two.", 1.9, "a", 1), said("Three.", 2.5, "a", 1)))
+    moved = inner_words(words, 10.0, 2.0)
+    assert [(word.word, word.start, word.end, word.voice) for word in moved] == [
+        ("One.", 10.2, 10.5, "a"),
+        ("Two.", 11.9, 12.0, "a"),
+    ]
+
+
+def test_a_clip_s_captions_are_one_run_per_voice_and_turn_and_name_nobody() -> None:
+    words = (said("Hello.", 0.0, "a", 1), said("Hi.", 0.4, "b", 2), said("Bye.", 0.8, "b", 2))
+    cues = spoken_cues(words)
+    assert [(cue.lines, cue.voice, cue.turn, cue.named) for cue in cues] == [
+        (("Hello.",), "a", 1, False),
+        (("Hi. Bye.",), "b", 2, False),
+    ]
+    assert "<v " not in vtt_text(cues)
+
+
+def test_a_film_s_words_are_its_narration_s_and_every_clip_s_in_the_order_they_start() -> None:
+    narration = {1: []}
+    inside = [(said("later", 3.0),), (said("sooner", 1.0),)]
+    assert [word.word for word in film_words(narration, inside).words] == ["sooner", "later"]
+
+
 # ---- chapters ---------------------------------------------------------------------------------
 
 
@@ -236,7 +273,7 @@ def test_consecutive_sections_with_one_title_share_one_chapter_marker(tmp_path):
 def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta")), 2: ("B", 2.0, 1.6, spoken("gamma delta"))})
-    cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes)))
     assert cues
     assert cues[0].start == 0.0
     # The second section's take starts where the first one ends in the joined narration.
@@ -473,6 +510,6 @@ def test_a_caption_never_spans_two_turns(tmp_path):
     second = a_take(1, turn=2, voice="guest", seconds=1.0, spoken="gamma delta", digest="0000000000000002")
     narrated(inputs, first, second, words={(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta")})
     takes = inputs.takes(required=True)
-    cues = build_captions(inputs, takes, {1: 0.0}, caption_texts(inputs, takes))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}, caption_texts(inputs, takes)))
     assert [cue.lines for cue in cues] == [("alpha beta",), ("gamma delta",)]
     assert cues[1].start >= 1.3

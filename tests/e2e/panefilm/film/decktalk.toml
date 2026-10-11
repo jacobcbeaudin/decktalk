@@ -1,0 +1,21 @@
+# The film the pane plays: a page of two reveals and no motion, built by DeckTalk with a placeholder voice.
+
+[project]
+name = "film"
+script = "script.md"
+cues = "cues.json"
+build = "build"
+
+[[section]]
+number = 1
+chapter = "Two reveals"
+page = "deck/index.html"
+scene = "1"
+
+[voices.narrator]
+provider = "elevenlabs"
+id = ""
+
+[video]
+width = 640
+height = 360

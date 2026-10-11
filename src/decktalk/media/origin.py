@@ -19,7 +19,10 @@ The origin is also where a page gets the runtime and KaTeX. Every path under `EN
 engine's own: the runtime and the pinned KaTeX release are answered from the installed package, by
 looking the name up in the closed list `engine_files` declares, and every other name there is
 refused. No project file is ever served under that path, so nothing an author writes can shadow the
-engine's files.
+engine's files. The one other thing answered there is a frame of a pane clip, under `CLIP_FRAMES`:
+the clip it names is held to the same rule as any project file, and the origin answers with the frame
+showing at the second asked for, decoded from the clip by `ClipFrames`, and keeps the clip among the
+files the page loaded.
 
 The router also keeps the project-relative path of every file it served, which is what lets `record`
 key a section on the assets its page actually loaded rather than on the page file alone. The
@@ -39,6 +42,7 @@ from __future__ import annotations
 import errno
 import io
 import logging
+import math
 import mimetypes
 import os
 import re
@@ -55,8 +59,9 @@ from urllib.parse import quote, unquote, urlencode, urlsplit
 from playwright.sync_api import BrowserContext, Page, Request, Route
 
 from ..errors import ToolError
-from ..page import ENGINE_PATH, Q
+from ..page import CLIP_FRAMES, ENGINE_PATH, SLOWEST_FPS, Q
 from ..toolchain.assets import engine_files
+from .clipframes import FRAME_TYPE, ClipFrames
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +76,10 @@ UNDECLARED = "that path is not in the deck directory and the project declares no
 RESERVED = f"that path is the engine's own, and the engine serves only its runtime and KaTeX under {ENGINE_PATH}"
 ENGINE_DIR = ENGINE_PATH.strip("/")
 """The first name of every path the engine answers itself, which no project file is ever served under."""
+CLIP_DIR = CLIP_FRAMES.strip("/")
+"""The names a request for one frame of a pane clip opens with, before the clip's second and its project path."""
+NO_SECOND = "a pane clip's frame is asked for by a second of 0 or more, then the clip's project path"
+NO_FRAME = "the pane clip could not be decoded into a frame"
 TEXT = "text/plain; charset=utf-8"
 """What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 
@@ -263,6 +272,69 @@ def engine_target(asked: str) -> Target:
     return Target(path=found, engine=True) if found is not None else Target(refused=RESERVED)
 
 
+@dataclass(frozen=True)
+class ClipAsk:
+    """One request for a frame of a pane clip: the clip it names or the refusal, and the second on the clip's clock."""
+
+    target: Target
+    second: float
+
+
+def clip_ask(allowed: Allowed, rel: str) -> ClipAsk | None:
+    """What a request for one frame of a pane clip names, or None when it asks for something else.
+
+    The path is folded before it is read, so a name that climbs out of the clip path is read as the
+    path it really opens, and the clip it names is held to the rule every project file is.
+    """
+    asked = project_path(rel)
+    if asked is None or not asked.startswith(f"{CLIP_DIR}/"):
+        return None
+    written, _, clip = asked.removeprefix(f"{CLIP_DIR}/").partition("/")
+    try:
+        second = float(written)
+    except ValueError:
+        # silent: a second that is not a number is refused just below.
+        second = math.nan
+    if not clip or not math.isfinite(second) or second < 0:
+        return ClipAsk(Target(refused=NO_SECOND), 0.0)
+    return ClipAsk(allowed.target(clip), second)
+
+
+def clip_answer(ask: ClipAsk, frames: ClipFrames, assets: Assets | None) -> tuple[HTTPStatus, str, bytes, str | None]:
+    """The status, type and body a request for one clip frame is answered with, and why it was refused, if it was."""
+    wanted = ask.target
+    if wanted.refused or wanted.path is None:
+        why = wanted.refused or OUTSIDE
+        return HTTPStatus.FORBIDDEN, TEXT, why.encode(), why
+    if not wanted.path.is_file():
+        if assets is not None:
+            assets.record(wanted.path, found=False)
+        return HTTPStatus.NOT_FOUND, TEXT, f"no such file: {wanted.path.name}".encode(), None
+    if assets is not None:
+        assets.record(wanted.path, found=True)
+    shot = frames.frame(wanted.path, ask.second)
+    if shot is None:
+        return HTTPStatus.UNPROCESSABLE_ENTITY, TEXT, NO_FRAME.encode(), None
+    return HTTPStatus.OK, FRAME_TYPE, shot, None
+
+
+def fulfil_clip(route: Route, url: str, ask: ClipAsk, frames: ClipFrames, assets: Assets) -> None:
+    """Answer one routed request for a frame of a pane clip, keeping a refusal among the recording's refusals."""
+    status, kind, body, refused = clip_answer(ask, frames, assets)
+    if refused:
+        assets.turned_away(url, refused)
+    route.fulfill(status=status, content_type=kind, body=body)
+
+
+def still_frames() -> ClipFrames:
+    """The decoder a page opened for a still answers clip frames with, which only ever asks for a clip's first frame.
+
+    A still shows a pane clip's first frame, which is the same frame at every rate, so the slowest
+    rate a film may use stands in for the film's own, and each decode stops once its frame is read.
+    """
+    return ClipFrames(fps=SLOWEST_FPS, held=False)
+
+
 def local_target(allowed: Allowed, url: str) -> Target:
     """The file an origin URL names, the reason it is refused, or neither when it names another host."""
     parts = urlsplit(url)
@@ -324,6 +396,7 @@ def route_pages(
     documents: Mapping[str, bytes] | None = None,
     *,
     trusted: bool,
+    clips: ClipFrames | None = None,
 ) -> Assets:
     """Answer every request under the origin from what `allowed` names, and return what was served.
 
@@ -336,15 +409,25 @@ def route_pages(
     `documents` are the paths a caller answers itself, such as the cue times a run resolved, which no
     file on disk holds. They are answered from memory as JSON and never recorded as assets, because a
     recording keyed on them would be keyed on its own output.
+
+    `clips` decodes the frames of every pane clip the page asks for, and its caller stops it with the
+    page. Without it each frame is decoded on its own, which is what a still asks for, since a still
+    shows a clip's first frame and nothing after it.
     """
     assets = Assets(root=allowed.root)
     answered = dict(documents or {})
+    frames = clips or still_frames()
 
     def handler(route: Route, request: Request) -> None:
         try:
             asked = unquote(urlsplit(request.url).path)
-            if asked in answered and urlsplit(request.url).netloc == urlsplit(ORIGIN).netloc:
+            mine = urlsplit(request.url).netloc == urlsplit(ORIGIN).netloc
+            if asked in answered and mine:
                 route.fulfill(status=HTTPStatus.OK, content_type=EXTRA_TYPES[".json"], body=answered[asked])
+                return
+            ask = clip_ask(allowed, asked.lstrip("/")) if mine else None
+            if ask is not None:
+                fulfil_clip(route, request.url, ask, frames, assets)
                 return
             wanted = local_target(allowed, request.url)
             if not wanted.mine:
@@ -397,12 +480,14 @@ class _Handler(SimpleHTTPRequestHandler):
         self,
         allowed: Allowed,
         documents: Mapping[str, bytes],
+        clips: ClipFrames,
         request: socket.socket,
         client_address: tuple[str, int],
         server: HTTPServer,
     ) -> None:
         self.allowed = allowed
         self.documents = documents
+        self.clips = clips
         super().__init__(request, client_address, server, directory=str(allowed.root))
 
     def end_headers(self) -> None:
@@ -431,6 +516,13 @@ class _Handler(SimpleHTTPRequestHandler):
         body = self.documents.get(asked)
         if body is not None:
             return self._answer(body, EXTRA_TYPES[".json"])
+        ask = clip_ask(self.allowed, asked.lstrip("/"))
+        if ask is not None:
+            status, kind, shot, _refused = clip_answer(ask, self.clips, None)
+            if status is not HTTPStatus.OK:
+                self.send_error(status, shot.decode())
+                return None
+            return self._answer(shot, kind)
         wanted = self.allowed.target(asked.lstrip("/"))
         if wanted.path is None:
             self.send_error(HTTPStatus.FORBIDDEN, wanted.refused or OUTSIDE)
@@ -449,7 +541,11 @@ class _Handler(SimpleHTTPRequestHandler):
 
 
 def open_server(
-    allowed: Allowed, host: str, port: int, documents: Mapping[str, bytes] | None = None
+    allowed: Allowed,
+    host: str,
+    port: int,
+    documents: Mapping[str, bytes] | None = None,
+    clips: ClipFrames | None = None,
 ) -> ThreadingHTTPServer:
     """A stopped-in-a-context HTTP server for the project directory, bound to `host` and `port`.
 
@@ -460,10 +556,12 @@ def open_server(
     for a recorded page. An author previewing a deck reads its cue times from the origin exactly as
     the recorder does, so a page that works in the preview is the page that is recorded.
 
+    `clips` decodes a pane clip's frames for a still the author opens, which asks for its first frame.
+
     The server outlives the run that opened it, so what it records, a request line or a request that
     raised, reaches a host's own logging and no run's events file, and nothing it records is printed.
     """
-    handler = partial(_Handler, allowed, dict(documents or {}))
+    handler = partial(_Handler, allowed, dict(documents or {}), clips or still_frames())
     try:
         family = socket.getaddrinfo(host or None, port, type=socket.SOCK_STREAM)[0][0]
     except OSError as exc:

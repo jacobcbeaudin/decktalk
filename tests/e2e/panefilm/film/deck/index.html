@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Two reveals</title>
+<script src="/__decktalk/decktalk-runtime.js"></script>
+<style>
+  html, body { margin: 0; background: #101010; }
+  #dt-canvas { background: #101010; }
+  .square, .bar, .label { position: absolute; margin: 0; background: #f5f5f5; }
+  .label { left: 240px; top: 120px; width: 1440px; height: 60px; background: #5b6cff; }
+  .square { left: 240px; top: 240px; width: 600px; height: 600px; }
+  .bar { left: 1080px; top: 420px; width: 600px; height: 240px; }
+</style>
+</head>
+<body>
+
+<div data-scene="1" data-name="Two reveals">
+  <template data-slide="1.1" data-describe="a square, then a bar beside it">
+    <div class="label"></div>
+    <div class="square" data-in="square" data-in-style="cut" data-describe="a white square"></div>
+    <div class="bar" data-in="bar" data-in-style="cut" data-describe="a white bar"></div>
+  </template>
+</div>
+
+</body>
+</html>

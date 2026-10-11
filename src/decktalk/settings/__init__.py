@@ -1295,7 +1295,7 @@ SHARED_TABLES = frozenset(("mix", "score", "score.ambience", "score.effects", "s
 The document parser owns these tables' unknown keys, because only it knows the content half.
 """
 
-DOCUMENT_TABLES = ("project", "section", "transition")
+DOCUMENT_TABLES = ("project", "section", "clip", "transition")
 """The tables of `decktalk.toml` that are project content rather than tuning, named so a refusal can say so.
 
 `mix` and `score` are missing on purpose: each holds settings declared above beside content

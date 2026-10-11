@@ -34,7 +34,7 @@ ESBUILD = ROOT / "node_modules" / ".bin" / "esbuild"
 # deliberate change to this count. An element and a container are one subject
 # here, because both are rows an author writes many times a deck.
 ROWS_PER_SUBJECT: dict[tuple[Subject, ...], int] = {
-    (Subject.ELEMENT, Subject.CONTAINER): 24,
+    (Subject.ELEMENT, Subject.CONTAINER): 26,
     (Subject.SLIDE,): 5,
     (Subject.SCENE,): 2,
 }
@@ -91,7 +91,7 @@ def test_an_element_has_four_moments_in_the_order_it_meets_them():
 
 
 def test_the_table_holds_the_rows_the_design_froze():
-    """Eighteen rows on an element or a container, five on a slide and two on a scene."""
+    """Twenty-six rows on an element or a container, five on a slide and two on a scene."""
     for subjects, count in ROWS_PER_SUBJECT.items():
         rows = [name for name, row in ATTRS.items() if set(subjects) & set(row.on)]
         assert len(rows) == count, f"{subjects} has {len(rows)} rows and the design froze {count}"

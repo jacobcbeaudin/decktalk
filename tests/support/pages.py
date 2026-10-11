@@ -106,11 +106,12 @@ def write_log(
     report: PageReport | None = None,
     findings: Sequence[Finding] = (),
     requested_seconds: float = 2.0,
+    assets: Sequence[str] = (),
 ) -> None:
-    """The log one section's recording left, carrying what its page said and what the recorder judged."""
+    """The log one section's recording left, carrying what its page said, what it loaded and what was judged."""
     RecordingLog(
         section=section,
         made_from={},
-        recording=a_recording(requested_seconds=requested_seconds, report=report or PageReport()),
+        recording=a_recording(requested_seconds=requested_seconds, report=report or PageReport(), assets=tuple(assets)),
         findings=tuple(findings),
     ).write(inputs.workspace.recording_log(f"{section:02d}"))

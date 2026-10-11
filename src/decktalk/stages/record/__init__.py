@@ -8,7 +8,7 @@ second zero of its section, so there is no start to find. The measurement belong
 beside it, and a long run can be read while it runs.
 
     capture.py   the page URL, what a recording is made from, and the page cut into its scenes
-    render.py    a section whose picture a command draws, which is the second source of a picture
+    render.py    a section whose picture a command draws, and the clips a project makes
     checks.py    the frames, the page's own codes and the origins it reached for
     pool.py      how many recorders work at once, and the chunks each section is split into
 
@@ -19,6 +19,9 @@ starting on a keyframe, and the recorder that finishes a section's last chunk jo
 the section's video without an encode. A section too short to repay another page load is one chunk.
 The rows, the progress lines and the result come back in section order whatever order the recorders
 finish in.
+
+Before anything is recorded, every clip the project makes and has not got is made, because a pane
+plays its clip while the page is stepped and the section is keyed on the clip's content.
 
 A section none of whose parts has moved is kept rather than recorded again, because the run would
 produce the same pixels. The parts are its turns' text, voice and word times, the markup of its own
@@ -58,6 +61,7 @@ from decktalk.media.pagereport import PageReport, Recording
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
+from decktalk.settings import PROJECT_FILE
 from decktalk.stages import selects
 from decktalk.stages.pool import Halt, Pool
 from decktalk.stages.record import render
@@ -245,7 +249,7 @@ def rendered_section(inputs: Inputs, job: Job) -> Recording:
     recording a page's is: the video at the section's own path, and a report carrying the lanes it
     said it drew for verify to mask and measure.
     """
-    render.admitted(inputs.settings.record.page_policy, number=job.section.number)
+    render.admitted(inputs.settings.record.page_policy, what=f"section {job.section.number} names a render_command")
     done = render.run_command(
         job.section.render_command,
         root=inputs.root,
@@ -415,6 +419,24 @@ def _decided(job: Job, *, force: bool, named: set[int]) -> bool:
     return why != "unchanged"
 
 
+def make_clips(inputs: Inputs, run: Run, *, force: bool) -> None:
+    """Make every clip the project makes and has not got, or every one of them when the run is forced."""
+    video = inputs.settings.video
+    for clip in inputs.document.clips:
+        if inputs.path(clip.file).is_file() and not force:
+            continue
+        render.admitted(inputs.settings.record.page_policy, what=f"{PROJECT_FILE} makes {clip.file} with a command")
+        made = render.make_clip(
+            clip,
+            root=inputs.root,
+            fps=video.fps,
+            width=video.width,
+            height=video.height,
+            timeout=inputs.settings.tools.timeout_seconds,
+        )
+        run.wrote(made)
+
+
 def expected(job: Job, fps: int) -> tuple[int, int]:
     """A section's frames and the steps recording it is expected to take.
 
@@ -464,10 +486,12 @@ def record(
 ) -> RecordResult:
     """Record every page section this run names, and judge each one as soon as it is finished.
 
-    The sections that must be recorded are split into chunks, which go to a pool of recorders as
-    `[record] concurrency` allows, longest first. The sections that are kept are reported by this
+    The clips the project makes come first. The sections that must be recorded are split into chunks,
+    which go to a pool of recorders as `[record] concurrency` allows, longest first. The sections that are
+    kept are reported by this
     thread, so every row is in section order.
     """
+    make_clips(inputs, run, force=force)
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())

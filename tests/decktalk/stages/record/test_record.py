@@ -723,3 +723,43 @@ def test_a_rendered_section_nothing_moved_under_is_kept(tmp_path: Path, driven: 
     again = record(inputs, a_run(inputs.root))
     assert [row.kept for row in again.sections] == [True]
     assert stale_recording(inputs, inputs.document.page_sections[0]) is None
+
+
+# ---- the clips a project makes ----------------------------------------------------------------------
+
+MAKER = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(b'made at ' + sys.argv[2].encode())"
+"""A clip's command that writes its file with the film's rate in it, so a test can tell a made clip from a kept one."""
+
+
+def with_a_made_clip(tmp_path: Path, *, machine: dict[str, Any] | None = None) -> Inputs:
+    clip = (
+        f'\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{{python}}", "-c", "{MAKER}", "{{out}}", "{{fps}}"]\n'
+    )
+    return a_project(tmp_path, extra=clip, machine=machine)
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_clip_the_project_makes_is_made_before_anything_is_recorded(tmp_path: Path) -> None:
+    inputs = with_a_made_clip(tmp_path)
+    record(inputs, a_run(inputs.root))
+    assert (tmp_path / "deck" / "clips" / "tone.mp4").read_bytes() == f"made at {FPS}".encode()
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_made_clip_already_there_is_kept_and_a_forced_run_makes_it_again(tmp_path: Path) -> None:
+    inputs = with_a_made_clip(tmp_path)
+    clip = tmp_path / "deck" / "clips" / "tone.mp4"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"kept")
+    record(inputs, a_run(inputs.root))
+    assert clip.read_bytes() == b"kept"
+    record(inputs, a_run(inputs.root), force=True)
+    assert clip.read_bytes() == f"made at {FPS}".encode()
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_host_that_does_not_trust_the_project_makes_no_clip_with_its_command(tmp_path: Path) -> None:
+    inputs = with_a_made_clip(tmp_path, machine={"record": {"page_policy": "untrusted"}})
+    with pytest.raises(InputError, match="deck/clips/tone.mp4"):
+        record(inputs, a_run(inputs.root))
+    assert not (tmp_path / "deck" / "clips" / "tone.mp4").exists()

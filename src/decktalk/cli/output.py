@@ -451,7 +451,8 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
         for row in result.motions:
             table.add_row(
                 str(row.section),
-                row.cue,
+                # A landing inside a pane clip lands on the clip's own cue, which is named by its clip.
+                row.cue if row.clip is None else f"{row.clip} {row.cue}",
                 row.kind,
                 f"{row.spoken:.2f}",
                 "" if row.shown is None else f"{row.shown:.2f}",

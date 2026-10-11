@@ -19,14 +19,19 @@ from decktalk.events import FindingRaised
 from decktalk.findings import Code
 from decktalk.inputs.markers import Marker
 from decktalk.media import ffmpeg
+from decktalk.media.pagereport import Box, Landing, MotionLane, Size
+from decktalk.stages.assemble.cut import rendered_starts
 from decktalk.stages.assemble.mix import (
     LAVFI,
     LOOP,
     ONCE,
+    Embedded,
     MixInput,
     MixPlan,
     delay,
+    embedded_sounds,
     marker_times,
+    matched_gains,
     max_expr,
     mix_input_args,
     mix_soundtrack,
@@ -37,8 +42,9 @@ from decktalk.stages.assemble.mix import (
     speech_spans,
 )
 from support.media_cards import write_tone_with_tail
+from support.pages import a_report, write_log
 
-from .conftest import MID_CLIP_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
+from .conftest import MID_CLIP_TOML, PAGES_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -206,8 +212,17 @@ def test_one_unbroken_run_of_pages_plays_the_whole_track_once(tmp_path):  # fmt:
     assert "atrim=start=" not in plan.filter
 
 
-def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_path):
+def loudnorm_says(integrated: float) -> str:
+    """What loudnorm prints for a file it measured at `integrated` LUFS, which is all a loudness match reads."""
+    return (
+        f'{{"input_i": "{integrated}", "input_tp": "-3.0", "input_lra": "4.0", "input_thresh": "-40.0", '
+        '"target_offset": "0.0"}'
+    )
+
+
+def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_path, fake_ffmpeg):
     """The narration pauses for a clip, so each run of page sections plays its own stretch of the track."""
+    fake_ffmpeg.stderr_text = loudnorm_says(-16.0)
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     opened = open_run(tmp_path)
     takes = take_index(
@@ -227,7 +242,8 @@ def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_pat
     assert "adelay=5000:all=1" in plan.filter
 
 
-def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp_path):
+def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp_path, fake_ffmpeg):
+    fake_ffmpeg.stderr_text = loudnorm_says(-30.0)
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
@@ -237,6 +253,60 @@ def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp
     assert "afade=t=in:d=0.02" in plan.filter
     assert "afade=t=out:st=2.980:d=0.02" in plan.filter
     assert "atrim=duration=3.000" in plan.filter
+
+
+def measured_as(monkeypatch, levels: dict[str, float]) -> None:
+    """Make loudnorm answer each file by its name, at the integrated loudness `levels` gives it."""
+
+    def stderr(*args: str) -> str:
+        return next(loudnorm_says(level) for name, level in levels.items() if any(arg.endswith(name) for arg in args))
+
+    monkeypatch.setattr(ffmpeg, "stderr", stderr)
+
+
+def test_a_clip_s_sound_is_matched_to_the_narration_s_loudness(tmp_path, monkeypatch):
+    """A film made elsewhere plays as loud as the voice beside it, so the master lifts both by one gain."""
+    inputs = write_project(tmp_path, MID_CLIP_TOML)
+    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
+    narration = inputs.workspace.narration_path
+    narration.parent.mkdir(parents=True, exist_ok=True)
+    narration.write_bytes(b"narration")
+    clip = tmp_path / "media" / "broll.mp4"
+    measured_as(monkeypatch, {narration.name: -19.5, clip.name: -31.0})
+    gains = matched_gains(inputs, takes, [Embedded(clip, 2.0, 3.0, "clip02")])
+    assert gains == {clip: pytest.approx(11.5)}
+
+
+def test_a_clip_beside_a_placeholder_narration_is_matched_to_the_master_s_target(tmp_path, monkeypatch):
+    """A placeholder is clicks and silence with no level of its own, so the target stands in for it."""
+    inputs = write_project(tmp_path, MID_CLIP_TOML)
+    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
+    clip = tmp_path / "media" / "broll.mp4"
+    measured_as(monkeypatch, {clip.name: -31.0})
+    gains = matched_gains(inputs, takes, [Embedded(clip, 2.0, 3.0, "clip02")])
+    assert gains == {clip: pytest.approx(inputs.settings.audio.target_lufs + 31.0)}
+
+
+def test_a_pane_clip_s_sound_lands_at_its_cue_and_stops_where_its_page_stops_recording(tmp_path, monkeypatch):
+    """The narration keeps going through a pane clip, so its sound joins at the cue and the music ducks under it."""
+    inputs = write_project(tmp_path, PAGES_TOML)
+    clip = tmp_path / "deck" / "clips" / "film.mp4"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"film")
+    monkeypatch.setattr(ffmpeg, "has_audio", lambda _path: True)
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.0)
+    lane = MotionLane(
+        id="clip-1", kind="clip", box=Box(x=0, y=0, w=960, h=540), size=Size(w=960, h=540), departs=0.8,
+        arrives=2.4, landings=(Landing(cue="2.1:play", kind="depart", at=0.8),), clip="deck/clips/film.mp4",
+    )  # fmt: skip
+    write_log(inputs, 2, report=a_report(motions=[lane]), requested_seconds=2.4, assets=["deck/clips/film.mp4"])
+    write_log(inputs, 3, report=a_report(motions=[lane.model_copy(update={"clip": "deck/clips/gone.mp4"})]))
+    rows = rendered(inputs, THREE_PAGES)
+    (sound,) = embedded_sounds(inputs, rows, rendered_starts(rows))
+    # Section 2 opens at 2.0 s, the clip starts 0.8 s into it, and the page stops recording at 2.4 s.
+    assert (sound.path, sound.at, sound.seconds, sound.pane) == (clip, 2.8, 1.6, True)
+    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
+    assert (2.8, 4.4) in speech_spans(rows, takes, rendered_starts(rows), [sound])
 
 
 def test_a_music_bed_the_project_names_and_has_not_got_is_an_error(tmp_path):

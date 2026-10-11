@@ -62,7 +62,11 @@ cue after it. Only a sound with a whole second to itself keeps a cue of its own.
 
 A clip section captions its own speech when it names a words file with `words`, and nothing captions
 it otherwise, because the captions are built from the narration's word times and a clip's speech is
-not in the narration. [Add a clip section](/guides/clip-section) has the file's shape.
+not in the narration. A clip in a pane captions its speech from the words file beside it,
+`<clip>.words.json`, which every DeckTalk build writes beside its film and `decktalk clip` beside
+every clip it cuts, so a film DeckTalk built is captioned in a pane as it captioned itself. A pane
+clip with no words file beside it adds no caption. [Play a clip](/guides/clip-section) has the
+file's shape.
 
 In a section spoken in more than one voice, `[output] caption_voices = true` names the voice of every
 caption: a WebVTT voice span such as `<v guest>` in the `.vtt`, and `guest: ` before the line in the
@@ -96,7 +100,8 @@ specificity, so a rule of your own restyles them:
 
 A caption carries the voice that says it as `data-voice` and the section's turn as `data-turn`, and
 never as text, so a dialogue can set each voice's captions on a side of its own and still name
-nobody. A line that says what is heard, such as `[ball bounces]`, carries `data-sound`. A caption
+nobody. The speech inside a clip carries the clip's own voice and turn the same way, when its words
+file names them. A line that says what is heard, such as `[ball bounces]`, carries `data-sound`. A caption
 shows on the frames from the one its start rounds to up to the one its end rounds to, which are the
 frames a player shows the same caption on from the `.vtt`. A caption over a clip section, or over a
 section a command renders, is drawn by the first page the film plays.

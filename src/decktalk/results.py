@@ -818,14 +818,20 @@ class CueCheck(Model):
 
 
 class MotionCheck(Model):
-    """One landing of a declared motion, measured on its own lane against the word it was promised to."""
+    """One landing of a declared motion, measured on its own lane against the word it was promised to.
+
+    A landing inside a pane clip names the clip, and its cue is the clip's own, on the film's clock.
+    """
 
     section: SectionNumber
-    cue: str = Field(description="The cue id the motion lands on.")
+    cue: str = Field(description="The cue id the motion lands on, or the clip's own cue for a landing inside a clip.")
     kind: Literal["depart", "arrive"] = Field(description="Whether the motion departs or arrives at this cue.")
     spoken: float = Field(ge=0, description="When the cue's word is spoken in the film, in seconds.")
     shown: float | None = Field(None, ge=0, description="The frame the motion was first or last seen moving, or null.")
     offset_seconds: float | None = Field(None, description="How far the landing is from its word, in seconds.")
+    clip: str | None = Field(
+        None, description="The pane clip this landing is inside, as its project path, or null for one of the page."
+    )
 
 
 class StageRun(Model):

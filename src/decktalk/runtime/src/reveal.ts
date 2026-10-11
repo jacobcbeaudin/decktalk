@@ -14,7 +14,7 @@ import { CLASS, countSeconds, span, styleClass } from "./canvas.ts";
 import { now, schedule } from "./clock.ts";
 import { ATTENTION, type Attr, type Count, cueId, EXITS, MILLISECONDS } from "./contract.ts";
 import { fallback } from "./katex.ts";
-import { wire } from "./motion.ts";
+import { reveal, wire } from "./motion.ts";
 import {
   ATTR,
   classChangesOf,
@@ -56,6 +56,8 @@ type Action = {
 /** What a mounted slide needs from the mode that mounted it, which is the state no element can read. */
 export type Playing = {
   readonly frozen: boolean;
+  /** Whether the recorder steps the clock, which a pane clip draws frame by frame under. */
+  readonly recorded: boolean;
   readonly held: ReadonlySet<string> | null;
   readonly words: readonly Spoken[] | null;
   /** The second a cue id is due, which is how a motion learns its own length, or null when unknown. */
@@ -98,25 +100,38 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
     said: new Set(),
   };
   const onLeave = (fn: () => void) => stops.push(fn);
+  // Under the recorder each element a cue reveals or changes is sampled from the cue's second, which is
+  // where a film's own reveals are measured when the film plays in another film's pane.
+  const noted = (element: HTMLElement, cue: string, action: Action): Action =>
+    playing.recorded && !playing.frozen
+      ? {
+          ...action,
+          run: () => {
+            action.run();
+            reveal(element, cue, playing.at(cue) ?? now());
+          },
+        }
+      : action;
   for (const target of momentElements(el)) {
     const element = target as HTMLElement;
     const moments = momentsOf(element, slide.id);
     if (moments.some((one) => one.attr === ATTR.in)) hide(element);
     for (const moment of moments) {
       const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
-      push(actions, moment.cue, action);
+      push(actions, moment.cue, noted(element, moment.cue, action));
     }
     for (const change of classChangesOf(element, slide.id)) {
-      push(actions, change.cue, {
+      const action: Action = {
         attr: ATTR.class,
         run: () => element.classList.add(change.name),
         line: classDescriptionOf(element, change.local) || null,
-      });
+      };
+      push(actions, change.cue, noted(element, change.cue, action));
     }
   }
   for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`))
     spotlight(container as HTMLElement, slide, actions);
-  wire(el, slide, { frozen: playing.frozen, at: playing.at }, (cue, run) =>
+  wire(el, slide, { frozen: playing.frozen, recorded: playing.recorded, at: playing.at }, (cue, run) =>
     push(actions, cue, { attr: ATTR.motion, run, line: null }),
   );
   if (playing.frozen) {

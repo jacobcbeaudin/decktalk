@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, ClipWords
+from decktalk.artifacts import ClipWords, SpokenWord, words_beside
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
@@ -30,7 +30,7 @@ from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact
-from decktalk.results import ClipResult, SectionWords, Word
+from decktalk.results import ClipResult, SectionWords
 from decktalk.stages.words import row_of
 
 FRAME_SLACK = 0.5
@@ -84,7 +84,7 @@ def clip(
     fps = settings.fps
     span = _span(inputs, video, start=start, end=end, hold_seconds=hold_seconds, fps=fps)
     film = _out_path(inputs, out, video)
-    words_file = film.with_name(film.stem + WORDS_SUFFIX)
+    words_file = words_beside(film)
 
     _render(inputs, video, sound, film, span=span, gain_db=gain_db, fps=fps)
     said = row_of(inputs, inputs.takes(required=True), section)
@@ -290,17 +290,21 @@ def _render(inputs: Inputs, video: Path, sound: _Sound, film: Path, *, span: _Sp
     )  # fmt: skip
 
 
-def _clip_words(said: SectionWords, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
-    """(the words wholly inside the span, in seconds after it starts, the words the span cuts in two)."""
-    inside: list[Word] = []
+def _clip_words(said: SectionWords, first: float, last: float) -> tuple[tuple[SpokenWord, ...], tuple[str, ...]]:
+    """(the words wholly inside the span, from its start, with their voice and turn, the words it cuts in two)."""
+    speakers = [(turn.voice, turn.turn) for turn in said.turns for _ in range(turn.word_count)]
+    inside: list[SpokenWord] = []
     cut: list[str] = []
-    for word in said.words:
+    for index, word in enumerate(said.words):
+        voice, turn = speakers[index] if index < len(speakers) else (None, None)
         if word.start >= first - WORD_SLACK_SECONDS and word.end <= last + WORD_SLACK_SECONDS:
             inside.append(
-                Word(
+                SpokenWord(
                     word=word.word,
                     start=round(max(0.0, word.start - first), SECOND_DIGITS),
                     end=round(min(last, word.end) - first, SECOND_DIGITS),
+                    voice=voice,
+                    turn=turn,
                 )
             )
         elif word.start < last and word.end > first:

@@ -2,6 +2,7 @@
 
     [project]                name, script, cues, build, language
     [[section]]              number, chapter, then page and scene, render_command, or clip
+    [[clip]]                 file, command: a clip the project makes at build time
     [transition]             dips, dip_seconds, page_fades_in
     [mix]                    music, ambience, music_markers, effects and their levels
     [score]                  the prompts `decktalk score` generates from
@@ -129,6 +130,20 @@ Section = ClipSection | PageSection
 
 
 @dataclass(frozen=True)
+class MadeClip:
+    """A clip the project makes at build time rather than keeps: the project file and the command that writes it.
+
+    A pane plays a clip from a project file and so does a clip section, and a clip that is drawn from
+    the film's own sources, or that a package cannot ship, is written by a command instead. `record`
+    runs the command when the file is not there, from the project root and with the placeholders a
+    render command is given, and the file is then a project file like any other.
+    """
+
+    file: str
+    command: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Transition:
     dips: tuple[tuple[int, int], ...] | None = None  # None: dip at every cut
     dip_seconds: float = 0.15
@@ -205,7 +220,9 @@ PROJECT_KEYS = frozenset({"name", "script", "cues", "build", "language"})
 # The keys each kind of section reads, which are the fields of its own class and nothing else.
 CLIP_KEYS = frozenset(ClipSection.__dataclass_fields__)
 PAGE_KEYS = frozenset(PageSection.__dataclass_fields__)
-TOP_TABLES = frozenset({"project", "section", "transition", "mix", "score"})
+CLIP_TABLE = "clip"
+"""The array of tables that declares a clip the project makes, in the singular like `[[section]]`."""
+TOP_TABLES = frozenset({"project", "section", CLIP_TABLE, "transition", "mix", "score"})
 
 
 @dataclass(frozen=True)
@@ -221,6 +238,8 @@ class Document:
     transition: Transition
     mix: Mix
     score: Score
+    clips: tuple[MadeClip, ...] = ()
+    """Every clip the project makes at build time, in the order the file declares them."""
     notes: tuple[str, ...] = ()
     """One sentence per key the parser read past, which a run reports rather than a log line nobody sees."""
 
@@ -249,6 +268,7 @@ class Document:
             transition=parse_transition(doc, numbers, notes),
             mix=parse_mix(doc, numbers, notes),
             score=parse_score(doc, notes),
+            clips=parse_clips(doc, notes),
             notes=tuple(notes),
         )
 
@@ -371,17 +391,35 @@ def parse_section(raw: dict[str, Any], index: int, notes: list[str]) -> Section:
     return fill(t, PageSection, number=number, page=page, scene=str(scene), params=params)
 
 
+def command_words(raw: object, where: str, key: str) -> tuple[str, ...]:
+    """A command a project names, as its words, refused unless it is a list of words none of which is empty."""
+    if not isinstance(raw, list) or not raw or not all(isinstance(word, str) and word for word in raw):
+        raise InputError(f'{where}: \'{key}\' must be a list of words, such as ["{{python}}", "render/bars.py"]')
+    return tuple(raw)
+
+
 def render_section(raw: dict[str, Any], t: Table, number: int, notes: list[str]) -> PageSection:
     """A narrated section whose picture a command draws, which names no page and no scene."""
     if "page" in raw or "clip" in raw:
         raise InputError(f"{t.where}: give one of 'page', 'clip' or 'render_command', not two")
-    command = raw["render_command"]
-    if not isinstance(command, list) or not command or not all(isinstance(word, str) and word for word in command):
-        raise InputError(
-            f'{t.where}: \'render_command\' must be a list of words, such as ["{{python}}", "render/bars.py"]'
-        )
+    command = command_words(raw["render_command"], t.where, "render_command")
     notes += section_key_notes(t, clip=False)
-    return fill(t, PageSection, number=number, page="", scene="", params={}, render_command=tuple(command))
+    return fill(t, PageSection, number=number, page="", scene="", params={}, render_command=command)
+
+
+def parse_clips(doc: dict[str, Any], notes: list[str]) -> tuple[MadeClip, ...]:
+    """Every clip the project makes, each a project file no other `[[clip]]` writes."""
+    made: list[MadeClip] = []
+    for i, item in enumerate(Table(doc, PROJECT_FILE).get_tables(CLIP_TABLE)):
+        t = Table(item, f"{PROJECT_FILE}: [[{CLIP_TABLE}]] #{i + 1}")
+        notes += t.note_unknown(MadeClip.__dataclass_fields__)
+        command = command_words(item.get("command"), t.where, "command")
+        made.append(fill(t, MadeClip, command=command))
+    files = [clip.file for clip in made]
+    doubled = sorted({file for file in files if files.count(file) > 1})
+    if doubled:
+        raise InputError(f"{PROJECT_FILE}: more than one [[{CLIP_TABLE}]] writes {', '.join(doubled)}")
+    return tuple(made)
 
 
 def parse_sections(doc: dict[str, Any], notes: list[str]) -> list[Section]:

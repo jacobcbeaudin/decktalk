@@ -227,11 +227,15 @@ class Code(Enum):
     )
     PAGE_MOTION_CUE_UNKNOWN = (
         "PAGE_MOTION_CUE_UNKNOWN",
-        "A motion names a cue no slide declares, so it never starts or never lands.",
+        "A motion or a pane clip names a cue no slide declares, so it never starts or never lands.",
     )
     PAGE_REALTIME_MEDIA = (
         "PAGE_REALTIME_MEDIA",
         "A page holds a video or an audio element, which plays at its own rate and not on the stepped clock.",
+    )
+    PAGE_CLIP_UNREADABLE = (
+        "PAGE_CLIP_UNREADABLE",
+        "A pane clip names a file the origin could not decode into a picture, so the pane plays nothing.",
     )
     PAGE_FRAME_THREW = (
         "PAGE_FRAME_THREW",

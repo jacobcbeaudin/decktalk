@@ -2,7 +2,8 @@
   "_comment": [
     "Which spoken phrase each moment on the page lands on. `id` is a cue id: the slide id, a colon,",
     "then the cue name the page writes. A motion departs on one cue and arrives on another, so both",
-    "are cues here. An arrival that eases to rest has no edge to measure, so its cue says verify false."
+    "are cues here. An arrival that eases to rest has no edge to measure, so its cue says verify false.",
+    "A pane clip starts on one cue, and the film's own landings are measured from there."
   ],
   "sections": {
     "1": {
@@ -27,6 +28,12 @@
         { "id": "3.1:one", "phrase": "for one", "occurrence": 1 },
         { "id": "3.1:two", "phrase": "for two", "occurrence": 1 },
         { "id": "3.1:three", "phrase": "for three", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:title", "phrase": "This pane plays", "occurrence": 1 },
+        { "id": "4.1:play", "phrase": "when I say play", "occurrence": 1 }
       ]
     }
   }

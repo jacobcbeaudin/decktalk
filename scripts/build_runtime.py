@@ -340,6 +340,7 @@ def page_module(data: dict[str, Any]) -> str:
         "PAIR_SEPARATOR",
         "PLAYABLE_SPAN_SECONDS",
         "PREVIEW_CUE_TIMES",
+        "CLIP_FRAMES",
         "Q",
         "QUERY",
         "REPORT",
@@ -391,6 +392,9 @@ def page_module(data: dict[str, Any]) -> str:
         '"""The path the engine answers itself under every origin, which holds the runtime and KaTeX."""\n',
         f"PREVIEW_CUE_TIMES = {data['previewCueTimes']!r}\n"
         '"""The path a previewed page asks its origin for, which answers with the last run\'s cue times."""\n',
+        f"CLIP_FRAMES = {data['clipFrames']!r}\n"
+        '"""The path a recorded page asks its origin for one frame of a pane clip under, then the clip\'s\n'
+        'own second, a slash and its project path."""\n',
         f"MOTION_SCALE_PROPERTY = {data['motionScaleProperty']!r}\n"
         '"""The custom property on the root element that carries `motion.scale` into a page."""\n',
         f"MOTION_EASES = {data['motionEases']!r}\n"

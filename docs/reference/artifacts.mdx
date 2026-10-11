@@ -120,6 +120,8 @@ my-lesson/build/
     <name>-transcript.html      the whole film as one page, which is the media alternative
     <name>-poster.png           the opening slide as a lossless PNG
     <name>-captioned.mp4        the film with its captions drawn in, when [output] captioned asks
+    <name>.landings.json        every landing the film's verify measures, on the film's own clock
+    <name>.words.json           every word the film says, on the film's own clock
     placements.json                   where every section sits in the finished film
   events/
     <run>.jsonl                 one JSON line per event of one run
@@ -365,7 +367,7 @@ log as soon as that section is done and a measurement always belongs to the reco
     "missing": [],
     "requested_seconds": 20.087,
     "fps": 25,
-    "load_seconds": 0.048,
+    "load_seconds": 0.066,
     "page_errors": [],
     "report": {
       "version": "0.5.0",
@@ -377,6 +379,78 @@ log as soon as that section is done and a measurement always belongs to the reco
       "cues": [],
       "words": [],
       "motions": [],
+      "reveals": [
+        {
+          "id": "reveal-1",
+          "kind": "reveal",
+          "box": { "x": 120.0, "y": 190.0, "w": 1680.0, "h": 152.0 },
+          "size": { "w": 1680.0, "h": 142.0 },
+          "departs": 0.5,
+          "arrives": 0.84,
+          "rest": { "x": 120.0, "y": 200.0, "w": 1680.0, "h": 141.75 },
+          "moved": 0.52,
+          "landings": [
+            { "cue": "1.1:title", "kind": "depart", "at": 0.5 }
+          ],
+          "clip": null
+        },
+        {
+          "id": "reveal-2",
+          "kind": "reveal",
+          "box": { "x": 120.0, "y": 620.0, "w": 1120.0, "h": 162.0 },
+          "size": { "w": 1120.0, "h": 152.0 },
+          "departs": 1.921,
+          "arrives": 2.4,
+          "rest": { "x": 120.0, "y": 630.0, "w": 1120.0, "h": 151.59375 },
+          "moved": 1.96,
+          "landings": [
+            { "cue": "1.1:files", "kind": "depart", "at": 1.921 }
+          ],
+          "clip": null
+        },
+        {
+          "id": "reveal-3",
+          "kind": "reveal",
+          "box": { "x": 120.0, "y": 300.0, "w": 760.0, "h": 230.0 },
+          "size": { "w": 760.0, "h": 220.0 },
+          "departs": 8.553,
+          "arrives": 8.88,
+          "rest": { "x": 120.0, "y": 310.0, "w": 760.0, "h": 220.0 },
+          "moved": 8.56,
+          "landings": [
+            { "cue": "1.2:script", "kind": "depart", "at": 8.553 }
+          ],
+          "clip": null
+        },
+        {
+          "id": "reveal-4",
+          "kind": "reveal",
+          "box": { "x": 1040.0, "y": 300.0, "w": 760.0, "h": 230.0 },
+          "size": { "w": 760.0, "h": 220.0 },
+          "departs": 11.868,
+          "arrives": 12.2,
+          "rest": { "x": 1040.0, "y": 310.0, "w": 760.0, "h": 220.0 },
+          "moved": 11.88,
+          "landings": [
+            { "cue": "1.2:deck", "kind": "depart", "at": 11.868 }
+          ],
+          "clip": null
+        },
+        {
+          "id": "reveal-5",
+          "kind": "reveal",
+          "box": { "x": 120.0, "y": 720.0, "w": 1680.0, "h": 118.0 },
+          "size": { "w": 1680.0, "h": 118.0 },
+          "departs": 17.079,
+          "arrives": 17.56,
+          "rest": { "x": 120.0, "y": 720.0, "w": 1680.0, "h": 118.0 },
+          "moved": null,
+          "landings": [
+            { "cue": "1.2:word", "kind": "depart", "at": 17.079 }
+          ],
+          "clip": null
+        }
+      ],
       "unreadable": []
     },
     "undeclared": [],
@@ -424,7 +498,8 @@ lists every part.
 [Runtime](/reference/runtime) gives every field of it.
 
 `report.motions` is the lane of every motion, loop and region the page declared, which is what
-verify masks and measures. A deck that declares none has an empty list, as the starter's log above
+verify masks and measures. `report.reveals` is one lane of kind `reveal` for each cue that revealed or
+changed an element, in the same shape, which verify never masks and the film's landings file carries. A deck that declares none has an empty list, as the starter's log above
 does.
 
 ```json build/recordings/01.json
@@ -450,11 +525,13 @@ rather than a real run.
 | Field | Meaning |
 |---|---|
 | `motions[].id` | The lane's own name, numbered in the order the page declared it. |
-| `motions[].kind` | `motion`, `loop` or `region`. |
+| `motions[].kind` | `motion`, `loop`, `region` or `clip`, and `reveal` in `reveals[]`. |
 | `motions[].box` | The union of every box the element filled on every frame it was alive, in the recording's pixels, or null when it was never seen. |
 | `motions[].size` | The element's own width and height. |
 | `motions[].departs` | The first second on the section clock the recorder saw the lane alive, or null. |
 | `motions[].arrives` | The last such second, or null. |
+| `motions[].rest` | Where the element stood on the first frame it was seen, to a fraction of a pixel, or null. |
+| `motions[].moved` | The first second the element stood anywhere else or at another size, or null when it held still. |
 | `motions[].landings[]` | Each cue a motion lands on, with `cue`, `kind` as `depart` or `arrive`, and `at`, the second the cue was due. |
 
 ### A render section's files
@@ -474,6 +551,14 @@ Beside them, under `build/recordings/render/NN/`, are the two files the program 
 | `landings.json` | the program, if it chooses | A list of lanes in the shape of `report.motions`. `record` deletes it before the program runs, so a file left by an earlier run is never read. |
 
 [A render section](/guides/motion#a-render-section) shows a program that writes both.
+
+### A pane clip in a recording
+
+A page section whose page plays a pane clip leaves the same two files. The clip's frames are decoded
+while the page is stepped and are never written to disk. The clip is among `recording.assets`,
+because the origin served it to the page, so its content is a part the section is keyed on, and the
+pane's lane in `report.motions` has `kind` `clip` and names the file in `clip`. `assemble` reads the
+lane for the second the clip's sound starts at, and plays only a clip the origin served the page.
 
 ## `score/ledger.json`
 
@@ -530,7 +615,7 @@ Beside each section video, `NN.json` holds the key it was encoded from.
 
 {/* sample: section-json, build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson */}
 ```json build/sections/01.json
-{ "digest": "69cce425e900ce795b5a8ba31daff72968b0c48ecc081c1ff625467ece52c857" }
+{ "digest": "5b354143a77992568ddd3ac0279277e8239add80a85f75166b1447483376f9c3" }
 ```
 
 The digest is a sha256 over the whole argument list of the encode, the BLAKE3 digest of every file it
@@ -598,7 +683,31 @@ Everything a viewer receives. `<name>` is the project name.
 | `<name>-transcript.html` | The media alternative: one page with a heading per chapter, what was said, and the description of each reveal the page reported. |
 | `<name>-poster.png` | The opening slide as a lossless PNG, drawn by the page rather than taken out of the mp4. |
 | `<name>-captioned.mp4` | The captioned copy, only when `[output] captioned` is on: the film's picture with every caption drawn over it by the page, and its sound and chapters copied. A build with the key off removes the copy an earlier build left. |
+| `<name>.landings.json` | Every landing the film's verify measures, its reveals, its motions and every landing inside its pane clips, moved onto the film's clock, as a list of lanes. |
+| `<name>.words.json` | Every word the film says, the narration's and every clip's, as its captions show it, with its voice and its turn, on the film's clock. |
 | `placements.json` | Where every section sits in the finished film. |
+
+### `build/final/<name>.landings.json`
+
+The landings of the film, in the shape a page reports its lanes in
+[The lane report](/concepts/page-contract#the-lane-report), each moved from its section's clock onto
+the film's by the second the section starts. Boxes are in the film's own pixels. It holds every
+landing the film's own verify measures: every lane that lands on a cue, every landing inside its
+pane clips, and one lane of kind `reveal` for each cue that revealed or changed an element, boxed
+where the recorder saw those elements drawn and departing on the cue. A landing on a cue `cues.json`
+marks `"verify": false` is not in it, and neither is a cue that only a script serves, which reveals
+no element to box. A film placed in a pane of another film with this file beside it under the film's
+own name, such as `deck/clips/larkbill.mp4` and `deck/clips/larkbill.landings.json`, has its landings
+measured there too, so a film built of reveals is measured there as fully as one built of motions. A
+clip section's footage declares nothing to the project, so its landings are not in the file.
+
+### `build/final/<name>.words.json`
+
+Every word the film says, in the order the words start, on the film's own clock: the narration's,
+spelled and punctuated as its captions show them, each with the voice and the turn that say it, and
+every word inside a clip section or a pane clip it captions. It is one object with a `words` list, in
+the shape of a clip's words file, so a film placed in a pane of another film with this file beside it
+under the film's own name, such as `deck/clips/larkbill.words.json`, has its speech captioned there.
 
 `output.timestamped_copy` writes a second copy of the film beside the first, named with the date and
 the minute the copy was taken.
@@ -652,16 +761,16 @@ file per run, never truncated, so a watch loop running beside a build by hand ca
 the other is writing. `--events` prints the same lines on stderr as they happen.
 
 {/* sample: cue-events, decktalk cue, on a starter built with --no-spend, the whole events file it wrote */}
-```jsonl build/events/6a5a550a5659.jsonl
-{"event":"run.start","time":"2026-10-09T04:24:50.633842Z","seq":0,"run":"6a5a550a5659","events_file":"build/events/6a5a550a5659.jsonl"}
-{"event":"run.log","time":"2026-10-09T04:24:50.634725Z","seq":1,"run":"6a5a550a5659","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":3316,"lock":".lock"}}
-{"event":"section.start","time":"2026-10-09T04:24:50.636715Z","seq":2,"run":"6a5a550a5659","stage":"cue","section":1,"turn":null}
-{"event":"section.done","time":"2026-10-09T04:24:50.636830Z","seq":3,"run":"6a5a550a5659","stage":"cue","section":1,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-09T04:24:50.636897Z","seq":4,"run":"6a5a550a5659","stage":"cue","section":2,"turn":null}
-{"event":"section.done","time":"2026-10-09T04:24:50.636950Z","seq":5,"run":"6a5a550a5659","stage":"cue","section":2,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-09T04:24:50.636991Z","seq":6,"run":"6a5a550a5659","stage":"cue","section":3,"turn":null}
-{"event":"section.done","time":"2026-10-09T04:24:50.637027Z","seq":7,"run":"6a5a550a5659","stage":"cue","section":3,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"run.done","time":"2026-10-09T04:24:50.641436Z","seq":8,"run":"6a5a550a5659","outcome":"ran","elapsed_seconds":0.008,"error":null,"dropped":0}
+```jsonl build/events/0e184f821ac0.jsonl
+{"event":"run.start","time":"2026-10-09T06:08:47.724200Z","seq":0,"run":"0e184f821ac0","events_file":"build/events/0e184f821ac0.jsonl"}
+{"event":"run.log","time":"2026-10-09T06:08:47.725160Z","seq":1,"run":"0e184f821ac0","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":23733,"lock":".lock"}}
+{"event":"section.start","time":"2026-10-09T06:08:47.727139Z","seq":2,"run":"0e184f821ac0","stage":"cue","section":1,"turn":null}
+{"event":"section.done","time":"2026-10-09T06:08:47.727227Z","seq":3,"run":"0e184f821ac0","stage":"cue","section":1,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-09T06:08:47.727287Z","seq":4,"run":"0e184f821ac0","stage":"cue","section":2,"turn":null}
+{"event":"section.done","time":"2026-10-09T06:08:47.727334Z","seq":5,"run":"0e184f821ac0","stage":"cue","section":2,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-09T06:08:47.727378Z","seq":6,"run":"0e184f821ac0","stage":"cue","section":3,"turn":null}
+{"event":"section.done","time":"2026-10-09T06:08:47.727417Z","seq":7,"run":"0e184f821ac0","stage":"cue","section":3,"turn":null,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"run.done","time":"2026-10-09T06:08:47.731950Z","seq":8,"run":"0e184f821ac0","outcome":"ran","elapsed_seconds":0.008,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. `time`, `seq` and `run` are on every line, and `seq` counts per run

@@ -15,6 +15,7 @@ from decktalk.artifacts import (
     CueTimes,
     EstimatedWords,
     ProviderWords,
+    SpokenWord,
     Take,
     Takes,
     TimedBy,
@@ -392,9 +393,10 @@ def test_a_placeholder_answers_the_words_decktalk_estimated_and_says_so(tmp_path
 def test_a_clip_section_answers_its_words_file_on_the_clip_own_clock(tmp_path):
     """A clip has no lead: its words file already runs on the clip's own clock."""
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
-    ClipWords(words=HELLO).write(tmp_path / "media" / "open.words.json")
+    said = tuple(SpokenWord(word=word.word, start=word.start, end=word.end) for word in HELLO)
+    ClipWords(words=said).write(tmp_path / "media" / "open.words.json")
     heard = inputs.words(0)
-    assert type(heard) is ClipWords and heard.words == HELLO and heard.estimated is False
+    assert type(heard) is ClipWords and heard.words == said and heard.estimated is False
 
 
 def test_a_clip_words_file_that_does_not_read_is_refused_as_the_author_input(tmp_path):

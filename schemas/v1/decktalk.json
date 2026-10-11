@@ -1900,6 +1900,17 @@
         "additionalProperties": true
       }
     },
+    "clip": {
+      "type": "array",
+      "description": "One clip the project makes at build time: the project file and the command that writes it.",
+      "x-kind": "document",
+      "items": {
+        "type": "object",
+        "description": "One clip the project makes at build time: the project file and the command that writes it.",
+        "x-kind": "document",
+        "additionalProperties": true
+      }
+    },
     "transition": {
       "type": "object",
       "description": "How one section is joined to the next.",

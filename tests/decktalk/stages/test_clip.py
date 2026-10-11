@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import Words
+from decktalk.artifacts import ClipWords
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
@@ -93,7 +93,7 @@ def test_the_words_file_holds_every_word_wholly_inside_the_span(tmp_path: Path) 
     """The clip's own clock starts at its first frame, so its words are moved back to it."""
     inputs = a_project(tmp_path)
     cut_a_clip(inputs, a_run(tmp_path), start=0.4, end=1.0)
-    written = Words.read(tmp_path / "media" / "answer.words.json")
+    written = ClipWords.read(tmp_path / "media" / "answer.words.json")
     assert written is not None
     assert [word.word for word in written.words] == ["Hello"]
     assert written.words[0].start == 0.1
@@ -110,7 +110,7 @@ def test_a_word_the_span_cuts_in_two_is_said_rather_than_written(tmp_path: Path,
     run = a_run(tmp_path)
     said = notes(run)
     result = cut_a_clip(inputs, run, start=0.4, end=1.2)
-    written = Words.read(tmp_path / "media" / "answer.words.json")
+    written = ClipWords.read(tmp_path / "media" / "answer.words.json")
     assert written is not None
     assert [word.word for word in written.words] == ["Hello"]
     assert any("cuts the word 'there' in two" in line for line in said)
@@ -223,6 +223,9 @@ def test_a_clip_of_a_dialogue_section_carries_every_turn(tmp_path: Path, fake_ff
     (call,) = [call for call in fake_ffmpeg.calls if "-filter_complex" in call]
     assert str(inputs.workspace.narration_path) in call
     assert "adelay=delays=0S" in graph_of(fake_ffmpeg)
-    said = Words.read(tmp_path / "media" / "answer.words.json")
+    said = ClipWords.read(tmp_path / "media" / "answer.words.json")
     assert said is not None
-    assert [word.word for word in said.words] == ["Hello.", "there."]
+    assert [(word.word, word.voice, word.turn) for word in said.words] == [
+        ("Hello.", "narrator", 1),
+        ("there.", "guest", 2),
+    ]

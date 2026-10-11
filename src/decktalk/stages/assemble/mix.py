@@ -1,11 +1,16 @@
 """The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
 
 A silent anchor of the picture's length fixes the duration, the narration plays under the page
-sections, each clip's own audio lands at its section start, the music is ducked under speech and
-shaped by `markers.json`, an ambience bed sits under the sections that ask for one, and each sound
-effect lands on its resolved cue. A clip between two page sections, or a hold, pauses the
-narration, so the track plays in the runs `inputs.timeline` splits it into, each from where its
-first section starts.
+sections, each clip section's own audio lands at its section start and each pane clip's at its cue,
+the music is ducked under speech and shaped by `markers.json`, an ambience bed sits under the
+sections that ask for one, and each sound effect lands on its resolved cue. A clip section between
+two page sections, or a hold, pauses the narration, so the track plays in the runs `inputs.timeline`
+splits it into, each from where its first section starts.
+
+Every sound a clip carries is matched to the narration's integrated loudness before it is laid, so a
+film made somewhere else plays as loud as the voice beside it and the master's one gain lifts both
+together. A narration that is a placeholder has no level of its own, so a clip is then matched to the
+level the master would bring the narration to.
 
 One function per layer, each named for the part of the graph it lays. A layer that cannot be laid
 says so through the run and lays nothing, since a soundtrack missing its music is still a soundtrack
@@ -14,6 +19,7 @@ and a film that stopped for one is not.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +34,7 @@ from decktalk.inputs.document import MixEffect
 from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine.run import Run
-from decktalk.media import ffmpeg
+from decktalk.media import audio, ffmpeg
 from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
@@ -236,11 +242,76 @@ def marker_times(markers: Sequence[Marker], starts: Mapping[int, float], inputs:
     return [one(marker) for marker in markers]
 
 
-def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]) -> list[Span]:
+@dataclass(frozen=True)
+class Embedded:
+    """One sound a clip carries into the film: its file, the second it starts at, how long it plays and its label."""
+
+    path: Path
+    at: float
+    seconds: float
+    label: str
+    pane: bool = False
+    """Whether a pane plays it, inside a page section, rather than a clip section of its own."""
+
+
+def embedded_sounds(inputs: Inputs, rows: list[Rendered], starts: Mapping[int, float]) -> list[Embedded]:
+    """Every clip's own sound: each clip section's from its start, and each pane clip's from its cue.
+
+    A pane clip plays from its cue until it ends or its page stops being recorded, whichever comes
+    first, because after that the film holds the page's last frame and nothing in it plays.
+    """
+    sounds = [
+        Embedded(row.audio, starts[row.number], row.seconds, f"clip{row.key}") for row in rows if row.audio is not None
+    ]
+    for row in rows:
+        if not isinstance(row.section, PageSection):
+            continue
+        log = inputs.recording_log(row.key)
+        if log is None:
+            continue
+        played = min(row.seconds, log.recording.requested_seconds)
+        for number, lane in enumerate(log.recording.pane_clips(), start=1):
+            path = inputs.path(lane.clip or "")
+            start = lane.landings[0].at
+            if start >= played or not path.is_file() or not ffmpeg.has_audio(path):
+                continue
+            seconds = round(min(ffmpeg.probe_duration(path), played - start), SECOND_DIGITS)
+            sounds.append(Embedded(path, starts[row.number] + start, seconds, f"pane{row.key}n{number}", pane=True))
+    return sounds
+
+
+def matched_gains(inputs: Inputs, takes: Takes, sounds: Sequence[Embedded]) -> dict[Path, float]:
+    """The gain in dB that brings each clip's sound to the narration's integrated loudness.
+
+    A narration that is a placeholder, or that is silent, has no level to match, so the target the
+    master normalizes to stands in for it, which is where the master would bring a real narration.
+    A clip that is silent has no level to move, so it is laid at unity.
+    """
+    settings = inputs.settings.audio
+
+    def integrated(path: Path) -> float:
+        return audio.measure_loudness(
+            path, i=settings.target_lufs, tp=settings.true_peak_max_dbtp, lra=settings.range_max_lu
+        ).i
+
+    narration = inputs.workspace.narration_path
+    level = integrated(narration) if sounds and not takes.estimated and narration.is_file() else math.nan
+    reference = level if math.isfinite(level) else settings.target_lufs
+    gains: dict[Path, float] = {}
+    for sound in sounds:
+        if sound.path not in gains:
+            own = integrated(sound.path)
+            gains[sound.path] = reference - own if math.isfinite(own) else 0.0
+    return gains
+
+
+def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float],
+                 sounds: Sequence[Embedded] = ()) -> list[Span]:  # fmt: skip
     """Every span of the film that carries speech, which is what the music ducks under.
 
     A spoken section speaks from where it starts until its last word, or until it ends when it says
-    nothing at all, and a clip speaks for the whole of its own length because its dialogue is its own.
+    nothing at all, and a clip section speaks for the whole of its own length because its dialogue is
+    its own. A pane clip speaks for as long as its sound plays.
     """
     offsets = narration_offsets([row.section for row in rows], takes, starts)
     spans: list[Span] = []
@@ -249,6 +320,7 @@ def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]
         until = at.speech_end if at.speech_end is not None else at.end
         spans.append((offset + at.start, offset + until))
     spans += [(starts[row.number], starts[row.number] + row.seconds) for row in rows if row.section.is_clip]
+    spans += [(sound.at, sound.at + sound.seconds) for sound in sounds if sound.pane]
     return spans
 
 
@@ -272,18 +344,16 @@ def _narration(chain: Chain, inputs: Inputs, rows: list[Rendered], takes: Takes,
         chain.layer(chain.add(ONCE, track), f",{trim},asetpts=PTS-STARTPTS,{delay(run.at)}", f"narr{number}")
 
 
-def _clip_audio(chain: Chain, rows: list[Rendered], starts: Mapping[int, float]) -> None:
-    """Each clip's own sound, at its section start, trimmed to its picture and faded at both ends."""
-    for row in rows:
-        if row.audio is None:
-            continue
-        fade_out_at = max(row.seconds - CLIP_FADE_SECONDS, 0)
+def _clip_audio(chain: Chain, sounds: Sequence[Embedded], gains: Mapping[Path, float]) -> None:
+    """Each clip's own sound at its own second, matched to the narration, trimmed to its picture and faded."""
+    for sound in sounds:
+        fade_out_at = max(sound.seconds - CLIP_FADE_SECONDS, 0)
         chain.layer(
-            chain.add(ONCE, str(row.audio)),
-            f",atrim=duration={row.seconds:.3f},asetpts=PTS-STARTPTS,"
+            chain.add(ONCE, str(sound.path)),
+            f",atrim=duration={sound.seconds:.3f},asetpts=PTS-STARTPTS,volume={gains[sound.path]:.2f}dB,"
             f"afade=t=in:d={CLIP_FADE_SECONDS},afade=t=out:st={fade_out_at:.3f}:d={CLIP_FADE_SECONDS},"
-            f"{delay(starts[row.number])}",
-            f"clip{row.key}",
+            f"{delay(sound.at)}",
+            sound.label,
         )
 
 
@@ -415,11 +485,12 @@ def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, sc
     chain = Chain(sample_rate=inputs.settings.audio.sample_rate)
     starts = rendered_starts(rows)
     total = round(sum(row.seconds for row in rows), SECOND_DIGITS)
+    sounds = embedded_sounds(inputs, rows, starts)
     _anchor(chain)
     _narration(chain, inputs, rows, takes, starts)
-    _clip_audio(chain, rows, starts)
+    _clip_audio(chain, sounds, matched_gains(inputs, takes, sounds))
     if score:
-        speech = speech_spans(rows, takes, starts)
+        speech = speech_spans(rows, takes, starts, sounds)
         _music(chain, inputs, run, starts, speech, total)
         _ambience(chain, inputs, run, rows, starts, total)
         _effects(chain, inputs, run, starts)
@@ -466,6 +537,7 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
 
 __all__ = [
     "CLIP_FADE_SECONDS",
+    "Embedded",
     "LAVFI",
     "LOOP",
     "ONCE",
@@ -474,6 +546,7 @@ __all__ = [
     "MixPlan",
     "Span",
     "delay",
+    "embedded_sounds",
     "encode_soundtrack",
     "max_expr",
     "mix_input_args",
@@ -483,6 +556,7 @@ __all__ = [
     "ramp_groups",
     "ramps_expr",
     "marker_times",
+    "matched_gains",
     "second",
     "speech_spans",
 ]

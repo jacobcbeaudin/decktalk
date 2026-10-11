@@ -93,9 +93,11 @@
     PAGE_MOTION_UNDECLARED:
       "{value} keeps moving past the half second a cue may still move and declares no motion, loop or region, so verify cannot mask it.",
     PAGE_MOTION_CUE_UNKNOWN:
-      "The motion names the cue {cue}, which no slide declares, so it never starts or never lands.",
+      "The motion or pane clip names the cue {cue}, which no slide declares, so it never starts or never lands.",
     PAGE_REALTIME_MEDIA:
-      "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so use a clip section.",
+      "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so play it in a pane with data-clip.",
+    PAGE_CLIP_UNREADABLE:
+      "The pane clip {value} on slide {slide} could not be read as a picture, so the pane plays nothing.",
     PAGE_FRAME_THREW: "A frame hook the deck registered threw {value}, so it stopped drawing from that frame on.",
     PAGE_WAIT_REJECTED: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
     PAGE_WAIT_UNSETTLED: "A promise the page waited for never settled, so the page was drawn without it.",
@@ -426,6 +428,31 @@
       affects: ["motion"],
       summary: "How long one turn of the loop takes.",
     },
+    "data-clip": {
+      name: "data-clip",
+      on: ["element"],
+      kind: "path",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_CLIP_UNREADABLE",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element is a pane that plays this project file, a clip with its own sound, drawn under the page and masked from every reveal check.",
+    },
+    "data-clip-from": {
+      name: "data-clip-from",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The pane clip starts playing, picture and sound, at this cue, and shows its first frame before it.",
+    },
     "data-scene": {
       name: "data-scene",
       on: ["scene"],
@@ -510,6 +537,7 @@
   var DONE_ATTR = "data-done";
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
+  var CLIP_FRAMES = `${ENGINE_PATH}clip/`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
   function cueId(slide, local) {
     return `${slide}${CUE_MARK}${local}`;
@@ -533,14 +561,14 @@
     return Object.hasOwn(ATTRS, name);
   }
   function refuse(name, value) {
-    const row = ATTRS[name];
-    if (row.values.length) {
-      return row.values.includes(value) ? null : `one of ${row.values.join(", ")}`;
+    const row2 = ATTRS[name];
+    if (row2.values.length) {
+      return row2.values.includes(value) ? null : `one of ${row2.values.join(", ")}`;
     }
-    if (row.range) {
+    if (row2.range) {
       const seconds2 = Number(value);
       if (!Number.isFinite(seconds2)) return `a number of seconds`;
-      const { min, max, step } = row.range;
+      const { min, max, step } = row2.range;
       if (seconds2 < min || seconds2 > max) return `${min} to ${max} seconds`;
       return Math.abs(Math.round(seconds2 / step) * step - seconds2) < 1e-9 ? null : `a multiple of ${step} seconds`;
     }
@@ -590,6 +618,8 @@
     caption: "dt-caption",
     /** One line of a caption, which carries `data-sound` when it says what is heard rather than said. */
     captionLine: "dt-caption-line",
+    /** A slide that plays a pane clip, every picture of which the sheet draws on a layer of its own. */
+    paned: "dt-paned",
   };
   var CAPTIONS_ID = "dt-captions";
   function frames(family, word2) {
@@ -648,8 +678,8 @@
   ];
   function sheet() {
     const declared2 = Object.values(ATTRS)
-      .filter((row) => row.kind === "id")
-      .map((row) => `[${row.name}]`)
+      .filter((row2) => row2.kind === "id")
+      .map((row2) => `[${row2.name}]`)
       .join(",");
     const parts = [
       `:where(${declared2}){display:none}
@@ -664,6 +694,11 @@
       `:where(.${CLASS.leaving}){opacity:1;z-index:0;pointer-events:none}
 `,
       `:where(.${CLASS.arriving}){z-index:1}
+`,
+      // A pane clip's picture is a compositor layer of its own, and Chromium lays a picture overlapping
+      // it out with it, so a picture that first shows beside it draws the pictures around it again with
+      // nothing changed. Every picture of a slide that plays one is a layer of its own, so none is.
+      `:where(.${CLASS.paned}) img{will-change:transform}
 `,
       `:where(.${CLASS.hidden}){opacity:0}
 `,
@@ -950,16 +985,16 @@
   var recorded = [];
   function warn(code, slide = null, cue = null, fields = {}) {
     const filled = { ...(slide === null ? {} : { slide }), ...(cue === null ? {} : { cue }), ...fields };
-    const row = {
+    const row2 = {
       code,
       message: message(code, filled),
       slide,
       cue,
       attr: fields.attr === void 0 ? null : String(fields.attr),
     };
-    if (recorded.some((seen) => same(seen, row))) return;
-    recorded.push(row);
-    console.warn(`${CONSOLE_PREFIX}: ${row.message}`);
+    if (recorded.some((seen) => same(seen, row2))) return;
+    recorded.push(row2);
+    console.warn(`${CONSOLE_PREFIX}: ${row2.message}`);
   }
   function same(a, b) {
     return a.code === b.code && a.slide === b.slide && a.cue === b.cue && a.attr === b.attr;
@@ -1018,8 +1053,10 @@
     motionEase: named("motion-ease"),
     loop: named("loop"),
     loopSeconds: named("loop-seconds"),
+    clip: named("clip"),
+    clipFrom: named("clip-from"),
   };
-  var MOVING_SELECTOR = `[${ATTR.motion}],[${ATTR.loop}]`;
+  var MOVING_SELECTOR = `[${ATTR.motion}],[${ATTR.loop}],[${ATTR.clip}]`;
   var REALTIME_MEDIA = ["video", "audio"];
   var SCENE_WORD = "Scene";
   var scenes = /* @__PURE__ */ new Map();
@@ -1104,6 +1141,18 @@
     return found ? found.value : null;
   }
   function motionOf(el, slideId) {
+    const clip = written(el, ATTR.clip);
+    if (clip) {
+      const from = written(el, ATTR.clipFrom);
+      return {
+        kind: "clip",
+        name: clip,
+        from: from ? cueId(slideId, from) : null,
+        to: null,
+        ease: null,
+        seconds: null,
+      };
+    }
     const name = written(el, ATTR.motion);
     if (name) {
       const from = written(el, ATTR.motionFrom);
@@ -1125,7 +1174,7 @@
     if (!slide.markup) return [];
     return [...slide.markup.content.querySelectorAll(MOVING_SELECTOR)]
       .map((el) => motionOf(el, slide.id))
-      .filter((row) => row !== null);
+      .filter((row2) => row2 !== null);
   }
   function easeOf(el) {
     return word(el, ATTR.motionEase, MOTION_EASES);
@@ -1148,9 +1197,9 @@
         for (const moment of momentsOf(el, slide.id)) add(moment.cue);
         for (const change of classChangesOf(el, slide.id)) add(change.cue);
       }
-      for (const row of motionsOf(slide)) {
-        if (row.from) add(row.from);
-        if (row.to) add(row.to);
+      for (const row2 of motionsOf(slide)) {
+        if (row2.from) add(row2.from);
+        if (row2.to) add(row2.to);
       }
     }
     for (const local of Object.keys(slide.on)) add(cueId(slide.id, local));
@@ -1309,10 +1358,10 @@
           warn("PAGE_ATTR_UNKNOWN", place, null, { attr: attribute.name });
           continue;
         }
-        const row = ATTRS[attribute.name];
-        if (!row.values.length && !row.range) continue;
+        const row2 = ATTRS[attribute.name];
+        if (!row2.values.length && !row2.range) continue;
         const value = attribute.value.trim();
-        if (!value && row.default !== null) continue;
+        if (!value && row2.default !== null) continue;
         const why = refuse(attribute.name, value);
         if (why) {
           warn("PAGE_BAD_VALUE", place, null, { attr: attribute.name, value: attribute.value, allowed: why });
@@ -1442,13 +1491,15 @@
   }
 
   // src/decktalk/runtime/src/motion.ts
-  /*! Declared motion: a thing that moves from one cue to another, a loop, and a region a frame hook draws in.
+  /*! Declared motion: a thing that moves from one cue to another, a loop, a region a frame hook draws in, and a pane clip.
    *
    * A moment is a reveal of half a second or less, measured as a step in the picture. A motion is the
    * other noun: it can run for any length, its length is the seconds between two cues and never a
    * number in markup, and it is declared on the element it moves, so verify can mask it from every
    * reveal and measure its own departure and arrival instead. A loop turns for as long as its slide is
-   * on screen and is masked and never a landing. A frame hook draws inside a region it names.
+   * on screen and is masked and never a landing. A frame hook draws inside a region it names. A pane clip
+   * plays a project file inside its element from one cue, frame by frame on the section clock, with the
+   * page drawn over it, and is masked from that cue and measured for its departure on it.
    *
    * Anything that keeps moving past the half second a cue may still move and declares none of these is
    * undeclared motion, which is exactly what makes verify's control dishonest, so the page reports it.
@@ -1491,6 +1542,9 @@
     return `linear(${points.join(", ")})`;
   }
   var lanes = [];
+  function standsAt(box, rest) {
+    return box.left === rest.x && box.top === rest.y && box.width === rest.w && box.height === rest.h;
+  }
   var swept = /* @__PURE__ */ new Map();
   function resolve(region2) {
     const found = typeof region2 === "string" ? document.querySelector(region2) : region2;
@@ -1500,6 +1554,7 @@
     return resolve(one.region);
   }
   function alive(one, seconds2) {
+    if (one.kind === "clip") return one.from !== null && seconds2 >= one.from - DUE;
     if (one.from !== null && one.to !== null) return seconds2 >= one.from - DUE && seconds2 <= one.to + DUE;
     return true;
   }
@@ -1507,29 +1562,38 @@
     for (const one of lanes) {
       if (!alive(one, seconds2)) continue;
       const el = regionOf(one);
-      if (!el) continue;
-      const box = el.getBoundingClientRect();
-      if (!box.width || !box.height) continue;
-      const seen = swept.get(one.id);
-      if (!seen) {
-        swept.set(one.id, {
-          left: box.left,
-          top: box.top,
-          right: box.right,
-          bottom: box.bottom,
-          width: box.width,
-          height: box.height,
-          first: seconds2,
-          last: seconds2,
-        });
-        continue;
-      }
-      seen.left = Math.min(seen.left, box.left);
-      seen.top = Math.min(seen.top, box.top);
-      seen.right = Math.max(seen.right, box.right);
-      seen.bottom = Math.max(seen.bottom, box.bottom);
-      seen.last = seconds2;
+      if (el) note(one.id, el, seconds2);
     }
+    for (const one of revealed) {
+      if (seconds2 < one.at - DUE || seconds2 > one.at + MEASURABLE_SPAN_SECONDS + DUE) continue;
+      for (const el of one.els) if (el.isConnected) note(one.id, el, seconds2);
+    }
+  }
+  function note(id, el, seconds2) {
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const seen = swept.get(id);
+    if (!seen) {
+      swept.set(id, {
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+        first: seconds2,
+        last: seconds2,
+        rest: { x: box.left, y: box.top, w: box.width, h: box.height },
+        moved: null,
+      });
+      return;
+    }
+    if (seen.moved === null && !standsAt(box, seen.rest)) seen.moved = seconds2;
+    seen.left = Math.min(seen.left, box.left);
+    seen.top = Math.min(seen.top, box.top);
+    seen.right = Math.max(seen.right, box.right);
+    seen.bottom = Math.max(seen.bottom, box.bottom);
+    seen.last = seconds2;
   }
   function moving(seconds2) {
     return lanes.some((one) => one.kind !== "region" && alive(one, seconds2) && regionOf(one) !== null);
@@ -1545,29 +1609,49 @@
   }
   function report() {
     return lanes.map((one) => {
-      const seen = swept.get(one.id);
       const landings = [];
       if (one.cues.from && one.from !== null)
         landings.push({ cue: one.cues.from, kind: "depart", at: round(one.from) });
       if (one.cues.to && one.to !== null) landings.push({ cue: one.cues.to, kind: "arrive", at: round(one.to) });
-      const box = seen
-        ? {
-            x: Math.round(seen.left),
-            y: Math.round(seen.top),
-            w: Math.round(seen.right) - Math.round(seen.left),
-            h: Math.round(seen.bottom) - Math.round(seen.top),
-          }
-        : null;
-      return {
-        id: one.id,
-        kind: one.kind,
-        box,
-        size: seen ? { w: Math.round(seen.width), h: Math.round(seen.height) } : null,
-        departs: seen ? round(seen.first) : null,
-        arrives: seen ? round(seen.last) : null,
-        landings,
-      };
+      const seen = swept.get(one.id);
+      return { ...row(one.id, one.kind, seen), landings, clip: one.clip ?? null };
     });
+  }
+  function reveals() {
+    return revealed.map((one) => ({
+      ...row(one.id, "reveal", swept.get(one.id)),
+      landings: [{ cue: one.cue, kind: "depart", at: round(one.at) }],
+      clip: null,
+    }));
+  }
+  function row(id, kind, seen) {
+    const box = seen
+      ? {
+          x: Math.round(seen.left),
+          y: Math.round(seen.top),
+          w: Math.round(seen.right) - Math.round(seen.left),
+          h: Math.round(seen.bottom) - Math.round(seen.top),
+        }
+      : null;
+    return {
+      id,
+      kind,
+      box,
+      size: seen ? { w: Math.round(seen.width), h: Math.round(seen.height) } : null,
+      departs: seen ? round(seen.first) : null,
+      arrives: seen ? round(seen.last) : null,
+      rest: seen ? seen.rest : null,
+      moved: seen && seen.moved !== null ? round(seen.moved) : null,
+    };
+  }
+  var revealed = [];
+  function reveal(el, cue, at) {
+    const one = revealed.find((row2) => row2.cue === cue);
+    if (one) {
+      if (!one.els.includes(el)) one.els.push(el);
+      return;
+    }
+    revealed.push({ id: `reveal-${revealed.length + 1}`, cue, at, els: [el] });
   }
   function lane(next) {
     lanes.push({ ...next, id: `${next.kind}-${lanes.length + 1}` });
@@ -1613,6 +1697,12 @@
   function wire(el, slide, timing, on2) {
     for (const target of el.querySelectorAll(MOVING_SELECTOR)) {
       const moving2 = target;
+      const clip = written(moving2, ATTR.clip);
+      if (clip) {
+        el.classList.add(CLASS.paned);
+        paneClip(moving2, clip, slide, timing, on2);
+        continue;
+      }
       const loop = written(moving2, ATTR.loop);
       if (timing.frozen) {
         if (loop) continue;
@@ -1644,6 +1734,62 @@
         moving2.style.animation = `${name} ${end - start2}s ${cssTiming(ease)} 0s 1 normal both`;
       });
     }
+  }
+  var PANE_FILL = "display:block;width:100%;height:100%;object-fit:fill;pointer-events:none;will-change:transform";
+  function clipSecond(seconds2, start2) {
+    return round(Math.max(0, seconds2 - start2));
+  }
+  function clipFrameUrl(clip, second) {
+    return `${CLIP_FRAMES}${second}/${clip.split("/").map(encodeURIComponent).join("/")}`;
+  }
+  function paneClip(el, clip, slide, timing, on2) {
+    const local = written(el, ATTR.clipFrom);
+    const from = local ? cueId(slide.id, local) : null;
+    const start2 = from === null ? null : timing.at(from);
+    if (!timing.frozen && (from === null || start2 === null)) {
+      warn("PAGE_MOTION_CUE_UNKNOWN", slide.id, from, { attr: ATTR.clip, value: clip });
+    }
+    if (!timing.frozen && !timing.recorded) {
+      const video = document.createElement("video");
+      video.src = `/${clip}`;
+      video.preload = "auto";
+      video.playsInline = true;
+      video.style.cssText = PANE_FILL;
+      el.prepend(video);
+      if (from !== null && start2 !== null) {
+        on2(from, () => {
+          video.currentTime = Math.max(0, now() - start2);
+          video.play().catch(() => {
+            video.muted = true;
+            return video.play().catch(() => void 0);
+          });
+        });
+      }
+      return;
+    }
+    const img = document.createElement("img");
+    img.alt = "";
+    img.style.cssText = PANE_FILL;
+    if (timing.recorded) {
+      img.addEventListener("error", () => warn("PAGE_CLIP_UNREADABLE", slide.id, from, { value: clip }), {
+        once: true,
+      });
+    }
+    el.prepend(img);
+    const show2 = (second) => {
+      const url = clipFrameUrl(clip, second);
+      if (img.getAttribute("src") !== url) img.src = url;
+    };
+    show2(0);
+    if (timing.frozen || from === null || start2 === null) return;
+    lane({ kind: "clip", region: el, from: start2, to: null, cues: { from, to: null }, clip });
+    schedule(start2, "reveal", clip, () =>
+      every((seconds2) => {
+        if (!img.isConnected) return false;
+        show2(clipSecond(seconds2, start2));
+        return true;
+      }),
+    );
   }
   function picture(el) {
     const canvases = el instanceof HTMLCanvasElement ? [el] : [...el.querySelectorAll("canvas")];
@@ -1893,24 +2039,35 @@
       said: /* @__PURE__ */ new Set(),
     };
     const onLeave = (fn) => stops.push(fn);
+    const noted = (element, cue, action) =>
+      playing.recorded && !playing.frozen
+        ? {
+            ...action,
+            run: () => {
+              action.run();
+              reveal(element, cue, playing.at(cue) ?? now());
+            },
+          }
+        : action;
     for (const target of momentElements(el)) {
       const element = target;
       const moments = momentsOf(element, slide.id);
       if (moments.some((one) => one.attr === ATTR.in)) hide2(element);
       for (const moment of moments) {
         const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
-        push(actions, moment.cue, action);
+        push(actions, moment.cue, noted(element, moment.cue, action));
       }
       for (const change of classChangesOf(element, slide.id)) {
-        push(actions, change.cue, {
+        const action = {
           attr: ATTR.class,
           run: () => element.classList.add(change.name),
           line: classDescriptionOf(element, change.local) || null,
-        });
+        };
+        push(actions, change.cue, noted(element, change.cue, action));
       }
     }
     for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`)) spotlight(container, slide, actions);
-    wire(el, slide, { frozen: playing.frozen, at: playing.at }, (cue, run2) =>
+    wire(el, slide, { frozen: playing.frozen, recorded: playing.recorded, at: playing.at }, (cue, run2) =>
       push(actions, cue, { attr: ATTR.motion, run: run2, line: null }),
     );
     if (playing.frozen) {
@@ -2136,7 +2293,7 @@
   function mount(scene, slide, held, at) {
     const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
     const el = buildSlide(scene, slide);
-    const mounted = prepare(el, slide, { frozen, held, words: state.words, at: cueAt });
+    const mounted = prepare(el, slide, { frozen, recorded: signalled, held, words: state.words, at: cueAt });
     typeset(el, slide.id);
     state.slide = slide;
     state.mounted = mounted;
@@ -2285,8 +2442,8 @@
       return null;
     }
     const cues = (rows[0].cues ?? [])
-      .filter((row) => typeof row.cue === "string" && typeof row.at === "number")
-      .map((row) => ({ id: row.cue, at: row.at / speed }));
+      .filter((row2) => typeof row2.cue === "string" && typeof row2.at === "number")
+      .map((row2) => ({ id: row2.cue, at: row2.at / speed }));
     return cues.length ? cues.sort((a, b) => a.at - b.at) : null;
   }
   function stop(slideId, held) {
@@ -2304,41 +2461,41 @@
     state.fired = [...firing];
     done();
   }
-  function index(note) {
+  function index(note2) {
     state.mode = "index";
     hide();
     const div = document.createElement("div");
     div.id = "dt-index";
     const title = document.title || "decktalk scenes";
-    div.appendChild(heading(title, note));
+    div.appendChild(heading(title, note2));
     for (const scene of all().values()) {
       const head = document.createElement("h2");
       head.textContent = `Scene ${scene.id}: ${scene.name} `;
       head.appendChild(link(`?${SCENE}=${encodeURIComponent(scene.id)}`, "▶ play"));
       div.appendChild(head);
-      const row = document.createElement("div");
-      row.className = "dt-slides";
+      const row2 = document.createElement("div");
+      row2.className = "dt-slides";
       for (const slide of scene.slides) {
         const cues = cueOrder(slide);
         const anchor = link(`?${FREEZE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
         const note_ = document.createElement("code");
         note_.textContent = `(${slide.previewSeconds}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
         anchor.appendChild(note_);
-        row.appendChild(anchor);
+        row2.appendChild(anchor);
       }
-      div.appendChild(row);
+      div.appendChild(row2);
     }
     document.body.appendChild(div);
   }
-  function heading(title, note) {
+  function heading(title, note2) {
     const out = document.createDocumentFragment();
     const h1 = document.createElement("h1");
     h1.textContent = title;
     out.appendChild(h1);
-    if (note) {
+    if (note2) {
       const p = document.createElement("p");
       const bold = document.createElement("b");
-      bold.textContent = note;
+      bold.textContent = note2;
       p.appendChild(bold);
       out.appendChild(p);
     }
@@ -2713,6 +2870,9 @@
     },
     get motions() {
       return report();
+    },
+    get reveals() {
+      return reveals();
     },
     get frozen() {
       return isFrozen();

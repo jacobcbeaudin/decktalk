@@ -10,6 +10,10 @@ A motion is measured on itself. Inside its lane, frame by frame, it moves while 
 `verify.motion_floor_percent` of its own area changes. Its departure is the first frame after its cue
 that moved, and its arrival is the last frame that moved. An arrival that eases to rest stops before
 its word, which is `MOTION_NO_EDGE`, and anything else outside the offset limit is `MOTION_OFF`.
+
+A pane clip is a lane from its cue on, whose departure is measured like a motion's. The landings a
+clip carries beside it are lanes too, moved onto the film's clock from the clip's cue and into its
+pane, and are measured the same way, each named by the clip it is inside.
 """
 
 from __future__ import annotations
@@ -51,7 +55,7 @@ class Landing:
 
 @dataclass(frozen=True)
 class Lane:
-    """One declared motion, loop or region on the film's clock, in the pixels a comparison is made at."""
+    """One declared motion, loop, region or pane clip on the film's clock, in the pixels a comparison is made at."""
 
     kind: str
     box: Rect
@@ -59,6 +63,8 @@ class Lane:
     departs: float
     arrives: float
     landings: tuple[Landing, ...] = ()
+    inner: str | None = None
+    """The pane clip this lane is inside, whose own cue ids its landings name, or None for a lane of the page."""
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,7 @@ class Landed:
     kind: LandingKind
     spoken: float
     shown: float | None
+    inner: str | None = None
 
     @property
     def offset_seconds(self) -> float | None:
@@ -91,7 +98,9 @@ def lanes_of(rows: Iterable[MotionLane], *, start: float, recorded: Size, probe:
         size = row.size or row.box
         area = max(1, round(size.w * sx) * round(size.h * sy))
         landings = tuple(Landing(one.cue, one.kind, round(start + one.at, 3)) for one in row.landings)
-        lanes.append(Lane(row.kind, box, area, round(start + row.departs, 3), round(start + row.arrives, 3), landings))
+        inner = row.clip if row.kind != "clip" else None
+        departs, arrives = round(start + row.departs, 3), round(start + row.arrives, 3)
+        lanes.append(Lane(row.kind, box, area, departs, arrives, landings, inner))
     return lanes
 
 
@@ -135,35 +144,39 @@ def measure(
             shown = after[0] if after else None
         else:
             shown = moving[-1] if moving else None
-        rows.append(Landed(landing.cue, landing.kind, landing.at, shown))
+        rows.append(Landed(landing.cue, landing.kind, landing.at, shown, lane.inner))
     return tuple(rows)
 
 
 def finding(
     row: Landed, *, settings: Settings, fps: int, film: Path | str, section: int | None = None
 ) -> Finding | None:
-    """The judgement one measured landing carries, or None when it landed inside the offset limit."""
+    """The judgement one measured landing carries, or None when it landed inside the offset limit.
+
+    A landing inside a pane clip is named by the clip and its own cue, which is no cue of this project.
+    """
     limit_ms = settings.verify.cue_offset_max_ms
     limit = limit_ms / 1000 + HALF_FRAME / fps
-    where = Location(where=row.cue, file=Path(film), section=section, cue=row.cue)
+    named = row.cue if row.inner is None else f"{row.inner} {row.cue}"
+    where = Location(where=named, file=Path(film), section=section, cue=row.cue if row.inner is None else None)
     offset = row.offset_seconds
     if offset is None:
         code = Code.MOTION_NO_EDGE if row.kind == ARRIVE else Code.MOTION_OFF
-        said = f"the motion at {row.cue} never moved near its {row.kind}, so no frame shows it {row.kind} on its word."
+        said = f"the motion at {named} never moved near its {row.kind}, so no frame shows it {row.kind} on its word."
         return judge(code, said, where, stage=Stage.VERIFY)
     if abs(offset) <= limit:
         return None
     if row.kind == ARRIVE and offset < 0:
         return judge(
             Code.MOTION_NO_EDGE,
-            f"the motion arriving at {row.cue} came to rest {offset * 1000:+.0f} ms from its word, outside the "
+            f"the motion arriving at {named} came to rest {offset * 1000:+.0f} ms from its word, outside the "
             f"{limit_ms:.0f} ms limit, so it eases to rest rather than landing. Use the firm ease.",
             where,
             stage=Stage.VERIFY,
         )
     return judge(
         Code.MOTION_OFF,
-        f"the motion at {row.cue} made its {row.kind} {offset * 1000:+.0f} ms from its word, which is outside the "
+        f"the motion at {named} made its {row.kind} {offset * 1000:+.0f} ms from its word, which is outside the "
         f"{limit_ms:.0f} ms the offset limit allows.",
         where,
         stage=Stage.VERIFY,
@@ -190,8 +203,11 @@ def mask_finding(
 
 
 def landing_cues(lanes: Sequence[Lane]) -> set[str]:
-    """Every cue some lane lands on, which is a cue a motion is measured at."""
-    return {landing.cue for one in lanes for landing in one.landings}
+    """Every cue of the page some lane lands on, which is a cue a motion is measured at.
+
+    A lane inside a pane clip lands on the clip's own cues, which are never this page's.
+    """
+    return {landing.cue for one in lanes if one.inner is None for landing in one.landings}
 
 
 __all__ = [

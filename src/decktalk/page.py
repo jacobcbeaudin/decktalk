@@ -31,6 +31,7 @@ __all__ = [
     "Attr",
     "AttrSpec",
     "BACK_OPACITY",
+    "CLIP_FRAMES",
     "COUNTS",
     "CUE_MARK",
     "DONE_ATTR",
@@ -120,6 +121,10 @@ ENGINE_PATH = "/__decktalk/"
 PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json"
 """The path a previewed page asks its origin for, which answers with the last run's cue times."""
 
+CLIP_FRAMES = "/__decktalk/clip/"
+"""The path a recorded page asks its origin for one frame of a pane clip under, then the clip's
+own second, a slash and its project path."""
+
 MOTION_SCALE_PROPERTY = "--dt-motion-scale"
 """The custom property on the root element that carries `motion.scale` into a page."""
 
@@ -156,6 +161,7 @@ class Kind(Enum):
     MOMENT = "moment"
     NAMES = "names"
     PAIRS = "pairs"
+    PATH = "path"
     SECONDS = "seconds"
     TEX = "tex"
     WORD = "word"
@@ -199,6 +205,8 @@ class Attr(Enum):
     MOTION_EASE = "data-motion-ease"
     LOOP = "data-loop"
     LOOP_SECONDS = "data-loop-seconds"
+    CLIP = "data-clip"
+    CLIP_FROM = "data-clip-from"
     SCENE = "data-scene"
     NAME = "data-name"
     SLIDE = "data-slide"
@@ -706,6 +714,40 @@ ATTRS: dict[Attr, AttrSpec] = {
         affects=(Affects.MOTION,),
         summary="How long one turn of the loop takes.",
     ),
+    Attr.CLIP: AttrSpec(
+        name=Attr.CLIP,
+        on=(Subject.ELEMENT,),
+        kind=Kind.PATH,
+        values=(),
+        default=None,
+        range=None,
+        code=Code.PAGE_CLIP_UNREADABLE,
+        span=0,
+        affects=(
+            Affects.MOTION,
+            Affects.CATALOG,
+        ),
+        summary=(
+            "The element is a pane that plays this project file, a clip with its own sound, drawn under the "
+            "page and masked from every reveal check."
+        ),
+    ),
+    Attr.CLIP_FROM: AttrSpec(
+        name=Attr.CLIP_FROM,
+        on=(Subject.ELEMENT,),
+        kind=Kind.CUE,
+        values=(),
+        default=None,
+        range=None,
+        code=Code.PAGE_MOTION_CUE_UNKNOWN,
+        span=0,
+        affects=(
+            Affects.CUE_ORDER,
+            Affects.MOTION,
+            Affects.CATALOG,
+        ),
+        summary="The pane clip starts playing, picture and sound, at this cue, and shows its first frame before it.",
+    ),
     Attr.SCENE: AttrSpec(
         name=Attr.SCENE,
         on=(Subject.SCENE,),
@@ -825,7 +867,10 @@ REPORT = {
     "catalog": "One entry per scene, with its slides, its cues and the measured box of every element.",
     "cues": "When each cue was due, when it ran, and the second of the frame that showed it.",
     "words": "Each synced line, when its cue ran, when the voice reaches it and when its first word showed.",
-    "motions": "Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on.",
+    "motions": (
+        "Every declared motion, loop, region and pane clip, the box it swept, when it moved and the cues it lands on."
+    ),
+    "reveals": "Every cue that revealed or changed an element, the box it was drawn in and the second the cue was due.",
 }
 """Every field the probe's one report call answers with, and what a reader does with it."""
 
