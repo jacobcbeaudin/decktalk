@@ -21,14 +21,15 @@ on that origin itself, from the installed package. Two things live there:
 |---|---|
 | `/__decktalk/decktalk-runtime.js` | The runtime of the engine that opened the page. |
 | `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js` | The pinned KaTeX release, with the fonts its stylesheet loads under `/__decktalk/katex/fonts/`. |
+| `/__decktalk/clip/<second>/<clip>` | The frame of a pane clip showing at that second on its own clock, as a BMP. The clip is a project path, held to the rule every served file is. |
 
 `record`, `check`, `storyboard`, the poster `assemble` draws and `decktalk serve` all open the page
 at that origin, so every one of them plays the runtime of the engine that is running, and a project
 holds no copy that could fall behind it. A build needs no network to draw a page.
 
-The path is a closed list. A name under `/__decktalk/` that is not one of those files is refused, the
-probe a command injects is never on it, and no file of the project is ever served under it, so
-nothing an author writes can shadow the engine's files.
+The path is a closed list. A name under `/__decktalk/` that is not one of those files or a clip
+frame is refused, the probe a command injects is never on it, and no file of the project is ever
+served as itself under it, so nothing an author writes can shadow the engine's files.
 
 A page opened from a `file://` URL resolves `/__decktalk/` against the root of the disk and finds
 nothing there, so it draws no slide. [Open it with `decktalk serve`](/guides/page-by-hand#open-the-page-yourself)

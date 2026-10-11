@@ -27,6 +27,7 @@ from decktalk.results import (
     CueCheck,
     DoctorResult,
     ErrorResult,
+    InstalledTool,
     Layer,
     ProviderKey,
     Result,
@@ -195,7 +196,7 @@ Found 1 finding, 1 error.
         "InitResult": """\
 Wrote build/root12 from the example14 example, 1 file.
 Voices voices15 (default)
-Next   cd build/root12 && decktalk build --no-spend
+Next   cd build/root12 && decktalk build --no-spend --set record.programs=run
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -410,13 +411,80 @@ def test_the_live_region_shows_each_stage_its_progress_and_its_time() -> None:
     assert "2/5" in shown
 
 
+CHROMIUM_BYTES = 190_945_690
+"""Truth: the 182.1 MiB Playwright's installer states for Chrome for Testing 153 on macOS arm64, in bytes."""
+
+
+def _fetch(done: int, total: int | None = CHROMIUM_BYTES, tool: str = "chromium") -> ToolFetch:
+    """One `tool.fetch` line of a download, as a fetcher's listener mints it."""
+    return ToolFetch(event="tool.fetch", time=_now(), seq=0, run="r", tool=tool, bytes=done, total_bytes=total)
+
+
 def test_a_download_shows_its_size_in_the_unit_a_person_reads() -> None:
     console = Console(record=True, width=100, no_color=True, file=io.StringIO(), force_terminal=True)
     region = output.Region(console)
     region.open()
-    region(ToolFetch(event="tool.fetch", time=_now(), seq=0, run="r", tool="ffmpeg", bytes=169_000_000))
+    region(_fetch(0, 169_000_000, "ffmpeg"))
+    region(_fetch(84_500_000, 169_000_000, "ffmpeg"))
     region.close()
-    assert "Fetching ffmpeg, 169.0 MB" in console.export_text()
+    assert "Fetching ffmpeg, 84.5 MB of 169.0 MB" in console.export_text()
+
+
+def test_a_pipe_hears_a_download_start_its_progress_and_its_end() -> None:
+    """A pipe heard nothing while Chromium and ffmpeg arrived, so an agent with a command timeout saw a
+    hung build. Now it hears the start with the size, a progress line no oftener than the interval,
+    and the end, and a line between two intervals is left out."""
+    ticks = iter((0.0, 1.0, output.FETCH_LINE_SECONDS + 1.0, output.FETCH_LINE_SECONDS + 2.0))
+    shown = io.StringIO()
+    lines = output.Lines(Console(file=shown, width=100, no_color=True), clock=lambda: next(ticks))
+    for event in (_fetch(0), _fetch(10_000_000), _fetch(95_500_000), _fetch(CHROMIUM_BYTES)):
+        lines(event)
+    assert shown.getvalue().splitlines() == [
+        "    Fetching chromium, about 190.9 MB",
+        "    Fetching chromium, 95.5 MB of 190.9 MB",
+        "     Fetched chromium, 190.9 MB",
+    ]
+
+
+def test_a_download_is_started_once_and_its_size_rides_on_its_progress_once_it_is_known() -> None:
+    """Nothing invents a size, and nothing starts a download twice: a part Playwright names before it
+    states a size opens with its name alone, and the size comes on the first progress line."""
+    ticks = iter((0.0, output.FETCH_LINE_SECONDS, output.FETCH_LINE_SECONDS * 2))
+    shown = io.StringIO()
+    lines = output.Lines(Console(file=shown, width=100, no_color=True), clock=lambda: next(ticks))
+    for event in (_fetch(0, None), _fetch(19_090_000), _fetch(CHROMIUM_BYTES)):
+        lines(event)
+    assert shown.getvalue().splitlines() == [
+        "    Fetching chromium",
+        "    Fetching chromium, 19.1 MB of 190.9 MB",
+        "     Fetched chromium, 190.9 MB",
+    ]
+
+
+def test_a_download_that_starts_over_prints_no_progress_line_of_nothing() -> None:
+    """Playwright starts a part over after a timeout, which announces nothing arrived. A real cold run in
+    a pipe printed that as `Fetching chromium, 0 bytes` at every retry, which says nothing a reader
+    can use, so only a line that counts something is a progress line."""
+    ticks = iter(output.FETCH_LINE_SECONDS * step for step in range(4))
+    shown = io.StringIO()
+    lines = output.Lines(Console(file=shown, width=100, no_color=True), clock=lambda: next(ticks))
+    for event in (_fetch(0, None), _fetch(0), _fetch(0, None), _fetch(0, None)):
+        lines(event)
+    assert shown.getvalue().splitlines() == ["    Fetching chromium"]
+
+
+def test_a_terminal_keeps_a_downloads_start_and_end_and_lets_its_bar_go() -> None:
+    """The bar is transient like every stage row, but the start and the end stay in the scrollback."""
+    shown = io.StringIO()
+    region = output.Region(Console(file=shown, width=100, no_color=True))
+    region.open()
+    for event in (_fetch(0), _fetch(95_500_000), _fetch(CHROMIUM_BYTES)):
+        region(event)
+    region.close()
+    assert shown.getvalue().splitlines() == [
+        "    Fetching chromium, about 190.9 MB",
+        "     Fetched chromium, 190.9 MB",
+    ]
 
 
 def test_a_finished_build_names_its_film_its_price_and_what_it_found() -> None:
@@ -553,3 +621,60 @@ def test_doctor_says_one_line_per_key() -> None:
     keys = (ProviderKey(provider="elevenlabs", variable="ELEVENLABS_API_KEY", state=ApiKeyState.MISSING),)
     shown = recorded(sample(DoctorResult).model_copy(update={"api_keys": keys}))
     assert "API key   elevenlabs ELEVENLABS_API_KEY missing" in shown
+
+
+# ---- a table in a pipe ---------------------------------------------------------------------------
+
+PIPE_WIDTH = 80
+"""The width rich gives a stream that is not a terminal, which is what a pipe and an agent read."""
+
+COLUMNS = "COLUMNS"
+"""The variable a caller sets to choose the line width, which rich reads and a pipe then keeps."""
+
+LONG_PATH = "/Users/someone/Library/Caches/decktalk/tools/chromium-headless-shell/mac-arm64/chrome-headless-shell"
+"""A cell wider than a pipe's whole line, which is where a table used to cut its cells with an ellipsis."""
+
+
+LONG_SCENE = "deck/index.html#a-scene-whose-name-runs-long"
+"""A status cell that, beside the seven other columns, does not fit a pipe's line either."""
+
+
+def _long_tables() -> list[tuple[Result, str]]:
+    """A doctor and a status whose tables are wider than a pipe, each with the cell that overflows."""
+    tool = InstalledTool(tool="chromium", version="140.0.7339.16", path=Path(LONG_PATH))
+    doctor = sample(DoctorResult).model_copy(update={"tools": (tool,)})
+    section = sample(SectionStatus).model_copy(update={"source": LONG_SCENE, "voices": ("narrator", "guest")})
+    status = sample(StatusResult).model_copy(update={"sections": (section,)})
+    return [(doctor, LONG_PATH), (status, LONG_SCENE)]
+
+
+@pytest.mark.parametrize(("result", "whole"), _long_tables(), ids=["doctor", "status"])
+def test_a_table_in_a_pipe_prints_every_cell_whole(result: Result, whole: str, monkeypatch) -> None:
+    """An agent reading plain output needs the whole path and the whole scene, so a pipe never cuts a cell."""
+    monkeypatch.delenv(COLUMNS, raising=False)
+    console = Console(record=True, width=PIPE_WIDTH, no_color=True, file=io.StringIO(), force_terminal=False)
+    output.render(result, console)
+    shown = console.export_text()
+    assert "\u2026" not in shown
+    assert whole in shown
+
+
+@pytest.mark.parametrize(("result", "whole"), _long_tables(), ids=["doctor", "status"])
+def test_a_table_in_a_pipe_keeps_the_width_its_caller_set(result: Result, whole: str, monkeypatch) -> None:
+    """A caller that sets COLUMNS chose the line width, as the docs samples do, so the table fits it."""
+    monkeypatch.setenv(COLUMNS, str(PIPE_WIDTH))
+    console = Console(record=True, no_color=True, file=io.StringIO(), force_terminal=False)
+    output.render(result, console)
+    shown = console.export_text()
+    assert all(len(line) <= PIPE_WIDTH for line in shown.splitlines())
+    assert whole not in shown
+
+
+@pytest.mark.parametrize(("result", "whole"), _long_tables(), ids=["doctor", "status"])
+def test_a_table_on_a_terminal_still_fits_the_terminal(result: Result, whole: str) -> None:
+    """A person's terminal keeps its width, so a cell too wide for it is cut there as it always was."""
+    console = Console(record=True, width=PIPE_WIDTH, no_color=True, file=io.StringIO(), force_terminal=True)
+    output.render(result, console)
+    shown = console.export_text()
+    assert all(len(line) <= PIPE_WIDTH for line in shown.splitlines())
+    assert whole not in shown

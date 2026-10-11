@@ -1,11 +1,11 @@
 """The projects and the skills packaged in the wheel, judged as the data they are.
 
 `tests/decktalk/test_template.py` holds what `decktalk.template` does. This file holds what it
-carries: the starter, the lesson example and the six skills, read from the package the way a reader
+carries: the starter, the three examples and the six skills, read from the package the way a reader
 of the wheel reads them.
 
-Two rules matter most. Every attribute the page contract publishes is written by one of the two
-example projects, which is the guard that no attribute ships untested, and the declared table
+Two rules matter most. Every attribute the page contract publishes is written by one of the four
+packaged projects, which is the guard that no attribute ships untested, and the declared table
 below says which example writes which row, so a row nothing exercises is named rather than
 discovered. And a skill names a command of the final vocabulary or it names none, because the CLI is
 the instruction set and a copy of it inside a skill is a copy that goes stale.
@@ -398,7 +398,10 @@ def test_the_agents_file_init_writes_points_at_the_help_rather_than_repeating_it
 
 
 def test_the_starter_and_the_shipped_examples_are_the_only_projects_the_wheel_ships() -> None:
-    """A reserved example name has no directory, so nothing can be written from it by accident."""
-    shipped = {found.name for found in template.EXAMPLES if found.shipped}
-    assert shipped == {LESSON, INTERVIEW, MOTION}
+    """Every example name has its directory in the wheel, and no directory is left without a name."""
+    named = {found.name for found in template.EXAMPLES}
+    assert named == {STARTER, LESSON, INTERVIEW, MOTION}
+    assert all(assets.package_file(f"template/{found.path}").is_dir() for found in template.EXAMPLES)
+    examples = assets.package_file("template/examples")
+    assert {found.name for found in examples.iterdir() if found.is_dir()} == {LESSON, INTERVIEW, MOTION}
     assert json.loads((PROJECTS[STARTER] / "cues.json").read_text(encoding="utf-8"))["sections"]

@@ -952,6 +952,9 @@ class InitResult(Result):
         description="The voices the project's decktalk.toml declares, the default first, read with no machine "
         "setting or variable."
     )
+    programs: tuple[Program, ...] = Field(
+        description="Every program the project names, which a build starts only where record.programs allows it."
+    )
 
 
 class InstallResult(Result):

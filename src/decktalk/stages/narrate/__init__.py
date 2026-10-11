@@ -11,12 +11,12 @@ A turn is the stretch of a section one voice reads, so a section with no voice d
 and one take, and a dialogue is one take per turn, each bought from its own voice's provider at its
 own bill and joined on the section's clock with the gap the script writes where the voice changes.
 
-The take a section plays is found by content alone, so inserting a section, renumbering one or
-retitling one moves no file and voices nothing, and two sections with the same words share one take.
+The take a turn plays is found by content alone, so inserting a section, renumbering one or
+retitling one moves no file and voices nothing, and two turns with the same words and voice share one take.
 Every take a voice spoke lives in the takes directory, `[narration] takes_dir`, which is `takes/`
 inside the project and which the author commits, so a fresh clone plays them with no key and
 deleting `build/` costs nothing. A take is looked for there first and then in the machine's
-`[narration] store_dir`, and one found in the second place is copied into the first, for every section
+`[narration] store_dir`, and one found in the second place is copied into the first, for every turn
 the narration plays whether or not the run selected it, so the narration is joined from the takes
 directory alone. A placeholder, the take index and the joined track stay under `build/narrate/`,
 because a build makes them again for nothing.
@@ -25,13 +25,13 @@ Every take on disk is played, voiced or placeholder, and the voice is built only
 made, so a run that makes nothing reads no key. Spend gates money and nothing else. A voice that
 declares it bills nothing, once it is named, makes every missing take whether or not the run may
 spend, and a run that may not spend never calls a voice that bills. Such a run plays a placeholder
-for each section whose take is missing: click audio sized at `placeholder_words_per_minute` plus the
+for each turn whose take is missing: click audio sized at `placeholder_words_per_minute` plus the
 declared pauses, with evenly spaced estimated words, so the whole pipeline runs offline. Each such
-section is one `TAKE_MISSING` finding, which says why its take did not play in the words the plan
+turn is one `TAKE_MISSING` finding, which says why its take did not play in the words the plan
 found, and names the command that buys it. A takes directory holding none of the takes the project
 played before is said as that, because a renamed or missing folder is not a script edit. A project
-that has paid for eight sections therefore builds its film with no key, and rehearses its ninth for
-nothing. A free voice that nothing answers is a server that is not running, so its sections play
+whose voices made eight turns therefore builds its film with no key, and rehearses its ninth for
+nothing. A free voice that nothing answers is a server that is not running, so its turns play
 placeholders too, and their findings say to start it rather than to buy anything.
 
 A run told to voice named turns again, by number or by the take they play, voices those turns and
@@ -39,7 +39,7 @@ nothing else, even though a take of their text is held. The new take is written 
 digest, because the digest names what the take was made from and that has not changed, and the take
 it replaces is set aside in the takes directory's `rejected/` folder rather than deleted, so the take
 index, `status` and every later stage read the new take as they read the old one. Each row of the
-take index records the BLAKE3 of the audio it was measured on, so a section whose take on disk is not
+take index records the BLAKE3 of the audio it was measured on, so a turn whose take on disk is not
 that audio, such as a rejected take moved back under its digest, is read again by the next run that
 does not select it, for nothing, rather than placed on numbers measured on other audio.
 
@@ -620,7 +620,7 @@ def _buy(
 
     def charge() -> None:
         # The voice answered, so it is paid: the take is counted before its line is written, so a stop
-        # or a failure between the two never leaves a paid take in the ceiling alone.
+        # or a failure between the two never leaves a charged take out of the ceiling.
         with progress.lock:
             progress.charged.add(key)
         charge_take(inputs, run, plan.section, plan.turn, digest, buy)

@@ -6,7 +6,6 @@ import ast
 import logging
 import os
 import socket
-import subprocess
 import sys
 import threading
 from collections.abc import Callable
@@ -35,7 +34,7 @@ from decktalk.stages.narrate.plan import speech_provider
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir, standard_data_dir
-from support.fakes import BareBrowser, FakeAligner, FakeChromium, FakeVoice
+from support.fakes import BareBrowser, FakeAligner, FakeChromium, FakeInstaller, FakeProcess, FakeVoice
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
@@ -662,6 +661,17 @@ def test_a_browser_whose_headless_shell_is_missing_says_the_shell_is_not_install
     )
 
 
+def test_install_does_not_tell_you_to_run_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`install` is the command that fetches the browser, so the line naming it is for every other command."""
+    faked_installer(monkeypatch, tmp_path)
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(tmp_path / "chrome").started())
+    a_machine(tmp_path).install()
+    said = [record.getMessage() for record in caplog.records if record.name == "decktalk.machine"]
+    assert not [line for line in said if "Run decktalk install" in line], said
+
+
 class ShellOnly(FakeChromium):
     """A cache holding the headless shell alone: no full browser on disk, and a headless launch that works."""
 
@@ -683,7 +693,7 @@ def test_a_headless_shell_alone_launches_and_is_reported_as_there(
 def rows(*answers: InstalledTool) -> Callable[[Machine], InstalledTool]:
     """`_browser_row` answering each call with the next of `answers`, the last one for every call after."""
     queue = list(answers)
-    return lambda _self: queue.pop(0) if len(queue) > 1 else queue[0]
+    return lambda _self, **_asked: queue.pop(0) if len(queue) > 1 else queue[0]
 
 
 ABSENT = InstalledTool(tool=CHROMIUM)
@@ -696,12 +706,13 @@ PRESENT = InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=Fal
 def faked_installer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tuple[list[str], dict[str, str]]]:
     """Stand in for `playwright install` and the ffmpeg download, keeping each installer command and its environment."""
     ran: list[tuple[list[str], dict[str, str]]] = []
+    installer = FakeInstaller()
 
-    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        ran.append((list(cmd), dict(env)))
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+    def start(cmd: list[str], **kwargs: Any) -> FakeProcess:
+        ran.append((list(cmd), dict(kwargs["env"])))
+        return installer(cmd, **kwargs)
 
-    monkeypatch.setattr(machine_module.chromium_fetch.subprocess, "run", run)
+    monkeypatch.setattr(machine_module.chromium_fetch.subprocess, "Popen", start)
     monkeypatch.setattr(
         machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
     )

@@ -51,9 +51,12 @@ SETS_ASIDE = "This sets aside every voiced take it replaces."
 BUYS_AGAIN = "This buys every bought sound it replaces again."
 """The warning a run told to replace bought sounds is asked under, because every one of them is bought again."""
 
+SPEND_QUESTION = "Spend that now? Answer no and the run goes on as --no-spend, buying nothing."
+"""The question a terminal is asked, which says what no does, because no is an answer and not a stop."""
+
 
 @dataclass(frozen=True)
-class Spending:
+class Allowance:
     """What one run may buy and what it may set aside, settled by at most one question."""
 
     spend: bool
@@ -250,9 +253,20 @@ class Session:
         """Ask one yes or no question on stderr, which is only ever called when `asks` is true."""
         return bool(typer.confirm(question, default=default, err=True))
 
-    def ask(self, question: str, *, default: str) -> str:
-        """Ask one question with a default on stderr, which is only ever called when `asks` is true."""
-        return str(typer.prompt(question, default=default, err=True))
+    def ask(self, question: str, *, default: str, choices: Sequence[str] | None = None) -> str:
+        """Ask one question with a default on stderr, which is only ever called when `asks` is true.
+
+        With `choices` the question lists them after itself and asks again until the answer is one.
+        """
+        if choices is None:
+            return str(typer.prompt(question, default=default, err=True))
+
+        def one_of(answer: str) -> str:
+            if answer not in choices:
+                raise typer.BadParameter(f"{answer!r} is not one of {', '.join(choices)}.")
+            return answer
+
+        return str(typer.prompt(f"{question} ({', '.join(choices)})", default=default, err=True, value_proc=one_of))
 
     def say(self, message: str) -> None:
         """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
@@ -299,7 +313,7 @@ class Session:
         storyboard: bool = False,
         turns: Sequence[tuple[int, int]] = (),
         takes: Sequence[str] = (),
-    ) -> Spending:
+    ) -> Allowance:
         """What this run of `stages` may buy and set aside, with at most one question on a terminal.
 
         The spend is settled by `_spend`. When that asks, its question carries the warning for each
@@ -322,12 +336,12 @@ class Session:
             retake=Retake(tuple(turns), tuple(takes)),
         )
         if asked:
-            return Spending(spend, replace_voiced=replace_voiced and spend, replace_score=replace_score and spend)
+            return Allowance(spend, replace_voiced=replace_voiced and spend, replace_score=replace_score and spend)
         voiced, score = replace_voiced, replace_score and spend
         if self.asks and (voiced or score):
             agreed = self.confirm(" ".join([*_warnings(voiced, score), "Carry on?"]))
             voiced, score = voiced and agreed, score and agreed
-        return Spending(spend, replace_voiced=voiced, replace_score=score)
+        return Allowance(spend, replace_voiced=voiced, replace_score=score)
 
     def _spend(
         self,
@@ -395,7 +409,7 @@ class Session:
         self._checkpoint(project, storyboard=storyboard)
         self.say(priced.sentence if priced is not None else _unpriced_sentence(unpriced))
         sets_aside = replace_voiced or bool(retake)
-        return self.confirm(" ".join([*_warnings(sets_aside, replace_score), "Spend that now?"])), True
+        return self.confirm(" ".join([*_warnings(sets_aside, replace_score), SPEND_QUESTION])), True
 
     def _held(
         self,

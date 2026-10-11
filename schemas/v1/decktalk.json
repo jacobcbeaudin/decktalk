@@ -140,7 +140,7 @@
           "x-environment": "DECKTALK_NARRATION_VOICE"
         },
         "concurrency": {
-          "description": "How many sections `narrate` voices at once.",
+          "description": "How many turns `narrate` voices at once.",
           "type": "integer",
           "default": 2,
           "minimum": 1,
@@ -300,7 +300,7 @@
           "x-environment": "DECKTALK_NARRATION_STORE_DIR"
         },
         "context_characters": {
-          "description": "Characters of each neighbour section sent with a request, for continuous prosody: the end of the turn before and the start of the turn after. 0 sends no neighbouring text, so each turn is sent on its own.",
+          "description": "Characters of the neighbouring turns sent with a request, for continuous prosody: the end of the turn before and the start of the turn after that the same voice reads among the turns the run selects. 0 sends no neighbouring text, so each turn is sent on its own.",
           "type": "integer",
           "default": 1500,
           "minimum": 0,

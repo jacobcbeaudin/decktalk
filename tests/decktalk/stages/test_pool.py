@@ -179,6 +179,9 @@ def test_a_second_section_that_failed_on_its_own_is_recorded_and_a_halted_one_is
     assert [data_of(record)["section"] for record in later] == [2]
     assert later[0].exc_info is not None
     assert "section 2 would not load" in str(later[0].exc_info[1])
+    # The line says the section failed beside the first one, with its own reason, not that it failed while
+    # something was being raised.
+    assert later[0].getMessage() == "Section 2 failed too, for a reason of its own: section 2 would not load."
 
 
 def test_a_tool_that_will_not_open_fails_the_pool_with_its_own_reason():

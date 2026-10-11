@@ -153,7 +153,7 @@ It answers with the `init` result: `decktalk schema init`.
 | Option | Meaning |
 |---|---|
 | `--name` `NAME` | The project's name. |
-| `--example` `NAME` | The packaged example to write: lesson, interview, motion, product (reserved), tutorial (reserved). |
+| `--example` `NAME` | The packaged project to write, starter by default: starter, lesson, interview, motion. |
 | `--no-skills` | Leave the packaged skills out. |
 | `--overwrite` | Write into a directory that already holds files. |
 
@@ -363,7 +363,7 @@ It answers with the `config-explain` result: `decktalk schema config-explain`.
 
 #### `decktalk narrate`
 
-Voice each section of script.md and time every word.
+Voice each turn of script.md and time every word.
 
 ```text
 decktalk narrate [OPTIONS]
@@ -403,7 +403,7 @@ It answers with the `cue` result: `decktalk schema cue`.
 
 #### `decktalk record`
 
-Record each page section in headless Chromium.
+Record each page in headless Chromium and run each render program.
 
 ```text
 decktalk record [OPTIONS]
@@ -517,7 +517,7 @@ It answers with the `clip` result: `decktalk schema clip`.
 |---|---|
 | `--section` `N` | The one section to cut the clip from, such as 3. |
 | `--start` `SECONDS` | Where the clip starts. |
-| `--end` `SECONDS` | Where the clip ends. |
+| `--end` `SECONDS` | Where the clip ends, after --start. Required. |
 | `--out` `FILE` | Where to write the clip. Default: clip-N.mp4, for section N. |
 | `--gain-db` `DB` | Lift or cut the clip's audio. |
 | `--hold-seconds` `SECONDS` | Hold the last frame this long. |

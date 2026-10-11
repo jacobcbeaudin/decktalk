@@ -13,8 +13,8 @@ and the score one. A row's price and ceiling are its charges added as the decima
 rounded up to the cent, so a run that can pay anything never reads as free and a host adding the
 charge lines comes to the same cent. Rows are combined by one rule, the one `total` adds the stages of
 a run by, to the nearest cent, because each is rounded already: a free row never names the bill, so a
-paid take beside a free one is never read as free. Whether a voice bills at all is what its provider
-declares, which `VoiceInForce.free` reads.
+take a billing voice made beside a free one is never read as free. Whether a voice bills at all is what
+its provider declares, which `VoiceInForce.free` reads.
 """
 
 from __future__ import annotations
@@ -274,7 +274,7 @@ def _combined(state: CostState, counted: Sequence[Cost | StageCost], rows: tuple
     providers and a run's stages are added by.
 
     A price that buys nothing and a free one never name the bill while another buys at a price, so a
-    paid take beside a free one is never read as free, and the rate named is the first one no layer
+    take a billing voice made beside a free one is never read as free, and the rate named is the first one no layer
     stated. A bill nobody declared makes the whole price undeclared.
     """
     buying = [cost for cost in counted if cost.buys] or counted

@@ -75,8 +75,8 @@ The motion example and the pane fixtures name programs this suite wrote, so the 
 says so on its own command line rather than the suite allowing every project's programs.
 """
 
-PACKAGED = [STARTER, *(example.name for example in EXAMPLES if example.shipped)]
-"""Every project `decktalk init` writes today, which is the starter and each shipped example."""
+PACKAGED = [example.name for example in EXAMPLES]
+"""Every project `decktalk init` writes, the starter first."""
 
 AUDIT_EVERY = 5
 """How often a build here captures a frame it would write again and compares the two.

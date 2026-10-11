@@ -236,6 +236,17 @@ def test_it_reports_the_version_that_is_actually_on_disk(clean_run: Install) -> 
     assert "decktalk 0.0.0 is installed" in done.stdout, done.stdout
 
 
+def test_the_next_steps_are_the_ones_the_readme_gives(clean_run: Install) -> None:
+    """The README and the quickstart start `my-lesson`, and macOS needs no `decktalk install` first, so the
+    installer names the same project and says who needs the fetch first."""
+    said = clean_run.done.stdout
+    assert "decktalk init my-lesson" in said and "cd my-lesson && decktalk build --no-spend" in said, said
+    assert "my-film" not in said
+    assert "# Linux, or to fetch Chromium and ffmpeg now" in said, said
+    # The starter names its voice in a [voices.narrator] table, so that is the table the note names.
+    assert "set [voices.narrator] id in decktalk.toml" in said, said
+
+
 # ---- presentation degrades rather than breaking -------------------------------------------------
 
 

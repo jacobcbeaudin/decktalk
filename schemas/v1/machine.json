@@ -11,7 +11,7 @@
       "x-kind": "tuning",
       "properties": {
         "concurrency": {
-          "description": "How many sections `narrate` voices at once.",
+          "description": "How many turns `narrate` voices at once.",
           "type": "integer",
           "default": 2,
           "minimum": 1,

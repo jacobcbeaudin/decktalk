@@ -4,7 +4,8 @@ A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a
 so ffmpeg is replaced at the one module attribute the stage reads and a fake voice stands in behind
 the shipped adapter's `for_context`, each fixture handing back the record of what the stage asked
 for, and `FakePage` is the page a browser seam hands a stage.
-`FakeChromium` stands one level lower, as the Playwright a launch is handed.
+`FakeChromium` stands one level lower, as the Playwright a launch is handed, and `FakeInstaller` is
+the `playwright install` a fetch starts.
 Faking the seam rather than the stage is what keeps these tests about the stage: an argument list, a
 page call or a speech request that changes shape shows up here rather than passing unread.
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import wave
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager, nullcontext
@@ -470,3 +472,51 @@ def _wav_seconds(wav: bytes) -> float:
             return sound.getnframes() / sound.getframerate()
     except (wave.Error, EOFError):
         return 0.0
+
+
+@dataclass
+class FakeInstaller:
+    """`subprocess.Popen` as a Chromium fetch starts `playwright install`, which never reaches the network.
+
+    The process says `said` on its one merged output stream and exits with `code`, writing `installs`
+    first when it succeeds, as the real installer leaves the browser on disk. `hangs` makes it run past
+    any timeout until it is killed. Every command line, environment and timeout it was given is kept.
+    """
+
+    said: bytes = b""
+    code: int = 0
+    installs: Path | None = None
+    hangs: bool = False
+    commands: list[list[str]] = field(default_factory=list)
+    envs: list[dict[str, str]] = field(default_factory=list)
+    timeouts: list[float | None] = field(default_factory=list)
+    killed: bool = False
+
+    def __call__(self, cmd: list[str], *, env: Mapping[str, str], stdout: int, stderr: int) -> FakeProcess:
+        assert stdout == subprocess.PIPE and stderr == subprocess.STDOUT, (
+            "the installer's output is kept, never printed"
+        )
+        self.commands.append(list(cmd))
+        self.envs.append(dict(env))
+        return FakeProcess(self, cmd)
+
+
+class FakeProcess:
+    """One run of a `FakeInstaller`, with the three things a fetch asks of a process."""
+
+    def __init__(self, installer: FakeInstaller, cmd: list[str]) -> None:
+        self._installer, self._cmd = installer, cmd
+        self.stdout = io.BytesIO(installer.said)
+
+    def wait(self, timeout: float | None = None) -> int:
+        installer = self._installer
+        installer.timeouts.append(timeout)
+        if installer.hangs and not installer.killed:
+            raise subprocess.TimeoutExpired(self._cmd, timeout or 0)
+        if installer.installs is not None and installer.code == 0:
+            installer.installs.parent.mkdir(parents=True, exist_ok=True)
+            installer.installs.write_text("#!/bin/sh\n", encoding="utf-8")
+        return installer.code
+
+    def kill(self) -> None:
+        self._installer.killed = True

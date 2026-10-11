@@ -58,11 +58,20 @@ nothing on PATH either.
 
 ### Roughly how large
 
-The browser is the large one. DeckTalk announces it as about 200 MB, which is what Playwright fetches
-for the browser and its headless shell together. On macOS on Apple silicon that unpacked to 554 MB in
-the cache. The pinned ffmpeg arrives as two archives of about 28 MB each on that platform
-and unpacks to 125 MB. Budget a gigabyte of cache for a machine that records, and a few minutes on a
-home connection for the first run.
+The browser is the large one. Playwright 1.63 fetches it in three parts, the browser, its headless
+shell and a small ffmpeg of its own, and its installer states each part's size as it starts, which is the
+size DeckTalk announces. On macOS on Apple silicon the parts are 191.0, 98.8 and 1.1 MB, 291 MB in all,
+and they come to 318 MB on Linux x86-64 and 327 MB on Windows. The pinned ffmpeg arrives as two
+archives of 28.2 and 28.1 MB on macOS on Apple silicon, and as one archive of 125.8 MB on Linux x86-64
+and 168.3 MB on Windows. In a pipe each download prints a line as it starts, with its size, a line as
+it ends, and lines between as it arrives. For ffmpeg those come every ten seconds whatever the speed of
+the link, while bytes keep arriving. Chromium's come from Playwright's installer, which owns that
+download and reports each part at every tenth, so on a slow link they can be further apart. An ffmpeg
+download that stops partway, because the link dropped or the host sent nothing for a minute, keeps
+what arrived beside the archive's name in the cache, and the next run asks the host for the rest,
+starting again only when the host cannot send part of a file. The pinned SHA-256 is checked on the
+whole archive either way. Budget a gigabyte of cache for a machine that records, and a few minutes on
+a home connection for the first run.
 
 ### Where they land
 

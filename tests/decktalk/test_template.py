@@ -23,24 +23,24 @@ from decktalk.toolchain import assets
 from support.git import git
 
 
-def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
-    assert [found.name for found in EXAMPLES] == ["lesson", "interview", "motion", "product", "tutorial"]
-    assert "product (reserved)" in listed_names()
-    assert example("lesson").shipped and not example("product").shipped
+def test_every_example_is_named_once_the_starter_first() -> None:
+    assert [found.name for found in EXAMPLES] == [STARTER, "lesson", "interview", "motion"]
+    assert listed_names() == "starter, lesson, interview, motion"
 
 
-def test_an_example_nobody_ships_is_refused_with_what_it_is_waiting_for(tmp_path: Path) -> None:
-    with pytest.raises(InputError) as refused:
-        write_project(tmp_path, name="demo", example_name="product", skills=False, force=False)
-    assert refused.value.code is ErrorCode.INPUT
-    assert "reserved name" in str(refused.value)
-    assert "decktalk init --example lesson" in (refused.value.hint or "")
+def test_the_starter_by_name_writes_what_no_name_writes(tmp_path: Path) -> None:
+    named = write_project(tmp_path / "named", name="demo", example_name=STARTER, skills=False, force=False)
+    unnamed = write_project(tmp_path / "unnamed", name="demo", example_name=None, skills=False, force=False)
+    assert [path.relative_to(tmp_path / "named") for path in named] == [
+        path.relative_to(tmp_path / "unnamed") for path in unnamed
+    ]
 
 
 def test_an_example_nobody_has_heard_of_names_every_example_there_is() -> None:
     with pytest.raises(InputError) as refused:
         example("nope")
-    assert "lesson" in (refused.value.hint or "")
+    assert refused.value.code is ErrorCode.INPUT
+    assert "starter, lesson, interview, motion" in (refused.value.hint or "")
 
 
 @pytest.mark.parametrize(
@@ -154,8 +154,9 @@ def test_writing_the_skills_again_replaces_them_rather_than_merging(tmp_path: Pa
     assert not stale.exists()
 
 
-def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
-    assert STARTER not in {found.name for found in EXAMPLES}
+def test_the_starter_is_the_default() -> None:
+    assert EXAMPLES[0].name == STARTER
+    assert example(STARTER).path == STARTER
 
 
 # ---- the runtime and KaTeX are the engine's -----------------------------------------------------

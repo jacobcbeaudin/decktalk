@@ -37,9 +37,9 @@ Read the settings and the schemas:
   config explain  Print one key whole: what it does, what may be set, and what set it.
 
 Run one stage, in this order:
-  narrate         Voice each section of script.md and time every word.
+  narrate         Voice each turn of script.md and time every word.
   cue             Turn each cue phrase into a second on its section clock.
-  record          Record each page section in headless Chromium.
+  record          Record each page in headless Chromium and run each render program.
   score           Compose the music, the ambience bed and the effects.
   assemble        Cut, mix and encode the sections into one mp4.
   verify          Measure the finished mp4: every start, cut, seam and landing.

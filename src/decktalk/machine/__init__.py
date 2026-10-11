@@ -474,13 +474,13 @@ class Machine:
             # Whether the browser already launches is the one answer that decides the fetch, the
             # system libraries and the row's `fetched`: a browser that launches has its libraries, so
             # a second `install` fetches nothing and names what was already there.
-            browser = self._browser_row()
+            browser = self._browser_row(installing=True)
             if browser.version is None:
                 chromium_fetch.fetch_chromium(env=child_environment(), with_deps=installs_system_libraries())
                 # The row is asked again the way `doctor` asks for it, by launching what was just
                 # fetched, so `install` cannot print the browser as missing a second after it
                 # downloaded one.
-                browser = self._browser_row().model_copy(update={"fetched": True})
+                browser = self._browser_row(installing=True).model_copy(update={"fetched": True})
             held = self.toolchain.complete
             tools = (browser, *_encoder_rows(self.toolchain.fetch(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
@@ -513,7 +513,7 @@ class Machine:
 
     # ---- the rows `doctor` reports ---------------------------------------------------------
 
-    def _browser_row(self) -> InstalledTool:
+    def _browser_row(self, *, installing: bool = False) -> InstalledTool:
         """What browser this machine can launch, asked by launching it rather than by looking for a file.
 
         The row also names where that browser lives, because a person told the browser is there
@@ -522,8 +522,8 @@ class Machine:
         headless launch runs Playwright's headless shell, not the full browser `installed_chromium`
         finds, so the launch is the answer: a shell that launches is a browser, named with no path
         when the full browser is not beside it. A launch refused because a file is not on disk says
-        what is not installed and names the command that fetches it, and any other refusal says the
-        browser did not launch, with the reason.
+        what is not installed and names the command that fetches it, unless the run `installing` is
+        that command, and any other refusal says the browser did not launch, with the reason.
         """
         with chromium_fetch.driver(chromium_fetch.browsers_in(self.cache_dir)) as playwright:
             where = chromium_fetch.installed_chromium(playwright)
@@ -535,8 +535,10 @@ class Machine:
                 # The row says only that there is no browser, so the reason goes on the run's stream.
                 reason = str(failed).splitlines()[0]
                 if NOT_ON_DISK in reason:
+                    # `install` is the command this line names, and its own fetch announces itself.
                     missing = "Chromium" if where is None else "Chromium's headless shell"
-                    log.warning(f"{missing} is not installed. Run decktalk install to fetch it.")
+                    if not installing:
+                        log.warning(f"{missing} is not installed. Run decktalk install to fetch it.")
                 else:
                     log.warning("Chromium did not launch.", extra={"data": {"reason": reason}})
                 return InstalledTool(tool=CHROMIUM)
@@ -581,13 +583,15 @@ def init(
         written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=overwrite)
         for wrote in written:
             run.wrote(wrote)
+        written_inputs = Inputs.load(root, environ={}, machine={})
         return run.result(
             InitResult,
             root=relative(root, here.cwd),
             name=name or root.name,
             example=example or STARTER,
             skills_written=skills,
-            voices=tuple(Inputs.load(root, environ={}, machine={}).voices),
+            voices=tuple(written_inputs.voices),
+            programs=written_inputs.programs(),
         )
 
 

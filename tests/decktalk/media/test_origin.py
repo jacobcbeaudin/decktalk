@@ -7,7 +7,8 @@ import http.client
 import json
 import urllib.error
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextvars import ContextVar
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urlsplit
@@ -221,9 +222,14 @@ SHUTDOWN_POLL_SECONDS = 0.01
 
 
 @contextlib.contextmanager
-def serving(allowed: Allowed, documents: dict[str, bytes] | None = None) -> Iterator[str]:
+def serving(
+    allowed: Allowed,
+    documents: dict[str, bytes] | None = None,
+    clips: ClipFrames | None = None,
+    bound: Callable[[], contextlib.AbstractContextManager[object]] = contextlib.nullcontext,
+) -> Iterator[str]:
     """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
-    server = open_server(allowed, "127.0.0.1", 0, documents)
+    server = open_server(allowed, "127.0.0.1", 0, documents, clips, bound)
     with server:
         Thread(target=server.serve_forever, args=(SHUTDOWN_POLL_SECONDS,), daemon=True).start()
         try:
@@ -673,3 +679,48 @@ def test_a_clip_ask_reads_the_second_and_the_clip_and_nothing_else_is_one(tmp_pa
     assert ask.target.path == (tmp_path / "deck" / "clips" / "film.mp4").resolve()
     assert clip_ask(allowed, "deck/clips/film.mp4") is None
     assert clip_ask(allowed, "__decktalk/decktalk-runtime.js") is None
+
+
+BINDING: ContextVar[str] = ContextVar("test_origin_binding", default="")
+"""What a test binds around its server's requests, which a frame decoder reads the way ffmpeg reads the tools."""
+
+
+class BoundFrames(ClipFrames):
+    """A clip decoder that answers only inside the binding, as the real one needs the machine's tools bound."""
+
+    def __init__(self) -> None:
+        super().__init__(fps=25)
+
+    def frame(self, path: Path, second: float) -> bytes | None:
+        if not BINDING.get():
+            raise ToolError("no machine named a directory to keep fetched tools in.")
+        return f"{BINDING.get()}:{path.name}@{second}".encode()
+
+
+@contextlib.contextmanager
+def machine_bound() -> Iterator[None]:
+    token = BINDING.set("machine")
+    try:
+        yield
+    finally:
+        BINDING.reset(token)
+
+
+def test_the_server_answers_a_pane_clip_s_frame_inside_the_binding_it_was_given(tmp_path):
+    """Each request is answered on a thread of its own, so the run's tools reach it only through the binding."""
+    with serving(clip_project(tmp_path), clips=BoundFrames(), bound=machine_bound) as base:
+        status, body = _get(f"{base}{CLIP_FRAMES}0/deck/clips/film.mp4")
+        assert (status, body) == (200, b"machine:film.mp4@0.0")
+        assert _get(f"{base}{CLIP_FRAMES}0/secret.mp4")[0] == 403, "a frame is held to the rule every file is"
+
+
+def test_a_request_that_raises_is_a_logged_500_and_never_a_dropped_connection(tmp_path, caplog):
+    """A decoder that fails must say so to the page and to the log, rather than close the socket on it."""
+    with serving(clip_project(tmp_path), clips=BoundFrames()) as base:
+        with caplog.at_level("ERROR", logger=origin.log.name):
+            status, body = _get(f"{base}{CLIP_FRAMES}0/deck/clips/film.mp4?secret=1")
+        assert status == 500 and origin.BROKEN.encode() in body
+        assert _get(f"{base}/deck/clips/film.mp4")[0] == 200, "the server goes on answering"
+    failed = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert failed and failed[0].exc_info is not None
+    assert "secret" not in failed[0].getMessage()

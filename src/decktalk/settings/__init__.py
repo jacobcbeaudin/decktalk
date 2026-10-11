@@ -155,7 +155,7 @@ class NarrationConfig:
     )
     concurrency: int = tune(
         2,
-        "How many sections `narrate` voices at once.",
+        "How many turns `narrate` voices at once.",
         bounds=Bounds(ge=1, le=8),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
@@ -252,8 +252,9 @@ class NarrationConfig:
     )
     context_characters: int = tune(
         1500,
-        "Characters of each neighbour section sent with a request, for continuous prosody: the end of the turn "
-        "before and the start of the turn after. 0 sends no neighbouring text, so each turn is sent on its own.",
+        "Characters of the neighbouring turns sent with a request, for continuous prosody: the end of the turn "
+        "before and the start of the turn after that the same voice reads among the turns the run selects. 0 sends "
+        "no neighbouring text, so each turn is sent on its own.",
         unit="characters",
         bounds=Bounds(ge=0, le=5000),
     )

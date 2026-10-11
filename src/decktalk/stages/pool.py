@@ -211,7 +211,7 @@ class Pool[J: Hashable, W, R]:
                     if later and not isinstance(exc, Cancelled):
                         # Only the first failure is raised, and a section stopped by the halt has nothing to
                         # say, but a second section that failed on its own is recorded rather than lost.
-                        _unraised(job, exc, "also failed while the first failure was being raised")
+                        _unraised(job, exc, f"failed too, for a reason of its own: {str(exc).rstrip('.')}")
                     self.halt.stop(FAILED)
                     row.set_exception(exc)
                 with self.changed:

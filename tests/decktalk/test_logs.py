@@ -37,7 +37,7 @@ from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
 from decktalk.stages.pool import Halt, Pool, nothing_to_open
 from decktalk.toolchain import chromium_fetch
-from support.fakes import FakeChromium, FakeRouter
+from support.fakes import FakeChromium, FakeInstaller, FakeRouter
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
@@ -415,16 +415,12 @@ def pinned_download_fails(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path
 
 
 def installer_fails(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
-    failed = subprocess.CompletedProcess([], 1, b"", b"ERROR: host unreachable\n")
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: failed)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", FakeInstaller(said=b"ERROR: host unreachable\n", code=1))
     chromium_fetch.fetch_chromium(env={})
 
 
 def installer_hangs(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
-    def hang(cmd: list[str], *, timeout: float, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired(cmd, timeout)
-
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", hang)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", FakeInstaller(hangs=True))
     chromium_fetch.fetch_chromium(env={})
 
 
@@ -464,8 +460,7 @@ def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Pa
     executable = tmp / "chrome"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     chromium = FakeChromium(executable, refusal="error while loading shared libraries: libnss3.so", refusals=1)
-    fetched = subprocess.CompletedProcess([], 0, b"", b"")
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: fetched)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", FakeInstaller())
     browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False)
 
 

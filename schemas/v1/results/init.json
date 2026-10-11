@@ -457,6 +457,45 @@
       "title": "Location",
       "type": "object"
     },
+    "Program": {
+      "additionalProperties": false,
+      "description": "One program a project names, which `[record] programs` decides whether `record` starts.",
+      "properties": {
+        "named_by": {
+          "description": "What names the program, such as section 3's render_command.",
+          "title": "Named By",
+          "type": "string"
+        },
+        "command": {
+          "description": "The words as decktalk.toml writes them, placeholders and all.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Command",
+          "type": "array"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The section a render_command draws, or null for a clip's.",
+          "title": "Section"
+        }
+      },
+      "required": [
+        "named_by",
+        "command"
+      ],
+      "title": "Program",
+      "type": "object"
+    },
     "Severity": {
       "description": "Whether a finding fails the default run or is reported and passes.\n\n`--fail-on` names the least severe finding that fails a run, so its values are these two words\nplus `never`, and a reader meets one vocabulary on the flag and on the field.",
       "enum": [
@@ -560,6 +599,14 @@
       },
       "title": "Voices",
       "type": "array"
+    },
+    "programs": {
+      "description": "Every program the project names, which a build starts only where record.programs allows it.",
+      "items": {
+        "$ref": "#/$defs/Program"
+      },
+      "title": "Programs",
+      "type": "array"
     }
   },
   "required": [
@@ -569,7 +616,8 @@
     "name",
     "example",
     "skills_written",
-    "voices"
+    "voices",
+    "programs"
   ],
   "title": "InitResult",
   "type": "object"

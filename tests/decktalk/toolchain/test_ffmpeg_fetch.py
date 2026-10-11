@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import http.server
 import io
+import os
 import re
 import sys
 import tarfile
@@ -22,6 +24,7 @@ from filelock import FileLock
 
 from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.media import ffmpeg as ff
+from decktalk.results import sized
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain import ffmpeg_fetch as fetch
 from decktalk.toolchain.announce import announcing
@@ -302,6 +305,33 @@ def test_a_download_says_what_is_arriving_and_how_much_of_it(monkeypatch):
     assert heard[-1] == (fetch.TOOL, len(tar), len(tar)), heard
 
 
+def test_a_download_whose_host_states_no_size_still_ends_with_the_size_that_arrived(monkeypatch):
+    """A reader closes a download on the line that counts all of it, so a host that states no size
+    must not leave the download open: its last line states the size that arrived."""
+    tar = pinned_tar(monkeypatch, "test-unsized")
+    monkeypatch.setattr(fetch, "_content_length", lambda _resp: None)
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        fetch.fetch_ffmpeg(wait_seconds=WAIT)
+    assert heard[0] == (fetch.TOOL, 0, None), heard
+    assert heard[-1] == (fetch.TOOL, len(tar), len(tar)), heard
+
+
+def test_each_archive_of_a_build_is_announced_under_the_executable_it_holds(monkeypatch):
+    """macOS builds come as two archives, and two downloads both called ffmpeg read as one fetched twice."""
+    a, b = zip_bytes({fetch._exe("ffmpeg"): b"A"}), zip_bytes({fetch._exe("ffprobe"): b"BB"})
+    first = fetch.FfmpegAsset("https://example.test/ffmpeg.zip", hashlib.sha256(a).hexdigest(), binaries=("ffmpeg",))
+    second = fetch.FfmpegAsset("https://example.test/ffprobe.zip", hashlib.sha256(b).hexdigest(), binaries=("ffprobe",))
+    pin(
+        monkeypatch, "test-named", fetch.FfmpegBuild(builder="test", license="GPL-3.0-or-later", assets=(first, second))
+    )
+    serve(monkeypatch, {"https://example.test/ffmpeg.zip": a, "https://example.test/ffprobe.zip": b})
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        fetch.fetch_ffmpeg(wait_seconds=WAIT)
+    assert [line for line in heard if line[1] == line[2]] == [("ffmpeg", len(a), len(a)), ("ffprobe", len(b), len(b))]
+
+
 def test_a_download_nobody_is_listening_to_says_nothing_and_still_arrives(monkeypatch):
     """The listener is what a machine sets for a run, so a caller that sets none downloads as before."""
     pinned_tar(monkeypatch, "test-silent")
@@ -395,3 +425,151 @@ def test_a_fetch_that_waited_says_how_long_and_what_it_found(monkeypatch, caplog
     assert waited[0]["found_installed"] is False
     verified = [data_of(record) for record in caplog.records if "sha256" in data_of(record)]
     assert verified and verified[0]["bytes"] > 0 and verified[0]["url"].startswith("https://")
+
+
+# ---- a slow or broken host ---------------------------------------------------------------------
+
+
+class Host:
+    """A local HTTP host for one archive, which can trickle it, drop the connection or stall partway, and
+    can honour a Range request or ignore it. Every request's Range header is recorded with the bytes sent.
+
+    `drop_after` and `stall_after` break only the first answer, which is what a link that came back does.
+    """
+
+    PATH = "/archive.tar.xz"
+
+    def __init__(self, data: bytes, *, ranges: bool = True) -> None:
+        self.data = data
+        self.ranges = ranges
+        self.piece = len(data)
+        self.pause = 0.0
+        self.drop_after: int | None = None
+        self.stall_after: int | None = None
+        self.stall_seconds = 0.0
+        self.asked: list[str | None] = []
+        self.sent: list[int] = []
+        host = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format: str, *args: object) -> None:  # a test host is quiet
+                pass
+
+            def do_GET(self) -> None:
+                host.answer(self)
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.server.server_address[1]}{self.PATH}"
+
+    def answer(self, handler: http.server.BaseHTTPRequestHandler) -> None:
+        asked = handler.headers.get("Range")
+        self.asked.append(asked)
+        start = int(asked.removeprefix("bytes=").rstrip("-")) if asked and self.ranges else 0
+        body = self.data[start:]
+        handler.send_response(206 if start else 200)
+        handler.send_header("Content-Length", str(len(body)))
+        if self.ranges:
+            handler.send_header("Accept-Ranges", "bytes")
+        if start:
+            handler.send_header("Content-Range", f"bytes {start}-{len(self.data) - 1}/{len(self.data)}")
+        handler.end_headers()
+        drop, stall = self.drop_after, self.stall_after
+        self.drop_after = self.stall_after = None
+        sent = 0
+        for at in range(0, len(body), self.piece):
+            if drop is not None and sent >= drop:
+                break
+            if stall is not None and sent >= stall:
+                time.sleep(self.stall_seconds)
+                break
+            piece = body[at : at + self.piece]
+            handler.wfile.write(piece)
+            handler.wfile.flush()
+            sent += len(piece)
+            time.sleep(self.pause)
+        self.sent.append(sent)
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture
+def host(monkeypatch):
+    """A pinned one-archive build served from a local host, whose archive is large enough to arrive in pieces."""
+    tar = tar_xz_bytes({"bin/ffmpeg": os.urandom(64 * 1024), "bin/ffprobe": b"#!/bin/sh\n"})
+    served = Host(tar)
+    asset = fetch.FfmpegAsset(url=served.url, sha256=hashlib.sha256(tar).hexdigest(), bin_dir="bin/")
+    pin(monkeypatch, "test-host", fetch.FfmpegBuild(builder="test", license="GPL-3.0-or-later", assets=(asset,)))
+    yield served
+    served.close()
+
+
+def test_a_slow_download_is_announced_by_the_clock_and_not_only_by_the_bytes(host, monkeypatch):
+    """A link far slower than the byte step still says how far it got at every announce interval."""
+    monkeypatch.setattr(fetch, "ANNOUNCE_SECONDS", 0.05)
+    host.piece, host.pause = len(host.data) // 8 + 1, 0.1
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        fetch.fetch_ffmpeg(wait_seconds=WAIT)
+    total = len(host.data)
+    between = [done for _tool, done, _total in heard[1:-1]]
+    assert heard[0] == (fetch.TOOL, 0, total) and heard[-1] == (fetch.TOOL, total, total), heard
+    assert len(between) >= 4 and between == sorted(between) and all(0 < done <= total for done in between), heard
+
+
+def test_a_dropped_download_keeps_what_arrived_and_the_next_fetch_asks_for_the_rest(host):
+    """The partial archive stays beside its final name, and the next fetch resumes it with a Range request."""
+    host.piece, host.drop_after = 4096, len(host.data) // 2
+    with pytest.raises(OSError, match="next run resumes") as stopped:
+        fetch.fetch_ffmpeg(wait_seconds=WAIT)
+    # The sizes are said in the unit every progress line speaks, never as a raw count of bytes.
+    assert f"of {sized(len(host.data))} (" in str(stopped.value) and " bytes" not in str(stopped.value), stopped.value
+    kept = [p for p in fetch.install_dir().parent.rglob("*.part")]
+    assert len(kept) == 1 and 0 < kept[0].stat().st_size < len(host.data)
+    have = kept[0].stat().st_size
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        assert fetch.fetch_ffmpeg(wait_seconds=WAIT) == fetch.installed_pinned()
+    assert host.asked == [None, f"bytes={have}-"]
+    assert host.sent[-1] == len(host.data) - have
+    assert heard[0] == (fetch.TOOL, have, len(host.data)), heard
+    assert list(fetch.install_dir().parent.rglob("*.part")) == []
+    assert scratch_left(fetch.install_dir()) == []
+
+
+def test_a_download_that_times_out_says_the_next_run_resumes(host, monkeypatch):
+    """A host that stops answering ends the run with what to expect next, and through the media layer too."""
+    monkeypatch.setattr(fetch, "DOWNLOAD_TIMEOUT_SECONDS", 0.2)
+    host.piece, host.stall_after, host.stall_seconds = 4096, len(host.data) // 2, 1.0
+    with pytest.raises(ToolError, match="next run resumes"):
+        ff.ffmpeg_paths()
+    assert len(list(fetch.install_dir().parent.rglob("*.part"))) == 1
+
+
+def test_a_host_without_ranges_sends_the_whole_archive_again_and_it_still_verifies(host):
+    """A host that answers a Range request with the whole archive is read from the start, never appended."""
+    host.ranges = False
+    host.piece, host.drop_after = 4096, len(host.data) // 2
+    with pytest.raises(OSError, match="next run resumes"):
+        fetch.fetch_ffmpeg(wait_seconds=WAIT)
+    assert fetch.fetch_ffmpeg(wait_seconds=WAIT) == fetch.installed_pinned()
+    assert host.asked[0] is None and host.asked[1] is not None
+    assert host.sent[-1] == len(host.data)
+
+
+@pytest.mark.usefixtures("host")
+def test_a_partial_that_no_longer_matches_is_discarded_by_the_digest():
+    """The pinned digest covers the whole file, so a partial with wrong bytes fails and is not kept."""
+    dest = fetch.install_dir()
+    downloads = dest.with_name(f".{dest.name}.download")
+    downloads.mkdir(parents=True)
+    (downloads / "archive.tar.xz.part").write_bytes(b"\0" * 1024)
+    with pytest.raises(ToolError, match="does not match the SHA-256"):
+        fetch.fetch_ffmpeg(wait_seconds=WAIT)
+    assert list(dest.parent.rglob("*.part")) == []
+    assert fetch.fetch_ffmpeg(wait_seconds=WAIT) == fetch.installed_pinned()

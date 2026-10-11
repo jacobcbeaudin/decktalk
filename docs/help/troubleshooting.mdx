@@ -202,6 +202,10 @@ fetches both the first time a command needs them and keeps them in a per-user ca
    installs through sudo, so it may ask for a password. A build never does that, because a build
    runs unattended and a password prompt is a hang rather than a question. That is why a Chromium
    that will not launch says to run `decktalk install`.
+4. A download that stalls stops with `error[TOOL]` saying how many bytes of ffmpeg arrived and that
+   the next run resumes from there. Run `decktalk install` again: it asks for the rest rather than
+   the whole archive, and checks the pinned SHA-256 on all of it. On a link too slow to finish, set
+   `[tools] ffmpeg` and `[tools] ffprobe` to a build you already have.
 
 **The settings.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
 `[tools] cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `[tools] chromium` records with a browser the

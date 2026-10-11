@@ -18,13 +18,15 @@ libraries are genuinely missing, the error says to run `decktalk install`.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -108,7 +110,52 @@ def installed_chromium(pw: Playwright) -> str | None:
 
 
 FETCH_TIMEOUT_SECONDS = 1800
-"""Calibration: half an hour, far longer than 200 MB takes on a usable connection, so only a stuck install hits it."""
+"""Calibration: half an hour, far longer than 330 MB takes on a usable connection, so only a stuck install hits it."""
+
+MIB = 1024 * 1024
+"""Truth: the mebibyte Playwright's installer states each download's size in."""
+
+COLOURS = re.compile(r"\x1b\[[0-9;]*m")
+"""The colour codes Playwright's installer prints around a URL even in a pipe, dropped before a line is read."""
+
+DOWNLOADING = re.compile(r"^Downloading .*\(playwright (?P<name>[\w-]+) v\w+\)")
+"""The line Playwright's installer starts each part of the download with, which names the part as Playwright does."""
+
+PROGRESS = re.compile(r"\|\s*(?P<percent>\d+)% of (?P<mib>\d+(?:\.\d+)?) MiB$")
+"""The line Playwright's installer writes at each tenth of a part, which carries the size its host stated."""
+
+
+def part_name(name: str) -> str:
+    """What a `fetch` line calls one part of Playwright's download.
+
+    `chromium install` fetches the browser, its headless shell and Playwright's own ffmpeg. A part
+    whose name does not already say chromium is named with chromium in front, so Playwright's
+    ffmpeg is never read as the encoder DeckTalk fetches under the name ffmpeg.
+    """
+    return name if name.startswith(TOOL) else f"{TOOL} {name}"
+
+
+def follow(said: Iterable[bytes], kept: list[bytes]) -> None:
+    """Read the installer's output as it arrives, keeping every line and announcing each part's progress.
+
+    Playwright's installer tells this process nothing but what it prints, and in a pipe it prints
+    each part's size, as its host states it in MiB to a tenth, and how far that part has got at each
+    tenth. Those lines are announced as they arrive, and the last of a part counts all of its size,
+    which is what closes it. A line in no form this reads is kept and announced as nothing, so an
+    installer that changed its wording leaves a download announced without a size, never with a
+    made-up one. The installer owns its download, so how often a line arrives is its choice too: on
+    a slow link a tenth of a part can take longer than the ten seconds the ffmpeg fetch keeps to.
+    """
+    part = TOOL
+    for raw in said:
+        kept.append(raw)
+        line = COLOURS.sub("", raw.decode(errors="replace")).strip()
+        if started := DOWNLOADING.match(line):
+            part = part_name(started["name"])
+            announce(part, 0, None)
+        elif counted := PROGRESS.search(line):
+            total = round(float(counted["mib"]) * MIB)
+            announce(part, total * int(counted["percent"]) // 100, total)
 
 
 def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
@@ -125,8 +172,8 @@ def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
     although the installer's own output is kept. That output is kept rather than printed, because
     nothing in the library prints, and its last lines are the reason a failed fetch gives.
 
-    The download is announced before it starts and never counted as it arrives, because Playwright
-    reports its progress to its own output and tells this process nothing. A fetch that runs past
+    The download is announced before it starts, and each part of it is then announced with the size
+    and the progress Playwright's installer prints, as `follow` reads them. A fetch that runs past
     `FETCH_TIMEOUT_SECONDS` is stopped and refused, so a stalled mirror cannot hold a build forever.
     The call is traced like every tool call, with its command, exit code, time and last lines.
     """
@@ -134,9 +181,18 @@ def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
     announce(TOOL, 0, None)
     cmd = [sys.executable, *INSTALL_ARGS, *([WITH_DEPS] if with_deps else [])]
     started = time.monotonic()
+    # The installer's output is followed on a thread, in a copy of this context, because a thread
+    # starts in a fresh context and the listener a run set travels in the context.
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=installer)
+    kept: list[bytes] = []
+    reader = threading.Thread(target=contextvars.copy_context().run, args=(follow, process.stdout, kept), daemon=True)
+    reader.start()
     try:
-        done = subprocess.run(cmd, capture_output=True, timeout=FETCH_TIMEOUT_SECONDS, check=False, env=installer)
+        code = process.wait(timeout=FETCH_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired as exc:
+        process.kill()
+        process.wait()
+        reader.join()
         log.warning(
             "playwright install was stopped after %d seconds (timeout).",
             FETCH_TIMEOUT_SECONDS,
@@ -146,10 +202,11 @@ def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
             f"playwright install ran for longer than {FETCH_TIMEOUT_SECONDS} seconds, so it was stopped.",
             hint="Check the network, then run `decktalk install`.",
         ) from exc
-    said = done.stderr or done.stdout or b""
-    traced(log, "playwright install", cmd, code=done.returncode, seconds=time.monotonic() - started, said=said)
-    if done.returncode != 0:
+    reader.join()
+    said = b"".join(kept)
+    traced(log, "playwright install", cmd, code=code, seconds=time.monotonic() - started, said=said)
+    if code != 0:
         raise ToolError(
-            f"playwright install failed: {tail(done.stderr or done.stdout or b'')}",
+            f"playwright install failed: {tail(said)}",
             hint="Check the network, then run `decktalk install`.",
         )

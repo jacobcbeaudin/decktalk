@@ -70,7 +70,7 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
        Built build/final/my-lesson.mp4, $0.00, 3 findings
 ```
 
-The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. On Linux, run `decktalk install` first, because it adds the system libraries Chromium needs. Recording steps each section one frame at a time, several sections at once, so a longer film takes longer to record. [What is measured](#what-is-measured) has the times.
+The first build downloads Chromium and ffmpeg, one time per machine: about 350 MB on macOS on Apple silicon and up to 500 MB on Linux and Windows. It prints a line as each download starts, with its size, a line now and then as it arrives, and a line as it ends. In CI or from an agent, run `decktalk install` first, or pass `--events` to read each `tool.fetch` line, so a command timeout never cuts the first build off mid-download. On Linux, run `decktalk install` first in any case, because it adds the system libraries Chromium needs. Recording steps each section one frame at a time, several sections at once, so a longer film takes longer to record. [What is measured](#what-is-measured) has the times.
 
 To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs API key, set `[voices.narrator] id` in `decktalk.toml` to your voice id, and run `decktalk build --spend --max-cost 1`. `decktalk check` prices the narration before anything is bought, and `decktalk storyboard` puts every slide at every cue on one page for a look first. The [quickstart](https://docs.decktalk.ai/quickstart) walks each step with its output.
 

@@ -11,22 +11,27 @@ licence.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import logging
 import platform
+import re
 import shutil
 import stat
 import sys
 import tarfile
 import tempfile
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass
+from http import HTTPStatus
 from pathlib import Path
 
 from filelock import FileLock, Timeout
 
 from ..errors import Cancel, ToolError
+from ..results import sized
 from .announce import announce
 from .cache import cache_dir
 
@@ -35,8 +40,9 @@ log = logging.getLogger(__name__)
 TOOL = "ffmpeg"
 """What a `fetch` line calls this download, which is the name `doctor` and `install` print too."""
 
-ANNOUNCE_STEP_BYTES = 4 * 1024 * 1024
-"""Calibration: often enough that a download looks alive, and rare enough to cost a run nothing."""
+ANNOUNCE_SECONDS = 1.0
+"""Calibration: how long a download goes between two counts of what arrived, whatever the byte rate. A tenth
+of the ten seconds a pipe allows between its lines, so its printer always has a fresh count to print."""
 
 FFMPEG_VERSION = "8.1.2"
 MAX_ARCHIVE_BYTES = 400 * 1024 * 1024
@@ -44,13 +50,17 @@ MAX_ARCHIVE_BYTES = 400 * 1024 * 1024
 # One host refuses urllib's default User-Agent, so every fetch names itself.
 USER_AGENT = "decktalk"
 CHUNK_BYTES = 1 << 20
-"""Truth: a megabyte at a time, which is large enough that hashing keeps up with the socket."""
+"""Truth: at most a megabyte at a time, which is large enough that hashing keeps up with the socket. A read
+takes what has arrived rather than waiting for the whole megabyte, so a slow link is counted as it trickles."""
 
 LOCK_POLL_SECONDS = 0.1
 """Calibration: how often a waiting fetch looks at the cancel token and the clock, which nobody notices."""
 
 DOWNLOAD_TIMEOUT_SECONDS = 60
 """Calibration: longer than any read of a healthy host takes, so only one that stopped answering hits it."""
+
+CONTENT_RANGE = re.compile(r"^bytes (?P<start>\d+)-\d+/(?P<total>\d+|\*)$")
+"""The `Content-Range` of a 206 answer: where the bytes it sends start, and the whole file's size when stated."""
 _BTBN = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27"
 _BTBN_DIR = "ffmpeg-n8.1.2-50-g1a748fe2cd"
 _EVERMEET = "https://evermeet.cx/ffmpeg"
@@ -65,6 +75,11 @@ class FfmpegAsset:
     sha256: str
     binaries: tuple[str, ...] = ("ffmpeg", "ffprobe")  # the executables this archive holds, without .exe
     bin_dir: str = ""  # the archive directory that holds them, with its trailing slash. "" is the root.
+
+    @property
+    def name(self) -> str:
+        """What a `fetch` line calls this archive: its first executable, so ffprobe's own archive is not ffmpeg."""
+        return self.binaries[0]
 
 
 @dataclass(frozen=True)
@@ -168,6 +183,13 @@ def install_dir(key: str | None = None) -> Path:
     return cache_dir() / "ffmpeg" / f"{FFMPEG_VERSION}-{key or platform_key()}"
 
 
+def download_dir(key: str | None = None) -> Path:
+    """Where the archives of one build arrive, beside its install directory, which a stopped download leaves
+    with its `.part` file so the next fetch resumes it, and an install removes."""
+    dest = install_dir(key)
+    return dest.with_name(f".{dest.name}.download")
+
+
 def _exe(name: str) -> str:
     return f"{name}.exe" if sys.platform == "win32" else name
 
@@ -187,32 +209,102 @@ def _content_length(resp: object) -> int | None:
     return int(stated) if stated and stated.isdigit() else None
 
 
+class DownloadStopped(ConnectionError):
+    """A download that ended before its last byte, whose partial file is kept for the next run to resume.
+
+    It is a ConnectionError, so a caller that falls back to a build on PATH when the network fails
+    still does, and one that cannot says what this says.
+    """
+
+
+def _hashed(path: Path) -> hashlib._Hash:
+    """The SHA-256 of a file on disk so far, which a resumed download carries on from."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        while block := fh.read(CHUNK_BYTES):
+            digest.update(block)
+    return digest
+
+
+def _open(asset: FfmpegAsset, have: int) -> tuple[http.client.HTTPResponse, int, int | None]:
+    """Ask the host for the archive from byte `have` on, and say where its answer really starts and the size.
+
+    A host that honours the Range request answers 206 with a `Content-Range` starting at `have`, and
+    the download carries on from there. Any other answer is the whole archive from its first byte, so
+    the partial file is started again. A host that refuses the range outright (416, which a partial
+    as long as the whole archive draws) is asked once more for all of it.
+    """
+    headers = {"User-Agent": USER_AGENT}
+    if have:
+        headers["Range"] = f"bytes={have}-"
+    request = urllib.request.Request(asset.url, headers=headers)
+    try:
+        resp = urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS)
+    except urllib.error.HTTPError as exc:
+        if have and exc.code == HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE:
+            return _open(asset, 0)
+        raise
+    stated = _content_length(resp)
+    ranged = CONTENT_RANGE.match(resp.headers.get("Content-Range", "") or "") if have else None
+    if have and getattr(resp, "status", HTTPStatus.OK) == HTTPStatus.PARTIAL_CONTENT:
+        if ranged and int(ranged["start"]) == have:
+            whole = ranged["total"]
+            return resp, have, int(whole) if whole.isdigit() else (have + stated if stated is not None else None)
+        resp.close()
+        return _open(asset, 0)
+    return resp, 0, stated
+
+
 def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
     """Stream the archive into `into`, hashing it as it arrives. A digest other than the pinned one is refused.
 
-    The file is written under a temporary name and only takes its own name once the digest matches,
-    so nothing that failed the check is ever left looking like an archive.
+    The file is written under a `.part` name beside its own, and only takes its own name once the
+    digest of the whole file matches, so nothing that failed the check is ever left looking like an
+    archive. A download that stops partway, because the link dropped or the host stopped answering
+    for `DOWNLOAD_TIMEOUT_SECONDS`, keeps its `.part` file and raises DownloadStopped, and the next
+    fetch asks for the rest with a Range request. A host that sends the whole archive instead starts
+    the file again. An archive already here under its own name passed the check when it took that
+    name and is checked again rather than fetched.
+
+    The download is announced under the archive's name with the size its host states, at its start
+    (counting what a resumed file already holds), every `ANNOUNCE_SECONDS` while bytes arrive, and
+    last with every byte as its size too, which is what tells a reader it ended even when the host
+    stated none.
     """
     target = into / asset.url.rsplit("/", 1)[1]
     partial = target.with_name(f"{target.name}.part")
-    digest = hashlib.sha256()
-    total = 0
     started = time.monotonic()
-    request = urllib.request.Request(asset.url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as resp, partial.open("wb") as fh:
-        expected = _content_length(resp)
-        announce(TOOL, 0, expected)
-        said = 0
-        while chunk := resp.read(CHUNK_BYTES):
-            total += len(chunk)
-            if total > MAX_ARCHIVE_BYTES:
-                raise ToolError(f"{asset.url} is larger than {MAX_ARCHIVE_BYTES} bytes, so the download was refused")
-            digest.update(chunk)
-            fh.write(chunk)
-            if total - said >= ANNOUNCE_STEP_BYTES:
-                announce(TOOL, total, expected)
-                said = total
-    announce(TOOL, total, expected)
+    if target.is_file() and _hashed(target).hexdigest() == asset.sha256:
+        return target
+    have = partial.stat().st_size if partial.is_file() else 0
+    resp, total, expected = _open(asset, have)
+    with resp, partial.open("ab" if total else "wb") as fh:
+        digest = _hashed(partial) if total else hashlib.sha256()
+        resumed_from = total
+        announce(asset.name, total, expected)
+        said = time.monotonic()
+        try:
+            while chunk := resp.read1(CHUNK_BYTES):
+                total += len(chunk)
+                if total > MAX_ARCHIVE_BYTES:
+                    fh.close()
+                    partial.unlink()
+                    raise ToolError(
+                        f"{asset.url} is larger than {MAX_ARCHIVE_BYTES} bytes, so the download was refused"
+                    )
+                digest.update(chunk)
+                fh.write(chunk)
+                if time.monotonic() - said >= ANNOUNCE_SECONDS:
+                    announce(asset.name, total, expected)
+                    said = time.monotonic()
+            if expected is not None and total < expected:
+                raise ConnectionError("the host closed the connection early")
+        except OSError as exc:
+            raise DownloadStopped(
+                f"{asset.name} stopped after {sized(total)} of {sized(expected) if expected else 'its size'} ({exc}). "
+                "What arrived is kept, and the next run resumes from there"
+            ) from exc
+    announce(asset.name, total, total)
     if digest.hexdigest() != asset.sha256:
         partial.unlink()
         raise ToolError(
@@ -226,7 +318,15 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
         "%s arrived and matched its pinned digest in %.2f seconds.",
         target.name,
         seconds,
-        extra={"data": {"url": asset.url, "sha256": asset.sha256, "bytes": total, "seconds": seconds}},
+        extra={
+            "data": {
+                "url": asset.url,
+                "sha256": asset.sha256,
+                "bytes": total,
+                "resumed_from": resumed_from,
+                "seconds": seconds,
+            }
+        },
     )
     return target
 
@@ -289,12 +389,14 @@ def _take_turn(lock: FileLock, cancel: Cancel | None, wait_seconds: float) -> fl
 def fetch_ffmpeg(key: str | None = None, *, cancel: Cancel | None = None, wait_seconds: float) -> tuple[str, str]:
     """Download the pinned build for a platform into install_dir() and return its (ffmpeg, ffprobe).
 
-    Every archive is verified before it is opened, the executables are unpacked into a scratch
-    directory of this fetch's own, and that directory replaces the install directory only once both
-    are in place. Two fetches of one build take turns under an operating system lock beside it,
-    which the system releases if its holder dies, and the second finds the build the first installed
-    and downloads nothing, so two cold first builds in one process or in two can never delete each
-    other's download. A fetch waiting for its turn stops when `cancel` is set and gives up after
+    Every archive arrives in download_dir() and is verified before it is opened, the executables are
+    unpacked into a scratch directory of this fetch's own, and that directory replaces the install
+    directory only once both are in place, which is when the downloads go. A download that stopped
+    leaves its partial file there for the next fetch to resume, and a refused archive leaves nothing.
+    Two fetches of one build take turns under an operating system lock beside it, which the system
+    releases if its holder dies, and the second finds the build the first installed and downloads
+    nothing, so two cold first builds in one process or in two can never delete each other's
+    download. A fetch waiting for its turn stops when `cancel` is set and gives up after
     `wait_seconds`, which a run takes from `tools.timeout_seconds`.
     """
     key = key or platform_key()
@@ -321,14 +423,19 @@ def fetch_ffmpeg(key: str | None = None, *, cancel: Cancel | None = None, wait_s
             )
         if installed:
             return installed
+        downloads = download_dir(key)
+        downloads.mkdir(exist_ok=True)
         scratch = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
         try:
             for asset in build.assets:
-                archive = _download_verified(asset, scratch)
-                _unpack(archive, asset, scratch)
-                archive.unlink()
+                _unpack(_download_verified(asset, downloads), asset, scratch)
             shutil.rmtree(dest, ignore_errors=True)
             scratch.replace(dest)
+            shutil.rmtree(downloads, ignore_errors=True)
+        except ToolError:
+            # A refused archive is never resumed, so nothing of this build's downloads is kept.
+            shutil.rmtree(downloads, ignore_errors=True)
+            raise
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
     finally:

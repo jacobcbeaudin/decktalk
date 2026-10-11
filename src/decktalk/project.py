@@ -47,6 +47,7 @@ from decktalk.inputs.paths import at
 from decktalk.machine import Machine
 from decktalk.machine.fixes import apply_fixes
 from decktalk.machine.run import Run, new_run
+from decktalk.media.environment import children_see
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -607,13 +608,17 @@ class Project:
         and neither can read the credential beside it. It also answers one alias, which is where a
         previewed page reads its resolved cues, since a preview has no recorder to put them in its
         URL and the build directory is not served.
+
+        The server answers each request on a thread of its own, after the run that opened it has
+        closed, so every request is answered inside the machine's tools and the environment its
+        children see, which is what a pane clip's frame is decoded with.
         """
         # The server is the media layer's, which carries the routing every recorded page also uses.
         from decktalk.media.origin import Allowed, open_server, served_url  # noqa: PLC0415
 
         with self._open(writes=False) as run:
             allowed = Allowed.of(self.root, self._inputs.served_paths())
-            server = open_server(allowed, host, port, self._inputs.documents())
+            server = open_server(allowed, host, port, self._inputs.documents(), bound=self._tooled)
             result = run.result(
                 ServeResult,
                 url=served_url(server),
@@ -621,6 +626,12 @@ class Project:
             )
             threading.Thread(target=server.serve_forever, args=(CLOSE_POLL_SECONDS,), daemon=True).start()
             return Origin(server, result)
+
+    @contextmanager
+    def _tooled(self) -> Iterator[None]:
+        """Bind the machine's tools, its cache and its children's environment, for work answered outside any run."""
+        with self.machine.toolchain.bound(), children_see(self.machine.environ):
+            yield
 
     # ---- how every call is made -----------------------------------------------------------------
 

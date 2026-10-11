@@ -14,12 +14,13 @@ import typer
 from typer import Context
 
 from decktalk import machine as machines
+from decktalk import template as templates
 from decktalk.cli import session as sessions
 from decktalk.cli.app import command
 from decktalk.cli.options import Fix, Group, answering
-from decktalk.errors import ApprovalRequired
+from decktalk.errors import ApprovalRequired, InputError
 from decktalk.results import DoctorResult, InitResult, InstallResult
-from decktalk.template import STARTER, listed_names
+from decktalk.template import STARTER, listed_names, names
 
 
 @command(
@@ -31,7 +32,9 @@ def init(
     name: Annotated[str | None, answering("--name", metavar="NAME", help="The project's name.")] = None,
     example: Annotated[
         str | None,
-        answering("--example", metavar="NAME", help=f"The packaged example to write: {listed_names()}."),
+        answering(
+            "--example", metavar="NAME", help=f"The packaged project to write, {STARTER} by default: {listed_names()}."
+        ),
     ] = None,
     no_skills: Annotated[bool, answering("--no-skills", help="Leave the packaged skills out.")] = False,
     overwrite: Annotated[
@@ -45,7 +48,7 @@ def init(
     """
     session = sessions.of(ctx)
     root = directory.expanduser()
-    chosen, picked, skills = _guided(session, root, name=name, example=example, no_skills=no_skills)
+    chosen, picked, skills = _guided(session, root, name=name, example=_example(example), no_skills=no_skills)
     if _occupied(root) and not session.approve(
         overwrite or None, f"{root.name} is not empty. Write the project into it?"
     ):
@@ -64,6 +67,20 @@ def init(
         )
 
 
+def _example(name: str | None) -> str | None:
+    """The `--example` value, refused as a usage error naming every example when nothing is packaged under it.
+
+    The library refuses the same name as `INPUT`, because a call there is not a command line. Here
+    the name came off the command line, which is where a refusal exits 2.
+    """
+    if name is None:
+        return None
+    try:
+        return templates.example(name).name
+    except InputError as refused:
+        raise typer.BadParameter(f"{refused} {refused.hint}", param_hint="--example") from refused
+
+
 def _guided(
     session: sessions.Session,
     root: Path,
@@ -77,7 +94,7 @@ def _guided(
     if not session.asks:
         return chosen, picked, skills
     chosen = session.ask("Project name", default=chosen)
-    picked = session.ask(f"Example ({listed_names()})", default=picked or STARTER)
+    picked = session.ask("Example", default=picked or STARTER, choices=names())
     skills = session.confirm("Write the packaged skills into the project?", default=skills)
     return chosen, picked, skills
 

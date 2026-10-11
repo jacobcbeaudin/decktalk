@@ -34,7 +34,10 @@ names the host it reached. An untrusted page is a stranger's, so its request is 
 leaves the browser, whatever its scheme, and the recording names the host it reached for all the same.
 
 `decktalk serve` is the other half: an author previewing a page in their own browser needs a real
-server, so this module also runs one from the standard library, bound to 127.0.0.1 by default.
+server, so this module also runs one from the standard library, bound to 127.0.0.1 by default. It
+answers each request on a thread of its own, outside the run that opened it, so its caller hands it the
+binding every request is answered in, which is what puts the machine's tools within reach of a clip
+frame's decode.
 """
 
 from __future__ import annotations
@@ -47,7 +50,8 @@ import mimetypes
 import os
 import re
 import socket
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
@@ -80,6 +84,8 @@ CLIP_DIR = CLIP_FRAMES.strip("/")
 """The names a request for one frame of a pane clip opens with, before the clip's second and its project path."""
 NO_SECOND = "a pane clip's frame is asked for by a second of 0 or more, then the clip's project path"
 NO_FRAME = "the pane clip could not be decoded into a frame"
+BROKEN = "the origin could not answer"
+"""What a request that raised is answered with, because the page must learn it failed rather than wait for it."""
 TEXT = "text/plain; charset=utf-8"
 """What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 
@@ -455,7 +461,7 @@ def route_pages(
             shown = request.url.split("?", 1)[0]
             log.warning("The origin could not answer %s.", shown, exc_info=exc, extra={"data": {"url": shown}})
             broke = HTTPStatus.INTERNAL_SERVER_ERROR
-            route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
+            route.fulfill(status=broke, content_type=TEXT, body=BROKEN)
 
     target.route("**/*", handler)
     return assets
@@ -507,6 +513,21 @@ class _Handler(SimpleHTTPRequestHandler):
         return None
 
     def send_head(self) -> io.BytesIO | BinaryIO | None:
+        """Answer one request, or a 500 the log explains when answering it raised.
+
+        A request that raised would otherwise close the connection with no answer at all, which a page
+        reads as an empty pane and an author reads as nothing. The query is left out of the log,
+        because it is where a page puts what it means to send somewhere.
+        """
+        try:
+            return self._head()
+        except Exception as exc:  # the page must learn its request failed rather than lose the connection
+            shown = urlsplit(self.path).path
+            log.error("The preview server could not answer %s.", shown, exc_info=exc, extra={"data": {"path": shown}})
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, BROKEN)
+            return None
+
+    def _head(self) -> io.BytesIO | BinaryIO | None:
         """Answer only what the one rule allows, so both halves of this module refuse the same file.
 
         The base class opens the file a second time below, so a name swapped for a link between the
@@ -546,6 +567,7 @@ def open_server(
     port: int,
     documents: Mapping[str, bytes] | None = None,
     clips: ClipFrames | None = None,
+    bound: Callable[[], AbstractContextManager[object]] = nullcontext,
 ) -> ThreadingHTTPServer:
     """A stopped-in-a-context HTTP server for the project directory, bound to `host` and `port`.
 
@@ -557,6 +579,11 @@ def open_server(
     the recorder does, so a page that works in the preview is the page that is recorded.
 
     `clips` decodes a pane clip's frames for a still the author opens, which asks for its first frame.
+
+    `bound` opens the binding every request is answered in. The server answers each request on a
+    thread of its own, which starts with none of the run's bindings, so a caller whose run bound the
+    machine's tools and cache hands that binding here, and a clip's frame is decoded with the ffmpeg
+    the run would have used.
 
     The server outlives the run that opened it, so what it records, a request line or a request that
     raised, reaches a host's own logging and no run's events file, and nothing it records is printed.
@@ -570,6 +597,13 @@ def open_server(
 
     class Server(ThreadingHTTPServer):
         address_family = family
+
+        def process_request_thread(
+            self, request: socket.socket | tuple[bytes, socket.socket], client_address: tuple[str, int]
+        ) -> None:
+            """Answer one request inside the binding the caller handed over."""
+            with bound():
+                super().process_request_thread(request, client_address)
 
         def handle_error(self, request: object, client_address: tuple[str, int]) -> None:  # noqa: ARG002  (the base's signature)
             """Record a request that raised, where the base class prints its traceback to stderr."""

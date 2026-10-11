@@ -20,9 +20,9 @@ from __future__ import annotations
 import ast
 import os
 import re
-import subprocess
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -32,7 +32,7 @@ from decktalk.media.environment import children_see
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announcing
 from decktalk.toolchain.cache import caching_in
-from support.fakes import BROWSERS_VARIABLE, BareBrowser, FakeChromium
+from support.fakes import BROWSERS_VARIABLE, BareBrowser, FakeChromium, FakeInstaller, FakeProcess
 from support.logs import data_of
 from support.paths import REPO
 
@@ -43,25 +43,35 @@ LIBRARIES_MISSING = "error while loading shared libraries: libnss3.so: cannot op
 """What Chromium says when it is on disk and will not start, which on Linux no download fixes."""
 
 
-def fake_fetch(monkeypatch: pytest.MonkeyPatch, installs: Path | None, *, code: int = 0) -> list[list[str]]:
+def fake_fetch(
+    monkeypatch: pytest.MonkeyPatch, installs: Path | None, *, code: int = 0, said: bytes = b""
+) -> list[list[str]]:
     """Stand in for `playwright install`, recording each command line and writing the browser it fetches.
 
     The real `fetch_chromium` still runs, so the command line these tests read is the one DeckTalk
     would run, and `--with-deps` cannot slip in behind a stubbed-out function.
     """
-    seen: list[list[str]] = []
+    installer = FakeInstaller(said=said or b"line 1\nERROR: host unreachable\n", code=code, installs=installs)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", installer)
+    return installer.commands
 
-    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        seen.append(list(cmd))
-        assert kwargs["capture_output"] is True, "the installer's output is kept, never printed"
-        assert kwargs["timeout"] == chromium_fetch.FETCH_TIMEOUT_SECONDS
-        if installs is not None and code == 0:
-            installs.parent.mkdir(parents=True, exist_ok=True)
-            installs.write_text("#!/bin/sh\n", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, code, b"downloading", b"line 1\nERROR: host unreachable\n")
 
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
-    return seen
+MIB = 1024 * 1024
+"""Truth: the mebibyte Playwright's installer states its sizes in."""
+
+DIM, PLAIN = "\x1b[2m", "\x1b[22m"
+"""The two colour codes Playwright's installer puts around a download's URL, even in a pipe."""
+
+
+def playwright_said(*parts: tuple[str, str, float]) -> bytes:
+    """What Playwright 1.63's installer prints in a pipe for each (title, name, MiB): a start, a line every
+    10%, and an end, copied from the format of a real cold `playwright install chromium`."""
+    lines: list[str] = []
+    for title, name, mib in parts:
+        lines.append(f"Downloading {title} (playwright {name} v1243){DIM} from https://cdn.example/{name}.zip{PLAIN}")
+        lines += [f"|{'■' * (tenth * 8):<80}| {tenth * 10:>3}% of {mib} MiB" for tenth in range(11)]
+        lines.append(f"{title} (playwright {name} v1243) downloaded to /cache/{name}-1243")
+    return "\n".join(lines).encode() + b"\n"
 
 
 @pytest.fixture(autouse=True)
@@ -86,15 +96,10 @@ def test_the_installer_puts_chromium_in_the_tool_cache_and_not_where_the_host_sa
     """The installer ran with the scrubbed environment, which dropped the variable, so Chromium landed
     in Playwright's own cache while the driver looked wherever the host's variable said. Now the
     installer is told the browser directory inside the tool cache, whatever the host set."""
-    handed: list[dict[str, str]] = []
-
-    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        handed.append(dict(env))
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
-
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    installer = FakeInstaller()
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", installer)
     chromium_fetch.fetch_chromium(env={"PATH": "/usr/bin", BROWSERS_VARIABLE: "/the/hosts/own"})
-    [env] = handed
+    [env] = installer.envs
     assert env[BROWSERS_VARIABLE] == str(cache / "ms-playwright")
     assert env["PATH"] == "/usr/bin"
 
@@ -168,18 +173,56 @@ def test_the_download_is_announced_before_it_starts(monkeypatch, on_disk) -> Non
     the download rather than with its result, and it goes out as a `fetch` line and not as a log."""
     pw = FakeChromium(on_disk).driver()
     heard: list[tuple[str, int, int | None]] = []
+    installer = FakeInstaller(installs=on_disk)
 
-    def run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def start(cmd: list[str], **kwargs: Any) -> FakeProcess:
         assert heard, "the download started with nothing said about it"
-        on_disk.parent.mkdir(parents=True, exist_ok=True)
-        on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        return installer(cmd, **kwargs)
 
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", start)
     with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
         browser.launch(pw, policy=browser.TRUSTED, spend=False)
-    # Playwright reports its own progress to its own output, so the start is all this download knows.
+    # An installer that printed nothing gave no size, so the start is all this download knows.
     assert heard == [(chromium_fetch.TOOL, 0, None)], heard
+
+
+def test_each_part_of_the_download_is_announced_with_the_size_playwright_states(monkeypatch, on_disk) -> None:
+    """Chromium was announced with no size and never again, so a pipe could not say how much was coming
+    or when it was done. Playwright's installer states each part's size as it downloads it, so every
+    part is announced with that size, counted at each tenth, and closed with its whole size. Playwright's
+    own ffmpeg is named apart from DeckTalk's, so a reader never takes it for the encoder."""
+    fake_fetch(
+        monkeypatch,
+        on_disk,
+        said=playwright_said(
+            ("Chrome for Testing 153.0.8010.12", "chromium", 182.1),
+            ("Chrome Headless Shell 153.0.8010.12", "chromium-headless-shell", 104.3),
+            ("FFmpeg", "ffmpeg", 1.1),
+        ),
+    )
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        chromium_fetch.fetch_chromium(env={})
+    whole, shell, encoder = round(182.1 * MIB), round(104.3 * MIB), round(1.1 * MIB)
+    assert heard[0] == ("chromium", 0, None), heard
+    assert ("chromium", 0, whole) in heard and ("chromium", whole // 2, whole) in heard, heard
+    ends = [line for line in heard if line[1] == line[2]]
+    assert ends == [
+        ("chromium", whole, whole),
+        ("chromium-headless-shell", shell, shell),
+        ("chromium ffmpeg", encoder, encoder),
+    ]
+
+
+def test_an_installer_that_states_no_size_is_announced_without_one(monkeypatch, on_disk) -> None:
+    """A size is the installer's to state. When its lines carry none, nothing here makes one up."""
+    fake_fetch(
+        monkeypatch, on_disk, said=b"Downloading Chrome for Testing (playwright chromium v1243)\nsomething else\n"
+    )
+    heard: list[tuple[str, int, int | None]] = []
+    with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
+        chromium_fetch.fetch_chromium(env={})
+    assert all(total is None for _tool, _done, total in heard), heard
 
 
 def test_a_browser_that_is_already_there_is_launched_without_a_fetch(monkeypatch, on_disk) -> None:
@@ -229,19 +272,12 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
 def test_the_installer_is_handed_the_scrubbed_environment_and_never_the_hosts_credentials(monkeypatch, on_disk) -> None:
     """The installer ran with the process's whole environment, so a host's own credentials reached it
     and every script it runs. It is now handed the environment every other child is handed."""
-    handed: list[dict[str, str]] = []
-
-    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        handed.append(dict(env))
-        on_disk.parent.mkdir(parents=True, exist_ok=True)
-        on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
-
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    installer = FakeInstaller(installs=on_disk)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", installer)
     host = {"PATH": "/usr/bin", "HOST_DB_PASSWORD": "pw_installer_canary_31f0", "AWS_SECRET_ACCESS_KEY": "aws-canary"}
     with children_see(host):
         browser.launch(FakeChromium(on_disk).driver(), policy=browser.TRUSTED, spend=False)
-    [env] = handed
+    [env] = installer.envs
     assert env["PATH"] == "/usr/bin"
     assert "HOST_DB_PASSWORD" not in env and "AWS_SECRET_ACCESS_KEY" not in env
     assert "pw_installer_canary_31f0" not in env.values()
@@ -259,12 +295,12 @@ def test_every_installer_run_leaves_its_command_exit_and_output_on_the_record(mo
 
 
 def test_a_fetch_that_never_finishes_is_stopped_refused_and_says_it_was_stopped(monkeypatch, caplog) -> None:
-    def run(cmd: list[str], *, timeout: float, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired(cmd, timeout)
-
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    installer = FakeInstaller(hangs=True)
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", installer)
     with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError, match="longer than"):
         chromium_fetch.fetch_chromium(env={})
+    assert installer.killed, "the stuck installer was left running"
+    assert installer.timeouts[0] == chromium_fetch.FETCH_TIMEOUT_SECONDS
     assert [data_of(record)["reason"] for record in caplog.records if data_of(record)] == ["timeout"]
 
 

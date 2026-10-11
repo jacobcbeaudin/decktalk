@@ -175,7 +175,14 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
 
 ANSWERS: dict[str, Result] = {
     "init": InitResult(
-        ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills_written=True, voices=("narrator",)
+        ok=True,
+        run="r",
+        root=Path("demo"),
+        name="demo",
+        example="starter",
+        skills_written=True,
+        voices=("narrator",),
+        programs=(),
     ),
     "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
     "doctor": DoctorResult(

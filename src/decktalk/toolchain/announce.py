@@ -20,7 +20,10 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 Announce = Callable[[str, int, int | None], None]
-"""One line about a download: what is being fetched, how much has arrived, and how much there is."""
+"""One line about a download: what is being fetched, how much has arrived, and how much there is.
+
+A fetcher's last line for a download counts every byte of it as both, which is how a reader knows it ended.
+"""
 
 
 def silent(tool: str, done_bytes: int, total_bytes: int | None) -> None:  # the listener that hears nothing
