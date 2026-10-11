@@ -414,8 +414,11 @@ The runtime prepends one generated stylesheet as `#dt-style`, before anything th
 Every selector in it sits inside `:where()`, which gives it no specificity at all, so a page rule of
 equal weight wins on document order and an author never reaches for `!important`.
 
-A deck is drawn into a stage of 1920 by 1080, scaled and centred in whatever window the page is
-opened in, so an element measured on a laptop is at the pixel a recording will put it at.
+A deck is drawn into a canvas of the project's frame shape with a short side of 1080 CSS pixels, 1920
+by 1080 for `[video] size = "wide"`, scaled and centred in whatever window the page is opened in, so
+an element measured on a laptop is at the pixel a recording will put it at. The recorder tells a page
+its canvas before any script of it runs, and a page previewed in a browser asks its origin for
+`/__decktalk/canvas.json` and lays itself out again on the answer.
 
 | Selector | What it is |
 |---|---|
@@ -424,6 +427,8 @@ opened in, so an element measured on a laptop is at the pixel a recording will p
 | `#dt-pan` | The layer slides are mounted into, which is where every reveal is drawn. |
 | `#dt-hud` | The heads-up display, drawn only under `?hud=1`. |
 | `#dt-style` | The runtime's own stylesheet. |
+| `--dt-width`, `--dt-height` | The custom properties on `:root` that hold the canvas's size in CSS pixels, which a stylesheet lays the page out by. |
+| `data-dt-shape` | The attribute on `:root` naming the canvas's shape: `wide`, `square` or `vertical`. |
 | `--dt-motion-scale` | The custom property on `:root` that slows every length down. |
 | `--dt-span` | The custom property each element's own motion length is written into. |
 

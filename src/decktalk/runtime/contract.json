@@ -12,6 +12,17 @@
   "previewCueTimes": "/__decktalk/cue-times.json",
   "clipFrames": "/__decktalk/clip/",
   "motionScaleProperty": "--dt-motion-scale",
+  "canvasWidth": 1920,
+  "canvasHeight": 1080,
+  "canvasWidthProperty": "--dt-width",
+  "canvasHeightProperty": "--dt-height",
+  "shapeAttr": "data-dt-shape",
+  "shapes": [
+    "wide",
+    "square",
+    "vertical"
+  ],
+  "previewCanvas": "/__decktalk/canvas.json",
   "runtimeMark": "decktalk-runtime",
   "frameStepMs": 40,
   "measurableSpanSeconds": 0.5,

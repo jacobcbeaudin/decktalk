@@ -30,7 +30,7 @@ from playwright.sync_api import BrowserContext, CDPSession, Page
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import ToolError
-from ..page import ENGINE_PATH, MOTION_SCALE_PROPERTY
+from ..page import CANVAS_HEIGHT_PROPERTY, CANVAS_WIDTH_PROPERTY, ENGINE_PATH, MOTION_SCALE_PROPERTY, layout
 from ..settings import COLOR_SCHEMES, MotionConfig, RecordConfig
 from ..toolchain.assets import RUNTIME_FILE, probe_path
 from . import pagereport
@@ -55,13 +55,14 @@ SEAL_JS = """(() => {
   Object.freeze(probe);
   Object.defineProperty(window, "__decktalkProbe", { value: probe, writable: false, configurable: false });
 })()"""
-# How much this render slows every declared length down, which the runtime reads off the root. The
-# tag is appended once the page's own sheets are in the head, so the setting decides and not a deck.
-MOTION_JS = """(() => {
+# The canvas the page is laid out on, and how much this render slows every declared length down, which
+# the runtime reads off the root. The tag is appended once the page's own sheets are in the head, so
+# the settings decide and not a deck.
+ROOT_JS = """(() => {
   const add = () => {
     const style = document.createElement("style");
-    style.id = "dt-motion";
-    style.textContent = ":root{%s:%s}";
+    style.id = "dt-root";
+    style.textContent = ":root{%s}";
     (document.head || document.documentElement).appendChild(style);
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add, { once: true });
@@ -90,15 +91,21 @@ ColorScheme = Literal["light", "dark", "no-preference"]
 """What a page may be told the viewer prefers, which is the closed set `[record] color_scheme` publishes."""
 
 
-def motion_scripts(motion: MotionConfig) -> list[str]:
-    """What `[motion]` asks a page for, as the scripts that put it there before the page's own run.
+def page_scripts(width: int, height: int, motion: MotionConfig) -> list[str]:
+    """What a page on a frame `width` by `height` is told before its own run: its canvas and `[motion]`'s scale.
 
-    Reduced motion is a media feature rather than an attribute, so Chromium is asked for it and the
-    same render is what a person who asked their own machine for less motion sees in a preview. The
-    scale is a custom property, because it multiplies every length the sheet plays and no query key
-    could carry it.
+    The canvas is the frame's own shape at the size `layout` gives it, and it reaches the page as two
+    custom properties on the root, which the runtime reads and the page's stylesheet lays itself out
+    by. Reduced motion is a media feature rather than an attribute, so Chromium is asked for it and
+    the same render is what a person who asked their own machine for less motion sees in a preview.
+    The scale is a custom property, because it multiplies every length the sheet plays and no query
+    key could carry it.
     """
-    return [] if motion.scale == 1 else [MOTION_JS % (MOTION_SCALE_PROPERTY, f"{motion.scale:g}")]
+    canvas_width, canvas_height = layout(width, height)
+    told = [f"{CANVAS_WIDTH_PROPERTY}:{canvas_width}px", f"{CANVAS_HEIGHT_PROPERTY}:{canvas_height}px"]
+    if motion.scale != 1:
+        told.append(f"{MOTION_SCALE_PROPERTY}:{motion.scale:g}")
+    return [ROOT_JS % ";".join(told)]
 
 
 def scheme(value: str) -> ColorScheme:
@@ -327,7 +334,7 @@ def open_page(
     motion = motion or MotionConfig()
     with driving("could not open a page"):
         page = chromium.browser.new_page(**view(width, height, color_scheme, motion))
-    instrument(page, *motion_scripts(motion))
+    instrument(page, *page_scripts(width, height, motion))
     return page, route_pages(page, allowed, documents, trusted=chromium.trusted)
 
 

@@ -198,7 +198,7 @@ def test_the_five_verbs_are_registered_on_the_one_nested_group() -> None:
 
 
 @pytest.mark.parametrize(
-    "verb", [("list",), ("get", "video.crf"), ("set", "video.width", "1280"), ("explain", "video.crf")]
+    "verb", [("list",), ("get", "video.crf"), ("set", "video.size", "square"), ("explain", "video.crf")]
 )
 def test_every_config_verb_says_a_project_key_is_misspelled(run, project_dir, verb) -> None:
     """The command that says which layer set a key is the one that must say a typo left it at its default."""

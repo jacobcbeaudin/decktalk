@@ -12,11 +12,12 @@ reduced motion.
 `decktalk schema page` prints the whole attribute table with each value, default, range and the
 finding it raises. Read it beside this page rather than guessing an attribute name.
 
-## The canvas is 1920 by 1080
+## The canvas is the frame's shape
 
-The runtime builds a canvas element, `#dt-canvas`, that is exactly 1920 by 1080 CSS pixels, scales it
-to fit the window and centres it. A size written in your stylesheet is therefore a size on the video
-frame. A page may supply its own `<div id="dt-canvas">` and the runtime will use that one, which is
+The runtime builds a canvas element, `#dt-canvas`, scales it to fit the window and centres it. The
+canvas has the shape of the project's frame, `[video] size`, and a short side of 1080 CSS pixels:
+1920 by 1080 for `wide`, the default, 1080 by 1080 for `square` and 1080 by 1920 for `vertical`. A
+size written in your stylesheet is therefore a size on the video frame. A page may supply its own `<div id="dt-canvas">` and the runtime will use that one, which is
 how a deck puts one figure under all of its slides.
 
 Place every element absolutely, so one reveal never moves another. Both packaged decks do this.
@@ -24,24 +25,31 @@ Place every element absolutely, so one reveal never moves another. Both packaged
 {/* input: src/decktalk/template/starter/deck/index.html */}
 ```css deck/index.html
 .eyebrow, .title, .card, .strip, .stat { position: absolute; margin: 0; box-sizing: border-box; }
-.title { left: 120px; width: 1680px; font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
+.title { left: var(--margin); top: 190px; width: var(--span); font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
 ```
 
-| Element | Size that reads on a 1920 by 1080 frame | What the starter uses |
+The runtime puts the canvas's size on `:root` as `--dt-width` and `--dt-height`, and its shape as
+`data-dt-shape`, which is `wide`, `square` or `vertical`. The starter lays every box out across
+`--dt-width`, and stacks its slides for a square or vertical frame under a `:root:not([data-dt-shape="wide"])`
+rule, so a square copy of a project is the project copied with `size = "square"` and nothing else
+changed.
+
+| Element | Size that reads on the wide canvas | What the starter uses |
 |---|---|---|
 | Side margin | 96 px or more, and 120 px for a title | 120 px |
 | Body text | 36 px or more | 44 px for the card values in scene 1 |
 | Headline | 64 px or more | 96 px for the titles of scenes 1 and 3 |
 | Eyebrow or label | 22 px or more, in the mono face and the muted colour | 24 px mono, in `--mute` |
 
-Keep every cued element out of the bottom 192 px of the 1080, where two lines of caption sit above a
+Keep every cued element out of the bottom 192 px of the canvas, where two lines of caption sit above a
 margin. A player draws captions there, so an element that arrives in that band can be covered at the moment it
 arrives. The starter's lowest band sits at `top: 720px` and ends about 840 px down, clear of it.
 
 Keep a slide to about four reveals. A derivation that needs more starts a second slide.
 
-<Note>`video.width` and `video.height` change the browser window and the encoded frame. A frame with
-another aspect ratio letterboxes the stage, and the slides do not reflow.</Note>
+<Note>`[video] size` also takes a width and a height in pixels, such as `"1280x720"`. The page is laid
+out on the canvas of that shape, so a smaller or larger frame of one shape draws the same slides at
+another resolution, and a frame of another shape lays the page out again by its own rules.</Note>
 
 ## Describe every cued element
 
@@ -51,7 +59,7 @@ verb for each moment: an arrival "appears", a step back "steps back", a return "
 and a departure "leaves".
 
 ```html deck/index.html
-<div class="title" style="top: 190px" data-in="title" data-describe="the title, This is DeckTalk">
+<div class="title" data-in="title" data-describe="the title, This is DeckTalk">
   <h1>This is DeckTalk.</h1>
   <div class="rule"></div>
 </div>

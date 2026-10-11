@@ -189,6 +189,12 @@ Reduced motion has two switches, and neither is a flag. `motion.reduce` asks Chr
 [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED), against the stylesheet that
 owes the reduction.
 
+The frame reaches the page the same way. `[video] size` names the frame, `wide`, `square`, `vertical`
+or a width and a height in pixels, and the page is laid out on a canvas of that shape whose short side
+is 1080 CSS pixels. The runtime puts the canvas's size on `:root` as `--dt-width` and `--dt-height` and
+its shape as `data-dt-shape`, so a stylesheet that reads them lays one page out for any frame. One
+project makes one video: a square cut is the project copied with its size changed.
+
 ## Motion
 
 A moment is a reveal of at most 0.46 seconds, measured as one step in the picture at its cue. A

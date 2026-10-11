@@ -215,6 +215,16 @@ def measurable(span: float) -> bool:
     """Whether a declared span is short enough for the cue it belongs to still to be measurable."""
     return span < MEASURABLE_SPAN_SECONDS
 
+
+def layout(width: int, height: int) -> tuple[int, int]:
+    """The canvas a frame `width` by `height` lays its page out on: the frame's shape, its short side `CANVAS_HEIGHT`.
+
+    A frame of a shape at any resolution is one layout drawn larger or smaller, so a page is written
+    once for its shape. A side is rounded to the CSS pixel, which the fit absorbs.
+    """
+    scale = CANVAS_HEIGHT / min(width, height)
+    return round(width * scale), round(height * scale)
+
 '''
 
 # A generated docstring is one sentence per member, and a sentence longer than this is written as
@@ -333,6 +343,14 @@ def page_module(data: dict[str, Any]) -> str:
         "MEASURABLE_SPAN_SECONDS",
         "MOTION_EASES",
         "MOTION_SCALE_PROPERTY",
+        "CANVAS_WIDTH",
+        "CANVAS_HEIGHT",
+        "CANVAS_WIDTH_PROPERTY",
+        "CANVAS_HEIGHT_PROPERTY",
+        "SHAPE_ATTR",
+        "SHAPES",
+        "PREVIEW_CANVAS",
+        "layout",
         "SPRING_SETTLE_RADIANS",
         "MOMENTS",
         "ONSET_FIRST_FRAME_PERCENT",
@@ -397,6 +415,23 @@ def page_module(data: dict[str, Any]) -> str:
         'own second, a slash and its project path."""\n',
         f"MOTION_SCALE_PROPERTY = {data['motionScaleProperty']!r}\n"
         '"""The custom property on the root element that carries `motion.scale` into a page."""\n',
+        f"CANVAS_WIDTH = {data['canvasWidth']!r}\n"
+        '"""Truth: the width of the canvas a wide project lays its page out on, which is a full HD frame."""\n',
+        f"CANVAS_HEIGHT = {data['canvasHeight']!r}\n"
+        '"""Truth: the height of that canvas, which is the short side of every canvas, so a page written for\n'
+        'one size of a shape lays out the same at every size of it."""\n',
+        f"CANVAS_WIDTH_PROPERTY = {data['canvasWidthProperty']!r}\n"
+        '"""The custom property on the root element that carries the canvas\'s width into a page."""\n',
+        f"CANVAS_HEIGHT_PROPERTY = {data['canvasHeightProperty']!r}\n"
+        '"""The custom property on the root element that carries the canvas\'s height into a page."""\n',
+        f"SHAPE_ATTR = {data['shapeAttr']!r}\n"
+        '"""The attribute the runtime sets on the root element to the canvas\'s shape, which a stylesheet\n'
+        'selects on."""\n',
+        f"SHAPES = {tuple(data['shapes'])!r}\n"
+        '"""The three shapes a canvas has: wider than tall, as tall as wide, and taller than wide."""\n',
+        f"PREVIEW_CANVAS = {data['previewCanvas']!r}\n"
+        '"""The path a previewed page asks its origin for, which answers with the canvas the project lays\n'
+        'its page out on."""\n',
         f"MOTION_EASES = {data['motionEases']!r}\n"
         '"""How a declared motion moves between its cues, as its Bezier control points, and whether its\n'
         'arrival is an edge verify can find or a rest it cannot."""\n',

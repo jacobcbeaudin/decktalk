@@ -1,8 +1,12 @@
 /*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
  *
- * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
- * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
- * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
+ * A DeckTalk page draws onto one canvas, the project's frame laid out at a short side of
+ * `CANVAS_HEIGHT` CSS pixels and scaled to whatever window it is opened in, so an element measured
+ * on a laptop is at the pixel a recording will put it at. The canvas's size reaches the page as two custom properties on
+ * the root, which the recorder writes before any script of the page runs and a preview asks its
+ * origin for, and the runtime writes them back with the canvas's shape, so a page's stylesheet lays
+ * itself out for its own frame. This module owns that canvas, the fit, the heads-up display, and the
+ * stylesheet.
  *
  * Every rule below is generated from the registry, so a style word's length lives once. Each
  * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
@@ -14,24 +18,25 @@ import {
   ATTENTION,
   ATTRS,
   BACK_OPACITY,
+  CANVAS_HEIGHT,
+  CANVAS_HEIGHT_PROPERTY,
+  CANVAS_WIDTH,
+  CANVAS_WIDTH_PROPERTY,
   COUNTS,
   ENTRANCES,
   type Entrance,
   EXITS,
   type Exit,
   MOTION_SCALE_PROPERTY,
+  PREVIEW_CANVAS,
+  SHAPE_ATTR,
   SLIDE_ENTRANCES,
   type SlideEntrance,
   scaled,
+  shapeOf,
   WORD_STYLES,
   type WordStyle,
 } from "./contract.ts";
-
-/** Truth: the width of the canvas every deck is laid out on, which is the frame a recording captures. */
-const CANVAS_WIDTH = 1920;
-
-/** Truth: the height of that canvas, which with the width is a full HD frame. */
-const CANVAS_HEIGHT = 1080;
 
 /** The one easing every entrance shares, which draws a quarter of the element inside the first frame. */
 const EASE = "cubic-bezier(.2,.7,.2,1)";
@@ -73,6 +78,20 @@ export const CLASS = {
 
 /** The id of the band the captions are drawn in, inside the canvas so a page styles it in canvas pixels. */
 const CAPTIONS_ID = "dt-captions";
+
+/**
+ * Calibration: how many ems wide the longest line of a caption is, which is the most characters a
+ * caption line is made of, in the band's semibold system face at a little over half an em each, with
+ * room for a run of wide letters.
+ */
+const CAPTION_LINE_EMS = 24;
+
+/** Calibration: the band keeps a twelfth of the canvas's width clear on each side, where broadcast captions sit. */
+const CAPTION_SIDE_SHARE = 12;
+
+/** The width of one side of the band, and the width the band leaves its lines, in terms of the canvas's width. */
+const CAPTION_SIDE = `calc(var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
+const CAPTION_LINE = `(var(${CANVAS_WIDTH_PROPERTY}) - 2 * var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
 
 /** The name of the keyframes one closed word animates through, which the sheet and the runtime share. */
 function frames(family: string, word: string): string {
@@ -155,11 +174,17 @@ const CHROME_CSS = [
  * a time. The clearing rules carry `!important`, because a page's own background and picture must
  * not reach a frame that is laid over the film, which is the one other thing a page may not argue.
  *
- * Calibration: the lengths are broadcast caption sizes at the canvas size, and none of them moves a verdict.
+ * Each side of the band keeps a twelfth of the canvas's width clear, and its type is the broadcast size or,
+ * on a canvas too narrow for that, the size at which the longest line a caption is made of, about
+ * `CAPTION_LINE_EMS` ems of this face, still fits the band in one row.
+ *
+ * Calibration: the lengths are broadcast caption sizes on the wide canvas, and none of them moves a verdict.
  */
 const CAPTION_CSS = [
-  `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 160px 72px;pointer-events:none}\n`,
+  `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;` +
+    `padding:0 ${CAPTION_SIDE} 72px;pointer-events:none}\n`,
   `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;` +
+    `font-size:min(46px,calc(${CAPTION_LINE} / ${CAPTION_LINE_EMS}));` +
     "color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}\n",
   `:where(.${CLASS.captionLine}){display:block}\n`,
   `:where(.${CLASS.captioning}),:where(.${CLASS.captioning}) body{background:transparent!important}\n`,
@@ -181,7 +206,8 @@ function sheet(): string {
     .join(",");
   const parts = [
     `:where(${declared}){display:none}\n`,
-    `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;` +
+    `:where(#dt-canvas){position:absolute;left:0;top:0;width:var(${CANVAS_WIDTH_PROPERTY});` +
+      `height:var(${CANVAS_HEIGHT_PROPERTY});` +
       "overflow:hidden;transform-origin:0 0}\n",
     ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
     `:where(.${CLASS.slide}){position:absolute;inset:0}\n`,
@@ -237,6 +263,10 @@ let panEl: HTMLElement | null = null;
 let hudEl: HTMLElement | null = null;
 let fitScale = 1;
 
+/** The canvas's size in CSS pixels, which is the wide canvas until the page is told another. */
+let canvasWidth = CANVAS_WIDTH;
+let canvasHeight = CANVAS_HEIGHT;
+
 /** Put the stylesheet in the document, before anything the page itself declares. */
 export function style(): void {
   if (document.getElementById("dt-style")) return;
@@ -276,7 +306,47 @@ export function span(el: HTMLElement, seconds: number): void {
   el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds, motionScale())}s`);
 }
 
-/** Build the canvas, fit it to the window, and keep it fitted for as long as the page is open. */
+/** One length the root element declares in CSS pixels, or null when it declares none a canvas could be. */
+function declared(property: string): number | null {
+  const length = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(property));
+  return Number.isFinite(length) && length > 0 ? length : null;
+}
+
+/** Lay the canvas out at `width` by `height`, tell the page so on its root, and fit it to the window again. */
+function resize(width: number, height: number): void {
+  canvasWidth = width;
+  canvasHeight = height;
+  const root = document.documentElement;
+  root.style.setProperty(CANVAS_WIDTH_PROPERTY, `${width}px`);
+  root.style.setProperty(CANVAS_HEIGHT_PROPERTY, `${height}px`);
+  root.setAttribute(SHAPE_ATTR, shapeOf(width, height));
+  fit();
+}
+
+/**
+ * Ask the origin for the canvas a preview has not been told, and lay the page out on its answer.
+ *
+ * Nothing here may fail a page: a page opened from the file system and a server that answers with
+ * something else both keep the wide canvas.
+ */
+async function previewed(): Promise<void> {
+  try {
+    const answer = await fetch(PREVIEW_CANVAS);
+    if (!answer.ok) return;
+    const told: { width?: unknown; height?: unknown } = await answer.json();
+    const { width, height } = told;
+    if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) resize(width, height);
+  } catch {
+    return;
+  }
+}
+
+/**
+ * Build the canvas at the size the page was told, fit it to the window, and keep it fitted for as long as the page is open.
+ *
+ * A recorded page is told its canvas on its root before any script of it runs. A page told nothing is
+ * a preview, which is laid out on the wide canvas until its origin answers with the project's own.
+ */
 export function build(hud: boolean): void {
   if (canvasEl) return;
   canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
@@ -294,16 +364,19 @@ export function build(hud: boolean): void {
     document.body.appendChild(hudEl);
   }
   if (reduced()) document.documentElement.classList.add(CLASS.reduced);
-  fit();
+  const width = declared(CANVAS_WIDTH_PROPERTY);
+  const height = declared(CANVAS_HEIGHT_PROPERTY);
+  resize(width ?? CANVAS_WIDTH, height ?? CANVAS_HEIGHT);
+  if (width === null || height === null) void previewed();
   window.addEventListener("resize", fit);
 }
 
 /** Scale the canvas into the window and centre it, which is what turns a client rect into canvas pixels. */
 function fit(): void {
   if (!canvasEl) return;
-  fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
-  const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
-  const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+  fitScale = Math.min(window.innerWidth / canvasWidth, window.innerHeight / canvasHeight);
+  const x = (window.innerWidth - canvasWidth * fitScale) / 2;
+  const y = (window.innerHeight - canvasHeight * fitScale) / 2;
   canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
 }
 

@@ -94,7 +94,7 @@ when it leaves. Write the cue name on the page and its [cue id](/concepts/cues#t
     - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-preview-seconds` is how long the preview rests on the slide, and no recording reads it.
     - An element with `data-in` stays hidden until that cue fires. The cue name is yours to choose, and it has to be unique within the slide.
     - `data-describe` says in one sentence what the moment shows. It is what the transcript reads and what a reviewer checks a reveal against, and a moment without one is reported.
-    - Every element is placed absolutely on the 1920 by 1080 stage, so one thing arriving moves nothing else.
+    - Every element is placed absolutely on the canvas, so one thing arriving moves nothing else.
 
     Declare a scene number one time per page. A second `[data-scene="4"]` wrapper replaces the first.
     [The page contract](/concepts/page-contract) covers the whole model, and `decktalk schema page`

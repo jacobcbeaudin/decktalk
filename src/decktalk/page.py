@@ -31,6 +31,10 @@ __all__ = [
     "Attr",
     "AttrSpec",
     "BACK_OPACITY",
+    "CANVAS_HEIGHT",
+    "CANVAS_HEIGHT_PROPERTY",
+    "CANVAS_WIDTH",
+    "CANVAS_WIDTH_PROPERTY",
     "CLIP_FRAMES",
     "COUNTS",
     "CUE_MARK",
@@ -51,12 +55,15 @@ __all__ = [
     "PAIR_MARK",
     "PAIR_SEPARATOR",
     "PLAYABLE_SPAN_SECONDS",
+    "PREVIEW_CANVAS",
     "PREVIEW_CUE_TIMES",
     "Q",
     "QUERY",
     "REPORT",
     "Range",
     "SECOND_DIGITS",
+    "SHAPES",
+    "SHAPE_ATTR",
     "SLIDE_ENTRANCES",
     "SLOWEST_FPS",
     "SPRING_SETTLE_RADIANS",
@@ -64,6 +71,7 @@ __all__ = [
     "T0_SIGNAL",
     "TIME_MARK",
     "WORD_STYLES",
+    "layout",
     "measurable",
     "stagger_span",
 ]
@@ -127,6 +135,30 @@ own second, a slash and its project path."""
 
 MOTION_SCALE_PROPERTY = "--dt-motion-scale"
 """The custom property on the root element that carries `motion.scale` into a page."""
+
+CANVAS_WIDTH = 1920
+"""Truth: the width of the canvas a wide project lays its page out on, which is a full HD frame."""
+
+CANVAS_HEIGHT = 1080
+"""Truth: the height of that canvas, which is the short side of every canvas, so a page written for
+one size of a shape lays out the same at every size of it."""
+
+CANVAS_WIDTH_PROPERTY = "--dt-width"
+"""The custom property on the root element that carries the canvas's width into a page."""
+
+CANVAS_HEIGHT_PROPERTY = "--dt-height"
+"""The custom property on the root element that carries the canvas's height into a page."""
+
+SHAPE_ATTR = "data-dt-shape"
+"""The attribute the runtime sets on the root element to the canvas's shape, which a stylesheet
+selects on."""
+
+SHAPES = ("wide", "square", "vertical")
+"""The three shapes a canvas has: wider than tall, as tall as wide, and taller than wide."""
+
+PREVIEW_CANVAS = "/__decktalk/canvas.json"
+"""The path a previewed page asks its origin for, which answers with the canvas the project lays
+its page out on."""
 
 MOTION_EASES = {
     "firm": {"curve": [0.25, 0.8, 0.5, 0.95], "arrival": "edge"},
@@ -895,3 +927,13 @@ def stagger_span(step: float, children: int, entrance: float) -> float:
 def measurable(span: float) -> bool:
     """Whether a declared span is short enough for the cue it belongs to still to be measurable."""
     return span < MEASURABLE_SPAN_SECONDS
+
+
+def layout(width: int, height: int) -> tuple[int, int]:
+    """The canvas a frame `width` by `height` lays its page out on: the frame's shape, its short side `CANVAS_HEIGHT`.
+
+    A frame of a shape at any resolution is one layout drawn larger or smaller, so a page is written
+    once for its shape. A side is rounded to the CSS pixel, which the fit absorbs.
+    """
+    scale = CANVAS_HEIGHT / min(width, height)
+    return round(width * scale), round(height * scale)

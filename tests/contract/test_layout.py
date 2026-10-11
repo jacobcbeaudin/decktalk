@@ -56,6 +56,7 @@ ALLOW = {
     "contract/test_discoverable.py": ("Every command, key, code and attribute, reachable from --help and the schemas."),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
+    "contract/test_frame_size.py": "`[video] size`, read by every picture a run makes and by the starter's page.",
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",

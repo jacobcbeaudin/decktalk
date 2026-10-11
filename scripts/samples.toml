@@ -361,7 +361,7 @@ grep = "CUE_UNRESOLVED"
 [cue-no-change]
 page = "docs/help/troubleshooting.mdx"
 what = "decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line"
-edits = [["deck/index.html", 'style="top: 190px" data-in="title"', 'style="top: 190px; visibility: hidden" data-in="title"']]
+edits = [["deck/index.html", '<div class="title" data-in="title"', '<div class="title" style="visibility: hidden" data-in="title"']]
 run = [["check"]]
 exit = 1
 stream = "both"

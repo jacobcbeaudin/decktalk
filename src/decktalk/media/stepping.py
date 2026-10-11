@@ -63,9 +63,9 @@ from .pages import (
     devtools,
     driving,
     instrument,
-    motion_scripts,
     page_error_text,
     page_errors,
+    page_scripts,
     read_report,
     view,
 )
@@ -608,7 +608,7 @@ def stepping(
     failed = False
     try:
         assets = route_pages(context, allowed, documents, trusted=chromium.trusted, clips=clips)
-        instrument(context, *motion_scripts(motion))
+        instrument(context, *page_scripts(width, height, motion))
         with driving("could not open a page"):
             page = context.new_page()
             page.clock.install()

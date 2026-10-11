@@ -72,7 +72,7 @@ class TestTheWriter:
         path = tmp_path / "decktalk.toml"
         path.write_text("[video\n", encoding="utf-8")
         with pytest.raises(InputError, match="is not valid TOML") as refused:
-            write(path, "video.width", "1280", scope=Scope.PROJECT, environ={})
+            write(path, "video.crf", "20", scope=Scope.PROJECT, environ={})
         assert refused.value.location is not None and refused.value.location.line == 1
         assert path.read_text(encoding="utf-8") == "[video\n"
 
@@ -93,16 +93,16 @@ class TestTheWriter:
     ) -> None:
         """A project that arrives with its `decktalk.toml` linked elsewhere chose where `config set` writes."""
         victim = tmp_path / "victim.toml"
-        victim.write_text("[video]\nwidth = 640\n", encoding="utf-8")
+        victim.write_text("[video]\ncrf = 30\n", encoding="utf-8")
         root = tmp_path / "project"
         root.mkdir()
         link(root / "decktalk.toml", victim)
         with pytest.raises(InputError, match="leads outside the project"):
             if removing:
-                unset(root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ={})
+                unset(root / "decktalk.toml", "video.crf", scope=Scope.PROJECT, environ={})
             else:
-                write(root / "decktalk.toml", "video.width", "1280", scope=Scope.PROJECT, environ={})
-        assert victim.read_text(encoding="utf-8") == "[video]\nwidth = 640\n"
+                write(root / "decktalk.toml", "video.crf", "20", scope=Scope.PROJECT, environ={})
+        assert victim.read_text(encoding="utf-8") == "[video]\ncrf = 30\n"
 
 
 class TestTheRemover:

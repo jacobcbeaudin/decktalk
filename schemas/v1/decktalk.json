@@ -10,39 +10,22 @@
       "description": "These keys set the frame size and the encoding of every recording and of the final mp4.",
       "x-kind": "tuning",
       "properties": {
-        "width": {
-          "description": "Frame width in pixels, for every recording and the final mp4.",
-          "type": "integer",
-          "default": 1920,
-          "minimum": 320,
-          "maximum": 7680,
-          "x-range": "must be between 320 and 7680",
+        "size": {
+          "description": "The frame of every recording and of the final mp4: wide (1920 by 1080), square (1080 by 1080), vertical (1080 by 1920), or WIDTHxHEIGHT in pixels. A page is laid out on a canvas of the frame's shape whose short side is 1080 CSS pixels, which it reads as --dt-width and --dt-height, so a square copy of a project is the project copied with this one key changed.",
+          "type": "string",
+          "default": "wide",
+          "pattern": "^(?:wide|square|vertical|(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680)x(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680))$",
+          "x-range": "must match the pattern ^(?:wide|square|vertical|(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680)x(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680))$",
           "x-unit": "pixels",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
+          "x-hazard": "An odd side cannot be encoded, because the film's colour is stored at half the frame's width and height, and a side past the range is a frame Chromium and x264 are not held to drawing.",
           "x-see-also": [
             "verify.probe_width",
             "verify.block_width"
           ],
-          "x-environment": "DECKTALK_VIDEO_WIDTH"
-        },
-        "height": {
-          "description": "Frame height in pixels, for every recording and the final mp4.",
-          "type": "integer",
-          "default": 1080,
-          "minimum": 240,
-          "maximum": 4320,
-          "x-range": "must be between 240 and 4320",
-          "x-unit": "pixels",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-see-also": [
-            "verify.probe_height",
-            "verify.block_height"
-          ],
-          "x-environment": "DECKTALK_VIDEO_HEIGHT"
+          "x-environment": "DECKTALK_VIDEO_SIZE"
         },
         "fps": {
           "description": "Frame rate of every recording and of the final mp4. The recorder steps the section clock one frame of this rate at a time, so every frame of a film is the page at its own second.",
@@ -2093,9 +2076,9 @@
     {
       "id": "verify.probe_width",
       "kind": "derived",
-      "formula": "video.width // PROBE_SCALE",
+      "formula": "the frame width video.size names // PROBE_SCALE",
       "reads": [
-        "video.width",
+        "video.size",
         "PROBE_SCALE"
       ],
       "value": 480,
@@ -2107,9 +2090,9 @@
     {
       "id": "verify.probe_height",
       "kind": "derived",
-      "formula": "video.height // PROBE_SCALE",
+      "formula": "the frame height video.size names // PROBE_SCALE",
       "reads": [
-        "video.height",
+        "video.size",
         "PROBE_SCALE"
       ],
       "value": 270,
@@ -2121,9 +2104,9 @@
     {
       "id": "verify.block_width",
       "kind": "derived",
-      "formula": "video.width // BLOCK_PX",
+      "formula": "the frame width video.size names // BLOCK_PX",
       "reads": [
-        "video.width",
+        "video.size",
         "BLOCK_PX"
       ],
       "value": 240,
@@ -2135,9 +2118,9 @@
     {
       "id": "verify.block_height",
       "kind": "derived",
-      "formula": "video.height // BLOCK_PX",
+      "formula": "the frame height video.size names // BLOCK_PX",
       "reads": [
-        "video.height",
+        "video.size",
         "BLOCK_PX"
       ],
       "value": 135,

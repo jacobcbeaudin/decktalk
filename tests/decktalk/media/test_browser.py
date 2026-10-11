@@ -106,7 +106,7 @@ def test_a_run_that_may_not_spend_opens_an_untrusted_page():
 def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_under(monkeypatch, tmp_path):
     seen: list[bool] = []
     monkeypatch.setattr(pages, "route_pages", lambda *_a, trusted, **_k: seen.append(trusted))
-    monkeypatch.setattr(pages, "instrument", lambda page: page)
+    monkeypatch.setattr(pages, "instrument", lambda page, *_scripts: page)
     monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(INSTALLED).started())
     allowed = Allowed.of(tmp_path, ["deck"])
     for policy in (browser.TRUSTED, browser.UNTRUSTED):

@@ -22,7 +22,9 @@ the page from outside when it does not answer, so a page that spins its main thr
 TOOL error rather than holding it open.
 
 The canvas is the one place the frame's size, its rate, its colour scheme and the motion it renders
-with are read, so every picture a run makes is drawn on one frame.
+with are read, so every picture a run makes is drawn on one frame. The size is `[video] size`, and a
+page opened on the canvas is laid out on a canvas of the frame's own shape, which `page.layout`
+gives and the page reads as `--dt-width` and `--dt-height`.
 """
 
 from __future__ import annotations
@@ -73,7 +75,8 @@ class Canvas:
     def of(cls, settings: Settings) -> Canvas:
         """The canvas a project's settings draw on."""
         video = settings.video
-        return cls(video.width, video.height, video.fps, settings.record.color_scheme, settings.motion)
+        width, height = video.frame
+        return cls(width, height, video.fps, settings.record.color_scheme, settings.motion)
 
     @property
     def size(self) -> str:

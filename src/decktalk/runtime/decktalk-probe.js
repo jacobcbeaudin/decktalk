@@ -444,6 +444,7 @@
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var CLIP_FRAMES = `${ENGINE_PATH}clip/`;
+  var PREVIEW_CANVAS = `${ENGINE_PATH}canvas.json`;
   function cueId(slide, local) {
     return `${slide}${CUE_MARK}${local}`;
   }

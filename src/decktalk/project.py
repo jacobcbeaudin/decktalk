@@ -605,9 +605,9 @@ class Project:
 
         The origin answers only for the deck directory and the files the document declares, so a
         page the recorder drives and a preview an author leaves running reach the same short list
-        and neither can read the credential beside it. It also answers one alias, which is where a
-        previewed page reads its resolved cues, since a preview has no recorder to put them in its
-        URL and the build directory is not served.
+        and neither can read the credential beside it. It also answers two aliases, which are where a
+        previewed page reads its resolved cues and its canvas, since a preview has no recorder to put
+        them in its URL or on its root and the build directory is not served.
 
         The server answers each request on a thread of its own, after the run that opened it has
         closed, so every request is answered inside the machine's tools and the environment its

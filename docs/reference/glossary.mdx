@@ -55,7 +55,7 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | stepped clock | The section clock as the recorder moves it, one frame at a time, so frame `k` of a recording is the page at second `k / fps`. | | [The recorder steps the clock](/decisions/the-recorder-steps-the-clock) |
 | chunk | A range of one page section's frames that one recorder records in a page of its own, into a lossless file that starts on a keyframe. `record` splits a long section into chunks so several recorders share it, and joins the files into the section's recording without an encode. | | [Requirements](/requirements#time) |
 | film clock | The seconds since the film starts, which `verify` reports on. | | [Verify](/reference/verify) |
-| canvas | The 1920 by 1080 surface the runtime draws on, which is `#dt-canvas` on the page. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
+| canvas | The surface the runtime draws on, which is `#dt-canvas` on the page: the shape of the frame `[video] size` names, with a short side of 1080 CSS pixels, so 1920 by 1080 for a wide project. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
 | runtime | `decktalk-runtime.js`, the page's script, which the engine serves beside every deck. The recorder reads it through `window.__decktalkProbe`. | __dtprobe | [The runtime](/reference/runtime) |
 
 ## The six stages

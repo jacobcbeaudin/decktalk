@@ -24,6 +24,7 @@ from decktalk.artifacts.stored import DIGEST_DIGITS, engine_digest
 from decktalk.artifacts.takes import Take, TakeInputs, Takes, TimedBy
 from decktalk.files import drafted, json_text, replace_all
 from decktalk.inputs import Inputs
+from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import SoundKind
 from decktalk.settings import Settings
 from decktalk.speech.sound import SoundRequest
@@ -194,8 +195,9 @@ def test_the_slate_still_key_keeps_its_bytes(monkeypatch: pytest.MonkeyPatch, tm
 
 
 def test_the_cue_times_a_preview_reads_keep_their_bytes() -> None:
-    answered = Inputs.documents(SimpleNamespace(preview_cues=lambda: PARTING))  # ty: ignore[invalid-argument-type]
-    assert list(answered.values()) == [json.dumps(PARTING).encode("utf-8")]
+    held = SimpleNamespace(preview_cues=lambda: PARTING, settings=Settings())
+    answered = Inputs.documents(held)  # ty: ignore[invalid-argument-type]
+    assert answered[PREVIEW_CUE_TIMES] == json.dumps(PARTING).encode("utf-8")
 
 
 def test_an_engine_digest_is_still_taken_over_newline_joined_lines() -> None:

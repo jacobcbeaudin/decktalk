@@ -853,6 +853,44 @@ export const CLIP_FRAMES = `${ENGINE_PATH}clip/`;
 export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
 
 /**
+ * Truth: the width of the canvas a wide project lays its page out on, which with its height is a full HD frame.
+ */
+export const CANVAS_WIDTH = 1920;
+
+/**
+ * Truth: the height of that canvas, which is the short side of every canvas.
+ *
+ * A project's frame is laid out on a canvas of the frame's own shape whose short side is this many
+ * CSS pixels, so a square frame is a canvas this tall and this wide, and a page written for one size
+ * of a shape lays out the same at every resolution of it.
+ */
+export const CANVAS_HEIGHT = 1080;
+
+/** The custom properties on the root element that carry the canvas's width and height into a page, in CSS pixels. */
+export const CANVAS_WIDTH_PROPERTY = "--dt-width";
+export const CANVAS_HEIGHT_PROPERTY = "--dt-height";
+
+/** The attribute the runtime sets on the root element to the canvas's shape, which a page's stylesheet selects on. */
+export const SHAPE_ATTR = "data-dt-shape";
+
+/** The three shapes a canvas has: wider than tall, as tall as wide, and taller than wide. */
+export const SHAPES = ["wide", "square", "vertical"] as const;
+export type Shape = (typeof SHAPES)[number];
+
+/** The shape of a canvas `width` by `height`. */
+export function shapeOf(width: number, height: number): Shape {
+  return width > height ? "wide" : width === height ? "square" : "vertical";
+}
+
+/**
+ * The path a previewed page asks its own origin for, which answers with the canvas the project lays its page out on.
+ *
+ * A recorded page is handed its canvas before any script of it runs, and an author previewing in a
+ * browser is not, so the origin answers this one alias from the project's settings.
+ */
+export const PREVIEW_CANVAS = `${ENGINE_PATH}canvas.json`;
+
+/**
  * The name the runtime bundle's first line gives, followed by the engine version that shipped it.
  *
  * The line is a legal comment every minifier keeps, so a reader holding the file the origin served
@@ -967,6 +1005,13 @@ export const CONTRACT = {
   previewCueTimes: PREVIEW_CUE_TIMES,
   clipFrames: CLIP_FRAMES,
   motionScaleProperty: MOTION_SCALE_PROPERTY,
+  canvasWidth: CANVAS_WIDTH,
+  canvasHeight: CANVAS_HEIGHT,
+  canvasWidthProperty: CANVAS_WIDTH_PROPERTY,
+  canvasHeightProperty: CANVAS_HEIGHT_PROPERTY,
+  shapeAttr: SHAPE_ATTR,
+  shapes: SHAPES,
+  previewCanvas: PREVIEW_CANVAS,
   runtimeMark: RUNTIME_MARK,
   frameStepMs: FRAME_STEP_MS,
   measurableSpanSeconds: MEASURABLE_SPAN_SECONDS,

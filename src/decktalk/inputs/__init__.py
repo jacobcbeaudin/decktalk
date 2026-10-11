@@ -77,7 +77,7 @@ from decktalk.inputs.programs import clip_program, section_program
 from decktalk.inputs.script import VOICE_HINT, ScriptSection, Turn, estimated_words, read_script
 from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
-from decktalk.page import PREVIEW_CUE_TIMES
+from decktalk.page import PREVIEW_CANVAS, PREVIEW_CUE_TIMES, layout
 from decktalk.pipeline import Artifact
 from decktalk.results import Program
 from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
@@ -592,7 +592,11 @@ class Inputs:
         A recording keyed on one of these would be keyed on its own output, so the origin never
         counts them among the assets a section was recorded from.
         """
-        return {PREVIEW_CUE_TIMES: json.dumps(self.preview_cues()).encode("utf-8")}
+        width, height = layout(*self.settings.video.frame)
+        return {
+            PREVIEW_CUE_TIMES: json.dumps(self.preview_cues()).encode("utf-8"),
+            PREVIEW_CANVAS: json.dumps({"width": width, "height": height}).encode("utf-8"),
+        }
 
     # ---- frozen frames -------------------------------------------------------------------------
 

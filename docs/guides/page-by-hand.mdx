@@ -67,8 +67,10 @@ what the lesson example does with its bundled OFL fonts.</Warning>
 
 ### The canvas
 
-The runtime builds a canvas element, `#dt-canvas`, that is 1920 by 1080 CSS pixels, and scales it to
-fit the window. A page that declares its own `<div id="dt-canvas">` keeps that element and the runtime
+The runtime builds a canvas element, `#dt-canvas`, of the frame's shape with a short side of 1080 CSS
+pixels, 1920 by 1080 for a wide project, and scales it to fit the window. It puts the canvas's size on
+`:root` as `--dt-width` and `--dt-height` and its shape as `data-dt-shape`, so a stylesheet that reads
+them lays the page out for a square or vertical frame as well. A page that declares its own `<div id="dt-canvas">` keeps that element and the runtime
 builds around it, which is how a deck puts one background under all of its slides. Style it, and do
 not size it.
 

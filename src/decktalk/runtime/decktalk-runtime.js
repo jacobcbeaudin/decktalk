@@ -540,6 +540,15 @@
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var CLIP_FRAMES = `${ENGINE_PATH}clip/`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
+  var CANVAS_WIDTH = 1920;
+  var CANVAS_HEIGHT = 1080;
+  var CANVAS_WIDTH_PROPERTY = "--dt-width";
+  var CANVAS_HEIGHT_PROPERTY = "--dt-height";
+  var SHAPE_ATTR = "data-dt-shape";
+  function shapeOf(width, height) {
+    return width > height ? "wide" : width === height ? "square" : "vertical";
+  }
+  var PREVIEW_CANVAS = `${ENGINE_PATH}canvas.json`;
   function cueId(slide, local) {
     return `${slide}${CUE_MARK}${local}`;
   }
@@ -585,17 +594,19 @@
   // src/decktalk/runtime/src/canvas.ts
   /*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
    *
-   * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
-   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
-   * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
+   * A DeckTalk page draws onto one canvas, the project's frame laid out at a short side of
+   * `CANVAS_HEIGHT` CSS pixels and scaled to whatever window it is opened in, so an element measured
+   * on a laptop is at the pixel a recording will put it at. The canvas's size reaches the page as two custom properties on
+   * the root, which the recorder writes before any script of the page runs and a preview asks its
+   * origin for, and the runtime writes them back with the canvas's shape, so a page's stylesheet lays
+   * itself out for its own frame. This module owns that canvas, the fit, the heads-up display, and the
+   * stylesheet.
    *
    * Every rule below is generated from the registry, so a style word's length lives once. Each
    * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
    * to the head, so a page rule of equal weight wins on document order. An author's stylesheet is
    * therefore always able to override the runtime without reaching for `!important`.
    */
-  var CANVAS_WIDTH = 1920;
-  var CANVAS_HEIGHT = 1080;
   var EASE = "cubic-bezier(.2,.7,.2,1)";
   var POP_ENTRY_SCALE = 0.7;
   var POP_OVERSHOOT_AT = 60;
@@ -623,6 +634,10 @@
     paned: "dt-paned",
   };
   var CAPTIONS_ID = "dt-captions";
+  var CAPTION_LINE_EMS = 24;
+  var CAPTION_SIDE_SHARE = 12;
+  var CAPTION_SIDE = `calc(var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
+  var CAPTION_LINE = `(var(${CANVAS_WIDTH_PROPERTY}) - 2 * var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
   function frames(family, word2) {
     return `dt-${family}-${word2}`;
   }
@@ -664,9 +679,9 @@
     ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
   ];
   var CAPTION_CSS = [
-    `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 160px 72px;pointer-events:none}
+    `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 ${CAPTION_SIDE} 72px;pointer-events:none}
 `,
-    `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}
+    `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;font-size:min(46px,calc(${CAPTION_LINE} / ${CAPTION_LINE_EMS}));color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}
 `,
     `:where(.${CLASS.captionLine}){display:block}
 `,
@@ -678,14 +693,14 @@
 `,
   ];
   function sheet() {
-    const declared2 = Object.values(ATTRS)
+    const declared3 = Object.values(ATTRS)
       .filter((row2) => row2.kind === "id")
       .map((row2) => `[${row2.name}]`)
       .join(",");
     const parts = [
-      `:where(${declared2}){display:none}
+      `:where(${declared3}){display:none}
 `,
-      `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;overflow:hidden;transform-origin:0 0}
+      `:where(#dt-canvas){position:absolute;left:0;top:0;width:var(${CANVAS_WIDTH_PROPERTY});height:var(${CANVAS_HEIGHT_PROPERTY});overflow:hidden;transform-origin:0 0}
 `,
       ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
       `:where(.${CLASS.slide}){position:absolute;inset:0}
@@ -743,6 +758,8 @@
   var panEl = null;
   var hudEl = null;
   var fitScale = 1;
+  var canvasWidth = CANVAS_WIDTH;
+  var canvasHeight = CANVAS_HEIGHT;
   function style() {
     if (document.getElementById("dt-style")) return;
     const el = document.createElement("style");
@@ -762,6 +779,30 @@
   function span(el, seconds2) {
     el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale())}s`);
   }
+  function declared(property) {
+    const length = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(property));
+    return Number.isFinite(length) && length > 0 ? length : null;
+  }
+  function resize(width, height) {
+    canvasWidth = width;
+    canvasHeight = height;
+    const root = document.documentElement;
+    root.style.setProperty(CANVAS_WIDTH_PROPERTY, `${width}px`);
+    root.style.setProperty(CANVAS_HEIGHT_PROPERTY, `${height}px`);
+    root.setAttribute(SHAPE_ATTR, shapeOf(width, height));
+    fit();
+  }
+  async function previewed() {
+    try {
+      const answer = await fetch(PREVIEW_CANVAS);
+      if (!answer.ok) return;
+      const told = await answer.json();
+      const { width, height } = told;
+      if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) resize(width, height);
+    } catch {
+      return;
+    }
+  }
   function build(hud) {
     if (canvasEl) return;
     canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
@@ -779,14 +820,17 @@
       document.body.appendChild(hudEl);
     }
     if (reduced()) document.documentElement.classList.add(CLASS.reduced);
-    fit();
+    const width = declared(CANVAS_WIDTH_PROPERTY);
+    const height = declared(CANVAS_HEIGHT_PROPERTY);
+    resize(width ?? CANVAS_WIDTH, height ?? CANVAS_HEIGHT);
+    if (width === null || height === null) void previewed();
     window.addEventListener("resize", fit);
   }
   function fit() {
     if (!canvasEl) return;
-    fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
-    const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
-    const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+    fitScale = Math.min(window.innerWidth / canvasWidth, window.innerHeight / canvasHeight);
+    const x = (window.innerWidth - canvasWidth * fitScale) / 2;
+    const y = (window.innerHeight - canvasHeight * fitScale) / 2;
     canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
   }
   function pan() {
@@ -1224,7 +1268,7 @@
   function spansOf(slide) {
     const spans = {};
     const widen = (cue, span2) => {
-      spans[cue] = Math.max(spans[cue] ?? 0, declared(span2));
+      spans[cue] = Math.max(spans[cue] ?? 0, declared2(span2));
     };
     if (!slide.markup) return spans;
     for (const el of momentElements(slide.markup.content)) {
@@ -1233,7 +1277,7 @@
     }
     return spans;
   }
-  function declared(span2) {
+  function declared2(span2) {
     return Number((span2 * motionScale2).toFixed(SECOND_DIGITS));
   }
   function spanOf(el, attr) {
@@ -1256,7 +1300,7 @@
         el.classList.add(change.name);
         const span2 = longestMotion(el);
         el.classList.remove(change.name);
-        into[change.cue] = Math.max(into[change.cue] ?? 0, declared(span2));
+        into[change.cue] = Math.max(into[change.cue] ?? 0, declared2(span2));
         if (reduced2 && span2 > 0) {
           warn("PAGE_CLASS_NOT_REDUCED", slide.id, change.cue, { value: change.name, attr: ATTR.class });
         }
@@ -1408,13 +1452,13 @@
   }
   function order(slide) {
     if (!slide.markup) return;
-    const declared2 = cueOrder(slide);
+    const declared3 = cueOrder(slide);
     for (const el of momentElements(slide.markup.content)) {
       const moments = momentsOf(el, slide.id);
       const arrival2 = moments.find((one) => one.attr === ATTR.in);
       const departure = moments.find((one) => one.attr === ATTR.out);
       if (!arrival2 || !departure) continue;
-      if (declared2.indexOf(departure.cue) <= declared2.indexOf(arrival2.cue)) {
+      if (declared3.indexOf(departure.cue) <= declared3.indexOf(arrival2.cue)) {
         warn("PAGE_MOMENT_ORDER", slide.id, departure.cue, { attr: ATTR.out, value: departure.local });
       }
     }

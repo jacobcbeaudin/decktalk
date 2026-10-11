@@ -83,14 +83,15 @@ These keys set the frame size and the encoding of every recording and of the fin
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `width` | integer | `1920` | must be between 320 and 7680 | pixels | project |  | Frame width in pixels, for every recording and the final mp4. |
-| `height` | integer | `1080` | must be between 240 and 4320 | pixels | project |  | Frame height in pixels, for every recording and the final mp4. |
+| `size` | string | `"wide"` | must match the pattern ^(?:wide\|square\|vertical\|(?:(?:2[4-9]\|[3-9][0-9]\|[1-6][0-9]{2}\|7[0-5][0-9]\|76[0-7])[02468]\|7680)x(?:(?:2[4-9]\|[3-9][0-9]\|[1-6][0-9]{2}\|7[0-5][0-9]\|76[0-7])[02468]\|7680))$ | pixels | project |  | The frame of every recording and of the final mp4: wide (1920 by 1080), square (1080 by 1080), vertical (1080 by 1920), or WIDTHxHEIGHT in pixels. A page is laid out on a canvas of the frame's shape whose short side is 1080 CSS pixels, which it reads as --dt-width and --dt-height, so a square copy of a project is the project copied with this one key changed. |
 | `fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of every recording and of the final mp4. The recorder steps the section clock one frame of this rate at a time, so every frame of a film is the page at its own second. |
 | `preset` | string | `"medium"` | must be one of ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow |  | project |  | x264 preset. Use veryfast for drafts. |
 | `crf` | integer | `18` | must be between 0 and 32 |  | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | x264 quality. A lower value gives higher quality and a larger file. |
 | `slate_color` | string | `"0x0e1116"` | must match the pattern ^(#\|0[xX])[0-9A-Fa-f]{6}$ |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB. |
 
 <Warning>
+**`video.size`** An odd side cannot be encoded, because the film's colour is stored at half the frame's width and height, and a side past the range is a frame Chromium and x264 are not held to drawing.
+
 **`video.crf`** Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
 
 **`video.slate_color`** The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other text could add a filter that opens a file or a rule that loads a URL.
@@ -457,10 +458,10 @@ can read.
 
 | Number | Kind | Formula | At the defaults | Why |
 |---|---|---|---|---|
-| `verify.probe_width` | derived | `video.width // PROBE_SCALE` | 480 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
-| `verify.probe_height` | derived | `video.height // PROBE_SCALE` | 270 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
-| `verify.block_width` | derived | `video.width // BLOCK_PX` | 240 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
-| `verify.block_height` | derived | `video.height // BLOCK_PX` | 135 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
+| `verify.probe_width` | derived | `the frame width video.size names // PROBE_SCALE` | 480 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
+| `verify.probe_height` | derived | `the frame height video.size names // PROBE_SCALE` | 270 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
+| `verify.block_width` | derived | `the frame width video.size names // BLOCK_PX` | 240 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
+| `verify.block_height` | derived | `the frame height video.size names // BLOCK_PX` | 135 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
 | `verify.reference_lead_seconds` | derived | `verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / video.fps + verify.reference_lead_extra_ms / 1000` | 0.14 seconds | Derived: the reference frame has to sit outside the window the offset limit allows, or the check compares a cue against a frame the same cue had already changed. |
 | `record.truncated_slack_seconds` | derived | `1 / video.fps` | 0.04 seconds | Derived: the recorder writes a section's span rounded to the nearest whole frame, so a whole recording runs at most half a frame under it, and one more than a frame under it stopped early. |
 | `SLOWEST_FPS` | constant | `25` | 25 frames per second | Truth: the slowest rate a film is recorded at, whose frame is the step every page range is written in. |

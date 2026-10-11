@@ -41,6 +41,7 @@ from pydantic import Field
 
 from decktalk.errors import InputError
 from decktalk.findings import Code, Model
+from decktalk.page import CANVAS_HEIGHT, CANVAS_WIDTH, SHAPES
 from decktalk.results import LayerValue, Scope, SoundKind, Source
 from decktalk.tomlmap import A_LUMA, A_PERCENT, A_SHARE, ENV_PREFIX, FAMILY, Bounds, Key, Nature, registry, tune
 from decktalk.tomlmap.suggest import did_you_mean
@@ -80,6 +81,31 @@ PAGE_POLICIES = ("trusted", "untrusted")
 PROGRAM_POLICIES = ("refuse", "ask", "run")
 """What `record` does with a program a project names: refuse it, ask a person at a terminal first, or run it."""
 
+FRAME_SIZES = {
+    SHAPES[0]: (CANVAS_WIDTH, CANVAS_HEIGHT),
+    SHAPES[1]: (CANVAS_HEIGHT, CANVAS_HEIGHT),
+    SHAPES[2]: (CANVAS_HEIGHT, CANVAS_WIDTH),
+}
+"""The frame each named size draws, which is the wide canvas, its height squared, and the wide canvas turned upright."""
+
+FRAME_SIZE_MARK = "x"
+"""What separates the width from the height of a size written in pixels."""
+
+FRAME_SIDE_MIN = 240
+"""Truth: the shortest side a frame may have, at which the block-averaged copy verify compares is 30 blocks across."""
+
+FRAME_SIDE_MAX = 7680
+"""Truth: the longest side a frame may have, which is the width of an 8K UHD frame."""
+
+FRAME_SIDE = r"(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680"
+"""Truth: an even number of pixels from `FRAME_SIDE_MIN` to `FRAME_SIDE_MAX`, spelled with no leading zero.
+
+The film's colour is stored at half its width and half its height, so x264 refuses an odd side.
+"""
+
+FRAME_SIZE = rf"^(?:{'|'.join(FRAME_SIZES)}|(?:{FRAME_SIDE}){FRAME_SIZE_MARK}(?:{FRAME_SIDE}))$"
+"""Truth: a named size, or a width and a height in pixels, which the loader and the schema both hold a size to."""
+
 # The three constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
 # one with its unit and its reason, so the reason is written there alone.
 BLOCK_PX = 8
@@ -91,19 +117,19 @@ CLICK_LEVEL_DBFS = -24.0
 class VideoConfig:
     """These keys set the frame size and the encoding of every recording and of the final mp4."""
 
-    width: int = tune(
-        1920,
-        "Frame width in pixels, for every recording and the final mp4.",
+    size: str = tune(
+        "wide",
+        "The frame of every recording and of the final mp4: wide (1920 by 1080), square (1080 by 1080), vertical "
+        "(1080 by 1920), or WIDTHxHEIGHT in pixels. A page is laid out on a canvas of the frame's shape whose short "
+        "side is 1080 CSS pixels, which it reads as --dt-width and --dt-height, so a square copy of a project is "
+        "the project copied with this one key changed.",
         unit="pixels",
-        bounds=Bounds(ge=320, le=7680),
+        bounds=Bounds(pattern=FRAME_SIZE),
+        hazard=(
+            "An odd side cannot be encoded, because the film's colour is stored at half the frame's width and "
+            "height, and a side past the range is a frame Chromium and x264 are not held to drawing."
+        ),
         see_also=("verify.probe_width", "verify.block_width"),
-    )
-    height: int = tune(
-        1080,
-        "Frame height in pixels, for every recording and the final mp4.",
-        unit="pixels",
-        bounds=Bounds(ge=240, le=4320),
-        see_also=("verify.probe_height", "verify.block_height"),
     )
     fps: int = tune(
         25,
@@ -139,6 +165,25 @@ class VideoConfig:
             "text could add a filter that opens a file or a rule that loads a URL."
         ),
     )
+
+    @property
+    def frame(self) -> tuple[int, int]:
+        """The frame `size` names, as its width and its height in pixels."""
+        named = FRAME_SIZES.get(self.size)
+        if named is not None:
+            return named
+        width, height = self.size.split(FRAME_SIZE_MARK)
+        return int(width), int(height)
+
+    @property
+    def width(self) -> int:
+        """The frame's width in pixels."""
+        return self.frame[0]
+
+    @property
+    def height(self) -> int:
+        """The frame's height in pixels."""
+        return self.frame[1]
 
 
 @dataclass(frozen=True)

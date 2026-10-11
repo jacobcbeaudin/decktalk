@@ -95,8 +95,8 @@ def truncated_slack_seconds(settings: Settings) -> float:
 NUMBERS: tuple[Number, ...] = (
     Number(
         id="verify.probe_width",
-        formula="video.width // PROBE_SCALE",
-        reads=("video.width", "PROBE_SCALE"),
+        formula="the frame width video.size names // PROBE_SCALE",
+        reads=("video.size", "PROBE_SCALE"),
         unit="pixels",
         nature=Nature.DERIVED,
         sentence=PROBE_SENTENCE,
@@ -104,8 +104,8 @@ NUMBERS: tuple[Number, ...] = (
     ),
     Number(
         id="verify.probe_height",
-        formula="video.height // PROBE_SCALE",
-        reads=("video.height", "PROBE_SCALE"),
+        formula="the frame height video.size names // PROBE_SCALE",
+        reads=("video.size", "PROBE_SCALE"),
         unit="pixels",
         nature=Nature.DERIVED,
         sentence=PROBE_SENTENCE,
@@ -113,8 +113,8 @@ NUMBERS: tuple[Number, ...] = (
     ),
     Number(
         id="verify.block_width",
-        formula="video.width // BLOCK_PX",
-        reads=("video.width", "BLOCK_PX"),
+        formula="the frame width video.size names // BLOCK_PX",
+        reads=("video.size", "BLOCK_PX"),
         unit="pixels",
         nature=Nature.DERIVED,
         sentence=BLOCK_SENTENCE,
@@ -122,8 +122,8 @@ NUMBERS: tuple[Number, ...] = (
     ),
     Number(
         id="verify.block_height",
-        formula="video.height // BLOCK_PX",
-        reads=("video.height", "BLOCK_PX"),
+        formula="the frame height video.size names // BLOCK_PX",
+        reads=("video.size", "BLOCK_PX"),
         unit="pixels",
         nature=Nature.DERIVED,
         sentence=BLOCK_SENTENCE,

@@ -60,4 +60,5 @@ true_peak_max_dbtp = -1.5
 # Every other value is a settings key. Run `decktalk config list` to see them with their layers, and
 # `decktalk config explain video.crf` for one of them.
 # [video]
+# size = "square"       # wide (the default), square, vertical or WIDTHxHEIGHT: copy the project to cut another shape
 # preset = "veryfast"   # faster drafts
