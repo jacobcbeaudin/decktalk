@@ -491,6 +491,7 @@
   var nativeCancel = window.clearTimeout.bind(window);
   var decoded = /* @__PURE__ */ new WeakMap();
   var SELF_DRAWN = "canvas, video, iframe, embed, object";
+  var SHOWN = { opacityProperty: true, visibilityProperty: true };
   var touched = true;
   var touch = () => {
     touched = true;
@@ -501,12 +502,143 @@
     touched = true;
     for (const record of records) {
       if (between.length >= KEEP) return;
-      between.push(record.target);
+      between.push(inDocument(record.target));
     }
   }
+  var OBSERVED = { subtree: true, childList: true, attributes: true, characterData: true };
   var watcher = new MutationObserver(keep);
-  watcher.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+  watcher.observe(document, OBSERVED);
   document.addEventListener("scroll", touch, { capture: true, passive: true });
+  var roots = /* @__PURE__ */ new Set();
+  function reached(root) {
+    if (root && !roots.has(root)) {
+      roots.add(root);
+      watcher.observe(root, OBSERVED);
+      root.addEventListener("scroll", touch, { capture: true, passive: true });
+    }
+    return root;
+  }
+  function inDocument(node) {
+    let shown2 = node;
+    for (let root = shown2.getRootNode(); root instanceof ShadowRoot; root = shown2.getRootNode()) shown2 = root.host;
+    return shown2;
+  }
+  function wrapMethod(owner, name, after) {
+    const own = Object.getOwnPropertyDescriptor(owner, name);
+    const original = own?.value;
+    if (!own?.configurable || typeof original !== "function") return;
+    Object.defineProperty(owner, name, {
+      ...own,
+      value: function (...args) {
+        let answer;
+        try {
+          answer = original.apply(this, args);
+          return answer;
+        } finally {
+          after(answer);
+        }
+      },
+    });
+  }
+  function wrapAccessor(owner, name, side, after) {
+    const own = Object.getOwnPropertyDescriptor(owner, name);
+    const original = own?.[side];
+    if (!own?.configurable || typeof original !== "function") return;
+    const wrapped = function (...args) {
+      return after(original.apply(this, args));
+    };
+    Object.defineProperty(owner, name, { ...own, [side]: wrapped });
+  }
+  wrapMethod(Element.prototype, "attachShadow", (root) => reached(root));
+  wrapAccessor(Element.prototype, "shadowRoot", "get", (root) => reached(root));
+  wrapAccessor(ElementInternals.prototype, "shadowRoot", "get", (root) => reached(root));
+  var SHEET_INTERFACES = /^(?:StyleSheet|MediaList|StylePropertyMap|CSS\w*(?:Rule|StyleSheet|Declaration|Properties))$/;
+  var SHEET_WRITERS = /* @__PURE__ */ new Set([
+    "insertRule",
+    "deleteRule",
+    "addRule",
+    "removeRule",
+    "appendRule",
+    "replace",
+    "replaceSync",
+    "setProperty",
+    "removeProperty",
+    "appendMedium",
+    "deleteMedium",
+    "set",
+    "append",
+    "delete",
+    "clear",
+  ]);
+  function written(answer) {
+    touch();
+    if (answer instanceof Promise) answer.then(touch, touch);
+  }
+  var declarations = /* @__PURE__ */ new WeakMap();
+  function heard(declaration) {
+    if (typeof declaration !== "object" || declaration === null) return declaration;
+    let view = declarations.get(declaration);
+    if (!view) {
+      view = new Proxy(declaration, {
+        get(target, key) {
+          const value = Reflect.get(target, key, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+        set(target, key, value) {
+          const done = Reflect.set(target, key, value, target);
+          touch();
+          return done;
+        },
+      });
+      declarations.set(declaration, view);
+    }
+    return view;
+  }
+  var scope = window;
+  for (const name of Object.getOwnPropertyNames(window).filter((one) => SHEET_INTERFACES.test(one))) {
+    const prototype = scope[name]?.prototype;
+    if (typeof prototype !== "object" || prototype === null) continue;
+    for (const [member, own] of Object.entries(Object.getOwnPropertyDescriptors(prototype))) {
+      if (member === "style" && own.get) wrapAccessor(prototype, member, "get", heard);
+      if (own.set) wrapAccessor(prototype, member, "set", written);
+      else if (SHEET_WRITERS.has(member)) wrapMethod(prototype, member, written);
+    }
+  }
+  var adopted = /* @__PURE__ */ new WeakMap();
+  function readopted() {
+    let changed = false;
+    for (const holder of [document, ...roots]) {
+      const now = holder.adoptedStyleSheets;
+      const before = adopted.get(holder) ?? [];
+      if (now.length === before.length && now.every((sheet, at) => sheet === before[at])) continue;
+      adopted.set(holder, [...now]);
+      changed = true;
+    }
+    return changed;
+  }
+  function shown(el) {
+    if (!el.checkVisibility(SHOWN)) return false;
+    const box = el.getBoundingClientRect();
+    return (
+      box.width > 0 &&
+      box.height > 0 &&
+      box.right > 0 &&
+      box.bottom > 0 &&
+      box.left < innerWidth &&
+      box.top < innerHeight
+    );
+  }
+  function selfDrawn() {
+    for (const holder of [document, ...roots]) {
+      for (const el of holder.querySelectorAll(SELF_DRAWN)) if (shown(el)) return el;
+    }
+    return null;
+  }
+  function named(el) {
+    const id = el.id ? `#${el.id}` : "";
+    const classes = [...el.classList].map((one) => `.${one}`).join("");
+    return `<${el.localName}${id}${classes}>`;
+  }
   var PAGE_CLOCK = "__pwClock";
   function nextTimer(seconds) {
     const clock = window[PAGE_CLOCK]?.controller;
@@ -521,7 +653,7 @@
     return Math.min(one, other);
   }
   function mutated() {
-    const seen = touched || watcher.takeRecords().length > 0;
+    const seen = readopted() || touched || watcher.takeRecords().length > 0;
     touched = false;
     between = [];
     return seen;
@@ -575,14 +707,15 @@
     const late = `the page had not drawn second ${seconds} within ${waitSeconds} seconds`;
     return within(drawn(), waitSeconds, late).then((waited) => {
       const touchedWhileDrawn = mutated();
-      const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+      const drawing = selfDrawn();
       answered = true;
-      const heard = waited || touchedWhileDrawn || selfDrawn;
+      const heard2 = waited || touchedWhileDrawn || drawing !== null;
       return {
         due: stepped.due,
-        changed: stepped.changed || touchedBefore || heard,
-        stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+        changed: stepped.changed || touchedBefore || heard2,
+        stillUntil: heard2 ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
         undeclared: outside,
+        selfDrawn: drawing && named(drawing),
       };
     });
   }
@@ -675,8 +808,8 @@
   function rowFor(el, slideId, frame, scale) {
     const attrs = {};
     for (const name of ELEMENT_ATTRS) {
-      const written = el.getAttribute(name);
-      if (written !== null) attrs[name] = written;
+      const written2 = el.getAttribute(name);
+      if (written2 !== null) attrs[name] = written2;
     }
     const moments = {};
     for (const name of MOMENT_ATTRS) {

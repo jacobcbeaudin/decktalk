@@ -78,10 +78,11 @@ MILLISECONDS = 1000
 STEP_JS = "([seconds, wait]) => window.__decktalkProbe.step(seconds, wait)"
 """The one call that moves a recorded page, which answers once the page has drawn the second it was moved to.
 
-It answers `{due, changed, stillUntil, undeclared}`: the second the next task is due, or null, whether
-anything the page draws may have changed since the step before, the earliest second anything can
-next change, or null when nothing ever will, and the element a script changed since the step before
-inside nothing the page declared as moving, or null.
+It answers `{due, changed, stillUntil, undeclared, selfDrawn}`: the second the next task is due, or
+null, whether anything the page draws may have changed since the step before, the earliest second
+anything can next change, or null when nothing ever will, the element a script changed since the
+step before inside nothing the page declared as moving, or null, and the element the page shows that
+draws on its own, which keeps every frame captured, or null.
 """
 
 STILL_SLACK_MS = 1
@@ -365,6 +366,8 @@ class Stepper:
     """The earliest second anything can next change, as the last step answered, or None when nothing ever will."""
     shown: bytes | None = None
     """The last frame captured, which an audited skip is compared with."""
+    drawing: str | None = None
+    """The element the page last answered it shows that draws on its own, which keeps every frame captured."""
     captured: int = 0
     """How many frames this stepper captured."""
     repeated: int = 0
@@ -431,6 +434,17 @@ class Stepper:
         still = answer.get("stillUntil", seconds) if isinstance(answer, dict) else seconds
         self.still_until = None if still is None else (finite(still) if finite(still) is not None else seconds)
         seen = Unexplained.of(seconds, answer.get("undeclared") if isinstance(answer, dict) else None)
+        drawing = answer.get("selfDrawn") if isinstance(answer, dict) else None
+        drawing = drawing if isinstance(drawing, str) else None
+        if drawing is not None and drawing != self.drawing:
+            log.debug(
+                "[page] %s  %s draws on its own, so every frame from second %g is captured",
+                self.name,
+                drawing,
+                seconds,
+                extra={"data": {"self_drawn": drawing, "second": seconds}},
+            )
+        self.drawing = drawing
         if seen is not None:
             self.unexplained = seen if self.unexplained is None else self.unexplained.joined(seen)
 
@@ -654,9 +668,12 @@ def piece_deadline(record: RecordConfig, frames: int) -> float:
     return record.page_deadline_seconds + record.deadline_slowdown * expected_seconds(record, frames)
 
 
-def encoding(out: Path, fps: int) -> list[str]:
-    """The arguments of the one encode the frames of `out` are piped into."""
-    return ["-f", "image2pipe", "-framerate", str(fps), "-c:v", "png", "-i", "-", *LOSSLESS, str(out)]
+def encoding(out: Path, fps: int, threads: int) -> list[str]:
+    """The arguments of the one encode the frames of `out` are piped into, on `threads` threads."""
+    return [
+        "-f", "image2pipe", "-framerate", str(fps), "-c:v", "png", "-i", "-",
+        *LOSSLESS, "-threads", str(threads), str(out),
+    ]  # fmt: skip
 
 
 class RendererCrashed(ToolError):
@@ -678,6 +695,7 @@ def record_piece(
     fps: int,
     record: RecordConfig,
     motion: MotionConfig,
+    threads: int,
     name: str,
     documents: Mapping[str, bytes] | None = None,
     check: Callable[[], None] = lambda: None,
@@ -692,7 +710,8 @@ def record_piece(
     again rather than captured, and `SKIP_AUDIT_EVERY` how often one is captured anyway to prove it.
     The page is held once it says it is ready, which is once its fonts, the promises its author
     handed the runtime and its scene are in place, and every step after that waits for the page to
-    draw it. `name` is what an error calls the recording, such as `section 2`.
+    draw it. `threads` is how many threads the encode runs on, which is the same for every piece of a
+    run, and `name` is what an error calls the recording, such as `section 2`.
 
     Every call into the page is held to `[record] page_deadline_seconds` and the piece as a whole to
     `piece_deadline`, by a `Watchdog` that closes the page when either passes, so a page cannot hold a
@@ -708,7 +727,7 @@ def record_piece(
         try:
             return _record_once(
                 chromium, url, frames, out, allowed=allowed, width=width, height=height, fps=fps, record=record,
-                motion=motion, name=name, documents=documents, check=check,
+                motion=motion, threads=threads, name=name, documents=documents, check=check,
             )  # fmt: skip
         except RendererCrashed as crashed:
             if attempt == attempts or not chromium.browser.is_connected():
@@ -734,6 +753,7 @@ def _record_once(
     fps: int,
     record: RecordConfig,
     motion: MotionConfig,
+    threads: int,
     name: str,
     documents: Mapping[str, bytes] | None,
     check: Callable[[], None],
@@ -782,7 +802,7 @@ def _record_once(
             stepper = Stepper(page, fps, deadline_seconds=deadline, watch=watch, name=name)
             stepper.hold()
             with (
-                ffmpeg.fed(*encoding(partial, fps), what=f"the encode of {out.name}") as write,
+                ffmpeg.fed(*encoding(partial, fps, threads), what=f"the encode of {out.name}") as write,
                 LosslessPipe.feeding(write) as sink,
             ):
                 stepper.record(frames, sink, checked, skip_still=record.skip_still, audit_every=SKIP_AUDIT_EVERY)

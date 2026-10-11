@@ -48,10 +48,16 @@ A step says the picture changed when any of these holds:
   animation it holds.
 - A declared motion is between its two cues, or a declared loop is on the page.
 - The DOM changed or something scrolled, which a `MutationObserver` the probe starts before the page
-  loads sees, so a plain `setTimeout` that sets a style is seen too.
+  loads sees, so a plain `setTimeout` that sets a style is seen too. The probe observes every shadow
+  root a script attaches or reaches the same way, open or closed.
+- A script wrote a style sheet through its object model, such as `insertRule`, `replaceSync` or a
+  rule's `style`, or the document or a shadow root adopted other sheets. The probe wraps every writer
+  of the object model before the page loads, and compares each adopted list at every step.
 - The step waited for a font or an image.
-- The page holds a `<canvas>`, a `<video>`, an `<iframe>`, an `<embed>` or an `<object>`, which draw
-  where the observer cannot see, so such a page is captured on every frame.
+- The page shows a `<canvas>`, a `<video>`, an `<iframe>`, an `<embed>` or an `<object>`, which draw
+  where the observer cannot see, so such a page is captured on every frame. One the page hides, makes
+  transparent, gives no size or places outside the viewport draws no pixel and turns nothing off, and
+  `record` logs a debug line naming the element that does.
 - The page has no runtime.
 
 So anything a page draws outside that list has to be drawn from a frame hook or declared as a loop.
@@ -62,9 +68,8 @@ inside that box, or anywhere when a changed element is laid out nowhere, `record
 [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) with the element, the first
 second and the number of frames. A change no pixel shows is not reported, and neither is one beside a cue that drew
 the frame's only difference somewhere else.
-A change made only through a style sheet's object model, such as `insertRule`, or inside a shadow
-root, or by an animated image, is not seen, and the recording shows the frame before until something
-else changes. `record.skip_still` turns the skip off for a project whose page needs it.
+An animated image plays on the browser's own time rather than the section clock, so which of its
+frames a recording shows depends on how long the recording takes, with the skip or without it.
 The test suite's builds step to and capture every fifth skipped frame anyway and stop the section if
 one differs from the frame before, and a golden builds every packaged project with the skip on and
 off and requires the same decoded frames and the same verify numbers.

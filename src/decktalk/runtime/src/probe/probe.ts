@@ -68,12 +68,20 @@ const nativeCancel = window.clearTimeout.bind(window);
 const decoded = new WeakMap<HTMLImageElement, string>();
 
 /**
- * What draws on its own, out of the DOM's sight, so a page that holds one is never reported still.
+ * What draws on its own, out of the DOM's sight, so a page that shows one is never reported still.
  *
  * A canvas is drawn by script without a mutation, a video plays at its own rate, and a framed
  * document, an embed or an object changes inside a document this page's observer cannot see.
  */
 const SELF_DRAWN = "canvas, video, iframe, embed, object";
+
+/**
+ * What hides a self-drawn element besides `display` and `content-visibility`: transparency and
+ * `visibility`, under which it draws no pixel either.
+ *
+ * Making it visible again is a style change, an animation or a scroll, each of which a step hears.
+ */
+const SHOWN: CheckVisibilityOptions = { opacityProperty: true, visibilityProperty: true };
 
 /**
  * Whether anything changed the DOM or scrolled since the last step answered, which starts true for the first.
@@ -105,13 +113,208 @@ function keep(records: readonly MutationRecord[]): void {
   touched = true;
   for (const record of records) {
     if (between.length >= KEEP) return;
-    between.push(record.target);
+    between.push(inDocument(record.target));
   }
 }
 
+/** What the observer hears in the document and in every shadow root a script reaches. */
+const OBSERVED: MutationObserverInit = { subtree: true, childList: true, attributes: true, characterData: true };
+
 const watcher = new MutationObserver(keep);
-watcher.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+watcher.observe(document, OBSERVED);
 document.addEventListener("scroll", touch, { capture: true, passive: true });
+
+// ---- what changes the picture without a mutation in the document ---------------------------------
+
+/**
+ * Every shadow root a script has made or reached, each observed as the document is.
+ *
+ * A mutation inside a shadow root is never delivered to an observer of the document, and a closed
+ * root cannot be found from outside it. A script reaches a root only by attaching it, by reading an
+ * open one off its host, or through its element's internals, which is how a component reaches a
+ * closed root the parser built, so watching those three hears every root a script can change. A
+ * root the parser built and no script ever reads stays as it was parsed.
+ */
+const roots = new Set<ShadowRoot>();
+
+/**
+ * Observe a shadow root a script has just reached, once, and hand it back.
+ *
+ * A scroll is not composed, so one inside a shadow root never reaches the document's listener either.
+ */
+function reached<T extends ShadowRoot | null>(root: T): T {
+  if (root && !roots.has(root)) {
+    roots.add(root);
+    watcher.observe(root, OBSERVED);
+    root.addEventListener("scroll", touch, { capture: true, passive: true });
+  }
+  return root;
+}
+
+/** The node a change inside a shadow root is shown in, which is its outermost host in the document. */
+function inDocument(node: Node): Node {
+  let shown = node;
+  for (let root = shown.getRootNode(); root instanceof ShadowRoot; root = shown.getRootNode()) shown = root.host;
+  return shown;
+}
+
+/** Wrap a method so `after` sees what each call answered, which the wrapper answers unchanged. */
+function wrapMethod(owner: object, name: string, after: (answer: unknown) => void): void {
+  const own = Object.getOwnPropertyDescriptor(owner, name);
+  const original: unknown = own?.value;
+  if (!own?.configurable || typeof original !== "function") return;
+  Object.defineProperty(owner, name, {
+    ...own,
+    value: function (this: unknown, ...args: unknown[]) {
+      let answer: unknown;
+      try {
+        answer = original.apply(this, args);
+        return answer;
+      } finally {
+        after(answer);
+      }
+    },
+  });
+}
+
+/** Wrap one accessor so each read or write of it answers what `after` makes of what the accessor answered. */
+function wrapAccessor(owner: object, name: string, side: "get" | "set", after: (answer: unknown) => unknown): void {
+  const own = Object.getOwnPropertyDescriptor(owner, name);
+  const original: ((...args: unknown[]) => unknown) | undefined = own?.[side];
+  if (!own?.configurable || typeof original !== "function") return;
+  const wrapped = function (this: unknown, ...args: unknown[]) {
+    return after(original.apply(this, args));
+  };
+  Object.defineProperty(owner, name, { ...own, [side]: wrapped });
+}
+
+wrapMethod(Element.prototype, "attachShadow", (root) => reached(root as ShadowRoot));
+wrapAccessor(Element.prototype, "shadowRoot", "get", (root) => reached(root as ShadowRoot | null));
+wrapAccessor(ElementInternals.prototype, "shadowRoot", "get", (root) => reached(root as ShadowRoot | null));
+
+/**
+ * The interfaces of the style sheet object model, a sheet, a rule, a rule's declaration and a media list among them.
+ *
+ * Each is matched by name off the page's global object, so a rule type a browser adds is heard too.
+ */
+const SHEET_INTERFACES = /^(?:StyleSheet|MediaList|StylePropertyMap|CSS\w*(?:Rule|StyleSheet|Declaration|Properties))$/;
+
+/** The methods of those interfaces that write, which with every setter they hold is every way to change a sheet. */
+const SHEET_WRITERS: ReadonlySet<string> = new Set([
+  "insertRule",
+  "deleteRule",
+  "addRule",
+  "removeRule",
+  "appendRule",
+  "replace",
+  "replaceSync",
+  "setProperty",
+  "removeProperty",
+  "appendMedium",
+  "deleteMedium",
+  "set",
+  "append",
+  "delete",
+  "clear",
+]);
+
+/**
+ * Count a write to a style sheet as a change, and its settling too when it answers a promise.
+ *
+ * A sheet's `replace` applies its rules once its promise settles, which may be after the step that
+ * made the call has answered.
+ */
+function written(answer: unknown): void {
+  touch();
+  if (answer instanceof Promise) answer.then(touch, touch);
+}
+
+/** The declaration of each rule a script has read, each handed out as one view that hears every write to it. */
+const declarations = new WeakMap<object, object>();
+
+/**
+ * A rule's declaration as a view that counts every property written through it as a change.
+ *
+ * Chromium keeps each property of a declaration, such as `rule.style.color`, on the declaration
+ * itself rather than on its prototype, so no setter can be wrapped once for all of them. A rule's
+ * declaration is reached only through its rule's `style`, so that read hands out this view instead,
+ * the same one every time, which reads and calls through to the declaration it stands for.
+ */
+function heard(declaration: unknown): unknown {
+  if (typeof declaration !== "object" || declaration === null) return declaration;
+  let view = declarations.get(declaration);
+  if (!view) {
+    view = new Proxy(declaration, {
+      get(target, key) {
+        const value: unknown = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+      set(target, key, value) {
+        const done = Reflect.set(target, key, value, target);
+        touch();
+        return done;
+      },
+    });
+    declarations.set(declaration, view);
+  }
+  return view;
+}
+
+const scope = window as unknown as Record<string, unknown>;
+for (const name of Object.getOwnPropertyNames(window).filter((one) => SHEET_INTERFACES.test(one))) {
+  const prototype = (scope[name] as { prototype?: unknown } | undefined)?.prototype;
+  if (typeof prototype !== "object" || prototype === null) continue;
+  for (const [member, own] of Object.entries(Object.getOwnPropertyDescriptors(prototype))) {
+    if (member === "style" && own.get) wrapAccessor(prototype, member, "get", heard);
+    if (own.set) wrapAccessor(prototype, member, "set", written);
+    else if (SHEET_WRITERS.has(member)) wrapMethod(prototype, member, written);
+  }
+}
+
+/** The sheets the document and each reached shadow root had adopted when a step last looked. */
+const adopted = new WeakMap<Document | ShadowRoot, readonly CSSStyleSheet[]>();
+
+/**
+ * Whether the document or a reached shadow root adopted other sheets since a step last looked.
+ *
+ * The adopted list is an array a script can push to and splice in place, which calls no setter, so
+ * each list is compared with what it held before.
+ */
+function readopted(): boolean {
+  let changed = false;
+  for (const holder of [document, ...roots]) {
+    const now = holder.adoptedStyleSheets;
+    const before = adopted.get(holder) ?? [];
+    if (now.length === before.length && now.every((sheet, at) => sheet === before[at])) continue;
+    adopted.set(holder, [...now]);
+    changed = true;
+  }
+  return changed;
+}
+
+/** Whether an element draws any pixel of the viewport, which a hidden, transparent, empty or offscreen one does not. */
+function shown(el: Element): boolean {
+  if (!el.checkVisibility(SHOWN)) return false;
+  const box = el.getBoundingClientRect();
+  return (
+    box.width > 0 && box.height > 0 && box.right > 0 && box.bottom > 0 && box.left < innerWidth && box.top < innerHeight
+  );
+}
+
+/** The first element that draws on its own and is shown, in the document or a reached shadow root, or null. */
+function selfDrawn(): Element | null {
+  for (const holder of [document, ...roots]) {
+    for (const el of holder.querySelectorAll(SELF_DRAWN)) if (shown(el)) return el;
+  }
+  return null;
+}
+
+/** A short name for an element in a log line, which is enough to find it in the markup. */
+function named(el: Element): string {
+  const id = el.id ? `#${el.id}` : "";
+  const classes = [...el.classList].map((one) => `.${one}`).join("");
+  return `<${el.localName}${id}${classes}>`;
+}
 
 /**
  * Where Playwright's clock keeps every timer and animation frame the page has set, read off the page's global object.
@@ -153,9 +356,12 @@ function sooner(one: number | null, other: number | null): number | null {
   return Math.min(one, other);
 }
 
-/** Whether the DOM changed or scrolled since the last call, counting the records not yet handed to the observer. */
+/**
+ * Whether the DOM or a style sheet changed or something scrolled since the last call, counting the
+ * records not yet handed to the observer.
+ */
 function mutated(): boolean {
-  const seen = touched || watcher.takeRecords().length > 0;
+  const seen = readopted() || touched || watcher.takeRecords().length > 0;
   touched = false;
   between = [];
   return seen;
@@ -245,17 +451,18 @@ async function drawn(): Promise<boolean> {
  * shows once it answers. The answer carries the second the next task is due, which the recorder steps
  * to on its own before it moves the timers past it, and whether the picture may have changed since the
  * step before. The runtime says what it knows: a task ran, a hook drew, an animation or a declared
- * motion moved. This adds what only the browser knows: the DOM changed or scrolled, a font or an image
- * arrived, or the page holds something that draws on its own. A page with no runtime always changed.
- * It also names the first element the page changed since the step before outside everything the
- * runtime ran and inside nothing it declared as moving, which the recorder reports when the frame
- * shows it.
+ * motion moved. This adds what only the browser knows: the DOM changed, in the document or in a
+ * shadow root, a style sheet was written or adopted, something scrolled, a font or an image arrived,
+ * or the page shows something that draws on its own. A page with no runtime always changed. It also
+ * names the first element the page changed since the step before outside everything the runtime ran
+ * and inside nothing it declared as moving, which the recorder reports when the frame shows it.
  *
  * The answer also carries the earliest second the picture can next change, which is the runtime's
- * own unless one of the page's timers is due sooner. It is the step's own second when the page holds
- * something that draws on its own, has no runtime, or heard of anything while it drew: a font, an
- * image, or a change to the DOM made after the runtime had answered, by an event or an observer the
- * runtime never ran, which may have started something the runtime has not seen.
+ * own unless one of the page's timers is due sooner. It is the step's own second when the page shows
+ * something that draws on its own, which the answer names, has no runtime, or heard of anything while
+ * it drew: a font, an image, or a change to the DOM or a style sheet made after the runtime had
+ * answered, by an event or an observer the runtime never ran, which may have started something the
+ * runtime has not seen.
  *
  * A capture taken the moment the runtime returns would race the page's own rendering: the style,
  * layout and paint of the step, the compositor's copy of every animation the step sought, a font the
@@ -270,14 +477,15 @@ export function step(seconds: number, waitSeconds: number): Promise<Stepped> {
   const late = `the page had not drawn second ${seconds} within ${waitSeconds} seconds`;
   return within(drawn(), waitSeconds, late).then((waited) => {
     const touchedWhileDrawn = mutated();
-    const selfDrawn = document.querySelector(SELF_DRAWN) !== null;
+    const drawing = selfDrawn();
     answered = true;
-    const heard = waited || touchedWhileDrawn || selfDrawn;
+    const heard = waited || touchedWhileDrawn || drawing !== null;
     return {
       due: stepped.due,
       changed: stepped.changed || touchedBefore || heard,
       stillUntil: heard ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
       undeclared: outside,
+      selfDrawn: drawing && named(drawing),
     };
   });
 }

@@ -34,6 +34,7 @@ from decktalk.inputs import Inputs
 from decktalk.media import browser, stepping
 from decktalk.media.origin import Allowed
 from decktalk.page import Q
+from decktalk.stages.record.pool import available_cpus, encode_threads
 from support.commands import HOSTILE_DIRECTORY, PACKAGED, RUNS_PROGRAMS, decktalk, frame_digests, written
 from support.timing_policy import EVERY_PACKAGED_PROJECT_SECONDS, FIRST_FETCH_SECONDS, budget
 from support.tools import machine_tools
@@ -127,6 +128,7 @@ def record_pieces(root: Path, section: str, starts: list[int], end: int, into: P
                     fps=video.fps,
                     record=replace(recorder, skip_still=False),
                     motion=inputs.settings.motion,
+                    threads=encode_threads(recorder.encode_threads, cpus=available_cpus(), workers=1),
                     name=f"section {section}",
                     documents=inputs.documents(),
                 )

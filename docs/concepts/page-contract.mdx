@@ -342,6 +342,9 @@ In record mode, ownership decides when each slide mounts.
 - A slide mounts at the earliest cue time it owns.
 - The first slide to mount is on the stage before the recorder's first step, so no frame of a
   recording is ever drawn on an empty stage.
+- An element that arrives on a cue due at the section's start arrives as a cut, as the first slide
+  does, so the section's first frame shows it. An entrance starts on its cue's own frame and draws
+  nothing there, and the section's start has no frame before it to begin on.
 - A slide that owns no cue in `?cues=` never mounts, which is
   [`PAGE_SLIDE_UNUSED`](/reference/findings/PAGE_SLIDE_UNUSED).
 - A cue that no slide of the playing scene owns, and that no handler serves, is

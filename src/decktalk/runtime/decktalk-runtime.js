@@ -2170,20 +2170,22 @@
     }
     return arrival(el, cue, slide, playing, onLeave);
   }
+  var OPENING_ENTRANCE = "cut";
   function arrival(el, cue, slide, playing, onLeave) {
-    const style2 = entranceOf(el);
-    const seconds2 = entranceSeconds(el);
+    const opens = playing.opens.has(cue) && !playing.frozen;
+    const style2 = opens ? OPENING_ENTRANCE : entranceOf(el);
+    const seconds2 = opens ? 0 : entranceSeconds(el);
     const step = staggerSeconds(el);
     const text = fallback(el);
     return {
       attr: ATTR.in,
       run: () => {
-        if (step === null) show(el, style2, seconds2, cue);
+        if (step === null) show(el, style2, seconds2, cue, playing.frozen);
         else {
           [...el.children].forEach((child, at) => {
             const one = child;
-            one.style.animationDelay = `${step * at}s`;
-            show(one, style2, seconds2, cue);
+            one.style.animationDelay = `${opens ? 0 : step * at}s`;
+            show(one, style2, seconds2, cue, playing.frozen);
           });
         }
         const counted = countOf(el);
@@ -2194,11 +2196,13 @@
       line: arrivalLine(el, text),
     };
   }
-  function show(el, style2, seconds2, cue) {
+  function show(el, style2, seconds2, cue, frozen2) {
     const entrance = styleClass("in", style2);
     el.classList.remove(CLASS.hidden);
     span(el, seconds2);
-    el.classList.add(CLASS.shown, entrance);
+    el.classList.add(CLASS.shown);
+    if (frozen2) return;
+    el.classList.add(entrance);
     const played = el.getAnimations().find((one) => one instanceof CSSAnimation && one.animationName === entrance);
     const ends = played?.effect?.getComputedTiming().endTime;
     if (typeof ends !== "number") return;
@@ -2320,7 +2324,8 @@
   function mount(scene, slide, held, at) {
     const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
     const el = buildSlide(scene, slide);
-    const mounted = prepare(el, slide, { frozen, recorded: signalled, held, words: state.words, at: cueAt });
+    const opens = at === null ? NOTHING : opening();
+    const mounted = prepare(el, slide, { frozen, recorded: signalled, held, opens, words: state.words, at: cueAt });
     typeset(el, slide.id);
     state.slide = slide;
     state.mounted = mounted;
@@ -2340,6 +2345,10 @@
       }
     }
     return el;
+  }
+  var NOTHING = /* @__PURE__ */ new Set();
+  function opening() {
+    return new Set(state.cues.filter((cue) => cue.at <= DUE_SLACK_SECONDS).map((cue) => cue.id));
   }
   function retire(incoming, outgoing, entrance) {
     const leaving = state.mounted;

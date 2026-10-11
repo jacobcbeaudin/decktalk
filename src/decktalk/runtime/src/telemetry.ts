@@ -177,9 +177,10 @@ export type Undeclared = {
  *
  * `undeclared` is what the page changed between the step before and this one, outside every cue,
  * frame hook and animation the runtime ran and inside nothing the page declared as moving, or is
- * null when there is none.
+ * null when there is none. `selfDrawn` names the first element the page shows that draws on its own,
+ * a canvas, a video or a framed document, which keeps every frame captured, or is null when it shows none.
  */
-export type Stepped = Step & { readonly undeclared: Undeclared | null };
+export type Stepped = Step & { readonly undeclared: Undeclared | null; readonly selfDrawn: string | null };
 
 /** Everything the recorder injects as `window.__decktalkProbe`, which the recorder and the runtime both call. */
 export type Probe = {

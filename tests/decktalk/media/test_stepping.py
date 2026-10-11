@@ -55,6 +55,9 @@ WIDTH, HEIGHT, FPS = 320, 180, 25
 RECORD = RecordConfig(color_scheme="dark")
 """The `[record]` table every recording here is made under, dark so the fixture's white bar shows."""
 
+THREADS = 1
+"""How many threads each test encode runs on, which never changes a frame."""
+
 SKIP_STILL = RecordConfig().skip_still
 """Whether a frame nothing changed on is written again rather than captured, which is the default."""
 
@@ -114,6 +117,7 @@ def record(
                 fps=FPS,
                 record=replace(settings, skip_still=skip_still),
                 motion=MotionConfig(),
+                threads=THREADS,
                 name="section 1",
             )  # fmt: skip
             for first, stop in itertools.pairwise(bounds)
@@ -575,31 +579,176 @@ STILL_CANVAS = (
 """A slide holding a canvas that nothing draws, which the recorder cannot see into and so never trusts."""
 
 
-def test_a_page_with_a_canvas_is_captured_on_every_frame(tmp_path):
-    """A canvas draws without touching the DOM, so a page that holds one is never reported still."""
+def test_a_page_with_a_canvas_is_captured_on_every_frame(tmp_path, caplog):
+    """A canvas draws without touching the DOM, so a page that shows one is never reported still, and says so."""
+    caplog.set_level("DEBUG", logger=stepping.log.name)
     sink = stepped_frames(deck_page(tmp_path, f"<script>{STILL_CANVAS}</script>"), 0.6, skip_still=True)
     assert sink.repeats == 0
     assert len(sink.frames) == stepping.frame_count(0.6, FPS)
+    assert [row.getMessage() for row in caplog.records if "<canvas#still>" in row.getMessage()], caplog.text
 
 
-HIDDEN = (
-    "<style id=sheet>#hidden{position:fixed;left:0;top:0;width:100px;height:40px;background:#fff;visibility:hidden}"
-    "</style>"
-    "<div id=hidden></div><script>"
+SHADOW_CANVAS = (
+    "<div id=host></div><script>"
     "DeckTalk.scene(1, { slides: [{ id: '1.1', owns: ['go'], render: () => '' }] });"
-    "DeckTalk.on('1.1:go', () => setTimeout(() => {"
-    " document.getElementById('sheet').sheet.insertRule('#hidden{visibility:visible}', 1); }, 400));</script>"
+    "document.getElementById('host').attachShadow({ mode: 'closed' }).innerHTML ="
+    " '<canvas id=inside width=32 height=18></canvas>';</script>"
 )
-"""A page that shows a box from second 0.4 through its style sheet's object model, which no DOM mutation reports."""
+"""A page that shows a canvas inside a closed shadow root, which no query from the document finds."""
 
 
-def test_the_audit_stops_a_recording_whose_skipped_frame_differs_from_the_frame_before(tmp_path):
-    """A change drawn outside what DeckTalk knows is skipped silently without the audit, and fails loudly with it."""
-    allowed = deck_page(tmp_path, HIDDEN)
+def test_a_canvas_shown_inside_a_shadow_root_is_captured_on_every_frame(tmp_path):
+    """A canvas a web component draws in is as unseen by the observer as one in the document, so it is never still."""
+    sink = stepped_frames(deck_page(tmp_path, SHADOW_CANVAS), 0.6, skip_still=True)
+    assert sink.repeats == 0
+
+
+UNSHOWN_SELF_DRAWN = {
+    "display none": "<canvas width=1 height=1 style='display:none'></canvas>",
+    "visibility hidden": "<canvas width=32 height=18 style='visibility:hidden'></canvas>",
+    "transparent": "<canvas width=32 height=18 style='opacity:0'></canvas>",
+    "no size": "<canvas width=0 height=0></canvas>",
+    "off the viewport": "<canvas width=32 height=18 style='position:fixed;left:-500px;top:0'></canvas>",
+    "hidden frame": "<iframe style='display:none'></iframe>",
+}
+"""Self-drawn elements a page holds and never shows, as an analytics or charting library leaves them behind."""
+
+
+@pytest.mark.parametrize("markup", UNSHOWN_SELF_DRAWN.values(), ids=UNSHOWN_SELF_DRAWN.keys())
+def test_a_self_drawn_element_the_page_does_not_show_leaves_still_frames_skipped(tmp_path, caplog, markup):
+    """Only a canvas, video or frame the page shows can change the picture, so one it hides costs no capture."""
+    caplog.set_level("DEBUG", logger=stepping.log.name)
+    allowed = fixture_page(tmp_path, RAW_TIMER, markup)
+    skipped = stepped_frames(allowed, 1.0, skip_still=True)
+    assert skipped.frames == stepped_frames(allowed, 1.0, skip_still=False).frames
+    assert skipped.repeats >= FPS - 3, "a hidden self-drawn element turned the skip off"
+    assert "draws on its own" not in caplog.text
+
+
+DENIED = (
+    "([seconds, wait]) => window.__decktalkProbe.step(seconds, wait)"
+    ".then((answer) => ({ ...answer, changed: false, stillUntil: null }))"
+)
+"""A step that answers that nothing changed and nothing ever will, which is how a change no signal hears would step."""
+
+
+def test_the_audit_stops_a_recording_whose_skipped_frame_differs_from_the_frame_before(tmp_path, monkeypatch):
+    """A change no step hears is skipped silently without the audit, and fails loudly with it."""
+    allowed = fixture_page(tmp_path, RAW_TIMER)
+    monkeypatch.setattr(stepping, "STEP_JS", DENIED)
     assert stepped_frames(allowed, 0.8, skip_still=True).frames != stepped_frames(allowed, 0.8, skip_still=False).frames
     with pytest.raises(ToolError) as raised:
         stepped_frames(allowed, 0.8, skip_still=True, audit_every=AUDIT_EVERY)
     assert "frame 10" in str(raised.value)
+
+
+# ---- a change made through a style sheet's object model or inside a shadow root ----------------
+
+LATE_BOX = "position:fixed;left:0;top:80px;width:100px;height:40px;background:#fff"
+"""The box every page below shows at second 0.4, on row 100 of the frame."""
+
+STYLE_HIDES = (
+    "const sheet = document.head.appendChild(document.createElement('style')).sheet;"
+    " sheet.insertRule('#late{visibility:hidden}');"
+)
+"""A style element's sheet that hides the box, as a CSS-in-JS library writes one."""
+
+ADOPTED_HIDES = (
+    "const sheet = new CSSStyleSheet(); sheet.replaceSync('#late{visibility:hidden}');"
+    " document.adoptedStyleSheets = [sheet];"
+)
+"""A constructed sheet the document adopts that hides the box."""
+
+SHEET_WRITES = {
+    "insertRule": (STYLE_HIDES, "sheet.insertRule('#late{visibility:visible}', 1)"),
+    "deleteRule": (STYLE_HIDES, "sheet.deleteRule(0)"),
+    "rule style": (STYLE_HIDES, "sheet.cssRules[0].style.visibility = 'visible'"),
+    "setProperty": (STYLE_HIDES, "sheet.cssRules[0].style.setProperty('visibility', 'visible')"),
+    "styleMap": (STYLE_HIDES, "sheet.cssRules[0].styleMap.set('visibility', 'visible')"),
+    "selectorText": (STYLE_HIDES, "sheet.cssRules[0].selectorText = '#gone'"),
+    "disabled": (STYLE_HIDES, "sheet.disabled = true"),
+    "media": (STYLE_HIDES, "sheet.media.mediaText = 'print'"),
+    "replaceSync": (ADOPTED_HIDES, "sheet.replaceSync('')"),
+    "replace": (ADOPTED_HIDES, "sheet.replace('')"),
+    "adoptedStyleSheets": (ADOPTED_HIDES, "document.adoptedStyleSheets = []"),
+    "adoptedStyleSheets pop": (ADOPTED_HIDES, "document.adoptedStyleSheets.pop()"),
+}
+"""Every way a script writes the style sheet object model, as what hides the box at load and what shows it."""
+
+SHADOW_LATE = f"<div id=late style='{LATE_BOX};visibility:hidden'></div>"
+
+SHADOW_WRITES = {
+    "open": (
+        "<div id=host></div>",
+        f"const root = document.getElementById('host').attachShadow({{ mode: 'open' }});"
+        f' root.innerHTML = "{SHADOW_LATE}";',
+        "root.getElementById('late').style.visibility = 'visible'",
+    ),
+    "closed": (
+        "<div id=host></div>",
+        f"const root = document.getElementById('host').attachShadow({{ mode: 'closed' }});"
+        f' root.innerHTML = "{SHADOW_LATE}";',
+        "root.getElementById('late').style.visibility = 'visible'",
+    ),
+    "declarative": (
+        f"<div id=host><template shadowrootmode=open>{SHADOW_LATE}</template></div>",
+        "",
+        "document.getElementById('host').shadowRoot.getElementById('late').style.visibility = 'visible'",
+    ),
+    "declarative closed, through internals": (
+        f"<x-box><template shadowrootmode=closed>{SHADOW_LATE}</template></x-box>",
+        "let root = null; customElements.define('x-box', class extends HTMLElement {"
+        " constructor() { super(); root = this.attachInternals().shadowRoot; } });",
+        "root.getElementById('late').style.visibility = 'visible'",
+    ),
+    "scroll in a shadow root": (
+        "<div id=host></div>",
+        "const root = document.getElementById('host').attachShadow({ mode: 'closed' });"
+        " root.innerHTML = \"<div id=late style='position:fixed;left:0;top:60px;width:100px;height:80px;"
+        "overflow:hidden'><div style='height:80px'></div><div style='height:80px;background:#fff'></div></div>\";",
+        "root.getElementById('late').scrollTop = 40",
+    ),
+    "adopted in a shadow root": (
+        "<div id=host></div>",
+        f"const root = document.getElementById('host').attachShadow({{ mode: 'closed' }});"
+        f" root.innerHTML = \"<div id=late style='{LATE_BOX}'></div>\"; {ADOPTED_HIDES.replace('document.', 'root.')}",
+        "root.adoptedStyleSheets = []",
+    ),
+}
+"""Every way a script reaches inside a shadow root, as its markup, what builds it at load and what shows the box."""
+
+
+def late_page(tmp_path: Path, markup: str, setup: str, change: str) -> Allowed:
+    """A deck page holding `markup`, prepared by `setup` at load, whose plain timer runs `change` at second 0.4."""
+    return deck_page(
+        tmp_path,
+        f"<style>#late{{{LATE_BOX}}}</style>{markup}<script>"
+        "DeckTalk.scene(1, { slides: [{ id: '1.1', owns: ['go'], render: () => '' }] });"
+        f"{setup} DeckTalk.on('1.1:go', () => setTimeout(() => {{ {change}; }}, 400));</script>",
+    )
+
+
+def assert_recorded_alike(allowed: Allowed, tmp_path: Path) -> None:
+    """The page decodes to the same frames skipping still frames as capturing every one, the box shown from frame 10."""
+    record(allowed, tmp_path / "skip.mp4", 0.8, skip_still=True, audit_every=0)
+    record(allowed, tmp_path / "all.mp4", 0.8, skip_still=False, audit_every=0)
+    skipped, captured = luma_frames(tmp_path / "skip.mp4"), luma_frames(tmp_path / "all.mp4")
+    assert [k for k, (one, other) in enumerate(zip(skipped, captured, strict=True)) if one != other] == []
+    assert [lit_width(frame, 100) > 0 for frame in skipped].index(True) == 10
+
+
+@pytest.mark.parametrize(("setup", "change"), SHEET_WRITES.values(), ids=SHEET_WRITES.keys())
+def test_a_timer_that_writes_a_style_sheet_records_the_same_frames_with_still_frames_skipped(tmp_path, setup, change):
+    """A style sheet written through its object model is no DOM mutation, yet its frame is captured on time."""
+    assert_recorded_alike(late_page(tmp_path, "<div id=late></div>", setup, change), tmp_path)
+
+
+@pytest.mark.parametrize(("markup", "setup", "change"), SHADOW_WRITES.values(), ids=SHADOW_WRITES.keys())
+def test_a_timer_that_changes_a_shadow_root_records_the_same_frames_with_still_frames_skipped(
+    tmp_path, markup, setup, change
+):
+    """A change inside a shadow root reaches no observer on the document, yet its frame is captured on time."""
+    assert_recorded_alike(late_page(tmp_path, markup, setup, change), tmp_path)
 
 
 # ---- the first frame of a page whose loop is already turning -----------------------------------
@@ -1359,3 +1508,76 @@ def test_a_crash_that_takes_the_browser_with_it_stops_the_piece_saying_so_and_le
             record(fixture_page(tmp_path, GROW), tmp_path / "a.mp4", 0.6)
     assert "section 1: the page's renderer crashed and took the browser with it" in str(raised.value)
     assert encodes_left() == []
+
+
+ENCODE_FRAMES = 12
+"""How many frames the thread-count proof encodes, enough for x264 to put several threads to work."""
+
+
+@pytest.mark.parametrize("threads", [1, 2, 4])
+def test_an_encode_on_any_number_of_threads_decodes_to_the_same_frames(tmp_path, threads):
+    """The thread count changes how much memory an encode takes and never a frame, so pieces stay the same frames."""
+    allowed = fixture_page(tmp_path, GROW)
+    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
+        stepping.record_piece(
+            real, URL, range(ENCODE_FRAMES), tmp_path / "one.mp4", allowed=allowed, width=WIDTH, height=HEIGHT,
+            fps=FPS, record=RECORD, motion=MotionConfig(), threads=1, name="section 1",
+        )  # fmt: skip
+        stepping.record_piece(
+            real, URL, range(ENCODE_FRAMES), tmp_path / "many.mp4", allowed=allowed, width=WIDTH, height=HEIGHT,
+            fps=FPS, record=RECORD, motion=MotionConfig(), threads=threads, name="section 1",
+        )  # fmt: skip
+    digests = [
+        hashlib.md5(ffmpeg.raw(*ffmpeg.source(tmp_path / name), "-f", "rawvideo", "-pix_fmt", "rgb24", "-")).hexdigest()
+        for name in ("one.mp4", "many.mp4")
+    ]
+    assert digests[0] == digests[1]
+
+
+# ---- a section that opens on a cue ---------------------------------------------------------------
+
+OPENING = (
+    "<style>.box{position:absolute;left:40px;top:20px;width:192px;height:120px;background:#fff}</style>"
+    '<div data-scene="1" data-name="opening"><template data-slide="1.1">'
+    '<div class="box" data-in="go" data-in-style="fade"></div></template></div>'
+)
+"""A box that fades in on the cue `go`, which is all a section needs to open on a reveal."""
+
+BOX_ROW = 12
+"""A row of the recording the box covers, which is its middle drawn at a sixth of the canvas."""
+
+DARK = 16
+"""The brightest a pixel of the black page decodes to, so anything brighter is the box begun to show."""
+
+
+def shows_box(frame: bytes) -> bool:
+    """Whether any of the box has been drawn, however far into its fade."""
+    return max(frame[BOX_ROW * WIDTH : (BOX_ROW + 1) * WIDTH]) > DARK
+
+
+def opening_url(go: float) -> str:
+    return page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: f"1.1:go@{go}", Q.T0: T0_SIGNAL})
+
+
+def test_a_reveal_due_at_the_section_s_start_is_on_its_first_frame(tmp_path):
+    """A cue at the section's start has no frame before it, so the section opens on what it reveals.
+
+    That is the case `CUE_NO_ONSET` names. The first slide is already on the canvas when the clock
+    starts, and an arrival due with it arrives with it rather than one frame later, so a section never
+    opens on a frame its reveal is missing from.
+    """
+    out = tmp_path / "01.mp4"
+    record(deck_page(tmp_path, OPENING), out, 0.2, url=opening_url(0.0))
+    frames = luma_frames(out)
+    assert shows_box(frames[0]), "the box is on the section's first frame"
+
+
+def test_a_reveal_due_later_still_enters_from_its_own_second(tmp_path):
+    """Only the section's start is special: a cue on a later frame starts its entrance there, as every frame shows."""
+    go = 0.2
+    out = tmp_path / "01.mp4"
+    record(deck_page(tmp_path, OPENING), out, 0.4, url=opening_url(go))
+    frames = luma_frames(out)
+    due = round(go * FPS)
+    assert not shows_box(frames[due])
+    assert shows_box(frames[due + 1])

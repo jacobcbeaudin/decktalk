@@ -419,6 +419,20 @@ class RecordConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
     )
+    encode_threads: int = tune(
+        0,
+        "Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders "
+        "at once, at least one each. Every piece of a run is encoded with the same number, and the frames are "
+        "the same whatever it is.",
+        bounds=Bounds(ge=0, le=64),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of "
+            "megabytes and buys no speed, because the encode is never what a recording waits on."
+        ),
+        see_also=("record.concurrency",),
+    )
     skip_still: bool = tune(
         True,
         "Write a frame again rather than capture it when the page reports that nothing it draws changed "
@@ -426,11 +440,6 @@ class RecordConfig:
         "next change the page reports without stepping the page to each. The frames are the same either "
         "way, so it changes how long `record` takes and nothing it writes.",
         nature=Nature.APPARATUS,
-        hazard=(
-            "A page that changes its picture outside what DeckTalk knows of, such as through its style "
-            "sheet's object model or inside a shadow root, records the frame before until something it "
-            "knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off."
-        ),
     )
 
 

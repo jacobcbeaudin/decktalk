@@ -78,7 +78,9 @@ from decktalk.stages.record.pool import (
     Chunk,
     Span,
     automatic,
+    available_cpus,
     chunked,
+    encode_threads,
     run_deadline,
 )
 
@@ -235,8 +237,13 @@ def piece(
     chunk: Chunk,
     out: Path,
     check: Callable[[], None],
+    *,
+    threads: int,
 ) -> stepping.Piece:
-    """Record one chunk of a page section by stepping its clock through the chunk's frames into `out`."""
+    """Record one chunk of a page section by stepping its clock through the chunk's frames into `out`.
+
+    `threads` is the encode's thread count, which is the same for every chunk of the run.
+    """
     settings = inputs.settings
     # The variable is not called `record`, because that is this module's own stage function.
     recorder, video = settings.record, settings.video
@@ -251,6 +258,7 @@ def piece(
         fps=video.fps,
         record=recorder,
         motion=settings.motion,
+        threads=threads,
         name=f"section {job.section.number}",
         documents=inputs.documents(),
         check=check,
@@ -385,18 +393,21 @@ class Underway:
         self.end(Outcome.RAN)
         return row(inputs, job, checks.duration_seconds, kept=False)
 
-    def record(self, opened: browser.Chromium, chunk: Chunk, check: Callable[[], None]) -> SectionRecording | None:
+    def record(
+        self, opened: browser.Chromium, chunk: Chunk, check: Callable[[], None], *, threads: int
+    ) -> SectionRecording | None:
         """Record one chunk, and when it is the section's last, join, measure and judge the section.
 
         Gives back the section's row from the recorder that finished it, and None from every other.
         `check` raises when the section should stop, which the recorder asks before every frame.
+        `threads` is the encode's thread count for every chunk of the run.
         """
         with within(stage=Stage.RECORD, section=self.job.section.number):
             self.begin()
             try:
                 if self.job.section.rendered:
                     return self.finish(lambda draft: rendered_section(self.inputs, self.job, draft))
-                made = piece(self.inputs, opened, self.job, chunk, self.piece_path(chunk), check)
+                made = piece(self.inputs, opened, self.job, chunk, self.piece_path(chunk), check, threads=threads)
                 if not self.add(made):
                     return None
                 return self.finish(
@@ -524,6 +535,7 @@ def record(
     todo = [job for job in planned if _decided(job, force=force, named=named)]
     recorder = inputs.settings.record
     workers = automatic(recorder.concurrency)
+    threads = encode_threads(recorder.encode_threads, cpus=available_cpus(), workers=workers)
     sections, chunks = underway(inputs, run, todo, workers)
     allowed = run_deadline(chunks, workers, recorder)
     ends = time.monotonic() + allowed
@@ -546,7 +558,7 @@ def record(
                     hint=STOPPED_HINT,
                 )
 
-        return sections[chunk.section].record(opened, chunk, check)
+        return sections[chunk.section].record(opened, chunk, check, threads=threads)
 
     rows: list[SectionRecording] = []
     total = len(planned)

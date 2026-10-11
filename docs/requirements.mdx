@@ -163,6 +163,7 @@ the machine rather than the film, so they are machine keys like the ones above.
 | `record.chunk_frames_min` | `50` | Fewest frames `record` puts in one chunk when it splits a section across its recorders. |
 | `record.chunk_startup_seconds` | `0.2` | How long one chunk takes to start on this machine, which `record` weighs against `step_seconds` when it splits a section. |
 | `record.step_seconds` | `0.014` | How long one recorder takes to step its page once on this machine, the capture of its frame included. |
+| `record.encode_threads` | `0` | Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. The frames are the same whatever it is. |
 | `record.page_deadline_seconds` | `15` | Longest one call into a recorded page may take before `record` closes the page and stops with a TOOL error naming the section and the frame. |
 | `record.deadline_slowdown` | `30` | How many times slower than `chunk_startup_seconds` and `step_seconds` a chunk, and the whole run, may record before `record` stops it. |
 | `record.renderer_retries` | `1` | How many more times `record` records a chunk in a fresh page when the page's renderer crashed. |

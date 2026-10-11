@@ -30,6 +30,7 @@ import { frameAt, now, round, run, schedule, start } from "./clock.ts";
 import {
   cueId,
   DONE_ATTR,
+  DUE_SLACK_SECONDS,
   FRAME_STEP_MS,
   LIST_SEPARATOR,
   MILLISECONDS,
@@ -164,7 +165,8 @@ export function buildSlide(scene: Scene, slide: Slide): HTMLElement {
 function mount(scene: Scene, slide: Slide, held: ReadonlySet<string> | null, at: number | null): HTMLElement {
   const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
   const el = buildSlide(scene, slide);
-  const mounted = prepare(el, slide, { frozen, recorded: signalled, held, words: state.words, at: cueAt });
+  const opens = at === null ? NOTHING : opening();
+  const mounted = prepare(el, slide, { frozen, recorded: signalled, held, opens, words: state.words, at: cueAt });
   typeset(el, slide.id);
   state.slide = slide;
   state.mounted = mounted;
@@ -186,6 +188,19 @@ function mount(scene: Scene, slide: Slide, held: ReadonlySet<string> | null, at:
     }
   }
   return el;
+}
+
+/** No cue at all, which is what a slide mounted after the section's start opens on. */
+const NOTHING: ReadonlySet<string> = new Set();
+
+/**
+ * The cues this page plays at the section's start, which the slide mounted there opens on.
+ *
+ * A cue is at the start when nothing comes before it on the section clock, which is the cue
+ * resolution's own clamp for a phrase that has no onset of its own.
+ */
+function opening(): ReadonlySet<string> {
+  return new Set(state.cues.filter((cue) => cue.at <= DUE_SLACK_SECONDS).map((cue) => cue.id));
 }
 
 /** Take the outgoing slide off once the incoming one has finished arriving, and never before. */

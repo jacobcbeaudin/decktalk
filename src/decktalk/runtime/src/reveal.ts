@@ -59,6 +59,12 @@ type Playing = {
   /** Whether the recorder steps the clock, which a pane clip draws frame by frame under. */
   readonly recorded: boolean;
   readonly held: ReadonlySet<string> | null;
+  /**
+   * The cues due at the section's start, whose arrivals the section opens on. There is no frame before
+   * the first, and an entrance born on a frame draws nothing on it, so each of these arrives as a cut,
+   * the way the first slide does, and the section's first frame shows it.
+   */
+  readonly opens: ReadonlySet<string>;
   readonly words: readonly Spoken[] | null;
   /** The second a cue id is due, which is how a motion learns its own length, or null when unknown. */
   readonly at: (cue: string) => number | null;
@@ -232,6 +238,9 @@ function actionFor(
   return arrival(el, cue, slide, playing, onLeave);
 }
 
+/** The entrance an arrival due at the section's start plays, which is none, as the first slide's is. */
+const OPENING_ENTRANCE = "cut";
+
 /** What an arrival does, which is the entrance, the stagger it may spread, and the text effects. */
 function arrival(
   el: HTMLElement,
@@ -240,19 +249,20 @@ function arrival(
   playing: Playing,
   onLeave: (stop: () => void) => void,
 ): Action {
-  const style = entranceOf(el);
-  const seconds = entranceSeconds(el);
+  const opens = playing.opens.has(cue) && !playing.frozen;
+  const style = opens ? OPENING_ENTRANCE : entranceOf(el);
+  const seconds = opens ? 0 : entranceSeconds(el);
   const step = staggerSeconds(el);
   const text = fallback(el);
   return {
     attr: ATTR.in,
     run: () => {
-      if (step === null) show(el, style, seconds, cue);
+      if (step === null) show(el, style, seconds, cue, playing.frozen);
       else {
         [...el.children].forEach((child, at) => {
           const one = child as HTMLElement;
-          one.style.animationDelay = `${step * at}s`;
-          show(one, style, seconds, cue);
+          one.style.animationDelay = `${opens ? 0 : step * at}s`;
+          show(one, style, seconds, cue, playing.frozen);
         });
       }
       const counted = countOf(el);
@@ -273,12 +283,18 @@ function arrival(
  * never left to the animation's end event. The browser sends that event from a frame it draws on its
  * own wall clock, so a recorder that reached a frame by its index and one that stepped every frame
  * before it would find the class on or off by chance when a later cue steps the element back.
+ *
+ * A still is the page once every length has run out, which is past the second the clock takes the
+ * entrance off, so a still never puts it on. Left on, its finished animation would hold the element
+ * at full strength over a later step back, and a still would never show one.
  */
-function show(el: HTMLElement, style: string, seconds: number, cue: string): void {
+function show(el: HTMLElement, style: string, seconds: number, cue: string, frozen: boolean): void {
   const entrance = styleClass("in", style);
   el.classList.remove(CLASS.hidden);
   span(el, seconds);
-  el.classList.add(CLASS.shown, entrance);
+  el.classList.add(CLASS.shown);
+  if (frozen) return;
+  el.classList.add(entrance);
   const played = el.getAnimations().find((one) => one instanceof CSSAnimation && one.animationName === entrance);
   const ends = played?.effect?.getComputedTiming().endTime;
   if (typeof ends !== "number") return;

@@ -136,6 +136,15 @@ def test_chunks_are_handed_out_dearest_first_across_every_section():
     assert [chunk.steps for chunk in order if chunk.section == 5] == [75.0] * 4, "a still section is cheap a frame"
 
 
+@pytest.mark.parametrize(
+    ("requested", "cpus", "workers", "want"),
+    [(0, 18.0, 4, 4), (0, 8.0, 4, 2), (0, 2.0, 4, 1), (0, 3.5, 1, 3), (6, 18.0, 4, 6)],
+)
+def test_each_encode_gets_its_share_of_the_cpus_unless_the_machine_names_a_number(requested, cpus, workers, want):
+    """Zero shares the CPUs among the recorders at once, at least one thread each, and a number names itself."""
+    assert pool.encode_threads(requested, cpus=cpus, workers=workers) == want
+
+
 def test_the_run_deadline_is_its_chunks_spread_over_the_recorders_plus_the_longest_times_the_slowdown():
     """Handed out longest first, the chunks end within their spread plus the longest, which the deadline scales."""
     record = replace(

@@ -16,11 +16,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.test_runtime import MARKUP_SCENE, deck
+from contract.test_runtime import MARKUP_SCENE, deck, stepped
 from decktalk.findings import Code
 from decktalk.media.origin import Allowed, page_url, route_pages
 from decktalk.media.pages import DEADLINE_SECONDS
-from decktalk.page import REPORT
+from decktalk.page import ATTENTION, BACK_OPACITY, REPORT
 from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
 from support.browser_pages import Tab, chromium_tab, opened, settled, write_page
 
@@ -280,6 +280,53 @@ def test_freeze_at_and_before_one_cue(page, errors, tmp_path):
     assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
     assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
     assert not errors
+
+
+RETURNS = """
+<style>
+  .panel { position: absolute; left: 120px; top: 360px; width: 820px; height: 280px; background: #222 }
+  .code { position: absolute; left: 1000px; top: 360px; width: 800px; height: 280px; background: #222 }
+</style>
+<div data-scene="4" data-name="Returns">
+  <template data-slide="4.4">
+    <div class="panel" data-in="formula" data-in-style="fade" data-back="code" data-front="waited"
+         data-describe="the formula"></div>
+    <div class="code" data-in="code" data-in-style="rise" data-describe="the code"></div>
+  </template>
+</div>
+"""
+"""A panel that fades in, steps back when a second arrives beside it, and returns to the front on a cue of its own."""
+
+RETURNS_CUES = "4.4:formula@0.05,4.4:code@0.4,4.4:waited@1.2"
+"""When each cue of the returning panel is due, each a whole attention span after the one before it."""
+
+SETTLED_SECONDS = 0.1
+"""How long past the end of a span a recorded frame is taken, so the frame is the state the span lands in."""
+
+
+@pytest.mark.parametrize(
+    ("cue", "due", "span", "opacity"),
+    [
+        pytest.param("4.4:code", 0.4, ATTENTION["back"].seconds, BACK_OPACITY, id="stepped back"),
+        pytest.param("4.4:waited", 1.2, ATTENTION["front"].seconds, 1.0, id="returned"),
+    ],
+)
+def test_a_still_draws_the_page_as_the_recorded_frame_at_its_second_draws_it(page, tmp_path, cue, due, span, opacity):
+    """A still after a step back or a return shows the panel as the film shows it once the span has landed.
+
+    `check`, `storyboard`, the poster and the caption bands all draw stills, so a return a still never
+    drew would be a cue `check` measured as no change at all while the film played it plainly.
+    """
+    url = write_page(tmp_path, "returns.html", RETURNS)
+    panel = "() => getComputedStyle(document.querySelector('.panel')).opacity"
+    opened(page, f"{url}?scene=4&t0=signal&cues={RETURNS_CUES}")
+    stepped(page, due + span + SETTLED_SECONDS)
+    assert float(page.evaluate(panel)) == pytest.approx(opacity)
+    recorded = page.screenshot()
+
+    settled(page, f"{url}?freeze=4.4&after={cue}")
+    assert float(page.evaluate(panel)) == pytest.approx(opacity)
+    assert page.screenshot() == recorded
 
 
 def starter_deck(page: Page, tmp_path: Path) -> str:

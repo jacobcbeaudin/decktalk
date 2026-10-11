@@ -542,6 +542,22 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_RENDERER_RETRIES"
         },
+        "encode_threads": {
+          "description": "Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. Every piece of a run is encoded with the same number, and the frames are the same whatever it is.",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 64,
+          "x-range": "must be between 0 and 64",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of megabytes and buys no speed, because the encode is never what a recording waits on.",
+          "x-see-also": [
+            "record.concurrency"
+          ],
+          "x-environment": "DECKTALK_RECORD_ENCODE_THREADS"
+        },
         "skip_still": {
           "description": "Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes.",
           "type": "boolean",
@@ -550,7 +566,6 @@
           "x-scope": "project",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "A page that changes its picture outside what DeckTalk knows of, such as through its style sheet's object model or inside a shadow root, records the frame before until something it knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off.",
           "x-environment": "DECKTALK_RECORD_SKIP_STILL"
         }
       },

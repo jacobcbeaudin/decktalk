@@ -35,10 +35,13 @@ than it would keep busy records slower and never differently, because the record
 MOST_AT_ONCE = 4
 """Calibration: the most recorders an automatic choice runs at once, because each one is a Chromium in memory.
 
-Four recordings held about 900 MB beside each other, which is what a small render worker can spare,
-and a machine with more to give says so through `[record] concurrency`.
+Each recorder is a Chromium, its Playwright driver and a lossless encode. Four recordings of the
+lesson with x264 choosing its own threads peaked at 4.4 GB beside each other on an 18 core Mac at a
+load of 12, 2.3 GB of it the encodes, and one such encode of 120 frames took 605 MB where the same
+encode on four threads took 253 MB with the same frames. `[record] encode_threads` gives each encode
+its share of the CPUs for that reason, and a machine with more memory to give says so through
+`[record] concurrency`.
 """
-
 
 CGROUP_V2_MAX = Path("/sys/fs/cgroup/cpu.max")
 """Truth: where a cgroup v2 container states its CPU quota and period, or `max` for none."""
@@ -91,6 +94,16 @@ def at_once(requested: int, *, cpus: float) -> int:
     `requested` is `[record] concurrency`, and zero asks this function to choose.
     """
     return max(1, requested or min(MOST_AT_ONCE, int(cpus // CPUS_PER_RECORDING)))
+
+
+def encode_threads(requested: int, *, cpus: float, workers: int) -> int:
+    """How many threads each recorder's lossless encode runs on: what the machine asked for, or its share of the CPUs.
+
+    `requested` is `[record] encode_threads`, and zero asks for this process's CPUs shared among the
+    `workers` recorders at once, at least one each. The answer is the same for every piece of a run,
+    so the pieces of a section are written with the same parameters and join without an encode.
+    """
+    return requested or max(1, int(cpus // workers))
 
 
 def automatic(requested: int) -> int:
@@ -195,5 +208,6 @@ __all__ = [
     "available_cpus",
     "chunk_count",
     "chunked",
+    "encode_threads",
     "run_deadline",
 ]

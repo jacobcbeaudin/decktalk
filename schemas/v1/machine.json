@@ -208,6 +208,22 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_RENDERER_RETRIES"
+        },
+        "encode_threads": {
+          "description": "Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. Every piece of a run is encoded with the same number, and the frames are the same whatever it is.",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 64,
+          "x-range": "must be between 0 and 64",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of megabytes and buys no speed, because the encode is never what a recording waits on.",
+          "x-see-also": [
+            "record.concurrency"
+          ],
+          "x-environment": "DECKTALK_RECORD_ENCODE_THREADS"
         }
       },
       "additionalProperties": false

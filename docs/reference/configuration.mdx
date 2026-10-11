@@ -50,7 +50,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.page_policy`, `record.programs`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `record.page_deadline_seconds`, `record.deadline_slowdown`, `record.renderer_retries`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.page_policy`, `record.programs`, `record.concurrency`, `record.chunk_frames_min`, `record.chunk_startup_seconds`, `record.step_seconds`, `record.page_deadline_seconds`, `record.deadline_slowdown`, `record.renderer_retries`, `record.encode_threads`, `elevenlabs.base_url`, `dtsp.base_url`, `dtsp.handshake_seconds`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -147,6 +147,7 @@ These keys tune how `record` opens each page section in headless Chromium and st
 | `page_deadline_seconds` | number | `15.0` | must be between 1 and 600 | seconds | machine |  | Longest one call into a recorded page may take before `record` closes the page and stops the section with a TOOL error naming the frame it was stuck at: a load, a step, a capture or a report. It is many times the longest a step measures, so only a page that stopped answering reaches it, such as one that spins its main thread or waits on a font or an image that never arrives. |
 | `deadline_slowdown` | number | `30.0` | must be between 1 and 10000 |  | machine |  | How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks take spread over the recorders, plus its longest chunk, so a page that answers every call and never gets on still ends with a TOOL error. |
 | `renderer_retries` | integer | `1` | must be between 0 and 5 |  | machine |  | How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or its page was closed under it. A frame is a function of its index, so a chunk recorded again is the same frames. |
+| `encode_threads` | integer | `0` | must be between 0 and 64 |  | machine |  | Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. Every piece of a run is encoded with the same number, and the frames are the same whatever it is. |
 | `skip_still` | boolean | `true` | takes any value of its type |  | project |  | Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes. |
 
 <Warning>
@@ -164,7 +165,7 @@ These keys tune how `record` opens each page section in headless Chromium and st
 
 **`record.deadline_slowdown`** A value near one stops a recording that a loaded machine is merely slow to make, because the two calibrations are this machine's speed when it is idle.
 
-**`record.skip_still`** A page that changes its picture outside what DeckTalk knows of, such as through its style sheet's object model or inside a shadow root, records the frame before until something it knows of changes. Such a page draws from a frame hook or declares a loop, or turns this off.
+**`record.encode_threads`** x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of megabytes and buys no speed, because the encode is never what a recording waits on.
 
 </Warning>
 
