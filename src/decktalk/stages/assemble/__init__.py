@@ -207,8 +207,8 @@ def write_landings(inputs: Inputs, rows: list[Rendered], out: Path) -> None:
         log = inputs.recording_log(row.key) if isinstance(row.section, PageSection) else None
         if log is not None:
             off = {cue for number, cue in skipped if number == row.number}
-            sections.append(FilmSection(start=starts[row.number], log=log, skipped=off))
-    out.write_bytes(LANDINGS.dump_json(film_lanes(sections, inputs.root), indent=1))
+            sections.append(FilmSection(start=starts[row.number], log=log, plays=row.panes, skipped=off))
+    out.write_bytes(LANDINGS.dump_json(film_lanes(sections), indent=1))
 
 
 def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:

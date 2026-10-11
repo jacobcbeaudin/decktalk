@@ -37,8 +37,7 @@ class ClipSection:
 
     A missing clip plays a titled slate for `slate_seconds`. With `strict` that is an error,
     unless the section declares `optional`, which is how a project says the slate is the point.
-    `words` names a words
-    file of the speech inside the clip, in seconds after the clip starts, which the captions add.
+    The speech inside the clip is captioned from the words file beside it, `<clip>.words.json`.
     `seamless` says the clip continues the previous section's picture, which verify checks.
     """
 
@@ -47,7 +46,6 @@ class ClipSection:
     chapter: str = ""
     slate_seconds: float = 5.0
     optional: bool = False
-    words: str | None = None
     seamless: bool = False
 
     @property
@@ -313,7 +311,7 @@ def tuning_keys(table: str) -> set[str]:
     return {key.name for key in BY_ID.values() if key.table == table}
 
 
-PATH_KEYS = ("clip", "words", "page", "file", "music", "music_markers", "ambience", "slate", "out")
+PATH_KEYS = ("clip", "page", "file", "music", "music_markers", "ambience", "slate", "out")
 """The text keys of the project tables that name a project file, which `get_path` keeps inside the project."""
 
 

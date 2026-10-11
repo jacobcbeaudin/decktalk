@@ -29,7 +29,6 @@ A clip section names its file and nothing else about the picture. It has no `pag
 number = 4
 chapter = "On camera"
 clip = "media/intro.mp4"          # your video, with its own audio
-words = "media/intro.words.json"  # the speech inside it, for the captions
 slate_seconds = 4                 # how long the slate plays while the file is missing
 ```
 
@@ -39,7 +38,6 @@ slate_seconds = 4                 # how long the slate plays while the file is m
 | `clip` | required | The video file, relative to the project. |
 | `chapter` | the script heading, else `Section N` | The chapter marker's title. |
 | `slate_seconds` | `5.0` | How long the titled slate plays while the file is not there. |
-| `words` | none | A words file for the speech inside the clip, which is what captions it. |
 | `optional` | `false` | Says this section is allowed to play its slate. |
 | `seamless` | `false` | Says the clip opens on the previous section's last picture, which `verify` measures. |
 
@@ -210,9 +208,9 @@ standard library. Add the clip's directory to `.gitignore`, as the example does,
 
 ## Caption the speech inside a clip
 
-The captions are built from the narration's word times, so a clip's own speech is captioned by
-nothing until the section names a words file. A words file is one object with a `words` list, and
-each word carries its span in seconds after the clip starts.
+The captions are built from the narration's word times, so a clip's own speech is captioned from
+the words file beside the clip, `<clip>.words.json`, and by nothing when there is none. A words file
+is one object with a `words` list, and each word carries its span in seconds after the clip starts.
 
 ```json media/intro.words.json
 {
@@ -223,13 +221,14 @@ each word carries its span in seconds after the clip starts.
 }
 ```
 
-Give each word its own punctuation and case, because the captions break where the sentences end. Then
-name the file on the section with `words`, and run `decktalk assemble`.
+Give each word its own punctuation and case, because the captions break where the sentences end. Save
+it beside the clip under the clip's name, as `media/intro.words.json` beside `media/intro.mp4`, and
+run `decktalk assemble`. `decktalk clip` writes this file beside every clip it cuts, and every build
+beside its film.
 
 - A word that starts after the clip's picture ends is left out.
 - A slate has no captions, and neither has a clip with no audio track.
-- A words file the section names and the project has not got is one sentence on the stream, and the
-  clip plays with no captions.
+- A clip with no words file beside it plays with no captions.
 - The transcript page carries the same words as one paragraph, so a reader is not left with a silent
   gap where the clip is.
 
@@ -251,8 +250,9 @@ ends where the next one starts.
 ## Cut a clip out of the film
 
 `decktalk clip` cuts a span of one built page section into its own file. The picture is a run of whole
-frames of `build/sections/NN.mp4` and the sound is that section's take over the same span, so a clip
-is a piece of the film rather than a second render of it.
+frames of `build/sections/NN.mp4` and the sound is the finished film's over the same span, so a clip
+is a piece of the film rather than a second render of it: it carries the voice, the sound a pane clip
+plays there and the score, as the film mixed them.
 
 The clock is the section's own. Zero is where the section starts, and the lead of silence before its
 first word is part of the span like anything else.
@@ -302,14 +302,14 @@ first word is part of the span like anything else.
   </Step>
 
   <Step title="Play it in a clip section">
-    The two files the command wrote are exactly what a clip section takes.
+    A clip section names the clip, and its captions come from the words file the command wrote
+    beside it.
 
     ```toml decktalk.toml
     [[section]]
     number = 4
     chapter = "The opening line again"
     clip = "media/open-line.mp4"
-    words = "media/open-line.words.json"
     ```
 
     Then run `decktalk assemble` and `decktalk verify`.

@@ -36,6 +36,7 @@ from decktalk.media.origin import Allowed, page_url
 from decktalk.media.pagereport import Box, Recording
 from decktalk.page import ENGINE_PATH, T0_SIGNAL, Q
 from decktalk.settings import MotionConfig, RecordConfig
+from decktalk.stages import played_clips
 from decktalk.toolchain.assets import RUNTIME_FILE
 from support.tools import machine_tools
 
@@ -1197,7 +1198,7 @@ def test_a_still_pane_at_a_fraction_of_a_pixel_places_its_clip_s_landings(tmp_pa
     """The canvas is drawn at a sixth, so the pane stands at 1.4 px, 167.2 px wide: a box no rounding keeps whole."""
     allowed = pane_at(tmp_path, "left:8.4px;width:1003.2px;height:540px")
     recording = recorded_pane(allowed, tmp_path / "01.mp4")
-    placed = pane_landings(recording, tmp_path)
+    placed = pane_landings(played_clips(recording, recording.requested_seconds, tmp_path))
     assert placed.unplaced == ()
     assert [(lane.id.split("/")[-1], lane.landings[0].at) for lane in placed.lanes] == [("step", 0.32)]
 
@@ -1214,7 +1215,7 @@ def test_a_pane_carried_away_after_its_clip_has_played_places_its_clip_s_landing
     allowed = pane_at(tmp_path, "width:960px;height:540px", AWAY)
     url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2,1.1:leave@0.6,1.1:gone@0.8", Q.T0: T0_SIGNAL})
     recording = recorded_pane(allowed, tmp_path / "01.mp4", url)
-    placed = pane_landings(recording, tmp_path)
+    placed = pane_landings(played_clips(recording, recording.requested_seconds, tmp_path))
     assert placed.unplaced == ()
     ((lane,),) = [placed.lanes]
     assert lane.box == Box(x=0, y=0, w=160, h=90), "the clip's lanes are drawn into the pane where it stood"
@@ -1224,7 +1225,7 @@ def test_a_pane_carried_away_while_its_clip_plays_places_none_of_its_landings_an
     allowed = pane_at(tmp_path, "width:960px;height:540px", AWAY)
     url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2,1.1:leave@0.3,1.1:gone@0.8", Q.T0: T0_SIGNAL})
     recording = recorded_pane(allowed, tmp_path / "01.mp4", url)
-    placed = pane_landings(recording, tmp_path)
+    placed = pane_landings(played_clips(recording, recording.requested_seconds, tmp_path))
     assert placed.lanes == ()
     assert placed.unplaced == (
         f"deck/steps.mkv: its pane moved at 0.32 s, before its clip ended at {0.2 + CLIP_SECONDS:g} s",
@@ -1240,7 +1241,9 @@ def test_a_pane_recorded_in_pieces_is_judged_still_or_moved_as_one_pass_judges_i
     lane = next(row for row in once.report.motions if row.kind == "clip")
     joined = next(row for row in split.report.motions if row.kind == "clip")
     assert (joined.rest, joined.moved) == (lane.rest, lane.moved) and lane.moved is not None
-    assert pane_landings(split, tmp_path) == pane_landings(once, tmp_path)
+    assert pane_landings(played_clips(split, split.requested_seconds, tmp_path)) == pane_landings(
+        played_clips(once, once.requested_seconds, tmp_path)
+    )
 
 
 # ---- what a film carries of its reveals --------------------------------------------------------------

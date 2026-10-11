@@ -1,6 +1,6 @@
 """Everything a viewer receives beside the picture: captions, chapters, the transcript and the poster.
 
-Captions carry the speech of every page section, the speech inside a clip that names a words file,
+Captions carry the speech of every page section, the speech inside a clip with a words file beside it,
 and one cue per cued sound that names a caption, so a viewer who cannot hear the film still reads
 `[ball bounces]`. The chapters come from the section chapters, and consecutive sections that share
 one chapter share one marker. The transcript is the media alternative: one page with a heading per
@@ -154,53 +154,40 @@ def spoken_cues(words: Sequence[SpokenWord]) -> list[CaptionCue]:
 def clip_words(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[tuple[SpokenWord, ...]]:
     """The words inside every clip the film plays with sound, one list per clip, on the film's clock.
 
-    A clip section's words are the file its `words` key names. A pane clip's are the words file
-    beside it, `<clip>.words.json`, which `decktalk clip` writes beside every clip it cuts and every
-    build writes beside its film, from the pane's cue for as long as the clip plays there. A slate, a
-    clip with no audio and a pane clip with no words file beside it add nothing.
+    Every clip's words are the file beside it, `<clip>.words.json`, which `decktalk clip` writes
+    beside every clip it cuts and every build writes beside its film: a clip section's from its
+    start, and a pane clip's from the pane's cue for as long as the clip plays there. A slate, a clip
+    with no audio and a clip with no words file beside it add nothing.
     """
     starts = rendered_starts(rows)
     found: list[tuple[SpokenWord, ...]] = []
     for row in rows:
         section = row.section
         if isinstance(section, ClipSection):
-            if not section.words or row.audio is None:
-                continue
-            words = inputs.clip_words(section)
-            if words is None:
-                run.note(
-                    f"{section.words} is not there, so section {section.number} plays with no captions.",
-                    level=Level.WARNING,
-                )
-                continue
-            found.append(inner_words(words, starts[row.number], row.seconds))
+            words = inputs.clip_words(section) if row.audio is not None else None
+            if words is not None:
+                found.append(inner_words(words, starts[row.number], row.seconds))
         elif isinstance(section, PageSection):
-            found += _pane_words(inputs, run, row, starts[row.number])
+            found += _pane_words(run, row, starts[row.number])
     return [words for words in found if words]
 
 
-def _pane_words(inputs: Inputs, run: Run, row: Rendered, start: float) -> list[tuple[SpokenWord, ...]]:
-    """The words of every pane clip one page section played with sound, from each pane's cue."""
-    log = inputs.recording_log(row.key)
-    if log is None:
-        return []
-    played = min(row.seconds, log.recording.requested_seconds)
+def _pane_words(run: Run, row: Rendered, start: float) -> list[tuple[SpokenWord, ...]]:
+    """The words of every pane clip one page section played with sound, over the span the mix plays its sound."""
     found: list[tuple[SpokenWord, ...]] = []
-    for lane in log.recording.pane_clips():
-        path = inputs.path(lane.clip or "")
-        cue = lane.landings[0].at
-        if cue >= played or not path.is_file() or not ffmpeg.has_audio(path):
+    for play in row.panes:
+        if not play.has_audio:
             continue
         try:
-            words = ClipWords.parse(words_beside(path))
+            words = ClipWords.parse(words_beside(play.path))
         except Unreadable as unread:
             run.note(
-                f"Section {row.number} plays the pane clip {lane.clip}, and {unread}, so its speech has no captions.",
+                f"Section {row.number} plays the pane clip {play.clip}, and {unread}, so its speech has no captions.",
                 level=Level.WARNING,
             )
             continue
         if words is not None:
-            found.append(inner_words(words, start + cue, min(ffmpeg.probe_duration(path), played - cue)))
+            found.append(inner_words(words, start + play.start, play.seconds))
     return found
 
 

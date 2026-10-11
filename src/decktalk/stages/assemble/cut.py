@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import Placement, Placements, Takes
+from decktalk.artifacts import PanePlay, Placement, Placements, Takes
 from decktalk.artifacts.placements import SectionVideoKey
 from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
@@ -39,7 +39,7 @@ from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
-from decktalk.stages import page_seconds, selects
+from decktalk.stages import page_seconds, played_clips, selects
 from decktalk.stages.assemble import slate
 
 log = logging.getLogger(__name__)
@@ -72,6 +72,10 @@ class Rendered:
     substitute: Substitute | None = None
     audio: Path | None = None
     """A clip with its own sound, which is mixed in at the section start."""
+
+    panes: tuple[PanePlay, ...] = ()
+    """Every pane clip the section's page played, over the span the film plays it, which the mix, the
+    captions and the film's landings all read."""
 
     @property
     def key(self) -> str:
@@ -224,7 +228,10 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
         f"{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
     )
     _cut(out, enc, ffmpeg.source(video), chain, (video,), seconds=total)
-    return Rendered(section, out, ffmpeg.probe_duration(out), source)
+    seconds = ffmpeg.probe_duration(out)
+    log = inputs.recording_log(section.key)
+    panes = () if log is None else played_clips(log.recording, seconds, inputs.root)
+    return Rendered(section, out, seconds, source, panes=panes)
 
 
 def page_target(takes: Takes, section: PageSection, fps: int) -> float:

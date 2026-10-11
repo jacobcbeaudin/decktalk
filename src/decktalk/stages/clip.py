@@ -1,11 +1,12 @@
 """A span of one built section, cut into its own file with its own sound and its own words.
 
-    decktalk clip 3 --start 4 --end 9 --out media/answer.mp4
+    decktalk clip --section 3 --start 4 --end 9 --out media/answer.mp4
 
-The picture is a run of whole frames of `build/sections/NN.mp4` and the sound is that section's take
-over the same span, so a clip is a piece of the film rather than a second render of it. The words
-file beside it lists every word wholly inside the span, in seconds after the clip starts, which is
-what a `[[section]]` playing this clip needs to caption it.
+The picture is a run of whole frames of `build/sections/NN.mp4` and the sound is the finished film's
+over the same span, so a clip is a piece of the film rather than a second render of it: it carries
+the narration, every turn of a dialogue, the sound a pane clip plays and the score, as the film mixed
+them. The words file beside it lists every word wholly inside the span, in seconds after the clip
+starts, which is what a `[[section]]` playing this clip needs to caption it.
 
 The clock is the section's own: zero is where the section starts, and the silence a section's lead
 puts before its first word is part of the span like anything else. It is read through `words`, so
@@ -49,13 +50,6 @@ WORD_SLACK_SECONDS = 0.001
 
 A span is rounded to whole frames and a word time is rounded to milliseconds, so a word that ends
 exactly where the span does can land a rounding step past it and would otherwise be dropped.
-"""
-
-LEAST_AUDIO_SECONDS = 0.001
-"""Truth: the shortest stretch of a take the trim may ask for, so a span wholly inside the lead still reads.
-
-A trim whose end is its start outputs no samples at all, and the filter chain that follows it then
-has nothing to pad, so the clip would carry no sound track rather than a silent one.
 """
 
 
@@ -176,43 +170,29 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
 
 @dataclass(frozen=True)
 class _Sound:
-    """Where a clip's sound is cut from: a file, how far into it the section starts, and the silence before it."""
+    """Where a clip's sound is cut from: the finished film, and where the section starts in it."""
 
     path: Path
     at: float
     """Where the section's clock starts in `path`, in seconds."""
-    lead: float
-    """The silence the section opens on that `path` does not hold, which is added before the sound."""
 
 
 def _sound_of(inputs: Inputs, number: int) -> _Sound:
-    """Where one section's sound is cut from, or a refusal naming the command that makes it.
+    """The finished film at the section's own place, or a refusal naming the command that makes it.
 
-    A section of one turn is its take, after the lead the take index places before it. A dialogue is
-    its turns joined with their gaps, which is the joined narration at the section's own place, so a
-    clip of it carries every turn.
+    The film's soundtrack is the one mix of everything the section plays, so a clip cut from it sounds
+    as the film does there, and nothing is mixed a second time.
     """
-    takes = inputs.takes(required=True)
-    rows = takes.turns_of(number)
-    if not rows:
+    film = inputs.workspace.film
+    placements = inputs.placements()
+    placed = None if placements is None else next((row for row in placements.sections if row.section == number), None)
+    if not film.is_file() or placed is None:
         raise NotBuiltError(
-            f"section {number} has no take in {inputs.relative(inputs.workspace.takes_path)}.",
-            hint=Artifact.TAKES.next_step,
-            location=at(inputs.workspace.takes_path, inputs.root, section=number),
+            f"section {number} has no place in a finished film at {inputs.relative(film)}.",
+            hint=Artifact.FINAL.next_step,
+            location=at(film, inputs.root, section=number),
         )
-    if len(rows) == 1:
-        source = inputs.take_places.find(rows[0].digest).audio
-        sound = _Sound(path=source, at=0.0, lead=rows[0].lead_seconds)
-    else:
-        source = inputs.workspace.narration_path
-        sound = _Sound(path=source, at=takes.placed[number].start, lead=0.0)
-    if not source.is_file():
-        raise NotBuiltError(
-            f"section {number} names the take {source.name}, which is not on disk.",
-            hint=Artifact.TAKES.next_step,
-            location=at(source, inputs.root, section=number),
-        )
-    return sound
+    return _Sound(path=film, at=placed.start)
 
 
 def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds: float, fps: int) -> _Span:
@@ -260,20 +240,16 @@ def _render(inputs: Inputs, video: Path, sound: _Sound, film: Path, *, span: _Sp
     """Cut the picture and the sound of one span into one file, in a single pass.
 
     The picture passes through the frame rate filter before the hold, because ffmpeg clones only two
-    frames after a trim otherwise, and the sound is moved to where the span starts so that a span
-    opening inside the section's lead opens on the silence the film has there.
+    frames after a trim otherwise, and the sound is the film's from the section's place plus the span.
     """
     rate = inputs.settings.audio.sample_rate
-    lead, source = sound.lead, sound.path
-    head = max(0.0, lead - span.first_seconds)
-    begins = sound.at + max(0.0, span.first_seconds - lead)
-    ends = max(begins + LEAST_AUDIO_SECONDS, sound.at + span.last_seconds - lead)
+    begins = sound.at + span.first_seconds
+    ends = sound.at + span.last_seconds
     played = span.last_seconds - span.first_seconds
     fade_out_at = max(played - EDGE_FADE_SECONDS, 0.0)
     total = span.total_seconds
     heard = (
-        f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
-        f"adelay=delays={round(head * rate)}S:all=1,volume={gain_db:g}dB,"
+        f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,volume={gain_db:g}dB,"
         f"afade=t=in:d={EDGE_FADE_SECONDS},afade=t=out:st={fade_out_at:.6f}:d={EDGE_FADE_SECONDS},"
         f"apad=whole_dur={total:.6f},atrim=duration={total:.6f}[a]"
     )
@@ -283,7 +259,7 @@ def _render(inputs: Inputs, video: Path, sound: _Sound, film: Path, *, span: _Sp
     )
     encoder = Encoder(inputs.settings.video, inputs.settings.audio)
     ffmpeg.run(
-        *ffmpeg.source(video), *ffmpeg.source(source),
+        *ffmpeg.source(video), *ffmpeg.source(sound.path),
         "-filter_complex", f"{picture};{heard}",
         "-map", "[v]", "-map", "[a]", "-r", str(fps), *encoder.venc, *encoder.aenc,
         "-t", f"{total:.6f}", "-movflags", "+faststart", str(film),

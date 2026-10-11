@@ -60,12 +60,12 @@ player draws overlapping cues twice or drops one of them, so a sound that lands 
 joins that caption as a line of its own and a sound that lands in the short gap before one joins the
 cue after it. Only a sound with a whole second to itself keeps a cue of its own.
 
-A clip section captions its own speech when it names a words file with `words`, and nothing captions
-it otherwise, because the captions are built from the narration's word times and a clip's speech is
-not in the narration. A clip in a pane captions its speech from the words file beside it,
-`<clip>.words.json`, which every DeckTalk build writes beside its film and `decktalk clip` beside
-every clip it cuts, so a film DeckTalk built is captioned in a pane as it captioned itself. A pane
-clip with no words file beside it adds no caption. [Play a clip](/guides/clip-section) has the
+A clip captions its own speech from the words file beside it, `<clip>.words.json`, whether it plays
+as a clip section or in a pane, and nothing captions it otherwise, because the captions are built
+from the narration's word times and a clip's speech is not in the narration. Every DeckTalk build
+writes that file beside its film and `decktalk clip` beside every clip it cuts, so a film DeckTalk
+built is captioned in a pane as it captioned itself. A clip with no words file beside it adds no
+caption. [Play a clip](/guides/clip-section) has the
 file's shape.
 
 In a section spoken in more than one voice, `[output] caption_voices = true` names the voice of every

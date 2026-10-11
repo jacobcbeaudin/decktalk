@@ -25,7 +25,6 @@ from decktalk.artifacts import (
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
 from decktalk.inputs import Inputs
-from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.script import estimated_words, parse_script, spoken_words
 from decktalk.pipeline import Artifact
@@ -43,32 +42,6 @@ from support.takes import (
     tail_take_words,
     write_takes,
 )
-
-TITLED_CLIP_TOML = """
-[project]
-name = "t"
-
-[[section]]
-number = 1
-chapter = "Open"
-page = "deck/index.html"
-
-[[section]]
-number = 2
-chapter = "The edit"
-clip = "media/before.mov"
-words = "media/before.words.json"
-
-[[section]]
-number = 3
-chapter = "The edit"
-page = "deck/index.html"
-
-[[section]]
-number = 4
-chapter = "Close"
-page = "deck/index.html"
-"""
 
 MID_CLIP_TOML = """
 [project]
@@ -278,11 +251,11 @@ def test_seamless_parses_on_any_section_but_the_first(tmp_path):
         Inputs.load(write_project(tmp_path, toml.replace("seamless = true", "seamless = 1")), environ={})
 
 
-def test_a_clip_section_reads_its_words_key(tmp_path):
-    titled = Inputs.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={}).document.sections[1]
-    assert isinstance(titled, ClipSection) and titled.words == "media/before.words.json"
-    plain = Inputs.load(write_project(tmp_path, MID_CLIP_TOML), environ={}).document.sections[1]
-    assert isinstance(plain, ClipSection) and plain.words is None
+def test_a_words_key_on_a_clip_section_is_an_unknown_key(tmp_path):
+    """A clip's words are the file beside it, so a section that names one elsewhere is told the key does nothing."""
+    toml = MID_CLIP_TOML.replace('clip = "media/broll.mp4"', 'clip = "media/broll.mp4"\nwords = "media/x.words.json"')
+    loaded = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert any("'words'" in note and "number=2" in note for note in loaded.notes)
 
 
 def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path):
@@ -304,7 +277,6 @@ def test_every_path_key_of_the_document_goes_through_the_one_check(tmp_path):
     base = "[project]\nname = 't'\n\n[[section]]\nnumber = 1\npage = 'deck/index.html'\n"
     cases = {
         "clip": "[[section]]\nnumber = 2\nclip = '/etc/hosts'\n",
-        "words": "[[section]]\nnumber = 2\nclip = 'a.mp4'\nwords = '/etc/hosts'\n",
         "music": "[mix]\nmusic = '/etc/hosts'\n",
         "ambience": "[mix]\nambience = '/etc/hosts'\n",
         "slate": "[mix]\nslate = '/etc/hosts'\n",
@@ -365,10 +337,8 @@ def test_the_artifacts_are_read_off_the_workspace_and_are_none_before_a_build(tm
     assert inputs.recording_log("01") is None
 
 
-LEAD_TOML = MINIMAL_TOML.replace(
-    'clip = "media/open.mp4"', 'clip = "media/open.mp4"\nwords = "media/open.words.json"'
-) + ("\n[narration]\nlead_seconds = 0.5\n")
-"""A project whose page sections open on half a second of silence and whose clip names a words file."""
+LEAD_TOML = MINIMAL_TOML + "\n[narration]\nlead_seconds = 0.5\n"
+"""A project whose page sections open on half a second of silence, with a clip at `media/open.mp4`."""
 
 HELLO = (Word(word="hello", start=0.0, end=0.4),)
 """One word on its take's own clock, before any lead moves it."""
@@ -394,8 +364,8 @@ def test_a_placeholder_answers_the_words_decktalk_estimated_and_says_so(tmp_path
     assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
 
 
-def test_a_clip_section_answers_its_words_file_on_the_clip_own_clock(tmp_path):
-    """A clip has no lead: its words file already runs on the clip's own clock."""
+def test_a_clip_section_answers_the_words_file_beside_its_clip_on_the_clip_own_clock(tmp_path):
+    """A clip's words sit beside it, as `decktalk clip` writes them, and already run on the clip's own clock."""
     inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
     said = tuple(SpokenWord(word=word.word, start=word.start, end=word.end) for word in HELLO)
     ClipWords(words=said).write(tmp_path / "media" / "open.words.json")
@@ -410,7 +380,7 @@ def test_a_clip_words_file_that_does_not_read_is_refused_as_the_author_input(tmp
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(InputError) as refused:
         inputs.words(0)
-    assert refused.value.code is ErrorCode.INPUT and "words names media/open.words.json" in str(refused.value)
+    assert refused.value.code is ErrorCode.INPUT and "media/open.words.json" in str(refused.value)
     assert path.read_text(encoding="utf-8") == "{not json"
 
 
@@ -616,7 +586,6 @@ page = "deck/one.html"
 [[section]]
 number = 2
 clip = "media/broll.mp4"
-words = "media/broll.words.json"
 
 [mix]
 music = "media/bed.mp3"
@@ -635,7 +604,6 @@ def test_the_origin_serves_the_deck_and_the_files_the_document_declares(tmp_path
     assert inputs.served_paths() == (
         "deck",
         "media/broll.mp4",
-        "media/broll.words.json",
         "media/bed.mp3",
         "media/slate.png",
         "media/chime.wav",
@@ -681,7 +649,7 @@ def test_a_declared_name_that_folds_to_the_project_root_is_never_offered(tmp_pat
         'slate = "media/slate.png"', 'slate = "./media/slate.png"'
     )
     served = Inputs.load(write_project(tmp_path, toml), environ={}).served_paths()
-    assert served == ("deck", "media/broll.mp4", "media/broll.words.json", "media/slate.png", "media/chime.wav")
+    assert served == ("deck", "media/broll.mp4", "media/slate.png", "media/chime.wav")
 
 
 # ---- every path the project names stays inside it ----------------------------------------------

@@ -131,7 +131,7 @@ def decoded(inputs: Inputs) -> Decoded:
 
 def checked(inputs: Inputs, run: Run, opted: set[tuple[int, str]]) -> tuple:
     """Both passes of the cue loop over the one cue the test film declares."""
-    planned = planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], opted)
+    planned = planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], opted, {})
     return cue_checks(inputs, run, inputs.workspace.film, planned, decoded(inputs))
 
 
@@ -260,7 +260,7 @@ def test_a_cue_fitted_between_its_neighbours_is_a_detail_that_says_nothing_is_wr
     inputs = assembled({1: {"1.1:a": 2.0, "1.1:b": 2.3}})
     lines: list[Event] = []
     with opened(inputs.root) as run, run.machine.events.subscribe(lines.append):
-        planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], set())
+        planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], set(), {})
     notes = [line for line in lines if isinstance(line, RunLog)]
     assert notes and all(line.level is Level.DEBUG for line in notes)
     assert notes[0].message[0].isupper()

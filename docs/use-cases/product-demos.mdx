@@ -30,8 +30,8 @@ section that shows it. Nothing else is recorded again, and nothing else is voice
 | `deck/index.html` | The title cards, the callouts and the closing card. |
 
 A section is a page section, which names a `page` and a `scene`, a clip section, which names a
-`clip` file instead, or a render section, whose picture a program you name draws. A clip section may also name a `words` file of the speech inside it, so
-the captions carry those words too, and `seamless = true` says the clip continues the previous
+`clip` file instead, or a render section, whose picture a program you name draws. A clip with a words file beside it, `<clip>.words.json`, has
+the captions carry the speech inside it too, and `seamless = true` says the clip continues the previous
 section's picture, which `verify` then measures at the seam.
 
 An effect lands on a cue through a `[[mix.effect]]` row, which names a `file`, a `section`, a `cue`

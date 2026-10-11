@@ -109,6 +109,27 @@ def inside(lane: MotionLane, pane: Box, frame: tuple[int, int]) -> MotionLane:
 
 
 @dataclass(frozen=True)
+class PanePlay:
+    """One pane clip as the film plays it: its lane, its file, the second it starts and how long it plays.
+
+    `start` is the pane's cue on the section's clock and `seconds` runs until the clip ends or its
+    section stops, whichever comes first, so the mix, the captions and verify all hear, read and
+    measure one span. `has_audio` says whether the clip carries sound for the mix and the captions.
+    """
+
+    lane: MotionLane
+    path: Path
+    start: float
+    seconds: float
+    has_audio: bool
+
+    @property
+    def clip(self) -> str:
+        """The project file the pane played, as the page named it."""
+        return self.lane.clip or ""
+
+
+@dataclass(frozen=True)
 class PaneLandings:
     """The landings inside every pane clip one recording played, and why any clip's landings could not be placed."""
 
@@ -116,46 +137,45 @@ class PaneLandings:
     unplaced: tuple[str, ...]
 
 
-def pane_landings(recording: Recording, root: Path) -> PaneLandings:
-    """Every landing a pane clip carries beside it, moved onto the section's clock and into its pane.
+def pane_landings(plays: Iterable[PanePlay]) -> PaneLandings:
+    """Every landing a played pane clip carries beside it, moved onto the section's clock and into its pane.
 
     A clip's own landings are on its own clock and in its own pixels, as the build that made it or
     the command that made it wrote them. The clip starts on its cue and fills its pane, so a landing
     moves by the cue's second and its box into the pane where it stood from the cue. Every landing of
-    the clip falls between its cue and its end, so the pane need hold still only while the clip plays
-    and may move with the camera once it has played. A pane that moved before its clip ended has no
-    one box to move them into, and a landings file that does not read as lanes has nothing to move, so
-    each is said rather than measured.
+    the clip falls between its cue and the end of the span it plays, so the pane need hold still only
+    while the clip plays and may move with the camera once it has played. A pane that moved before its
+    clip ended has no one box to move them into, and a landings file that does not read as lanes has
+    nothing to move, so each is said rather than measured.
     """
     lanes: list[MotionLane] = []
     unplaced: list[str] = []
-    for lane in recording.pane_clips():
-        clip = root / (lane.clip or "")
-        written = landings_of(clip)
+    for play in plays:
+        lane = play.lane
+        written = landings_of(play.path)
         if not written.is_file():
             continue
         try:
             own = LANDINGS.validate_json(written.read_bytes())
         except ValidationError as unread:
             unplaced.append(
-                f"{lane.clip}: its landings file is not in the shape of lanes ({unread.error_count()} problems)"
+                f"{play.clip}: its landings file is not in the shape of lanes ({unread.error_count()} problems)"
             )
             continue
         try:
-            frame, seconds = ffmpeg.probe_size(clip), ffmpeg.probe_duration(clip)
+            frame = ffmpeg.probe_size(play.path)
         except ToolError as cannot:
-            unplaced.append(f"{lane.clip}: {cannot}")
+            unplaced.append(f"{play.clip}: {cannot}")
             continue
-        start = lane.landings[0].at
-        end = round(start + seconds, SECOND_DIGITS)
+        end = round(play.start + play.seconds, SECOND_DIGITS)
         if lane.rest is None:
-            unplaced.append(f"{lane.clip}: its pane was never seen while its clip played")
+            unplaced.append(f"{play.clip}: its pane was never seen while its clip played")
             continue
         if lane.moved is not None and lane.moved < end:
-            unplaced.append(f"{lane.clip}: its pane moved at {lane.moved:g} s, before its clip ended at {end:g} s")
+            unplaced.append(f"{play.clip}: its pane moved at {lane.moved:g} s, before its clip ended at {end:g} s")
             continue
         lanes += [
-            inside(later(row, start), lane.rest, frame).model_copy(
+            inside(later(row, play.start), lane.rest, frame).model_copy(
                 update={"id": f"{lane.id}/{row.id}", "clip": lane.clip}
             )
             for row in own
@@ -170,18 +190,19 @@ def inner(lane: MotionLane) -> bool:
 
 @dataclass(frozen=True)
 class FilmSection:
-    """One recorded section of a film as its landings file reads it: where it starts and the cues verify skips.
+    """One recorded section of a film as its landings file reads it: where it starts, its pane clips and its skips.
 
-    `skipped` is the cues `cues.json` marks `"verify": false` in the section, which verify measures
-    nothing at.
+    `plays` is every pane clip the section played, as the film plays it. `skipped` is the cues
+    `cues.json` marks `"verify": false` in the section, which verify measures nothing at.
     """
 
     start: float
     log: RecordingLog
+    plays: tuple[PanePlay, ...]
     skipped: Set[str]
 
 
-def film_lanes(sections: Iterable[FilmSection], root: Path) -> tuple[MotionLane, ...]:
+def film_lanes(sections: Iterable[FilmSection]) -> tuple[MotionLane, ...]:
     """Every landing a film's verify measures, on the film's own clock, as the lanes the film carries beside itself.
 
     That is every lane its sections reported, every landing inside their pane clips, and every reveal
@@ -192,7 +213,7 @@ def film_lanes(sections: Iterable[FilmSection], root: Path) -> tuple[MotionLane,
     lanes: list[MotionLane] = []
     for section in sections:
         report = section.log.recording.report
-        drawn = (*report.motions, *pane_landings(section.log.recording, root).lanes, *report.reveals)
+        drawn = (*report.motions, *pane_landings(section.plays).lanes, *report.reveals)
         # A lane inside a pane clip lands on the clip's own cues, which no `cues.json` of this film names.
         measured = [
             lane.model_copy(
@@ -211,6 +232,7 @@ __all__ = [
     "FilmSection",
     "Luma",
     "PaneLandings",
+    "PanePlay",
     "RecordingChecks",
     "RecordingLog",
     "film_lanes",

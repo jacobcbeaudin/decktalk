@@ -188,8 +188,8 @@ hold_seconds = 2      # the page plays on 2 seconds before section 5
 ```
 
 A page may load only what this file declares. Every page is opened at a local origin that answers
-for the directory each `page` sits in and for the files the document names, which are each clip and
-its `words`, every `[mix]` file, every `[[mix.effect]]` file and every `[score]` `out`. Every
+for the directory each `page` sits in and for the files the document names, which are each clip,
+every `[mix]` file, every `[[mix.effect]]` file and every `[score]` `out`. Every
 other file in the project is refused, so the script, the cue file, `build/` and `.env` stay out of a
 page's reach. A declared file is reached by the spelling written here and by no other, so
 `media/Theme.mp3` does not answer a request for `media/theme.mp3` on any platform. A declared
@@ -240,10 +240,10 @@ of its cues.
 | `clip` | path | required | Your own video file. It keeps its own audio. |
 | `slate_seconds` | number | `5` | How long the titled slate plays when the file is not there. |
 | `optional` | boolean | `false` | A missing file is expected here for now, so `decktalk status` raises no `FILE_MISSING` for it and `Project.assemble(strict=True)` plays the slate rather than refusing. Delete the line once the clip is there. |
-| `words` | path | none | A words file of the speech inside the clip, in seconds after the clip starts, which the captions add. |
 
 A clip whose file is not there plays a titled slate for `slate_seconds`, and `decktalk status`
-raises `FILE_MISSING` unless the section sets `optional`. The voice never reads a clip section, so it
+raises `FILE_MISSING` unless the section sets `optional`. The speech inside a clip is captioned from
+the words file beside it, `<clip>.words.json`. The voice never reads a clip section, so it
 needs no heading in the script and it is never voiced. A clip between two page sections pauses the
 narration, which resumes with the next page section. DeckTalk scales and pads the clip to the frame
 size, matches its sound to the narration's loudness, and the chapters include it.

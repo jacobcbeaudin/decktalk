@@ -50,6 +50,7 @@ from decktalk.artifacts import (
     file_digest,
     is_placeholder,
     on_section_clock,
+    words_beside,
 )
 from decktalk.artifacts.stills import Stills, still_key
 from decktalk.errors import InputError, NotBuiltError
@@ -356,22 +357,20 @@ class Inputs:
         return current_text(self.cues_path)
 
     def clip_words(self, section: ClipSection) -> ClipWords | None:
-        """The words file a clip section's `words` key names, or None when it names none or it is not there.
+        """The words file beside a clip section's clip, `<clip>.words.json`, or None when it is not there.
 
-        The author wrote that file, or kept the one `decktalk clip` wrote, so DeckTalk cannot build it
-        again. One that does not read is refused as `INPUT`, naming the key that named it, and nothing
-        here deletes it.
+        `decktalk clip` writes it beside every clip it cuts and every build beside its film, and an
+        author may write one beside a clip of their own, so DeckTalk cannot build it again. One that
+        does not read is refused as `INPUT`, and nothing here deletes it.
         """
-        if not section.words:
-            return None
-        path = self.path(section.words)
+        path = words_beside(self.path(section.clip))
         try:
             return ClipWords.parse(path)
         except Unreadable as unread:
+            name = self.relative(path).as_posix()
             raise InputError(
-                f"{PROJECT_FILE}: [[section]] number={section.number} words names {section.words}, and {unread}",
-                hint=f"Fix {section.words}, write it again with decktalk clip, or take the words key off "
-                f"section {section.number} in {PROJECT_FILE}.",
+                f"{name}, the words beside the clip of section {section.number}, does not read: {unread}",
+                hint=f"Fix {name}, or write it again with decktalk clip.",
                 location=at(path, self.root, section=section.number),
             ) from unread
 
@@ -434,10 +433,10 @@ class Inputs:
 
         A page section answers every turn's words in turn order on one clock, as `turn_words` places
         them, as `EstimatedWords` when any turn's are estimated and as plain `Words` otherwise, whether
-        it has one turn or several. A clip section answers the words file its
-        `words` key names, which already runs on the clip's own clock, and one that does not read is
-        refused as `INPUT`. No take index, no row, or no such section answers an empty `Words`. Every
-        answer is a copy for reading, which no writer puts on disk.
+        it has one turn or several. A clip section answers the words file beside its clip, which
+        already runs on the clip's own clock, and one that does not read is refused as `INPUT`. No
+        take index, no row, or no such section answers an empty `Words`. Every answer is a copy for
+        reading, which no writer puts on disk.
         """
         found = self.document.section(number)
         if isinstance(found, ClipSection):
@@ -572,7 +571,6 @@ class Inputs:
         document = self.document
         named: list[str] = [Path(page).parent.as_posix() for page in document.page_files]
         named += [section.clip for section in document.clip_sections]
-        named += [section.words for section in document.clip_sections if section.words]
         mix = document.mix
         named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
         named += [effect.file for effect in mix.effects]

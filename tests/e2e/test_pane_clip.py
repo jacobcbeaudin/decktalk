@@ -193,3 +193,38 @@ def test_the_recording_log_names_the_clip_it_played_and_keys_the_section_on_it(b
     assert lane["clip"] == CLIP
     assert CLIP in log["recording"]["assets"]
     assert f"file:{CLIP}" in log["made_from"]
+
+
+def clip_samples(clip: Path) -> np.ndarray:
+    """A clip's soundtrack as one mono channel of floats."""
+    raw = ffmpeg.raw(*ffmpeg.source(clip), "-ac", "1", "-ar", str(RATE), "-f", "f32le", "-")
+    return np.frombuffer(raw, dtype="<f4")
+
+
+CLIP_LEAD_SECONDS = 0.5
+"""How long before the pane's cue the cut opens, so the cut holds the cue rather than starting on it."""
+
+CLIP_TONE_SECONDS = 2.0
+"""How much of the pane clip's three seconds the cut holds after the cue."""
+
+CUT_LEVEL_RATIO = 0.5
+"""How much of the tone's level in the film the cut may lose and still be the same sound, after one more encode."""
+
+
+def test_a_cut_of_the_section_keeps_the_pane_clip_s_sound(built) -> None:
+    """A cut is a piece of the film, so the tone the pane plays in the film plays in the cut at the same place."""
+    root, _made, _verified = built
+    placements = json.loads((root / "build" / "final" / "placements.json").read_text(encoding="utf-8"))
+    (section,) = placements["sections"]
+    play = cue_second(root, "1.1:play") - section["start"]
+    start, end = play - CLIP_LEAD_SECONDS, play + CLIP_TONE_SECONDS
+    cut = decktalk(
+        "--project", str(root), "clip", "--section", "1", "--start", f"{start:.3f}", "--end", f"{end:.3f}",
+        "--out", "media/cut.mp4", cwd=root.parent,
+    )  # fmt: skip
+    assert cut["ok"], cut
+    heard = clip_samples(root / "media" / "cut.mp4")
+    offset = cut["start_seconds"]
+    in_film = tone_level(samples(root), section["start"] + play + 0.1, section["start"] + play + 1.9)
+    in_cut = tone_level(heard, play - offset + 0.1, play - offset + 1.9)
+    assert in_cut > CUT_LEVEL_RATIO * in_film, (in_cut, in_film)

@@ -9,17 +9,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Words
+from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Words, words_beside
 from decktalk.captions import CAPTION_MAX_CHARS, CaptionCue, Said, srt_text, vtt_text
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
-from decktalk.media import browser, pages
-from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
+from decktalk.media import browser, ffmpeg, pages
+from decktalk.media.pagereport import Box, CueRow, Landing, MeasuredScene, MotionLane, PageReport, Size
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.settings import BY_ID
 from decktalk.stages import storyboard
-from decktalk.stages.assemble.cut import placements_of
+from decktalk.stages.assemble.cut import placements_of, rendered_starts
+from decktalk.stages.assemble.mix import embedded_sounds
 from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
     build_captions,
@@ -41,7 +42,7 @@ from decktalk.stages.assemble.publish import (
     uncaptioned_sounds,
     with_sound_captions,
 )
-from support.pages import write_log
+from support.pages import a_report, write_log
 from support.takes import a_take, narrated
 
 from .conftest import (
@@ -53,6 +54,7 @@ from .conftest import (
     rendered,
     spoken,
     take_index,
+    with_panes,
     write_project,
 )
 
@@ -205,7 +207,7 @@ def test_a_clip_s_speech_is_read_into_the_transcript_in_the_section_it_plays_in(
 
 
 def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path):
-    """The author named the file in decktalk.toml, so DeckTalk cannot build it again and never says to delete it."""
+    """The author keeps the file beside the clip, so DeckTalk cannot build it again and never says to delete it."""
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     path = tmp_path / "media" / "before.words.json"
@@ -215,7 +217,7 @@ def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_
         clip_captions(inputs, open_run(tmp_path).run, rows)
     said = f"{refused.value} {refused.value.hint}"
     assert refused.value.code is ErrorCode.INPUT
-    assert str(refused.value).startswith("decktalk.toml: [[section]] number=2 words names media/before.words.json")
+    assert str(refused.value).startswith("media/before.words.json, the words beside the clip of section 2,")
     assert "the words of one clip: it is not JSON" in str(refused.value)
     assert "elete" not in said
     assert refused.value.location is not None and refused.value.location.file == Path("media/before.words.json")
@@ -247,6 +249,27 @@ def test_a_clip_s_captions_are_one_run_per_voice_and_turn_and_name_nobody() -> N
         (("Hi. Bye.",), "b", 2, False),
     ]
     assert "<v " not in vtt_text(cues)
+
+
+def test_a_pane_clip_s_words_show_over_the_span_the_mix_plays_its_sound(tmp_path, monkeypatch):
+    """The captions and the mix read one span, so a pane clip's words stop where its sound stops."""
+    inputs = write_project(tmp_path, PAGES_TOML)
+    clip = tmp_path / "deck" / "clips" / "film.mp4"
+    clip.parent.mkdir(parents=True)
+    clip.write_bytes(b"film")
+    ClipWords(words=(said("Heard.", 0.2, "a", 1), said("Cut.", 1.7, "a", 1))).write(words_beside(clip))
+    monkeypatch.setattr(ffmpeg, "has_audio", lambda _path: True)
+    monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.0)
+    lane = MotionLane(
+        id="clip-1", kind="clip", box=Box(x=0, y=0, w=960, h=540), size=Size(w=960, h=540), departs=0.8,
+        arrives=2.4, landings=(Landing(cue="2.1:play", kind="depart", at=0.8),), clip="deck/clips/film.mp4",
+    )  # fmt: skip
+    write_log(inputs, 2, report=a_report(motions=[lane]), requested_seconds=2.4, assets=["deck/clips/film.mp4"])
+    rows = with_panes(inputs, rendered(inputs, {1: 2.0, 2: 2.5, 3: 1.5}))
+    (words,) = clip_words(inputs, open_run(tmp_path).run, rows)
+    (sound,) = embedded_sounds(rows, rendered_starts(rows))
+    assert [(word.word, word.start) for word in words] == [("Heard.", 3.0)]
+    assert sound.at == 2.8 and words[-1].end <= sound.at + sound.seconds
 
 
 def test_a_film_s_words_are_its_narration_s_and_every_clip_s_in_the_order_they_start() -> None:
@@ -295,12 +318,12 @@ def test_a_clips_captions_count_from_its_own_start_and_stop_at_its_picture(tmp_p
     assert cues[0].start == 2.0
 
 
-def test_a_clip_whose_words_file_is_missing_is_said_and_plays_uncaptioned(tmp_path):
+def test_a_clip_with_no_words_file_beside_it_plays_uncaptioned(tmp_path):
+    """A clip whose speech nobody wrote down adds no caption, as a pane clip with no words beside it adds none."""
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
     rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
     assert clip_captions(inputs, opened.run, rows) == []
-    assert any("plays with no captions" in note for note in opened.notes())
 
 
 # ---- sound captions ----------------------------------------------------------------------------

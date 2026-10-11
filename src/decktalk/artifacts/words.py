@@ -23,9 +23,8 @@ Only `ProviderWords` is a paid record, refused rather than built again when it d
 carries `audio`, the size and BLAKE3 of the take it was sent with, written in the same atomic step as
 that take. A take's name is the digest of what was asked for, so a truncated or swapped audio file
 keeps a valid name forever, and only this fingerprint tells a damaged copy from a good one, so a
-words file without one does not read. A clip's words file is the author's own input once a
-`[[section]] words` key names it, so `Inputs.clip_words` refuses one that does not read as `INPUT`,
-naming that key, and never asks for it to be deleted.
+words file without one does not read. A clip's words file beside it is the author's own input, so
+`Inputs.clip_words` refuses one that does not read as `INPUT` and never asks for it to be deleted.
 
 A take plays to its sound end and is cut there, so every reader of the words a take plays reads
 them `cut_at` that sound end: a word given to the take's trailing silence ends where the sound does.

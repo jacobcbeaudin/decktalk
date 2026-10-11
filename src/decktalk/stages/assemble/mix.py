@@ -254,29 +254,20 @@ class Embedded:
     """Whether a pane plays it, inside a page section, rather than a clip section of its own."""
 
 
-def embedded_sounds(inputs: Inputs, rows: list[Rendered], starts: Mapping[int, float]) -> list[Embedded]:
+def embedded_sounds(rows: list[Rendered], starts: Mapping[int, float]) -> list[Embedded]:
     """Every clip's own sound: each clip section's from its start, and each pane clip's from its cue.
 
-    A pane clip plays from its cue until it ends or its page stops being recorded, whichever comes
-    first, because after that the film holds the page's last frame and nothing in it plays.
+    A pane clip's sound plays over the span its row says the film plays the clip, which is the span
+    the captions show its words over.
     """
     sounds = [
         Embedded(row.audio, starts[row.number], row.seconds, f"clip{row.key}") for row in rows if row.audio is not None
     ]
     for row in rows:
-        if not isinstance(row.section, PageSection):
-            continue
-        log = inputs.recording_log(row.key)
-        if log is None:
-            continue
-        played = min(row.seconds, log.recording.requested_seconds)
-        for number, lane in enumerate(log.recording.pane_clips(), start=1):
-            path = inputs.path(lane.clip or "")
-            start = lane.landings[0].at
-            if start >= played or not path.is_file() or not ffmpeg.has_audio(path):
-                continue
-            seconds = round(min(ffmpeg.probe_duration(path), played - start), SECOND_DIGITS)
-            sounds.append(Embedded(path, starts[row.number] + start, seconds, f"pane{row.key}n{number}", pane=True))
+        for number, play in enumerate(row.panes, start=1):
+            if play.has_audio:
+                at = starts[row.number] + play.start
+                sounds.append(Embedded(play.path, at, play.seconds, f"pane{row.key}n{number}", pane=True))
     return sounds
 
 
@@ -483,7 +474,7 @@ def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, sc
     chain = Chain(sample_rate=inputs.settings.audio.sample_rate)
     starts = rendered_starts(rows)
     total = round(sum(row.seconds for row in rows), SECOND_DIGITS)
-    sounds = embedded_sounds(inputs, rows, starts)
+    sounds = embedded_sounds(rows, starts)
     _anchor(chain)
     _narration(chain, inputs, rows, takes, starts)
     _clip_audio(chain, sounds, matched_gains(inputs, takes, sounds))

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
+from decktalk.artifacts import PaneLandings
 from decktalk.errors import NotBuiltError
 from decktalk.events import Level
 from decktalk.findings import Code, Finding, Location, judge
@@ -40,8 +41,10 @@ from decktalk.stages.verify.measure import (
     film_starts,
     landing_checks,
     planned_cues,
+    section_lanes,
+    section_panes,
+    section_spans,
     unmeasured_render,
-    unplaced_landings,
     want_cues,
     want_landings,
 )
@@ -72,14 +75,19 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
     kept = {number: at for number, at in starts.items() if wanted(number)}
     _repeat_recorded(inputs, run, wanted)
     _unmeasured_renders(inputs, run, wanted)
-    _unplaced_landings(inputs, run, wanted)
+    spans = section_spans(starts, total)
+    # Each section's pane clips are read and probed once here, and every cue and landing of it reads these.
+    panes = {number: section_panes(inputs, number, seconds) for number, seconds in spans.items()}
+    every = {number: section_lanes(inputs, number, starts[number], panes[number]) for number in starts}
+    _unplaced_landings(inputs, run, wanted, panes)
     _placed(inputs, run, wanted)
-    cues = planned_cues(inputs, run, starts, total, default_checks(inputs.cue_times(), list(kept)), opted_out(inputs))
+    checks = default_checks(inputs.cue_times(), list(kept))
+    cues = planned_cues(inputs, run, starts, total, checks, opted_out(inputs), every)
     seams = planned_seams(inputs, kept)
     wanted = frames.Wanted()
     want_cues(inputs, cues, wanted)
     want_seams(inputs, seams, wanted)
-    lanes = want_landings(inputs, kept, wanted)
+    lanes = want_landings(inputs, {number: every[number] for number in kept}, wanted)
     decoded = frames.decode(film, wanted)
     return run.result(
         VerifyResult,
@@ -116,12 +124,13 @@ def _unmeasured_renders(inputs: Inputs, run: Run, wanted: Callable[[int], bool])
             )
 
 
-def _unplaced_landings(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
-    """Say, once a clip, that a pane clip carries landings verify could not place in its pane, and why."""
+def _unplaced_landings(inputs: Inputs, run: Run, wanted: Callable[[int], bool], panes: dict[int, PaneLandings]
+                       ) -> None:  # fmt: skip
+    """Say, once a clip, that a pane clip the film plays carries landings verify could not place, and why."""
     for section in inputs.document.page_sections:
-        if not wanted(section.number):
+        if not wanted(section.number) or section.number not in panes:
             continue
-        for why in unplaced_landings(inputs, section.number):
+        for why in panes[section.number].unplaced:
             run.note(
                 f"Section {section.number} plays the pane clip {why}, so verify measured none of its own landings.",
                 level=Level.WARNING,

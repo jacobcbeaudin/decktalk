@@ -44,7 +44,17 @@ from decktalk.stages.assemble.mix import (
 from support.media_cards import write_tone_with_tail
 from support.pages import a_report, write_log
 
-from .conftest import MID_CLIP_TOML, PAGES_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
+from .conftest import (
+    MID_CLIP_TOML,
+    PAGES_TOML,
+    cue_times,
+    open_run,
+    rendered,
+    spoken,
+    take_index,
+    with_panes,
+    write_project,
+)
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -301,8 +311,8 @@ def test_a_pane_clip_s_sound_lands_at_its_cue_and_stops_where_its_page_stops_rec
     )  # fmt: skip
     write_log(inputs, 2, report=a_report(motions=[lane]), requested_seconds=2.4, assets=["deck/clips/film.mp4"])
     write_log(inputs, 3, report=a_report(motions=[lane.model_copy(update={"clip": "deck/clips/gone.mp4"})]))
-    rows = rendered(inputs, THREE_PAGES)
-    (sound,) = embedded_sounds(inputs, rows, rendered_starts(rows))
+    rows = with_panes(inputs, rendered(inputs, THREE_PAGES))
+    (sound,) = embedded_sounds(rows, rendered_starts(rows))
     # Section 2 opens at 2.0 s, the clip starts 0.8 s into it, and the page stops recording at 2.4 s.
     assert (sound.path, sound.at, sound.seconds, sound.pane) == (clip, 2.8, 1.6, True)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
@@ -411,10 +421,7 @@ def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
 
 def test_a_marker_on_a_clip_section_resolves_only_its_start_and_never_reads_the_clip_words(tmp_path):
     """A clip's words are not narration, so a damaged clip words file never refuses the mix."""
-    toml = MID_CLIP_TOML.replace(
-        'clip = "media/broll.mp4"', 'clip = "media/broll.mp4"\nwords = "media/broll.words.json"'
-    )
-    inputs = write_project(tmp_path, toml)
+    inputs = write_project(tmp_path, MID_CLIP_TOML)
     (tmp_path / "media").mkdir(exist_ok=True)
     (tmp_path / "media" / "broll.words.json").write_text("{not json", encoding="utf-8")
     markers = [

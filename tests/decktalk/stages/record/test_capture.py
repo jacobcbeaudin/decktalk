@@ -53,7 +53,6 @@ scene = "2"
 [[section]]
 number = 3
 clip = "media/broll.mp4"
-words = "media/broll.words.json"
 
 [mix]
 music = "media/bed.mp3"
