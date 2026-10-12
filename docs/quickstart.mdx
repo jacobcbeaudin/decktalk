@@ -69,30 +69,30 @@ the one thing in DeckTalk that costs money.
 
   <Step title="Read the machine">
     `decktalk doctor` reports what is installed and what a run would use. This is what it prints on a
-    machine that has recorded before.
+    machine that has fetched its tools.
 
     ```console
     decktalk doctor
     ```
 
-    {/* sample: decktalk doctor, on a Mac that has recorded before, with the home folder written as ~ and the source checkout it ran from as ~/workspace/decktalk */}
+    {/* sample: doctor, decktalk doctor, on a machine that has fetched its tools, with every path, the Python and the platform written as ... */}
     ```text
      Tool       Version         Where
      ──────────────────────────────────────────────────────────────────────────────────────────────────
-     chromium   153.0.8010.12   ~/Library/Caches/decktalk/ms-playwright/chromium-1243/chrom…
-                                Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing
-     ffmpeg     8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
-     ffprobe    8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
-     katex      0.18.7          ~/workspace/decktalk/src/decktalk/katex
+     chromium   153.0.8010.12   ...
+     ffmpeg     8.1.2           ...
+     ffprobe    8.1.2           ...
+     katex      0.18.7          ...
 
-    Python    3.13.1 (~/workspace/decktalk/.venv/bin/python)
-    Platform  macOS-26.6.2-arm64-arm-64bit-Mach-O (darwin)
-    API key   missing
+    Python    ...
+    Platform  ...
+    API key   elevenlabs ELEVENLABS_API_KEY missing
     ```
 
-    `API key   missing` means `ELEVENLABS_API_KEY` is unset, which is the right state for everything up to
-    part 3. KaTeX is not a download: the pinned release ships inside the package, and DeckTalk serves
-    it to the page.
+    The paths, the Python and the platform are this machine's, so they are written as `...` here.
+    `API key   elevenlabs ELEVENLABS_API_KEY missing` means the key the narrator's provider reads is
+    unset, which is the right state for everything up to part 3. KaTeX is not a download: the pinned
+    release ships inside the package, and DeckTalk serves it to the page.
 
     On a machine that has never recorded, the `chromium`, `ffmpeg` and `ffprobe` rows read
     `missing`, and each one comes with a finding. `doctor` also prints `Chromium is not installed. Run
@@ -121,12 +121,9 @@ the one thing in DeckTalk that costs money.
 DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them. It fetches
 both itself, one time per machine, the first time a command needs one. The run announces each
 download as it starts and reports the bytes as they arrive, so a long first build says what it is
-waiting on. Under `--events` the same thing is one `tool.fetch` line per step on stderr.
-
-{/* sample: DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk install --events --no-input, the first tool.fetch line of stderr */}
-```json
-{"event":"tool.fetch","time":"2026-01-01T00:00:00.000000Z","seq":2,"run":"769c5119cd83","tool":"chromium","bytes":0,"total_bytes":null}
-```
+waiting on. Under `--events` the same thing is one `tool.fetch` line per step on stderr, naming the
+`tool` and the `bytes` that have arrived of its `total_bytes`, as
+[the event stream](/agents/json#the-event-stream) lists.
 
 `decktalk install` makes both downloads up front instead, and does nothing else.
 
@@ -180,10 +177,10 @@ cache paths.
 
     {/* sample: build, decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run 9f1bb781ea41, events build/events/9f1bb781ea41.jsonl
+    run 14c7e2c91a71, events build/events/14c7e2c91a71.jsonl
          Narrate    0:00
              Cue    0:00
-          Record    0:22
+          Record    0:03
     The project declares no score for this run, so there is nothing to generate.
            Score    0:00
     The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
@@ -222,11 +219,17 @@ cache paths.
     ls build/final
     ```
 
-    {/* sample: ls build/final, after the build above */}
+    {/* sample: build-final, ls build/final, after decktalk build --no-spend on a fresh decktalk init my-lesson */}
     ```text
-    my-lesson-poster.png       my-lesson.mp4  placements.json
-    my-lesson-transcript.html  my-lesson.srt
-    my-lesson.chapters.txt     my-lesson.vtt
+    my-lesson-poster.png
+    my-lesson-transcript.html
+    my-lesson.chapters.txt
+    my-lesson.landings.json
+    my-lesson.mp4
+    my-lesson.srt
+    my-lesson.vtt
+    my-lesson.words.json
+    placements.json
     ```
 
     `my-lesson.mp4` is the film. The name comes from `[project] name` in `decktalk.toml`. The
@@ -304,9 +307,9 @@ with the cues it declares.
 decktalk serve
 ```
 
-{/* sample: decktalk serve, in the starter */}
+{/* sample: serve, decktalk serve, in a fresh decktalk init my-lesson, the line it prints before it is stopped */}
 ```text
-Serving http://127.0.0.1:52203
+Serving http://127.0.0.1:51783
 ```
 
 `serve` answers from the project directory on 127.0.0.1, which is the origin the recorder uses, so

@@ -1,5 +1,6 @@
 # Every docs sample `scripts/build_samples.py` writes, keyed by the id its page names in a
-# `{/* sample: <id> */}` comment above the block.
+# `{/* sample: <id> */}` comment above the block, or `<!-- sample: <id> -->` in the README. A comment
+# whose id has no row here is refused.
 #
 # A row says how the project was made, what ran on it and what the block shows:
 #   page      the page whose block this row fills
@@ -14,11 +15,14 @@
 #   exit      the exit the last command must end with, 0 when it is not given
 #   file      the file the block shows, project-relative, where {digest} is section 1's take digest and
 #             {run} is the run of the newest events file, which is the last command's
+#   listing   instead of a file, the names in this project-relative folder, as `ls` prints them into a pipe
 #   stream    instead of a file, what the last command printed: "stdout", "stderr" or "both" in order
+#   lines     for a last command that serves until stopped, read this many lines of the stream and stop it
 #   fence     the block's language, from the file's suffix or "text" when it is not given. A "json"
 #             block is parsed, cut and printed again, and any other is the printed text
 #   head      keep the first N lines of a text block
 #   grep      keep the lines of a text block this pattern finds
+#   hide      write each match of these patterns as ..., so a text block names no path of the machine that ran it
 #   key       show one part of a json block, by a dotted path where a number is a list index
 #   fragment  true to write that part as the `"key": value` entry a reader pastes into the file
 #   only      keep these keys of a json block, in this order
@@ -183,6 +187,16 @@ what = "decktalk storyboard, on the starter"
 run = [["storyboard"]]
 stream = "both"
 
+[doctor]
+page = "docs/quickstart.mdx"
+what = "decktalk doctor, on a machine that has fetched its tools, with every path, the Python and the platform written as ..."
+init = false
+run = [["doctor"]]
+stream = "both"
+# A long path wraps onto a second line of its cell, which names nothing but the rest of the path.
+grep = '^(?!\s{10,}\S)'
+hide = ['(?<=\s)(?:/|~|[A-Za-z]:\\)\S.*$', '(?<=^Python    )\S.*$', '(?<=^Platform  )\S.*$']
+
 [doctor-empty-cache]
 page = "docs/quickstart.mdx"
 what = "DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor, the findings under the table, which exits 1"
@@ -266,6 +280,15 @@ edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["narrate", "--no-input"]]
 exit = 2
 stream = "both"
+
+[build-json-no-terminal]
+page = "README.md"
+what = "decktalk --json build, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which exits 2"
+edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
+run = [["--json", "build"]]
+exit = 2
+stream = "stdout"
+fence = "json"
 
 [build-over-the-ceiling]
 page = "docs/quickstart.mdx"
@@ -395,6 +418,19 @@ what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, which exi
 run = [["build", "--no-spend"]]
 stream = "both"
 masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
+
+[build-built-line]
+page = "README.md"
+what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, the Built line"
+run = [["build", "--no-spend"]]
+stream = "both"
+grep = '^\s*Built '
+
+[build-final]
+page = "docs/quickstart.mdx"
+what = "ls build/final, after decktalk build --no-spend on a fresh decktalk init my-lesson"
+run = [["build", "--no-spend"]]
+listing = "build/final"
 
 [build-assemble-line]
 page = "docs/help/troubleshooting.mdx"
@@ -853,3 +889,30 @@ run = [
 ]
 stream = "both"
 masks = ['(?<=\d)  +\d+\.\d\d   +[-+]\d\.\d\d$']
+
+# ---- commands that serve until stopped ---------------------------------------------------------
+
+[serve]
+page = "docs/quickstart.mdx"
+what = "decktalk serve, in a fresh decktalk init my-lesson, the line it prints before it is stopped"
+run = [["serve"]]
+stream = "stdout"
+lines = 1
+masks = ['(?<=127\.0\.0\.1:)\d+']
+
+[build-watch]
+page = "docs/guides/rebuild-one-section.mdx"
+what = "decktalk build --watch, on a fresh decktalk init my-lesson, the lines it prints before its first build"
+run = [["build", "--watch"]]
+stream = "stderr"
+lines = 2
+masks = ['(?<=127\.0\.0\.1:)\d+']
+
+[page-cdn-asset]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk check, on a fresh decktalk init my-lesson whose page links https://fonts.example.com/inter.css, the finding line"
+edits = [["deck/index.html", "</head>", "<link rel=\"stylesheet\" href=\"https://fonts.example.com/inter.css\">\n</head>"]]
+run = [["check"]]
+exit = 1
+stream = "both"
+grep = "PAGE_CDN_ASSET"

@@ -28,6 +28,7 @@ from decktalk import ApprovalRequired, InputError, ProviderError
 from decktalk.cli import catalog
 from decktalk.cli.app import docs_for
 from decktalk.explain import explain
+from decktalk.inputs.workspace import Workspace
 from decktalk.results import Layer
 from decktalk.settings import BY_ID, KEYS, Scope
 from decktalk.speech import Speech, SpeechRequest
@@ -309,3 +310,53 @@ def test_no_page_says_doctor_fetches_nothing_without_saying_when_it_does() -> No
                 if FETCHES_NOTHING.search(sentence) and not ("--fix" in sentence and "terminal" in sentence):
                     wrong.append(f"{page.relative_to(REPO)}: {sentence}")
     assert not wrong, "\n".join(wrong)
+
+
+FINAL = Workspace(root=REPO, build=REPO / "build", name="<name>", takes=REPO / "takes", score_dir=REPO / "score")
+"""A workspace whose project is called `<name>`, the way the pages write the film's name."""
+
+
+def written_to_final() -> set[str]:
+    """Every file a build can write into `build/final/`: what assemble always writes, and the captioned copy."""
+    return {path.name for path in (*FINAL.deliverables().values(), FINAL.captioned_film)}
+
+
+def section(page: Path, heading: str) -> str:
+    """The text of one page under a heading, up to the next heading of any level."""
+    text = page.read_text(encoding="utf-8")
+    at = text.index(f"{heading}\n")
+    after = re.search(r"^#+ ", text[at + len(heading) :], flags=re.MULTILINE)
+    return text[at : at + len(heading) + (after.start() if after else len(text))]
+
+
+def first_names(block: str, fence: str) -> set[str]:
+    """The first word of every line of the first fenced block opening with `fence`."""
+    body = block.split(f"```{fence}\n", 1)[1].split("```", 1)[0]
+    return {line.split()[0] for line in body.splitlines() if line.strip()}
+
+
+def table_files(block: str) -> set[str]:
+    """Every file a Markdown table names in its first column, written as code."""
+    return set(re.findall(r"^\| `([^`]+)` \|", block, flags=re.MULTILINE))
+
+
+def test_every_page_that_lists_build_final_lists_every_file_a_build_writes_there() -> None:
+    """The README, the stability promise and the artifacts reference each list `build/final/`, by hand.
+
+    The list a reader trusts is the one the code writes, so each one is held to it: a file assemble
+    adds that a page does not name fails here rather than surprising the person who reads the folder.
+    """
+    expected = written_to_final()
+    readme = {
+        name.replace("my-lesson", "<name>")
+        for name in first_names(section(REPO / "README.md", "### What a build writes"), "text")
+    }
+    tree = section(REPO / "docs" / "reference" / "artifacts.mdx", "## The tree").split("  final/\n", 1)[1]
+    listed = {
+        "README.md": readme,
+        "stability.mdx": table_files(section(REPO / "docs" / "reference" / "stability.mdx", "## `build/final/`")),
+        "artifacts.mdx table": table_files(section(REPO / "docs" / "reference" / "artifacts.mdx", "## `build/final/`")),
+        "artifacts.mdx tree": {line.split()[0] for line in tree.split("  events/", 1)[0].splitlines() if line.strip()},
+    }
+    wrong = {page: sorted(expected ^ names) for page, names in listed.items() if names != expected}
+    assert not wrong, wrong

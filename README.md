@@ -65,7 +65,7 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
 
 `decktalk init` writes a starter of three sections that already builds. The build with `--no-spend` needs no account and spends nothing. It makes the whole film, captions and chapters included, with a click on every word where the voice would be, so the cues, the cuts and the pacing all run as they will when voiced. It prints this line, and one `TAKE_MISSING` per section that has no voiced take yet, with the command that buys it.
 
-<!-- sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, the Built line -->
+<!-- sample: build-built-line, decktalk build --no-spend, on a fresh decktalk init my-lesson, the Built line -->
 ```text
        Built build/final/my-lesson.mp4, $0.00, 3 findings
 ```
@@ -117,7 +117,7 @@ The agent reads `decktalk --help` for the commands, `decktalk schema build` for 
 
 Without a terminal, a build with something to buy refuses unless `--spend` or `--no-spend` is passed, so an agent left alone cannot buy speech by accident. A build whose takes are all on disk buys nothing and needs neither flag nor key. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
 
-<!-- sample: decktalk --json build, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key -->
+<!-- sample: build-json-no-terminal, decktalk --json build, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which exits 2 -->
 ```json
 {
   "schema": 1,
@@ -157,10 +157,14 @@ A build writes everything under `build/`, and `decktalk status` reads it back. T
 
 ```text
 my-lesson.mp4              the film
-my-lesson.srt, .vtt        captions
+my-lesson.srt              captions, as SubRip
+my-lesson.vtt              captions, as WebVTT
 my-lesson.chapters.txt     one chapter per section
 my-lesson-transcript.html  a transcript page
 my-lesson-poster.png       a poster frame
+my-lesson.landings.json    every landing verify measures, on the film's clock
+my-lesson.words.json       every word the film says, on the film's clock
+my-lesson-captioned.mp4    the film with its captions drawn in, when [output] captioned asks
 placements.json            where every section sits in the film
 ```
 

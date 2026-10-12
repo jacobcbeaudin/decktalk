@@ -232,7 +232,7 @@ loop dispatches on.
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "a81933978687",
+  "run": "b10120b6ce1f",
   "name": "my-lesson",
   "script": "script.md",
   "cues_file": "cues.json",
@@ -300,7 +300,7 @@ that made the film did.
 
 {/* sample: build-unchanged, a second decktalk build --no-spend on an unchanged starter named my-lesson */}
 ```text
-run 5e30b4531f8c, events build/events/5e30b4531f8c.jsonl
+run fc4263c62d74, events build/events/fc4263c62d74.jsonl
      Narrate    0:00
          Cue    0:00
       Record    0:00
@@ -414,9 +414,9 @@ without buying, and then rebuilds on every save until you stop it.
 decktalk build --watch
 ```
 
-{/* sample: the two lines decktalk build --watch prints before its first build */}
+{/* sample: build-watch, decktalk build --watch, on a fresh decktalk init my-lesson, the lines it prints before its first build */}
 ```text
-Serving http://127.0.0.1:53017
+Serving http://127.0.0.1:51784
 Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, and a take a voice bills for goes stale rather than being bought again.
 ```
 

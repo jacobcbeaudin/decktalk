@@ -346,6 +346,10 @@ encoded because `assemble` encodes it once more at the film's own quality. `NN.j
 that section, written when that section is finished, so a reader of a long run sees each section's
 log as soon as that section is done and a measurement always belongs to the recording beside it.
 
+The sample below was recorded with `record.concurrency = 4`, the most recorders an automatic choice
+runs, so it shows the section split as a machine of twelve or more CPUs splits it. Its `pieces` and
+`steps` follow the number of recorders, and a machine that runs fewer writes fewer of each.
+
 {/* sample: recording-json, build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues and words cut to [] */}
 ```json build/recordings/01.json
 {
