@@ -73,7 +73,7 @@ from decktalk.inputs.document import (
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
-from decktalk.inputs.programs import clip_program, section_program
+from decktalk.inputs.programs import section_program
 from decktalk.inputs.script import VOICE_HINT, ScriptSection, Turn, estimated_words, read_script
 from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
@@ -267,24 +267,17 @@ class Inputs:
         """
         return contained(self.root, named)
 
-    def programs(self, only: Sequence[int] | None = None, *, force: bool = False) -> tuple[Program, ...]:
-        """Every program a `record` over `only` would start, each clip's before every section's.
+    def programs(self, only: Sequence[int] | None = None) -> tuple[Program, ...]:
+        """Every program a `record` over `only` would start, which is every render section's `render_command`.
 
-        A clip's command runs when its file is not there, or for every clip when `force` is true. A
-        section's `render_command` is counted whenever the section is in `only`, whether or not its
+        A section's `render_command` is counted whenever the section is in `only`, whether or not its
         recording still stands, so the answer never depends on what a run finds on disk later.
         """
-        clips = [
-            clip_program(clip.file, clip.command)
-            for clip in self.document.clips
-            if force or not self.path(clip.file).is_file()
-        ]
-        drawn = [
+        return tuple(
             section_program(section.number, section.render_command)
             for section in self.document.sections
             if isinstance(section, RenderSection) and (only is None or section.number in only)
-        ]
-        return (*clips, *drawn)
+        )
 
     def relative(self, path: Path) -> Path:
         """One path as every result and every finding publishes it, which is relative to the project."""

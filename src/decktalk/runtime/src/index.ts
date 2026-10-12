@@ -32,7 +32,6 @@ import {
   moving,
   type Region,
   region,
-  reveals,
   type Scripted,
   sample,
   scripted,
@@ -261,9 +260,6 @@ const view: RuntimeView = {
   },
   get motions() {
     return lanes();
-  },
-  get reveals() {
-    return reveals();
   },
   get frozen() {
     return isFrozen();

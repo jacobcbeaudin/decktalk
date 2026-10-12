@@ -87,15 +87,13 @@ class Deck(HTMLParser):
 
     @staticmethod
     def _declared(written: dict[str, str]) -> list[str]:
-        """Every cue name one element declares: its moments, its class pairs, what it owns, its motion's two cues and
-        its pane clip's one."""
+        """Every cue name one element declares: its moments, its class pairs, what it owns and its motion's two cues."""
         named = [written[moment.value] for moment in MOMENTS if written.get(moment.value)]
         pairs = written.get(Attr.CLASS.value, "").split(PAIR_SEPARATOR)
         named += [pair.split(PAIR_MARK, 1)[0] for pair in pairs if PAIR_MARK in pair]
         named += written.get(Attr.OWNS.value, "").split()
-        # A motion departs and arrives on cues of its slide, and a pane clip starts on one, so each joins the order.
-        edges = (Attr.MOTION_FROM, Attr.MOTION_TO, Attr.CLIP_FROM)
-        named += [written[edge.value] for edge in edges if written.get(edge.value)]
+        # A motion departs and arrives on cues of its slide, so both join the slide's cue order.
+        named += [written[edge.value] for edge in (Attr.MOTION_FROM, Attr.MOTION_TO) if written.get(edge.value)]
         return named
 
     def handle_endtag(self, tag: str) -> None:
@@ -181,8 +179,6 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
     Attr.MOTION_EASE: (MOTION,),
     Attr.LOOP: (MOTION,),
     Attr.LOOP_SECONDS: (MOTION,),
-    Attr.CLIP: (MOTION,),
-    Attr.CLIP_FROM: (MOTION,),
 }
 """Which packaged example writes which attribute, declared so a gap is named rather than found.
 

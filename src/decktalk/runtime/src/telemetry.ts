@@ -96,9 +96,9 @@ export type ElementRow = {
   children: number;
 };
 
-/** One motion, loop or pane clip a slide declares, with the cue ids it departs and arrives on. */
+/** One motion or loop a slide declares, with the cue ids it departs and arrives on. */
 export type MotionRow = {
-  kind: "motion" | "loop" | "clip";
+  kind: "motion" | "loop";
   name: string;
   from: string | null;
   to: string | null;
@@ -113,7 +113,7 @@ export type CatalogEntry = {
   slides: string[];
   cues: Record<string, string[]>;
   spans: Record<string, number>;
-  /** Every motion, loop and pane clip each slide declares in its markup, keyed by the slide id. */
+  /** Every motion and loop each slide declares in its markup, keyed by the slide id. */
   motions: Record<string, MotionRow[]>;
   /** The measured rows of each slide, which the probe adds on the index page and nothing else writes. */
   elements?: Record<string, ElementRow[]>;
@@ -212,8 +212,6 @@ export type RuntimeView = {
   readonly catalog: readonly CatalogEntry[];
   /** Every declared motion, loop and region, with the box it swept and the cues it lands on. */
   readonly motions: readonly unknown[];
-  /** Every cue that revealed or changed an element under the recorder, with the box it drew in. */
-  readonly reveals: readonly unknown[];
   readonly frozen: boolean;
   readonly signalled: boolean;
   now(): number;

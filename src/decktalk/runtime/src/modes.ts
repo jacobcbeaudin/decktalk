@@ -166,7 +166,7 @@ function mount(scene: Scene, slide: Slide, held: ReadonlySet<string> | null, at:
   const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
   const el = buildSlide(scene, slide);
   const opens = at === null ? NOTHING : opening();
-  const mounted = prepare(el, slide, { frozen, recorded: signalled, held, opens, words: state.words, at: cueAt });
+  const mounted = prepare(el, slide, { frozen, held, opens, words: state.words, at: cueAt });
   typeset(el, slide.id);
   state.slide = slide;
   state.mounted = mounted;

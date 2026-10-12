@@ -14,8 +14,7 @@ narration must be quiet in the window before each cut, so no cut lands on a word
 declares itself seamless must open on the picture the section before it ended on. And every cue must
 change the picture, by enough to be seen, within the offset limit of the word it was promised to,
 with every declared motion around it masked out. And every declared motion must depart and arrive
-on its own lane within that same limit of its words, and so must every landing a pane clip carries,
-moved onto the film's clock from the clip's cue.
+on its own lane within that same limit of its words.
 
 It repeats what each recording log already judged rather than measuring it again, so a page that
 threw or an equation that was never typeset is still a finding after the build that recorded it, and
@@ -26,7 +25,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from decktalk.artifacts import PaneLandings
 from decktalk.errors import NotBuiltError
 from decktalk.events import Level
 from decktalk.findings import Code, Finding, Location, judge
@@ -42,8 +40,6 @@ from decktalk.stages.verify.measure import (
     landing_checks,
     planned_cues,
     section_lanes,
-    section_panes,
-    section_spans,
     unmeasured_render,
     want_cues,
     want_landings,
@@ -76,11 +72,8 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
     _require_recording_logs(inputs, kept)
     _repeat_recorded(inputs, run, wanted)
     _unmeasured_renders(inputs, run, wanted)
-    spans = section_spans(starts, total)
-    # Each section's pane clips are read and probed once here, and every cue and landing of it reads these.
-    panes = {number: section_panes(inputs, number, seconds) for number, seconds in spans.items()}
-    every = {number: section_lanes(inputs, number, starts[number], panes[number]) for number in starts}
-    _unplaced_landings(inputs, run, wanted, panes)
+    # Each section's lanes are read once here, and every cue and landing of it reads these.
+    every = {number: section_lanes(inputs, number, starts[number]) for number in starts}
     _placed(inputs, run, wanted)
     checks = default_checks(inputs.cue_times(), list(kept))
     cues = planned_cues(inputs, run, starts, total, checks, opted_out(inputs), every)
@@ -105,9 +98,9 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
 def _require_recording_logs(inputs: Inputs, kept: dict[int, float]) -> None:
     """Refuse a film whose recorded sections came without their recording logs.
 
-    A log holds what the recorder judged, the motion the page declared and the clips its panes
-    played, so a verify without it repeats no finding and measures no motion, which would read as a
-    pass. A section the film filled with black was never recorded and needs none.
+    A log holds what the recorder judged and the motion the page declared, so a verify without it
+    repeats no finding and measures no motion, which would read as a pass. A section the film filled
+    with black was never recorded and needs none.
     """
     placed = inputs.placements()
     filled = {row.section for row in placed.sections if row.substitute is not None} if placed is not None else set()
@@ -149,19 +142,6 @@ def _unmeasured_renders(inputs: Inputs, run: Run, wanted: Callable[[int], bool])
             run.note(
                 f"Section {section.number} was drawn by its render_command, which wrote no landings, so verify "
                 "measured none of its cues. Have the command write {landings} to measure them.",
-                level=Level.WARNING,
-            )
-
-
-def _unplaced_landings(inputs: Inputs, run: Run, wanted: Callable[[int], bool], panes: dict[int, PaneLandings]
-                       ) -> None:  # fmt: skip
-    """Say, once a clip, that a pane clip the film plays carries landings verify could not place, and why."""
-    for section in inputs.document.page_sections:
-        if not wanted(section.number) or section.number not in panes:
-            continue
-        for why in panes[section.number].unplaced:
-            run.note(
-                f"Section {section.number} plays the pane clip {why}, so verify measured none of its own landings.",
                 level=Level.WARNING,
             )
 

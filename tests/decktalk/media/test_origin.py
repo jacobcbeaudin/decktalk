@@ -7,8 +7,7 @@ import http.client
 import json
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Iterator
-from contextvars import ContextVar
+from collections.abc import Iterator
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urlsplit
@@ -18,7 +17,6 @@ import pytest
 from decktalk.errors import ToolError
 from decktalk.media import origin
 from decktalk.media.browser import TRUSTED, UNTRUSTED, chromium
-from decktalk.media.clipframes import FRAME_TYPE, ClipFrames
 from decktalk.media.origin import (
     HIDDEN,
     OFF_ORIGIN,
@@ -28,7 +26,6 @@ from decktalk.media.origin import (
     UNDECLARED,
     Allowed,
     Assets,
-    clip_ask,
     content_type,
     local_target,
     open_server,
@@ -37,7 +34,7 @@ from decktalk.media.origin import (
     served_url,
 )
 from decktalk.media.pages import open_page
-from decktalk.page import CLIP_FRAMES, ENGINE_PATH, Q
+from decktalk.page import ENGINE_PATH, Q
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
 from support.fakes import FakeRouter
 from support.logs import data_of
@@ -225,11 +222,9 @@ SHUTDOWN_POLL_SECONDS = 0.01
 def serving(
     allowed: Allowed,
     documents: dict[str, bytes] | None = None,
-    clips: ClipFrames | None = None,
-    bound: Callable[[], contextlib.AbstractContextManager[object]] = contextlib.nullcontext,
 ) -> Iterator[str]:
     """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
-    server = open_server(allowed, "127.0.0.1", 0, documents, clips, bound)
+    server = open_server(allowed, "127.0.0.1", 0, documents)
     with server:
         Thread(target=server.serve_forever, args=(SHUTDOWN_POLL_SECONDS,), daemon=True).start()
         try:
@@ -607,119 +602,48 @@ def test_a_page_with_no_copy_of_the_runtime_gets_the_engines(tmp_path):
     assert sorted(p.name for p in (tmp_path / "deck").iterdir()) == ["index.html"]
 
 
-# ---- the frames of a pane clip ------------------------------------------------------------------------
-
-
-class Frames(ClipFrames):
-    """A clip decoder that answers each frame with the clip's name and the second it was asked for."""
-
-    def __init__(self) -> None:
-        super().__init__(fps=25)
-        self.asked: list[tuple[str, float]] = []
-
-    def frame(self, path: Path, second: float) -> bytes | None:
-        self.asked.append((path.name, second))
-        return None if path.name == "broken.mp4" else f"{path.name}@{second}".encode()
+# ---- a path no clip frame is answered under ---------------------------------------------------------
 
 
 def clip_project(tmp_path: Path) -> Allowed:
     clips = tmp_path / "deck" / "clips"
     clips.mkdir(parents=True)
-    for name in ("film.mp4", "broken.mp4"):
-        (clips / name).write_bytes(b"film")
-    (tmp_path / "secret.mp4").write_bytes(b"not the deck's")
+    (clips / "film.mp4").write_bytes(b"film")
     return Allowed.of(tmp_path, ["deck"])
 
 
-def test_a_pane_clip_s_frame_is_answered_as_a_picture_and_its_clip_is_a_file_the_page_loaded(tmp_path):
-    target, frames = FakeRouter(), Frames()
-    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
-    served = target.request(f"{ORIGIN}{CLIP_FRAMES}1.24/deck/clips/film.mp4")
-    assert served.answer == {"status": 200, "content_type": FRAME_TYPE, "body": b"film.mp4@1.24"}
-    assert frames.asked == [("film.mp4", 1.24)]
-    assert assets.paths == ["deck/clips/film.mp4"]
+CLIP_PATH = f"{ENGINE_PATH}clip/0.5/deck/clips/film.mp4"
+"""Where a page once asked for one frame of a clip, which is a name under the engine's path like any other."""
 
 
-def test_a_pane_clip_is_held_to_the_rule_every_project_file_is(tmp_path):
-    """A frame request is a way to read a file, so it opens only what the page could have fetched itself."""
-    target, frames = FakeRouter(), Frames()
-    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
-    for asked in ("0/secret.mp4", "0/deck/../secret.mp4", "0/.env", "0/deck/clips/../../.env"):
-        refused = target.request(f"{ORIGIN}{CLIP_FRAMES}{asked}")
-        assert refused.answer is not None and refused.answer["status"] == 403, asked
-    assert frames.asked == [] and assets.paths == []
-    assert assets.refused
+def test_the_router_refuses_a_clip_frame_as_a_path_the_engine_does_not_serve(tmp_path):
+    """No page plays a clip frame by frame, so the engine's path answers its runtime and KaTeX and nothing else."""
+    target = FakeRouter()
+    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True)
+    refused = target.request(f"{ORIGIN}{CLIP_PATH}")
+    assert refused.answer == {"status": 403, "content_type": origin.TEXT, "body": RESERVED}
+    assert assets.paths == [] and assets.refused == [f"{CLIP_PATH.lstrip('/')} ({RESERVED})"]
 
 
-@pytest.mark.parametrize(
-    "asked", ["-1/deck/clips/film.mp4", "soon/deck/clips/film.mp4", "nan/deck/clips/film.mp4", "2"]
-)
-def test_a_frame_asked_for_by_no_second_of_0_or_more_is_refused(tmp_path, asked):
-    target, frames = FakeRouter(), Frames()
-    route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
-    refused = target.request(f"{ORIGIN}{CLIP_FRAMES}{asked}")
-    assert refused.answer is not None and refused.answer["status"] == 403
-    assert frames.asked == []
+def test_the_preview_server_refuses_a_clip_frame_as_a_path_the_engine_does_not_serve(tmp_path):
+    with serving(clip_project(tmp_path)) as base:
+        status, body = _get(f"{base}{CLIP_PATH}")
+        assert status == 403 and RESERVED.encode() in body
+        assert _get(f"{base}/deck/clips/film.mp4")[0] == 200, "the clip is a file of the deck like any other"
 
 
-def test_a_pane_clip_that_is_missing_or_does_not_decode_is_no_picture(tmp_path):
-    target, frames = FakeRouter(), Frames()
-    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True, clips=frames)
-    missing = target.request(f"{ORIGIN}{CLIP_FRAMES}0/deck/clips/gone.mp4")
-    assert missing.answer is not None and missing.answer["status"] == 404
-    assert assets.missing == ["deck/clips/gone.mp4"]
-    broken = target.request(f"{ORIGIN}{CLIP_FRAMES}0/deck/clips/broken.mp4")
-    assert broken.answer is not None and broken.answer["status"] == 422
+def test_a_request_that_raises_is_a_logged_500_and_never_a_dropped_connection(tmp_path, caplog, monkeypatch):
+    """A request that fails must say so to the page and to the log, rather than close the socket on it."""
 
+    def broken(_handler: object) -> None:
+        raise RuntimeError("the handler broke")
 
-def test_a_clip_ask_reads_the_second_and_the_clip_and_nothing_else_is_one(tmp_path):
-    allowed = clip_project(tmp_path)
-    ask = clip_ask(allowed, "__decktalk/clip/0.5/deck/clips/film.mp4")
-    assert ask is not None and ask.second == 0.5
-    assert ask.target.path == (tmp_path / "deck" / "clips" / "film.mp4").resolve()
-    assert clip_ask(allowed, "deck/clips/film.mp4") is None
-    assert clip_ask(allowed, "__decktalk/decktalk-runtime.js") is None
-
-
-BINDING: ContextVar[str] = ContextVar("test_origin_binding", default="")
-"""What a test binds around its server's requests, which a frame decoder reads the way ffmpeg reads the tools."""
-
-
-class BoundFrames(ClipFrames):
-    """A clip decoder that answers only inside the binding, as the real one needs the machine's tools bound."""
-
-    def __init__(self) -> None:
-        super().__init__(fps=25)
-
-    def frame(self, path: Path, second: float) -> bytes | None:
-        if not BINDING.get():
-            raise ToolError("no machine named a directory to keep fetched tools in.")
-        return f"{BINDING.get()}:{path.name}@{second}".encode()
-
-
-@contextlib.contextmanager
-def machine_bound() -> Iterator[None]:
-    token = BINDING.set("machine")
-    try:
-        yield
-    finally:
-        BINDING.reset(token)
-
-
-def test_the_server_answers_a_pane_clip_s_frame_inside_the_binding_it_was_given(tmp_path):
-    """Each request is answered on a thread of its own, so the run's tools reach it only through the binding."""
-    with serving(clip_project(tmp_path), clips=BoundFrames(), bound=machine_bound) as base:
-        status, body = _get(f"{base}{CLIP_FRAMES}0/deck/clips/film.mp4")
-        assert (status, body) == (200, b"machine:film.mp4@0.0")
-        assert _get(f"{base}{CLIP_FRAMES}0/secret.mp4")[0] == 403, "a frame is held to the rule every file is"
-
-
-def test_a_request_that_raises_is_a_logged_500_and_never_a_dropped_connection(tmp_path, caplog):
-    """A decoder that fails must say so to the page and to the log, rather than close the socket on it."""
-    with serving(clip_project(tmp_path), clips=BoundFrames()) as base:
+    with serving(clip_project(tmp_path)) as base:
+        monkeypatch.setattr(origin._Handler, "_head", broken)
         with caplog.at_level("ERROR", logger=origin.log.name):
-            status, body = _get(f"{base}{CLIP_FRAMES}0/deck/clips/film.mp4?secret=1")
+            status, body = _get(f"{base}/deck/clips/film.mp4?secret=1")
         assert status == 500 and origin.BROKEN.encode() in body
+        monkeypatch.undo()
         assert _get(f"{base}/deck/clips/film.mp4")[0] == 200, "the server goes on answering"
     failed = [record for record in caplog.records if record.levelname == "ERROR"]
     assert failed and failed[0].exc_info is not None

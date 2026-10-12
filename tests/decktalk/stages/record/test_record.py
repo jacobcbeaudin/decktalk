@@ -230,7 +230,7 @@ def recorded_pair(inputs: Inputs, key: str) -> tuple[bytes | None, RecordingLog 
 def test_a_record_again_that_fails_keeps_the_recording_it_was_replacing_with_its_log(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed record again left the old video with no log, so assemble cut it and dropped its pane clips' sound."""
+    """A failed record again left the old video with no log, so assemble cut a recording verify could not read."""
     inputs = a_project(tmp_path)
     record(inputs, a_run(inputs.root))
     before = recorded_pair(inputs, "01")
@@ -794,46 +794,6 @@ def test_a_rendered_section_nothing_moved_under_is_kept(tmp_path: Path, driven: 
     assert driven.launched == 0, "a section a command draws needs no browser"
 
 
-# ---- the clips a project makes ----------------------------------------------------------------------
-
-MAKER = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_bytes(b'made at ' + sys.argv[2].encode())"
-"""A clip's command that writes its file with the film's rate in it, so a test can tell a made clip from a kept one."""
-
-
-def with_a_made_clip(tmp_path: Path, *, machine: dict[str, Any] | None = RUNS_PROGRAMS) -> Inputs:
-    clip = (
-        f'\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{{python}}", "-c", "{MAKER}", "{{out}}", "{{fps}}"]\n'
-    )
-    return a_project(tmp_path, extra=clip, machine=machine)
-
-
-@pytest.mark.usefixtures("driven")
-def test_a_clip_the_project_makes_is_made_before_anything_is_recorded(tmp_path: Path) -> None:
-    inputs = with_a_made_clip(tmp_path)
-    record(inputs, a_run(inputs.root))
-    assert (tmp_path / "deck" / "clips" / "tone.mp4").read_bytes() == f"made at {FPS}".encode()
-
-
-@pytest.mark.usefixtures("driven")
-def test_a_made_clip_already_there_is_kept_and_a_forced_run_makes_it_again(tmp_path: Path) -> None:
-    inputs = with_a_made_clip(tmp_path)
-    clip = tmp_path / "deck" / "clips" / "tone.mp4"
-    clip.parent.mkdir(parents=True)
-    clip.write_bytes(b"kept")
-    record(inputs, a_run(inputs.root))
-    assert clip.read_bytes() == b"kept"
-    record(inputs, a_run(inputs.root), force=True)
-    assert clip.read_bytes() == f"made at {FPS}".encode()
-
-
-@pytest.mark.usefixtures("driven")
-def test_a_host_that_does_not_trust_the_project_makes_no_clip_with_its_command(tmp_path: Path) -> None:
-    inputs = with_a_made_clip(tmp_path, machine={"record": {"page_policy": "untrusted", "programs": programs.RUN}})
-    with pytest.raises(InputError, match="deck/clips/tone.mp4"):
-        record(inputs, a_run(inputs.root))
-    assert not (tmp_path / "deck" / "clips" / "tone.mp4").exists()
-
-
 MARKER = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_text('started')"
 """A program that leaves a marker where it is told to, so a test can tell that it never started."""
 
@@ -843,14 +803,11 @@ MARKER = "import pathlib, sys; pathlib.Path(sys.argv[1]).write_text('started')"
 def test_a_fresh_project_starts_none_of_its_programs_and_names_the_key_that_allows_them(
     tmp_path: Path, machine: dict[str, Any] | None
 ) -> None:
-    """The security seat's p1 ran a clip's command before anything else was judged: it now runs nothing."""
+    """The security seat's p1 ran a project's program before anything else was judged: it now runs nothing."""
     marker = tmp_path / "marker"
-    clip = f'\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{{python}}", "-c", "{MARKER}", "{marker}"]\n'
     drawn = f'\n[[section]]\nnumber = 3\nrender_command = ["{{python}}", "-c", "{MARKER}", "{marker}"]\n'
-    inputs = a_project(tmp_path, extra=drawn + clip, machine=machine)
+    inputs = a_project(tmp_path, extra=drawn, machine=machine)
     with pytest.raises(InputError, match="record.programs") as refused:
         record(inputs, a_run(inputs.root))
     assert "section 3's render_command" in str(refused.value)
-    assert "the [[clip]] that makes deck/clips/tone.mp4" in str(refused.value)
     assert not marker.exists()
-    assert not (tmp_path / "deck" / "clips" / "tone.mp4").exists()

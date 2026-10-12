@@ -2,7 +2,6 @@
 
     [project]                name, script, cues, build, language
     [[section]]              number, chapter, then page and scene, render_command, or clip
-    [[clip]]                 file, command: a clip the project makes at build time
     [transition]             dips, dip_seconds, page_fades_in
     [mix]                    music, ambience, music_markers, effects and their levels
     [score]                  the prompts `decktalk score` generates from
@@ -179,20 +178,6 @@ RecordedSection = PageSection | RenderSection
 """A section `record` makes the picture of, from a page or from a command, which the narration runs through."""
 
 
-@dataclass(frozen=True)
-class MadeClip:
-    """A clip the project makes at build time rather than keeps: the project file and the command that writes it.
-
-    A pane plays a clip from a project file and so does a clip section, and a clip that is drawn from
-    the film's own sources, or that a package cannot ship, is written by a command instead. `record`
-    runs the command when the file is not there, in a scratch folder of its own and with the
-    placeholders a render command is given, and the file is then a project file like any other.
-    """
-
-    file: str
-    command: tuple[str, ...]
-
-
 ZERO_FADE_HAZARD = (
     "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one "
     "above zero."
@@ -323,9 +308,7 @@ PAGE_KEYS = frozenset(PageSection.__dataclass_fields__)
 RENDER_KEYS = frozenset(RenderSection.__dataclass_fields__)
 KIND_KEYS = {SectionKind.PAGE: PAGE_KEYS, SectionKind.CLIP: CLIP_KEYS}
 """The keys each kind a misplaced key is named for reads, the page's first, which a note names that kind by."""
-CLIP_TABLE = "clip"
-"""The array of tables that declares a clip the project makes, in the singular like `[[section]]`."""
-TOP_TABLES = frozenset({"project", "section", CLIP_TABLE, "transition", "mix", "score"})
+TOP_TABLES = frozenset({"project", "section", "transition", "mix", "score"})
 
 
 @dataclass(frozen=True)
@@ -341,8 +324,6 @@ class Document:
     transition: Transition
     mix: Mix
     score: Score
-    clips: tuple[MadeClip, ...] = ()
-    """Every clip the project makes at build time, in the order the file declares them."""
     notes: tuple[str, ...] = ()
     """One sentence per key the parser read past, which a run reports rather than a log line nobody sees."""
 
@@ -374,7 +355,6 @@ class Document:
             transition=parse_transition(top, numbers, notes),
             mix=parse_mix(top, numbers, notes),
             score=parse_score(top, notes),
-            clips=parse_clips(top, notes),
             notes=tuple(notes),
         )
 
@@ -510,21 +490,6 @@ def render_section(raw: dict[str, Any], t: Table, number: int, notes: list[str])
     command = command_words(raw["render_command"], t.where, "render_command")
     notes += section_key_notes(t, RENDER_KEYS)
     return fill(t, RenderSection, number=number, render_command=command)
-
-
-def parse_clips(top: Table, notes: list[str]) -> tuple[MadeClip, ...]:
-    """Every clip the project makes, each a project file no other `[[clip]]` writes."""
-    made: list[MadeClip] = []
-    for i, item in enumerate(top.get_tables(CLIP_TABLE), start=1):
-        t = top.inner(item, f"{PROJECT_FILE}: [[{CLIP_TABLE}]] #{i}", table=CLIP_TABLE, item=i)
-        notes += t.note_unknown(MadeClip.__dataclass_fields__)
-        command = command_words(item.get("command"), t.where, "command")
-        made.append(fill(t, MadeClip, command=command))
-    files = [clip.file for clip in made]
-    doubled = sorted({file for file in files if files.count(file) > 1})
-    if doubled:
-        raise InputError(f"{PROJECT_FILE}: more than one [[{CLIP_TABLE}]] writes {', '.join(doubled)}")
-    return tuple(made)
 
 
 def parse_sections(top: Table, notes: list[str]) -> list[Section]:

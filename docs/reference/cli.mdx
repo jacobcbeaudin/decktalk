@@ -82,9 +82,8 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`PAGE_SLIDE_HANDLER_THREW`](/reference/findings/PAGE_SLIDE_HANDLER_THREW) | error | A slide's own moment handler threw, so that moment did not play. |
 | [`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW) | error | A moment handler threw, so the change it was to make never happened. |
 | [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | error | Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it. |
-| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | error | A motion or a pane clip names a cue no slide declares, so it never starts or never lands. |
+| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | error | A motion names a cue no slide declares, so it never starts or never lands. |
 | [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA) | error | A page holds a video or an audio element, which plays at its own rate and not on the stepped clock. |
-| [`PAGE_CLIP_UNREADABLE`](/reference/findings/PAGE_CLIP_UNREADABLE) | error | A pane clip names a file the origin could not decode into a picture, so the pane plays nothing. |
 | [`PAGE_FRAME_THREW`](/reference/findings/PAGE_FRAME_THREW) | error | A frame hook threw, so whatever it drew stopped moving from that frame on. |
 | [`PAGE_WAIT_REJECTED`](/reference/findings/PAGE_WAIT_REJECTED) | error | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
 | [`PAGE_WAIT_UNSETTLED`](/reference/findings/PAGE_WAIT_UNSETTLED) | error | A wait the page declared never settled inside its budget, so the runtime carried on without it. |

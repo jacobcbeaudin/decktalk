@@ -43,7 +43,7 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | frame hook | A function `DeckTalk.frame` calls on every frame with the section second, which draws something from that second alone. | | [Runtime](/reference/runtime#the-decktalk-object) |
 | region | The element a frame hook draws inside, which `DeckTalk.frame` names in `region` and verify masks. | | [Things that move](/guides/motion#a-frame-hook-and-its-region) |
 | composition page | A deck page that draws its whole picture itself, in a canvas, WebGL or three.js, from a frame hook and the runtime's cues and words. It plays in an ordinary page section. | | [Things that move](/guides/motion#a-composition-page) |
-| lane | One declared motion, loop, region or pane clip as the recorder saw it: the box it swept, its size, when it moved and the cues it lands on. Verify masks a lane out of every cue and measures a motion's landings on it. A cue that reveals or changes an element is reported the same way, as a lane of kind `reveal` that a film's landings carry and verify never masks. | | [The page contract](/concepts/page-contract#the-lane-report) |
+| lane | One declared motion, loop or region as the recorder saw it: the box it swept, its size, when it moved and the cues it lands on. Verify masks a lane out of every cue and measures a motion's landings on it. | | [The page contract](/concepts/page-contract#the-lane-report) |
 | landing | One cue a motion lands on, either its departure, `depart`, or its arrival, `arrive`. | | [Verify](/reference/verify#motions) |
 | cue name | The name a moment attribute writes, such as `expand`, which means something inside its own slide alone. | local name | [The page contract](/concepts/page-contract) |
 | cue id | The slide id, a colon and the cue name. `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`. | wire id | [Cues](/concepts/cues) |
@@ -121,7 +121,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 | estimated words | The words DeckTalk timed from the script's pace, for a placeholder or for a take no aligner could time. They cost nothing to make again. | placeholder words | [Build artifacts](/reference/artifacts) |
 | aligner | What times the words of a take whose voice sent none, from its audio and the script's words. DeckTalk ships one, the local server `[dtsp] base_url` names. | | [Providers](/decisions/the-provider-interface) |
 | aligned words | The words an aligner measured in a take, kept in `takes/aligned/` under a key of the take and the aligner. They cost nothing to make again. | | [Build artifacts](/reference/artifacts) |
-| clip words | The words of one clip, cut from its section's words, or a words file the author names for a clip section, each word with the voice and the turn that say it when the file names them. A pane clip's are the words file beside it as `<clip>.words.json`, and a built film writes its own as `<name>.words.json`. | | [Play a clip](/guides/clip-section#caption-the-speech-inside-a-clip) |
+| clip words | The words of one clip, cut from its section's words, or the words file beside a clip section's clip as `<clip>.words.json`, each word with the voice and the turn that say it when the file names them. A built film writes its own as `<name>.words.json`. | | [Play a clip](/guides/clip-section#caption-the-speech-inside-a-clip) |
 
 ## Money and records
 
@@ -146,10 +146,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 | section video | One section encoded to its own span, `build/sections/NN.mp4`, which `assemble` joins into the film. | | [Build artifacts](/reference/artifacts) |
 | film | The finished mp4, `build/final/<name>.mp4`. | | [Build artifacts](/reference/artifacts) |
 | captioned copy | The film with its captions drawn into the picture by the page, `build/final/<name>-captioned.mp4`, which `[output] captioned` asks for. | | [Accessible video](/guides/accessible-video) |
-| clip | A video file with its own audio, which a clip section plays full frame or a pane plays inside a page: one of your own, one a `[[clip]]` makes, a film DeckTalk built, or the file `decktalk clip` cuts out of a built section. | | [Play a clip](/guides/clip-section) |
-| pane clip | A clip a page section plays inside an element, declared with `data-clip` and the cue `data-clip-from`. The page draws around it and over it, the voice keeps going, and its sound joins the mix at the cue. | | [Play a clip](/guides/clip-section#a-clip-in-a-pane) |
-| made clip | A clip the project makes at build time with the command its `[[clip]]` names, rather than keeps as a file. | | [Play a clip](/guides/clip-section#a-clip-the-project-makes) |
-| clip landings | The landings a clip carries beside it as `<clip>.landings.json`, on its own clock and in its own pixels, which verify moves onto the film's clock from a pane's cue and measures. A built film writes its own as `<name>.landings.json`. | | [Verify](/reference/verify#a-pane-clip) |
+| clip | A video file with its own audio, which a clip section plays full frame: one of your own, a film DeckTalk built, or the file `decktalk clip` cuts out of a built section. | | [Play a clip](/guides/clip-section) |
 | slate | The titled frame a missing clip plays. | placeholder frame | [Play a clip](/guides/clip-section) |
 | cut | The boundary where one section ends and the next starts. | | [Verify](/reference/verify) |
 | seam | A cut a `seamless` section claims shows nothing. | | [Verify](/reference/verify) |

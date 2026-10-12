@@ -366,15 +366,16 @@ def test_check_says_which_voice_reads_how_many_turns_on_which_bill(tmp_path: Pat
 
 
 def test_every_program_the_project_names_is_listed_before_anything_runs(tmp_path: Path) -> None:
-    """A reviewer reads what a project would start before a build starts it, a made clip's command included."""
-    clip = '\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{python}", "clips/make", "{out}"]\n'
-    inputs = a_project(tmp_path, toml=TOML + clip, cues=CUES)
-    (tmp_path / "deck" / "clips").mkdir(parents=True)
-    (tmp_path / "deck" / "clips" / "tone.mp4").write_bytes(b"made")
+    """A reviewer reads what a project would start before a build starts it, whether or not it was recorded."""
+    drawn = 'page = "deck/index.html"\nscene = "2"\n'
+    assert TOML.count(drawn) == 1
+    toml = TOML.replace(drawn, 'render_command = ["{python}", "render/draw", "{out}"]\n')
+    inputs = a_project(tmp_path, toml=toml, cues=CUES)
     result = check(inputs, a_run(tmp_path), pages=False)
     [listed] = [found for found in result.findings if found.code is Code.PROGRAM_NAMED]
     assert listed.severity is Severity.WARNING
-    assert 'the [[clip]] that makes deck/clips/tone.mp4 runs `["{python}", "clips/make", "{out}"]`' in listed.message
+    assert 'section 2\'s render_command runs `["{python}", "render/draw", "{out}"]`' in listed.message
+    assert listed.location is not None and listed.location.section == 2
     assert ".env" in listed.message
     assert "record.programs is refuse" in listed.message
 

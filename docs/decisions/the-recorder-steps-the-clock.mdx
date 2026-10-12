@@ -62,7 +62,7 @@ A step says the picture changed when any of these holds:
 
 So anything a page draws outside that list has to be drawn from a frame hook or declared as a loop.
 A DOM change a timer or an animation frame of the page's own makes between two steps is seen, and is
-undeclared change when it sits inside no declared motion, loop, region or pane clip: the step names the element
+undeclared change when it sits inside no declared motion, loop or region: the step names the element
 and where every changed element is laid out, and when the frame captured after it differs from the frame before
 inside that box, or anywhere when a changed element is laid out nowhere, `record` reports
 [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) with the element, the first
@@ -158,9 +158,8 @@ the film's own quality, and a lossy pass here would put the encoder's ringing in
   and an encode of each of its frames, which runs beside the steps. A heavy page records slower than
   real time rather than wrongly, and a starved machine takes longer rather than dropping a frame.
 - A Worker keeps its own clock, and a `<video>` or an `<audio>` element plays at its own rate. The
-  stepped clock holds neither, so a deck that needs footage in a page plays it in a pane with
-  `data-clip`, whose frames the recorder draws one second at a time, or uses a clip section or a
-  render section, and a page that holds a video element is `PAGE_REALTIME_MEDIA`.
+  stepped clock holds neither, so a deck that needs footage uses a clip section or a render section,
+  and a page that holds a video element is `PAGE_REALTIME_MEDIA`.
 - Anything the page moves for longer than a moment is declared as a motion, a loop or a frame hook's
   region, because verify masks only what it was told moves. [Things that move](/guides/motion) shows
   each.

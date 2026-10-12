@@ -20,7 +20,6 @@ and says so.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -70,14 +69,9 @@ def test_a_packaged_project_verifies_clean_with_every_cue_on_its_frame(tmp_path:
     assert len(landed) == len(verified["motions"]), verified["motions"]
     due = due_seconds(root / "build")
     fps = Settings().video.fps
-
-    def due_at(row: dict[str, Any]) -> tuple[float, float]:
-        # A landing inside a pane clip lands on the clip's own cue, due at the film second its row says.
-        return (0.0, row["spoken"]) if row.get("clip") else due[(row["section"], row["cue"])]
-
     late = {
-        f"{row['section']}:{row.get('clip') or ''}{row['cue']}:{row.get('kind', 'reveal')}": frames_late(
-            row["shown"], *due_at(row), fps
+        f"{row['section']}:{row['cue']}:{row.get('kind', 'reveal')}": frames_late(
+            row["shown"], *due[(row["section"], row["cue"])], fps
         )
         for row in [*measured, *landed]
     }

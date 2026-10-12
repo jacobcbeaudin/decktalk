@@ -1,11 +1,11 @@
 """The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
 
 A silent anchor of the picture's length fixes the duration, the narration plays under the page
-sections, each clip section's own audio lands at its section start and each pane clip's at its cue,
-the music is ducked under speech and shaped by `markers.json`, an ambience bed sits under the
-sections that ask for one, and each sound effect lands on its resolved cue. A clip section between
-two page sections, or a hold, pauses the narration, so the track plays in the runs `inputs.timeline`
-splits it into, each from where its first section starts.
+sections, each clip section's own audio lands at its section start, the music is ducked under
+speech and shaped by `markers.json`, an ambience bed sits under the sections that ask for one, and
+each sound effect lands on its resolved cue. A clip section between two page sections, or a hold,
+pauses the narration, so the track plays in the runs `inputs.timeline` splits it into, each from
+where its first section starts.
 
 Every sound a clip carries is matched to the narration's integrated loudness before it is laid, so a
 film made somewhere else plays as loud as the voice beside it and the master's one gain lifts both
@@ -250,25 +250,13 @@ class Embedded:
     at: float
     seconds: float
     label: str
-    pane: bool = False
-    """Whether a pane plays it, inside a page section, rather than a clip section of its own."""
 
 
 def embedded_sounds(rows: list[Rendered], starts: Mapping[int, float]) -> list[Embedded]:
-    """Every clip's own sound: each clip section's from its start, and each pane clip's from its cue.
-
-    A pane clip's sound plays over the span its row says the film plays the clip, which is the span
-    the captions show its words over.
-    """
-    sounds = [
+    """Every clip section's own sound, from the second its section starts, for as long as the section plays."""
+    return [
         Embedded(row.audio, starts[row.number], row.seconds, f"clip{row.key}") for row in rows if row.audio is not None
     ]
-    for row in rows:
-        for number, play in enumerate(row.panes, start=1):
-            if play.has_audio:
-                at = starts[row.number] + play.start
-                sounds.append(Embedded(play.path, at, play.seconds, f"pane{row.key}n{number}", pane=True))
-    return sounds
 
 
 def matched_gains(inputs: Inputs, takes: Takes, sounds: Sequence[Embedded]) -> dict[Path, float]:
@@ -294,13 +282,12 @@ def matched_gains(inputs: Inputs, takes: Takes, sounds: Sequence[Embedded]) -> d
     return gains
 
 
-def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float],
-                 sounds: Sequence[Embedded] = ()) -> list[Span]:  # fmt: skip
+def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]) -> list[Span]:
     """Every span of the film that carries speech, which is what the music ducks under.
 
     A spoken section speaks from where it starts until its last word, or until it ends when it says
     nothing at all, and a clip section speaks for the whole of its own length because its dialogue is
-    its own. A pane clip speaks for as long as its sound plays.
+    its own.
     """
     offsets = narration_offsets([row.section for row in rows], takes, starts)
     spans: list[Span] = []
@@ -309,7 +296,6 @@ def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]
         until = at.speech_end if at.speech_end is not None else at.end
         spans.append((offset + at.start, offset + until))
     spans += [(starts[row.number], starts[row.number] + row.seconds) for row in rows if row.section.is_clip]
-    spans += [(sound.at, sound.at + sound.seconds) for sound in sounds if sound.pane]
     return spans
 
 
@@ -479,7 +465,7 @@ def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, sc
     _narration(chain, inputs, rows, takes, starts)
     _clip_audio(chain, sounds, matched_gains(inputs, takes, sounds))
     if score:
-        speech = speech_spans(rows, takes, starts, sounds)
+        speech = speech_spans(rows, takes, starts)
         _music(chain, inputs, run, starts, speech, total)
         _ambience(chain, inputs, run, rows, starts, total)
         _effects(chain, inputs, run, starts)

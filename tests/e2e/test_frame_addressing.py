@@ -103,9 +103,9 @@ def cue_seconds(url: str) -> list[float]:
 def record_pieces(root: Path, section: str, starts: list[int], end: int, into: Path) -> list[str]:
     """Record `[starts[i], starts[i + 1])` of one section, each piece in a fresh page, and digest every frame.
 
-    Each piece is recorded the way `record` records a chunk, with every frame captured, so a pane clip
-    is decoded for it and nothing is written again that the piece did not draw. The Chromium is
-    launched without the capture switches, which the one pass was recorded with.
+    Each piece is recorded the way `record` records a chunk, with every frame captured, so nothing is
+    written again that the piece did not draw. The Chromium is launched without the capture switches,
+    which the one pass was recorded with.
     """
     inputs = Inputs.load(root, environ={})
     log = RecordingLog.read(root / "build" / "recordings" / f"{section}.json")

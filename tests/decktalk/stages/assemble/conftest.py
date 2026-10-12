@@ -7,19 +7,17 @@ is what keeps a test here about the cut, the mix and the publish rather than abo
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, PanePlay, Takes
+from decktalk.artifacts import CueTimes, Takes
 from decktalk.errors import Cancel
 from decktalk.events import FindingRaised, RunLog, StageProgress
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
-from decktalk.stages import played_clips
 from decktalk.stages.assemble.cut import Rendered
 from support.fakes import FakeFfmpeg
 from support.projects import load_project
@@ -209,16 +207,6 @@ def rendered(inputs: Inputs, seconds: dict[int, float], *, audio: dict[int, Path
         for section in inputs.document.sections
         if section.number in seconds
     ]
-
-
-def with_panes(inputs: Inputs, rows: list[Rendered]) -> list[Rendered]:
-    """The rows with every pane clip each page section's recording log says it played, as the cut attaches them."""
-
-    def panes(row: Rendered) -> tuple[PanePlay, ...]:
-        log = inputs.recording_log(row.key) if isinstance(row.section, PageSection) else None
-        return () if log is None else played_clips(log.recording, row.seconds, inputs.root)
-
-    return [replace(row, panes=panes(row)) for row in rows]
 
 
 def durations(monkeypatch: pytest.MonkeyPatch, by_name: dict[str, float], default: float = 1.0) -> None:

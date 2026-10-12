@@ -140,42 +140,16 @@ def test_a_render_command_that_is_not_a_list_of_words_is_refused() -> None:
 
 
 PAGE = {"number": 1, "page": "deck/index.html", "scene": "1"}
-"""One page section, which is all a document needs before it can declare a clip it makes."""
+"""One page section, which is all a document needs to be whole."""
 
 
-def test_a_clip_the_project_makes_names_its_file_and_the_command_that_writes_it() -> None:
-    doc = Document.from_toml(
-        {"section": [PAGE], "clip": [{"file": "deck/clips/tone.mp4", "command": ["{python}", "clips/make", "{out}"]}]},
-        default_name="t",
-    )
-    (made,) = doc.clips
-    assert (made.file, made.command) == ("deck/clips/tone.mp4", ("{python}", "clips/make", "{out}"))
-
-
-def test_a_clip_made_outside_the_project_is_refused() -> None:
-    with pytest.raises(InputError, match="outside the project"):
+def test_a_clip_table_is_a_table_the_document_does_not_know() -> None:
+    """A project makes no clip at build time, so `[[clip]]` is refused as any unknown table is."""
+    with pytest.raises(InputError, match=r"unknown table\(s\) \['clip'\]"):
         Document.from_toml(
-            {"section": [PAGE], "clip": [{"file": "../film.mp4", "command": ["make"]}]}, default_name="t"
+            {"section": [PAGE], "clip": [{"file": "deck/clips/tone.mp4", "command": ["{python}", "make", "{out}"]}]},
+            default_name="t",
         )
-
-
-def test_a_clip_whose_command_is_not_a_list_of_words_is_refused() -> None:
-    with pytest.raises(InputError, match="'command' must be a list of words"):
-        Document.from_toml({"section": [PAGE], "clip": [{"file": "a.mp4", "command": "make a.mp4"}]}, default_name="t")
-
-
-def test_two_clips_that_write_one_file_are_refused() -> None:
-    """Two commands writing one clip would leave whichever ran last, which no reader could tell from the file."""
-    made = {"file": "deck/a.mp4", "command": ["make"]}
-    with pytest.raises(InputError, match="more than one"):
-        Document.from_toml({"section": [PAGE], "clip": [made, made]}, default_name="t")
-
-
-def test_a_key_a_made_clip_does_not_read_is_a_note() -> None:
-    doc = Document.from_toml(
-        {"section": [PAGE], "clip": [{"file": "a.mp4", "command": ["make"], "fps": 30}]}, default_name="t"
-    )
-    assert any("fps" in note for note in doc.notes)
 
 
 def test_a_section_cannot_be_both_a_page_and_a_render() -> None:

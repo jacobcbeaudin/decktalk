@@ -38,12 +38,12 @@ STRAY_SUFFIXES = (".pyc", ".pyo", ".orig", ".rej", ".swp", ".bak", ".tmp", ".log
 SHIPPED_SUFFIXES = {".py", ".typed", ".js", ".css", ".woff2", ".html", ".json", ".md", ".toml", ".txt", ".webp"}
 """Every kind of file the package ships. A new kind is a deliberate change to this set."""
 
-SHIPPED_BARE_NAMES = {"LICENSE", "gitignore", "env.example", "draw_bars", "make_film"}
-"""The five files that ship without a suffix.
+SHIPPED_BARE_NAMES = {"LICENSE", "gitignore", "env.example", "draw_bars"}
+"""The four files that ship without a suffix.
 
-Three are copied into a project under another name. The other two are the motion example's
-programs, the renderer its `render_command` runs and the maker its `[[clip]]` runs, each by name,
-and neither has a suffix so that no rule for the library's own modules reaches a project's script.
+Three are copied into a project under another name. The fourth is the motion example's renderer,
+the program its `render_command` runs by name, which has no suffix so that no rule for the
+library's own modules reaches a project's script.
 """
 
 KATEX_FONT_FILES = 20

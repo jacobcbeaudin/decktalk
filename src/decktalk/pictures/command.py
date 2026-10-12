@@ -20,7 +20,7 @@ The words a program is given are replaced before it runs:
     {python}    the Python this run is
     {ffmpeg}    the ffmpeg this run encodes with
 
-`run_program` is how every program a project names runs, a clip's command as well as a section's.
+`run_program` runs the program, in a scratch folder and with a scrubbed environment.
 """
 
 from __future__ import annotations

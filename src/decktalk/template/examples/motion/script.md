@@ -25,10 +25,3 @@ way to the last one, while the voice talks over it.
 
 This picture is drawn by another program, from the same word times. [beat] One bar for one, a
 second for two, and a third for three, while the voice keeps going.
-
-## 4. A film in a pane
-
-[Scene 4. A film with its own sound plays in a pane, with a label over it and a line under it.]
-
-This pane plays a film with its own sound. [beat] It starts when I say play, and the page keeps
-drawing around it and over it while the voice keeps going.

@@ -156,9 +156,8 @@ class ClipWords(Words):
     """Every word inside one clip, on the clip's own clock, as the captions show them.
 
     `decktalk clip` writes one beside every clip it cuts, and every build writes its film's own beside
-    the film as `<name>.words.json`, each word with its voice and its turn, so a pane that plays either
-    captions its speech. A section that names one in `decktalk.toml` makes it an input the author owns,
-    which DeckTalk reads and never writes again.
+    the film as `<name>.words.json`, each word with its voice and its turn, so a clip section that
+    plays either captions its speech.
     """
 
     label: ClassVar[str] = "the words of one clip"

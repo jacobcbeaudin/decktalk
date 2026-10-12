@@ -340,31 +340,6 @@
       affects: ["motion"],
       summary: "How long one turn of the loop takes.",
     },
-    "data-clip": {
-      name: "data-clip",
-      on: ["element"],
-      kind: "path",
-      values: [],
-      default: null,
-      range: null,
-      code: "PAGE_CLIP_UNREADABLE",
-      span: 0,
-      affects: ["motion", "catalog"],
-      summary:
-        "The element is a pane that plays this project file, a clip with its own sound, drawn under the page and masked from every reveal check.",
-    },
-    "data-clip-from": {
-      name: "data-clip-from",
-      on: ["element"],
-      kind: "cue",
-      values: [],
-      default: null,
-      range: null,
-      code: "PAGE_MOTION_CUE_UNKNOWN",
-      span: 0,
-      affects: ["cue-order", "motion", "catalog"],
-      summary: "The pane clip starts playing, picture and sound, at this cue, and shows its first frame before it.",
-    },
     "data-scene": {
       name: "data-scene",
       on: ["scene"],
@@ -443,7 +418,6 @@
   var CUE_MARK = ":";
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
-  var CLIP_FRAMES = `${ENGINE_PATH}clip/`;
   var PREVIEW_CANVAS = `${ENGINE_PATH}canvas.json`;
   function cueId(slide, local) {
     return `${slide}${CUE_MARK}${local}`;
@@ -776,7 +750,6 @@
       cues,
       words,
       motions: view?.motions ?? [],
-      reveals: view?.reveals ?? [],
     };
   }
   function freezeCues(order, slideId, warn) {

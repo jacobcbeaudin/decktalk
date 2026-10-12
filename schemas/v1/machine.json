@@ -75,7 +75,7 @@
           "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
         },
         "programs": {
-          "description": "Whether `record` runs the programs a project names, which are a section's `render_command` and a `[[clip]]` table's `command`. A program runs with your user's rights and can read every file you can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run would start and runs them only when a person at a terminal answers yes, and refuses without a terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the `untrusted` page policy no program runs whatever this says. It is the machine's to set, so a project cannot allow its own programs.",
+          "description": "Whether `record` runs the programs a project names, which are its render sections' `render_command`. A program runs with your user's rights and can read every file you can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run would start and runs them only when a person at a terminal answers yes, and refuses without a terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the `untrusted` page policy no program runs whatever this says. It is the machine's to set, so a project cannot allow its own programs.",
           "type": "string",
           "default": "refuse",
           "enum": [

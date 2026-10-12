@@ -51,7 +51,6 @@ from ..page import SECOND_DIGITS
 from ..settings import MotionConfig, RecordConfig
 from . import ffmpeg
 from .browser import Chromium
-from .clipframes import ClipFrames
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording, UndeclaredChange, joined
 from .pages import (
@@ -595,19 +594,17 @@ def stepping(
     color_scheme: str,
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
-    clips: ClipFrames | None = None,
 ) -> Iterator[tuple[Page, Assets]]:
     """A page on Playwright's clock in a context of its own, and what it loads, closed however this ends.
 
-    `clips` decodes every pane clip the page plays, and is stopped with the context. A context that
-    cannot close after the block failed leaves the block's own error to say why: a renderer that
-    crashed under a capture can take its browser with it as its page closes.
+    A context that cannot close after the block failed leaves the block's own error to say why: a
+    renderer that crashed under a capture can take its browser with it as its page closes.
     """
     with driving("could not open a recording context"):
         context = chromium.browser.new_context(**view(width, height, color_scheme, motion))
     failed = False
     try:
-        assets = route_pages(context, allowed, documents, trusted=chromium.trusted, clips=clips)
+        assets = route_pages(context, allowed, documents, trusted=chromium.trusted)
         instrument(context, *page_scripts(width, height, motion))
         with driving("could not open a page"):
             page = context.new_page()
@@ -624,8 +621,6 @@ def stepping(
             if not failed:
                 raise
             # silent: the block's own error is the one that says why the recording ended.
-        if clips is not None:
-            clips.close()
 
 
 @dataclass(frozen=True)
@@ -770,8 +765,6 @@ def _record_once(
             color_scheme=record.color_scheme,
             motion=motion,
             documents=documents,
-            # Every pane clip is decoded at the film's rate and no larger than its frame, by the ffmpeg the encode runs.
-            clips=ClipFrames(fps=fps, executable=ffmpeg.ffmpeg(), width=width, height=height),
         ) as (page, assets),
         Watchdog.watching(
             lambda: close_soon(page.context),

@@ -72,8 +72,6 @@ export const CLASS = {
   caption: "dt-caption",
   /** One line of a caption, which carries `data-sound` when it says what is heard rather than said. */
   captionLine: "dt-caption-line",
-  /** A slide that plays a pane clip, every picture of which the sheet draws on a layer of its own. */
-  paned: "dt-paned",
 } as const;
 
 /** The id of the band the captions are drawn in, inside the canvas so a page styles it in canvas pixels. */
@@ -215,10 +213,6 @@ function sheet(): string {
     // is opaque at every moment of a crossfade and never dips towards the page's own background.
     `:where(.${CLASS.leaving}){opacity:1;z-index:0;pointer-events:none}\n`,
     `:where(.${CLASS.arriving}){z-index:1}\n`,
-    // A pane clip's picture is a compositor layer of its own, and Chromium lays a picture overlapping
-    // it out with it, so a picture that first shows beside it draws the pictures around it again with
-    // nothing changed. Every picture of a slide that plays one is a layer of its own, so none is.
-    `:where(.${CLASS.paned}) img{will-change:transform}\n`,
     `:where(.${CLASS.hidden}){opacity:0}\n`,
     `:where(.${CLASS.shown}){opacity:1}\n`,
   ];

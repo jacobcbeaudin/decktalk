@@ -33,14 +33,10 @@ than at the end.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from pathlib import Path
 
-from decktalk.artifacts import PanePlay, Takes
+from decktalk.artifacts import Takes
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import RecordedSection
-from decktalk.inputs.paths import contained
-from decktalk.media import ffmpeg
-from decktalk.media.pagereport import Recording
 from decktalk.page import SECOND_DIGITS
 from decktalk.speech import SpeechContext, VoiceInForce
 
@@ -77,7 +73,6 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
 
 __all__ = [
     "SECTION_START_SECONDS",
-    "played_clips",
     "selects",
     "speech_context",
 ]
@@ -101,25 +96,3 @@ def page_seconds(takes: Takes, section: RecordedSection, fps: int) -> float:
     """
     span = section_targets(takes, fps).get(section.number, 0.0)
     return round(span + section.hold_seconds, SECOND_DIGITS) if span > 0 else 0.0
-
-
-def played_clips(recording: Recording, seconds: float, root: Path) -> tuple[PanePlay, ...]:
-    """Every pane clip one recording played, each with the span the film plays it over, probed once.
-
-    A pane clip plays from its cue until it ends, or until its page stops being recorded or its
-    section stops playing, whichever comes first, because after that the film holds the page's last
-    frame and nothing in it plays. A clip whose cue falls after that, or whose file is not there,
-    plays nothing. The clip's path comes from a recording log, which a project may carry in, so it is
-    read through the project's containment rule like every other file the project names, and a log
-    that names a file outside the project is refused before anything opens it.
-    """
-    played = min(seconds, recording.requested_seconds)
-    plays: list[PanePlay] = []
-    for lane in recording.pane_clips():
-        path = contained(root, lane.clip or "")
-        start = lane.landings[0].at
-        if start >= played or not path.is_file():
-            continue
-        length = round(min(ffmpeg.probe_duration(path), played - start), SECOND_DIGITS)
-        plays.append(PanePlay(lane, path, start, length, ffmpeg.has_audio(path)))
-    return tuple(plays)

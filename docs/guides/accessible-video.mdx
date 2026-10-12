@@ -60,11 +60,11 @@ player draws overlapping cues twice or drops one of them, so a sound that lands 
 joins that caption as a line of its own and a sound that lands in the short gap before one joins the
 cue after it. Only a sound with a whole second to itself keeps a cue of its own.
 
-A clip captions its own speech from the words file beside it, `<clip>.words.json`, whether it plays
-as a clip section or in a pane, and nothing captions it otherwise, because the captions are built
-from the narration's word times and a clip's speech is not in the narration. Every DeckTalk build
-writes that file beside its film and `decktalk clip` beside every clip it cuts, so a film DeckTalk
-built is captioned in a pane as it captioned itself. A clip with no words file beside it adds no
+A clip section captions its clip's own speech from the words file beside it, `<clip>.words.json`,
+and nothing captions it otherwise, because the captions are built from the narration's word times
+and a clip's speech is not in the narration. Every DeckTalk build writes that file beside its film
+and `decktalk clip` beside every clip it cuts, so a film DeckTalk built is captioned in a clip
+section as it captioned itself. A clip with no words file beside it adds no
 caption. [Play a clip](/guides/clip-section) has the
 file's shape.
 
@@ -116,7 +116,7 @@ from the film untouched, and only the picture is encoded again.
 
 The transcript page carries, for every chapter in the order it plays: a heading, the span in the
 finished film, the spoken text of each section under it, the speech inside every clip the captions
-carry, a clip section's and a pane clip's alike, and a list of that chapter's described reveals with the
+carry, and a list of that chapter's described reveals with the
 second each one fired. The paragraphs of a section are in the order the film plays them. A section spoken
 in more than one voice is one paragraph per turn, each opening with the name of its voice, and a clip's
 speech is one paragraph that names nobody.

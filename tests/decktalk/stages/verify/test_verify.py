@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
+from collections.abc import Callable, Iterable
+from typing import Any
 
 import pytest
 
-from decktalk.artifacts import CueTimes, PanePlay
-from decktalk.errors import Cancelled, InputError, NotBuiltError
+from decktalk.artifacts import CueTimes
+from decktalk.errors import Cancelled, NotBuiltError
 from decktalk.events import Event, StageProgress, Unit
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
-from decktalk.media.clipframes import landings_of
-from decktalk.media.pagereport import Box, Landing, MotionLane, PageReport, Recording, Size
+from decktalk.media.pagereport import MotionLane
 from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, Substitute, VerifyResult
-from decktalk.stages import played_clips
-from decktalk.stages.verify import measure as measure_module
+from decktalk.stages.verify import motion as verify_motion
 from decktalk.stages.verify import verify
 from support.pages import write_log
 
@@ -121,40 +119,21 @@ def test_a_recording_logs_own_judgement_is_reported_again(assembled: Callable[..
     assert Code.PAGE_RENDER_THREW in [row.code for row in result.findings]
 
 
-def test_a_recording_log_that_names_a_pane_clip_outside_the_project_is_refused(
-    assembled: Callable[..., Inputs], tmp_path: Path
-) -> None:
-    """Verify reads a pane clip's path through the containment rule, as the mix and the captions do."""
-    inputs = assembled(CUES)
-    outside = tmp_path.parent / f"{tmp_path.name}-x.mp4"
-    outside.write_bytes(b"not the project's")
-    landings_of(outside).write_text("[]", encoding="utf-8")
-    planted = MotionLane(
-        id="clip-1", kind="clip", box=Box(x=0, y=0, w=960, h=540), size=Size(w=960, h=540), departs=0.5,
-        arrives=1.0, rest=Box(x=0, y=0, w=960, h=540), landings=(Landing(cue="1.1:a", kind="depart", at=0.5),),
-        clip=f"../{outside.name}",
-    )  # fmt: skip
-    write_log(
-        inputs, 1, report=PageReport(motions=(planted,)), requested_seconds=SECTION_SECONDS, assets=[planted.clip or ""]
-    )
-    with pytest.raises(InputError, match="outside the project"):
-        measure(inputs)
-
-
-def test_each_section_s_pane_clips_are_read_once_however_many_cues_it_has(
+def test_each_section_s_lanes_are_read_once_however_many_cues_it_has(
     assembled: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Every clip a section played is probed once a verify, not once for every cue measured in it."""
+    """Every section's recording log is read into lanes once a verify, not once for every cue measured in it."""
     inputs = assembled({1: {"1.1:a": 2.0, "1.1:b": 3.0, "1.1:c": 4.0}, 2: {"2.1:a": 2.0}})
     for section in (1, 2):
         write_log(inputs, section, requested_seconds=SECTION_SECONDS)
     asked: list[float] = []
+    lanes_of = verify_motion.lanes_of
 
-    def counted(recording: Recording, seconds: float, root: Path) -> tuple[PanePlay, ...]:
-        asked.append(seconds)
-        return played_clips(recording, seconds, root)
+    def counted(rows: Iterable[MotionLane], **sizes: Any) -> list[verify_motion.Lane]:
+        asked.append(sizes["start"])
+        return lanes_of(rows, **sizes)
 
-    monkeypatch.setattr(measure_module, "played_clips", counted)
+    monkeypatch.setattr(verify_motion, "lanes_of", counted)
     measure(inputs)
     assert len(asked) == 2, "one read for each of the two sections"
 

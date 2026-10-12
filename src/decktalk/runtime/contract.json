@@ -10,7 +10,6 @@
   "doneAttr": "data-done",
   "enginePath": "/__decktalk/",
   "previewCueTimes": "/__decktalk/cue-times.json",
-  "clipFrames": "/__decktalk/clip/",
   "motionScaleProperty": "--dt-motion-scale",
   "canvasWidth": 1920,
   "canvasHeight": 1080,
@@ -600,41 +599,6 @@
       ],
       "summary": "How long one turn of the loop takes."
     },
-    "data-clip": {
-      "name": "data-clip",
-      "on": [
-        "element"
-      ],
-      "kind": "path",
-      "values": [],
-      "default": null,
-      "range": null,
-      "code": "PAGE_CLIP_UNREADABLE",
-      "span": 0,
-      "affects": [
-        "motion",
-        "catalog"
-      ],
-      "summary": "The element is a pane that plays this project file, a clip with its own sound, drawn under the page and masked from every reveal check."
-    },
-    "data-clip-from": {
-      "name": "data-clip-from",
-      "on": [
-        "element"
-      ],
-      "kind": "cue",
-      "values": [],
-      "default": null,
-      "range": null,
-      "code": "PAGE_MOTION_CUE_UNKNOWN",
-      "span": 0,
-      "affects": [
-        "cue-order",
-        "motion",
-        "catalog"
-      ],
-      "summary": "The pane clip starts playing, picture and sound, at this cue, and shows its first frame before it."
-    },
     "data-scene": {
       "name": "data-scene",
       "on": [
@@ -771,9 +735,8 @@
     "PAGE_SLIDE_HANDLER_THREW": "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
     "PAGE_HANDLER_THREW": "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
     "PAGE_MOTION_UNDECLARED": "{value} keeps moving past the half second a cue may still move and declares no motion, loop or region, so verify cannot mask it.",
-    "PAGE_MOTION_CUE_UNKNOWN": "The motion or pane clip names the cue {cue}, which no slide declares, so it never starts or never lands.",
-    "PAGE_REALTIME_MEDIA": "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so play it in a pane with data-clip.",
-    "PAGE_CLIP_UNREADABLE": "The pane clip {value} on slide {slide} could not be read as a picture, so the pane plays nothing.",
+    "PAGE_MOTION_CUE_UNKNOWN": "The motion names the cue {cue}, which no slide declares, so it never starts or never lands.",
+    "PAGE_REALTIME_MEDIA": "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so use a clip section.",
     "PAGE_FRAME_THREW": "A frame hook the deck registered threw {value}, so it stopped drawing from that frame on.",
     "PAGE_WAIT_REJECTED": "A promise the page waited for rejected with {value}, so the page was drawn without it.",
     "PAGE_WAIT_UNSETTLED": "A promise the page waited for never settled, so the page was drawn without it.",
@@ -817,7 +780,6 @@
     "catalog": "One entry per scene, with its slides, its cues and the measured box of every element.",
     "cues": "When each cue was due, when it ran, and the second of the frame that showed it.",
     "words": "Each synced line, when its cue ran, when the voice reaches it and when its first word showed.",
-    "motions": "Every declared motion, loop, region and pane clip, the box it swept, when it moved and the cues it lands on.",
-    "reveals": "Every cue that revealed or changed an element, the box it was drawn in and the second the cue was due."
+    "motions": "Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on."
   }
 }

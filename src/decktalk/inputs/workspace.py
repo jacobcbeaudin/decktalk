@@ -12,7 +12,7 @@
                         and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, placements,
-                        transcript page, poster and landings, and the captioned copy when it is
+                        transcript page, poster and words, and the captioned copy when it is
                         asked for
     build/events/       one JSON lines file per run, which is what a run says it is doing
     build/kept.json     what the last build's assemble and verify read, wrote and found
@@ -32,7 +32,6 @@ from pathlib import Path
 
 from decktalk.artifacts import WORDS_SUFFIX, words_beside
 from decktalk.inputs.paths import confined
-from decktalk.media.clipframes import landings_of
 from decktalk.pipeline import Artifact
 
 SECTION_CUT = re.compile(r"(\d+)\.(?:mp4|json)")
@@ -231,7 +230,6 @@ class Workspace:
             "placements": self.placements_path,
             "transcript": self.final_dir / f"{self.name}-transcript.html",
             "poster": self.final_dir / f"{self.name}-poster.png",
-            "landings": landings_of(self.film),
             "words": words_beside(self.film),
         }
 

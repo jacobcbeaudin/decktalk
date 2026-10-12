@@ -37,7 +37,6 @@
         "PAGE_MOTION_UNDECLARED",
         "PAGE_MOTION_CUE_UNKNOWN",
         "PAGE_REALTIME_MEDIA",
-        "PAGE_CLIP_UNREADABLE",
         "PAGE_FRAME_THREW",
         "PAGE_WAIT_REJECTED",
         "PAGE_WAIT_UNSETTLED",
@@ -475,23 +474,16 @@
           "type": "array"
         },
         "section": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The section a render_command draws, or null for a clip's.",
-          "title": "Section"
+          "description": "The section whose render_command it is.",
+          "minimum": 0,
+          "title": "Section",
+          "type": "integer"
         }
       },
       "required": [
         "named_by",
-        "command"
+        "command",
+        "section"
       ],
       "title": "Program",
       "type": "object"

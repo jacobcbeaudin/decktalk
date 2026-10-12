@@ -37,7 +37,6 @@
         "PAGE_MOTION_UNDECLARED",
         "PAGE_MOTION_CUE_UNKNOWN",
         "PAGE_REALTIME_MEDIA",
-        "PAGE_CLIP_UNREADABLE",
         "PAGE_FRAME_THREW",
         "PAGE_WAIT_REJECTED",
         "PAGE_WAIT_UNSETTLED",
@@ -592,7 +591,7 @@
     },
     "MotionCheck": {
       "additionalProperties": false,
-      "description": "One landing of a declared motion, measured on its own lane against the word it was promised to.\n\nA landing inside a pane clip names the clip, and its cue is the clip's own, on the film's clock.",
+      "description": "One landing of a declared motion, measured on its own lane against the word it was promised to.",
       "properties": {
         "section": {
           "description": "The section this row is about, as the author numbered it.",
@@ -601,7 +600,7 @@
           "type": "integer"
         },
         "cue": {
-          "description": "The cue id the motion lands on, or the clip's own cue for a landing inside a clip.",
+          "description": "The cue id the motion lands on.",
           "title": "Cue",
           "type": "string"
         },
@@ -646,19 +645,6 @@
           "default": null,
           "description": "How far the landing is from its word, in seconds.",
           "title": "Offset Seconds"
-        },
-        "clip": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The pane clip this landing is inside, as its project path, or null for one of the page.",
-          "title": "Clip"
         }
       },
       "required": [

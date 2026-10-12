@@ -1,5 +1,5 @@
 #:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
-# The motion example: things that travel between two words, a loop, a spring, a bar that fills, and a film in a pane.
+# The motion example: things that travel between two words, a loop, a spring and a bar that fills.
 # `decktalk init --example motion DIR` writes it. Run `decktalk schema setting` for every key.
 
 [project]
@@ -27,19 +27,6 @@ number = 3
 chapter = "A picture from elsewhere"
 render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landings}", "{ffmpeg}"]
 hold_seconds = 1.0     # the page plays on this long after the narration
-
-# A page section that plays a film with its own sound in a pane, while the voice keeps going over it.
-[[section]]
-number = 4
-chapter = "A film in a pane"
-page = "deck/index.html"
-scene = "4"
-
-# The film the pane plays. A package ships no video, so a short script makes it the first time a
-# build records, from ffmpeg's own sources, at the film's rate, with its own landings beside it.
-[[clip]]
-file = "deck/clips/film.mp4"
-command = ["{python}", "render/make_film", "{out}", "{landings}", "{ffmpeg}", "{fps}"]
 
 [narration]
 tail_seconds = 1.0  # silence kept after the last word of a section, so a cut breathes

@@ -47,7 +47,6 @@ from decktalk.inputs.paths import at
 from decktalk.machine import Machine
 from decktalk.machine.fixes import apply_fixes
 from decktalk.machine.run import Run, new_run
-from decktalk.media.environment import children_see
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -309,14 +308,13 @@ class Project:
             location=at(self.root / PROJECT_FILE, self.root),
         )
 
-    def programs(self, *, only: Sequence[int] | None = None, force: bool = False) -> tuple[Program, ...]:
+    def programs(self, *, only: Sequence[int] | None = None) -> tuple[Program, ...]:
         """Every program a `record` over `only` would start, which `[record] programs` decides whether it may.
 
-        A clip's command is counted when its file is not there, or always when `force` is true, and a
-        section's `render_command` whenever `only` names the section. Each carries its words as the
+        That is the `render_command` of every render section `only` names, each with its words as the
         project file writes them.
         """
-        return self._inputs.programs(self.select(only), force=force)
+        return self._inputs.programs(self.select(only))
 
     def authored_files(self) -> tuple[Path, ...]:
         """Every file under the project an author edits, which is what a watch loop polls for saves.
@@ -608,17 +606,13 @@ class Project:
         and neither can read the credential beside it. It also answers two aliases, which are where a
         previewed page reads its resolved cues and its canvas, since a preview has no recorder to put
         them in its URL or on its root and the build directory is not served.
-
-        The server answers each request on a thread of its own, after the run that opened it has
-        closed, so every request is answered inside the machine's tools and the environment its
-        children see, which is what a pane clip's frame is decoded with.
         """
         # The server is the media layer's, which carries the routing every recorded page also uses.
         from decktalk.media.origin import Allowed, open_server, served_url  # noqa: PLC0415
 
         with self._open(writes=False) as run:
             allowed = Allowed.of(self.root, self._inputs.served_paths())
-            server = open_server(allowed, host, port, self._inputs.documents(), bound=self._tooled)
+            server = open_server(allowed, host, port, self._inputs.documents())
             result = run.result(
                 ServeResult,
                 url=served_url(server),
@@ -626,12 +620,6 @@ class Project:
             )
             threading.Thread(target=server.serve_forever, args=(CLOSE_POLL_SECONDS,), daemon=True).start()
             return Origin(server, result)
-
-    @contextmanager
-    def _tooled(self) -> Iterator[None]:
-        """Bind the machine's tools, its cache and its children's environment, for work answered outside any run."""
-        with self.machine.toolchain.bound(), children_see(self.machine.environ):
-            yield
 
     # ---- how every call is made -----------------------------------------------------------------
 

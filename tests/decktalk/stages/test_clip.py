@@ -226,7 +226,7 @@ def test_a_section_with_no_finished_film_names_the_command_that_makes_one(tmp_pa
 
 
 def test_the_sound_is_cut_from_the_finished_film(tmp_path: Path, fake_ffmpeg: FakeFfmpeg) -> None:
-    """The film's mix holds the voice, a pane clip's sound and the score, so the clip's sound is the film's."""
+    """The film's mix holds the voice, the effects and the score, so the clip's sound is the film's."""
     inputs = a_project(tmp_path)
     cut_a_clip(inputs, a_run(tmp_path))
     (call,) = [call for call in fake_ffmpeg.calls if "-filter_complex" in call]

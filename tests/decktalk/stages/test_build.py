@@ -463,8 +463,10 @@ def test_a_program_the_machine_refuses_is_refused_before_the_first_stage(
     refused: bool,
 ) -> None:
     """A take is made for nothing when the record stage then refuses the program, so the build asks first."""
-    clip = '\n[[clip]]\nfile = "media/made.mp4"\ncommand = ["{python}", "-c", "pass", "{out}"]\n'
-    inputs = load_project(tmp_path, TOML + clip, script=SCRIPT)
+    page = 'page = "deck/index.html"\nscene = "2"\n'
+    drawn = TOML.replace(page, 'render_command = ["{python}", "-c", "pass", "{out}"]\n')
+    assert drawn != TOML
+    inputs = load_project(tmp_path, drawn, script=SCRIPT)
     run = make_run(inputs).run
     if refused:
         with pytest.raises(InputError, match="record.programs is refuse"):

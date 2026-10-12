@@ -165,8 +165,8 @@ DOES = {
 def program_findings(inputs: Inputs) -> list[Finding]:
     """One warning per program the project names, said before anything else is judged and before any of them runs.
 
-    Every program is listed, a clip's whether or not its file is there, because a reviewer reads what
-    the project can start rather than what this checkout happens to lack.
+    Every render section's program is listed whether or not its recording still stands, because a
+    reviewer reads what the project can start rather than what this checkout happens to lack.
     """
     record = inputs.settings.record
     does = "so record refuses it" if record.page_policy == UNTRUSTED else DOES[record.programs]
@@ -180,7 +180,7 @@ def program_findings(inputs: Inputs) -> list[Finding]:
             ),
             location=Location(where=program.named_by, file=Path(PROJECT_FILE), section=program.section),
         )
-        for program in inputs.programs(force=True)
+        for program in inputs.programs()
     ]
 
 

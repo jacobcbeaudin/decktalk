@@ -236,8 +236,8 @@ def test_a_captioned_copy_no_page_can_draw_is_refused_before_anything_is_cut(tmp
     assert not inputs.workspace.film.exists()
 
 
-def test_the_transcript_carries_a_pane_clip_s_speech_where_the_film_plays_it_and_names_nobody(tmp_path, monkeypatch):
-    """A pane clip's speech reached the captions and the captioned copy, and the transcript left it out."""
+def test_the_transcript_carries_a_clip_s_speech_where_the_film_plays_it_and_names_nobody(tmp_path, monkeypatch):
+    """A clip's speech reached the captions and the captioned copy, and the transcript left it out."""
     inputs = write_project(tmp_path)
     a_film(inputs, voiced=False)
     inside = (

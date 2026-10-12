@@ -27,16 +27,13 @@ import pytest
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 
-from decktalk.artifacts.recordings import pane_landings
 from decktalk.errors import ToolError
 from decktalk.findings import Code
 from decktalk.media import browser, ffmpeg, pages, stepping
-from decktalk.media.clipframes import landings_of
 from decktalk.media.origin import Allowed, page_url
-from decktalk.media.pagereport import Box, Recording
+from decktalk.media.pagereport import Recording
 from decktalk.page import ENGINE_PATH, T0_SIGNAL, Q
 from decktalk.settings import MotionConfig, RecordConfig
-from decktalk.stages import played_clips
 from decktalk.toolchain.assets import RUNTIME_FILE
 from support.tools import machine_tools
 
@@ -936,90 +933,6 @@ def decoded(frames: list[bytes], tmp_path: Path) -> list[bytes]:
     return planes
 
 
-# ---- a pane clip ------------------------------------------------------------------------------------
-
-CLIP_FRAMES_SHOWN = 8
-"""How many frames the pane's clip holds, each brighter than the one before."""
-
-CLIP_STEP = 25
-"""How much brighter each frame of the pane's clip is drawn than the one before."""
-
-PANE = (
-    "<style>.pane{position:absolute;left:0;top:0;width:1920px;height:1080px}</style>"
-    '<div data-scene="1" data-name="pane"><template data-slide="1.1">'
-    '<div class="pane" data-clip="deck/steps.mkv" data-clip-from="go"></div></template></div>'
-)
-"""A slide that is one pane over the whole frame, playing its clip from the cue `go`."""
-
-PANE_URL = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2", Q.T0: T0_SIGNAL})
-
-
-def pane_page(tmp_path: Path) -> Allowed:
-    allowed = deck_page(tmp_path, PANE)
-    ffmpeg.run(
-        "-f", "lavfi", "-i",
-        f"color=c=black:s=64x36:r={FPS}:d={CLIP_FRAMES_SHOWN / FPS},geq=lum='N*{CLIP_STEP}':cb=128:cr=128",
-        "-c:v", "ffv1", "-pix_fmt", "yuv444p", str(tmp_path / "deck" / "steps.mkv"),
-    )  # fmt: skip
-    return allowed
-
-
-def record_pane(allowed: Allowed, out: Path, starts: tuple[int, ...] = (0,)) -> Recording:
-    return record(allowed, out, 0.8, url=PANE_URL, starts=starts, skip_still=True, audit_every=1)
-
-
-def test_a_pane_clip_shows_its_first_frame_until_its_cue_and_then_one_frame_of_its_own_a_frame(tmp_path):
-    """The cue is at frame 5, so frame `k` shows the clip's frame `k - 5` from there, and its first frame before."""
-    out = tmp_path / "01.mp4"
-    recording = record_pane(pane_page(tmp_path), out)
-    middle = (HEIGHT // 2) * WIDTH + WIDTH // 2
-    levels = [frame[middle] for frame in luma_frames(out)]
-    cue = round(0.2 * FPS)
-    assert len(set(levels[: cue + 1])) == 1, f"the pane holds the clip's first frame up to its cue: {levels}"
-    played = levels[cue : cue + CLIP_FRAMES_SHOWN]
-    assert played == sorted(set(played)), f"each frame from the cue shows the clip's next frame: {levels}"
-    assert levels[cue + CLIP_FRAMES_SHOWN :] == [levels[cue + CLIP_FRAMES_SHOWN - 1]] * (
-        len(levels) - cue - CLIP_FRAMES_SHOWN
-    ), "the pane holds the clip's last frame once it has played"
-    (lane,) = recording.report.motions
-    assert (lane.kind, lane.clip, lane.departs) == ("clip", "deck/steps.mkv", 0.2)
-    assert [(one.cue, one.kind, one.at) for one in lane.landings] == [("1.1:go", "depart", 0.2)]
-    assert "deck/steps.mkv" in recording.assets
-    assert recording.pane_clips() == (lane,)
-
-
-def test_a_pane_clip_records_the_same_frames_twice(tmp_path):
-    allowed = pane_page(tmp_path)
-    first, second = tmp_path / "a.mp4", tmp_path / "b.mp4"
-    record_pane(allowed, first)
-    record_pane(allowed, second)
-    assert luma_frames(first) == luma_frames(second)
-
-
-def test_a_pane_clip_recorded_in_pieces_is_the_frames_one_page_records(tmp_path):
-    """A piece that starts after the clip's cue shows the clip's own frame for its second, not the clip's first."""
-    allowed = pane_page(tmp_path)
-    whole, split = tmp_path / "a.mp4", tmp_path / "b.mp4"
-    once = record_pane(allowed, whole)
-    joined = record_pane(allowed, split, starts=(0, 3, 8, 11))
-    assert luma_frames(split) == luma_frames(whole)
-    assert joined.report == once.report
-
-
-def test_a_pane_clip_records_the_same_frames_when_still_frames_are_skipped_with_the_audit_on(tmp_path):
-    """Each new frame of a playing clip is a change, so skipping still frames never writes an old clip frame again."""
-    allowed = pane_page(tmp_path)
-    skipped = stepped_frames(allowed, 0.8, skip_still=True, audit_every=1, url=PANE_URL)
-    captured = stepped_frames(allowed, 0.8, skip_still=False, url=PANE_URL)
-    assert skipped.frames == captured.frames
-
-
-def test_a_pane_clip_is_still_before_its_cue(tmp_path):
-    """The pane shows the clip's first frame until its cue on frame 5, so frames 1 to 4 are written again."""
-    sink = stepped_frames(pane_page(tmp_path), 0.8, skip_still=True, url=PANE_URL)
-    assert sink.repeats >= 4, f"only {sink.repeats} of the frames before the cue were written again"
-
-
 # ---- what the page draws that nothing declared, and what a motion leaves undrawn -----------------
 
 
@@ -1078,23 +991,6 @@ def test_a_timer_inside_a_still_stretch_ends_the_stretch_and_is_reported_as_unde
     shown = [lit_width(frame, 100) > 0 for frame in luma_frames(out)]
     assert shown.index(True) == 10 and all(shown[10:]), "the stretch ends on the frame the timer lands on"
     assert [(row.what, row.at, row.frames) for row in recording.undeclared] == [("<div#late>", 0.4, 1)]
-
-
-def test_a_playing_pane_clip_and_a_timer_drawing_in_its_pane_are_declared_change(tmp_path):
-    """A pane clip is declared motion, so neither its frames nor a page timer drawing inside it are undeclared."""
-    plain = tmp_path / "a.mp4"
-    assert record_pane(pane_page(tmp_path), plain).undeclared == ()
-    timed = PANE.replace(
-        "</template></div>",
-        "</template></div><script>DeckTalk.on('1.1:go', () => setTimeout(() => {"
-        " document.querySelector('.pane').style.filter = 'invert(1)'; }, 200));</script>",
-    )
-    assert timed != PANE
-    deck = tmp_path / "deck" / "index.html"
-    deck.write_text(deck.read_text(encoding="utf-8").replace(PANE, timed), encoding="utf-8")
-    out = tmp_path / "b.mp4"
-    assert record_pane(Allowed.of(tmp_path, ["deck"]), out).undeclared == ()
-    assert luma_frames(out) != luma_frames(plain), "the timer's change shows in the pane"
 
 
 SPOKEN_LINE = (
@@ -1166,87 +1062,7 @@ def test_a_section_recorded_in_pieces_with_still_frames_skipped_is_the_one_pass_
     assert joined.report == once.report
 
 
-# ---- whether a pane held still while its clip played -----------------------------------------------
-
-CLIP_SECONDS = CLIP_FRAMES_SHOWN / FPS
-"""How long the pane's clip plays from its cue, which is the span its own landings fall in."""
-
-OWN_LANDING = (
-    '[{"id": "step", "kind": "motion", "box": {"x": 0, "y": 0, "w": 64, "h": 36}, "size": {"w": 64, "h": 36},'
-    ' "departs": 0.12, "arrives": 0.12, "landings": [{"cue": "step", "kind": "depart", "at": 0.12}]}]'
-)
-"""One landing of the clip's own, a little after it starts, as a build that made the clip would write it."""
-
-
-def pane_at(tmp_path: Path, style: str, wrap: str = "") -> Allowed:
-    """The pane fixture with the pane laid out by `style`, inside a `wrap` element when one is given."""
-    pane = '<div class="pane" data-clip="deck/steps.mkv" data-clip-from="go"></div>'
-    held = pane if not wrap else f"{wrap}{pane}</div>"
-    allowed = pane_page(tmp_path)
-    deck = tmp_path / "deck" / "index.html"
-    markup = PANE.replace("width:1920px;height:1080px", style).replace(pane, held)
-    deck.write_text(deck.read_text(encoding="utf-8").replace(PANE, markup), encoding="utf-8")
-    landings_of(tmp_path / "deck" / "steps.mkv").write_text(OWN_LANDING, encoding="utf-8")
-    return allowed
-
-
-def recorded_pane(allowed: Allowed, out: Path, url: str = PANE_URL, starts: tuple[int, ...] = (0,)) -> Recording:
-    return record(allowed, out, 1.0, url=url, starts=starts, audit_every=0)
-
-
-def test_a_still_pane_at_a_fraction_of_a_pixel_places_its_clip_s_landings(tmp_path):
-    """The canvas is drawn at a sixth, so the pane stands at 1.4 px, 167.2 px wide: a box no rounding keeps whole."""
-    allowed = pane_at(tmp_path, "left:8.4px;width:1003.2px;height:540px")
-    recording = recorded_pane(allowed, tmp_path / "01.mp4")
-    placed = pane_landings(played_clips(recording, recording.requested_seconds, tmp_path))
-    assert placed.unplaced == ()
-    assert [(lane.id.split("/")[-1], lane.landings[0].at) for lane in placed.lanes] == [("step", 0.32)]
-
-
-AWAY = (
-    "<style>@keyframes away{to{transform:translateX(600px)}}</style>"
-    '<div data-motion="away" data-motion-from="leave" data-motion-to="gone">'
-)
-"""A camera that carries the pane away from the cue `leave` to the cue `gone`."""
-
-
-def test_a_pane_carried_away_after_its_clip_has_played_places_its_clip_s_landings(tmp_path):
-    """The clip plays from 0.2 s to 0.52 s, and the camera leaves from 0.6 s, so the section need not be cut there."""
-    allowed = pane_at(tmp_path, "width:960px;height:540px", AWAY)
-    url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2,1.1:leave@0.6,1.1:gone@0.8", Q.T0: T0_SIGNAL})
-    recording = recorded_pane(allowed, tmp_path / "01.mp4", url)
-    placed = pane_landings(played_clips(recording, recording.requested_seconds, tmp_path))
-    assert placed.unplaced == ()
-    ((lane,),) = [placed.lanes]
-    assert lane.box == Box(x=0, y=0, w=160, h=90), "the clip's lanes are drawn into the pane where it stood"
-
-
-def test_a_pane_carried_away_while_its_clip_plays_places_none_of_its_landings_and_says_when(tmp_path):
-    allowed = pane_at(tmp_path, "width:960px;height:540px", AWAY)
-    url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2,1.1:leave@0.3,1.1:gone@0.8", Q.T0: T0_SIGNAL})
-    recording = recorded_pane(allowed, tmp_path / "01.mp4", url)
-    placed = pane_landings(played_clips(recording, recording.requested_seconds, tmp_path))
-    assert placed.lanes == ()
-    assert placed.unplaced == (
-        f"deck/steps.mkv: its pane moved at 0.32 s, before its clip ended at {0.2 + CLIP_SECONDS:g} s",
-    )
-
-
-def test_a_pane_recorded_in_pieces_is_judged_still_or_moved_as_one_pass_judges_it(tmp_path):
-    """A piece that starts after the camera left sees the pane only where it went, so pieces are joined by `rest`."""
-    allowed = pane_at(tmp_path, "width:960px;height:540px", AWAY)
-    url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2,1.1:leave@0.3,1.1:gone@0.5", Q.T0: T0_SIGNAL})
-    once = recorded_pane(allowed, tmp_path / "whole.mp4", url)
-    split = recorded_pane(allowed, tmp_path / "split.mp4", url, starts=(0, 7, 15))
-    lane = next(row for row in once.report.motions if row.kind == "clip")
-    joined = next(row for row in split.report.motions if row.kind == "clip")
-    assert (joined.rest, joined.moved) == (lane.rest, lane.moved) and lane.moved is not None
-    assert pane_landings(played_clips(split, split.requested_seconds, tmp_path)) == pane_landings(
-        played_clips(once, once.requested_seconds, tmp_path)
-    )
-
-
-# ---- what a film carries of its reveals --------------------------------------------------------------
+# ---- a reveal recorded in pieces ------------------------------------------------------------------
 
 REVEALING = (
     "<style>.square{position:absolute;left:600px;top:300px;width:600px;height:600px;background:#fff}</style>"
@@ -1254,72 +1070,6 @@ REVEALING = (
     '<div class="square" data-in="go" data-in-style="cut"></div></template></div>'
 )
 """A slide that reveals a square at the cue `go`, at 0.2 s, with no motion at all."""
-
-
-def test_a_reveal_is_reported_on_the_box_it_was_drawn_in_departing_on_its_cue(tmp_path):
-    """The canvas is drawn at a sixth, so the square stands at 100, 50 and is 100 wide in the recording."""
-    url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2", Q.T0: T0_SIGNAL})
-    recording = record(deck_page(tmp_path, REVEALING), tmp_path / "01.mp4", 0.8, url=url)
-    assert recording.report.motions == ()
-    (reveal,) = recording.report.reveals
-    assert (reveal.kind, reveal.box, reveal.departs) == ("reveal", Box(x=100, y=50, w=100, h=100), 0.2)
-    assert [(one.cue, one.kind, one.at) for one in reveal.landings] == [("1.1:go", "depart", 0.2)]
-    split = record(deck_page(tmp_path, REVEALING), tmp_path / "02.mp4", 0.8, url=url, starts=(0, 3, 9))
-    assert split.report.reveals == recording.report.reveals, "pieces join their reveals as one pass sees them"
-
-
-# ---- a picture beside a pane clip ------------------------------------------------------------------
-
-BESIDE = (
-    "<style>.pane{position:absolute;left:300px;top:200px;width:780px;height:439px;border-radius:12px;"
-    "overflow:hidden}.clip{position:absolute;inset:0}"
-    "#slide,#button{position:absolute;inset:0;width:100%;height:100%}"
-    "#button{clip-path:inset(300.37px 20.5px 40.2px 500.1px);opacity:0}</style>"
-    '<div data-scene="1" data-name="pane"><template data-slide="1.1" data-owns="show"><div class="pane">'
-    '<div class="clip" data-clip="deck/steps.mkv" data-clip-from="go"></div>'
-    '<img id="slide" src="slide.png" alt=""><img id="button" src="button.png" alt=""></div></template></div>'
-    "<script>DeckTalk.on('1.1:show', () => { document.getElementById('button').style.opacity = '0.6'; });</script>"
-)
-"""A pane playing a clip under a slide's picture, whose button picture a cue shows in its lower right corner."""
-
-BESIDE_URL = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.1,1.1:show@0.4", Q.T0: T0_SIGNAL})
-
-LARGE = (960, 540)
-"""A frame at half the canvas, where the slide's picture is drawn at a scale of its own, as a camera draws it."""
-
-
-def test_a_picture_shown_beside_a_pane_clip_never_draws_the_pictures_around_it_again(tmp_path):
-    """Chromium lays out a picture overlapping the clip's layer with it, so one that first shows re-rasters the rest.
-
-    The slide's picture fills the pane and nothing changes it, so its top left, far from the button, is
-    the same pixels on every frame before and after the cue that shows the button.
-    """
-    allowed = deck_page(tmp_path, BESIDE)
-    deck = tmp_path / "deck"
-    ffmpeg.run("-f", "lavfi", "-i", "testsrc2=s=1280x720:d=1", "-frames:v", "1", str(deck / "slide.png"))
-    ffmpeg.run("-f", "lavfi", "-i", "testsrc=s=1280x720:d=1", "-frames:v", "1", str(deck / "button.png"))
-    ffmpeg.run("-f", "lavfi", "-i", f"color=c=gray:s=64x36:r={FPS}:d=2", "-c:v", "ffv1", str(deck / "steps.mkv"))
-    width, height = LARGE
-    sink = Frames()
-    with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
-        opened = stepping.stepping(
-            real, allowed, width=width, height=height, color_scheme="dark", motion=MotionConfig()
-        )
-        with opened as (page, _assets):
-            page.goto(BESIDE_URL, wait_until="load")
-            stepper = stepping.Stepper(page, FPS)
-            stepper.hold()
-            stepper.record(range(round(0.8 * FPS)), sink, lambda: None, skip_still=False, audit_every=0)
-    planes = decoded(sink.frames, tmp_path)
-
-    def corner(plane: bytes) -> bytes:
-        return b"".join(plane[y * width + 155 : y * width + 390] for y in range(105, 200))
-
-    before = corner(planes[round(0.3 * FPS)])
-    moved = [k for k, plane in enumerate(planes) if corner(plane) != before]
-    assert moved == [], f"the slide's picture was drawn again on frames {moved}"
-    shown = planes[round(0.6 * FPS)][270 * width + 450]
-    assert shown != planes[round(0.3 * FPS)][270 * width + 450], "the cue shows the button"
 
 
 CUED_AND_UNSEEN = page_url("deck/index.html", {Q.SCENE: "2", Q.CUES: "2.1:go@0,2.1:show@0.4", Q.T0: T0_SIGNAL})
@@ -1345,14 +1095,15 @@ RISING = REVEALING.replace('data-in-style="cut"', 'data-in-style="rise"')
 
 @pytest.mark.parametrize("markup", [REVEALING, RISING], ids=["cut", "rise"])
 @pytest.mark.parametrize("starts", [(0, 9), (0, 13), (0, 6, 19)], ids=["inside", "after-settle", "seams"])
-def test_a_reveal_recorded_in_pieces_is_the_reveal_one_pass_records_field_for_field(tmp_path, markup, starts):
+def test_a_reveal_recorded_in_pieces_is_the_reveal_one_pass_records_frame_for_frame(tmp_path, markup, starts):
     """A build crosses still frames in one step, so a piece starting inside a reveal's half second steps a second
-    the one pass never did, and the joined reveal still has to be the one pass's, `arrives` included."""
+    the one pass never did, and the joined recording still has to be the one pass's, frames and report."""
     url = page_url("deck/index.html", {Q.SCENE: "1", Q.CUES: "1.1:go@0.2", Q.T0: T0_SIGNAL})
     allowed = deck_page(tmp_path, markup)
     once = record(allowed, tmp_path / "01.mp4", 1.0, url=url, skip_still=True, audit_every=0)
     split = record(allowed, tmp_path / "02.mp4", 1.0, url=url, starts=starts, skip_still=True, audit_every=0)
-    assert split.report.reveals == once.report.reveals
+    assert luma_frames(tmp_path / "02.mp4") == luma_frames(tmp_path / "01.mp4")
+    assert split.report == once.report
 
 
 # ---- a page cannot hold a recording open ----------------------------------------------------------

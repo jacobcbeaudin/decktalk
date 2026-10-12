@@ -1,10 +1,10 @@
 """The programs a project names, and the machine's word on whether `record` starts them.
 
-A project names a program in two places: a section's `render_command`, which draws the section's
-picture, and a `[[clip]]` table's `command`, which writes a clip the project makes. Either one is a
-program a stranger's `decktalk.toml` can name, and it runs as the user who runs DeckTalk, so it can
-read every file that user can, the project's `.env` included. The scrubbed environment it is given
-keeps a credential in the shell away from it and keeps nothing on disk away from it.
+A project names a program in one place: a render section's `render_command`, which draws the
+section's picture. It is a program a stranger's `decktalk.toml` can name, and it runs as the user who
+runs DeckTalk, so it can read every file that user can, the project's `.env` included. The scrubbed
+environment it is given keeps a credential in the shell away from it and keeps nothing on disk away
+from it.
 
 So the machine decides, through `[record] programs`: `refuse` starts none, `run` starts every one,
 and `ask` starts them when a person at a terminal said yes for this run, which the command line
@@ -33,11 +33,6 @@ KEY = "record.programs"
 def section_program(number: int, command: Sequence[str]) -> Program:
     """The program that draws section `number`."""
     return Program(named_by=f"section {number}'s render_command", command=tuple(command), section=number)
-
-
-def clip_program(file: str, command: Sequence[str]) -> Program:
-    """The program that writes the clip at `file`."""
-    return Program(named_by=f"the [[clip]] that makes {file}", command=tuple(command))
 
 
 def project_files(root: Path, command: Sequence[str]) -> dict[str, Path]:
@@ -90,7 +85,6 @@ __all__ = [
     "REFUSE",
     "RUN",
     "admitted",
-    "clip_program",
     "project_files",
     "section_program",
     "variable",

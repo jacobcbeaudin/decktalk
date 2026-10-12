@@ -9,7 +9,6 @@ second zero of its section, so there is no start to find. The measurement belong
 beside it, and a long run can be read while it runs.
 
     capture.py   what a recording is made from, and the page cut into its scenes
-    render.py    the clips a project makes
     checks.py    the frames, the page's own codes and the origins it reached for
     pool.py      how many recorders work at once, and the chunks each section is split into
 
@@ -22,9 +21,6 @@ section too short to repay another page load is one chunk, and a render section'
 whole video as one.
 The rows, the progress lines and the result come back in section order whatever order the recorders
 finish in.
-
-Before anything is recorded, every clip the project makes and has not got is made, because a pane
-plays its clip while the page is stepped and the section is keyed on the clip's content.
 
 A section none of whose parts has moved is kept rather than recorded again, because the run would
 produce the same pixels. The parts are its turns' text, voice and word times, the markup of its own
@@ -69,7 +65,6 @@ from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
 from decktalk.stages import page_seconds, selects
 from decktalk.stages.pool import Halt, Pool
-from decktalk.stages.record import render
 from decktalk.stages.record.capture import (
     Job,
     TurnText,
@@ -390,23 +385,6 @@ def _decided(job: Job, *, force: bool, named: set[int]) -> bool:
     return why != "unchanged"
 
 
-def make_clips(inputs: Inputs, run: Run, *, force: bool) -> None:
-    """Make every clip the project makes and has not got, or every one of them when the run is forced."""
-    video = inputs.settings.video
-    for clip in inputs.document.clips:
-        if inputs.path(clip.file).is_file() and not force:
-            continue
-        made = render.make_clip(
-            clip,
-            root=inputs.root,
-            fps=video.fps,
-            width=video.width,
-            height=video.height,
-            timeout=inputs.settings.tools.timeout_seconds,
-        )
-        run.wrote(made)
-
-
 def expected(job: Job, fps: int) -> tuple[int, int]:
     """A section's frames and the steps recording it is expected to take.
 
@@ -457,16 +435,14 @@ def record(
     """Record every page section this run names, and judge each one as soon as it is finished.
 
     Every program this run would start is held to `[record] programs` first, before any of them
-    starts. The clips the project makes come next. The sections that must be recorded are split into chunks,
-    which go to a pool of recorders as `[record] concurrency` allows, longest first. The sections that are
-    kept are reported by this
+    starts. The sections that must be recorded are split into chunks, which go to a pool of recorders
+    as `[record] concurrency` allows, longest first. The sections that are kept are reported by this
     thread, so every row is in section order.
 
     Each chunk's page is held to its own deadlines, and the run as a whole to `run_deadline`, which
     every recorder asks before every frame, so no page can hold the run open.
     """
-    programs.admitted(inputs.settings.record, inputs.programs(only, force=force))
-    make_clips(inputs, run, force=force)
+    programs.admitted(inputs.settings.record, inputs.programs(only))
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())

@@ -13,7 +13,6 @@ from decktalk.inputs import programs
 from decktalk.settings import RecordConfig
 from support.projects import MINIMAL_TOML, load_project
 
-CLIP = '\n[[clip]]\nfile = "deck/clips/tone.mp4"\ncommand = ["{python}", "clips/make", "{out}"]\n'
 DRAWN = '\n[[section]]\nnumber = 3\nrender_command = ["/usr/bin/true", "{out}"]\n'
 DRAWER = programs.section_program(3, ("/usr/bin/true", "{out}"))
 
@@ -56,17 +55,11 @@ def test_a_project_file_cannot_allow_its_own_programs(tmp_path: Path) -> None:
         load_project(tmp_path, MINIMAL_TOML + '\n[record]\nprograms = "run"\n')
 
 
-def test_the_programs_a_record_would_start_are_its_missing_clips_and_its_selected_drawn_sections(
-    tmp_path: Path,
-) -> None:
-    inputs = load_project(tmp_path, MINIMAL_TOML + DRAWN + CLIP)
-    clip = programs.clip_program("deck/clips/tone.mp4", ("{python}", "clips/make", "{out}"))
-    assert inputs.programs() == (clip, DRAWER)
-    assert inputs.programs([1]) == (clip,)
-    (tmp_path / "deck" / "clips").mkdir(parents=True)
-    (tmp_path / "deck" / "clips" / "tone.mp4").write_bytes(b"made")
+def test_the_programs_a_record_would_start_are_its_selected_drawn_sections(tmp_path: Path) -> None:
+    inputs = load_project(tmp_path, MINIMAL_TOML + DRAWN)
     assert inputs.programs() == (DRAWER,)
-    assert inputs.programs(force=True) == (clip, DRAWER)
+    assert inputs.programs([3]) == (DRAWER,)
+    assert inputs.programs([1]) == ()
 
 
 def test_only_a_relative_word_naming_a_project_file_is_a_project_file(tmp_path: Path) -> None:

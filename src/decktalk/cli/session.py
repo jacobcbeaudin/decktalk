@@ -275,7 +275,7 @@ class Session:
 
     # ---- the programs a project names --------------------------------------------------------------
 
-    def programs(self, project: Project, *, only: Sequence[int] | None = None, force: bool = False) -> Project:
+    def programs(self, project: Project, *, only: Sequence[int] | None = None) -> Project:
         """This run's project, with its programs allowed for this run alone when a person at a terminal said yes.
 
         Only `[record] programs = "ask"` on a machine that trusts its pages asks. The question lists
@@ -286,7 +286,7 @@ class Session:
         record = project.settings.record
         if record.programs != programs.ASK or record.page_policy == UNTRUSTED or not self.asks:
             return project
-        named = project.programs(only=only, force=force)
+        named = project.programs(only=only)
         if not named:
             return project
         listed = "\n".join(f"  {program.named_by}: {program.shown}" for program in named)

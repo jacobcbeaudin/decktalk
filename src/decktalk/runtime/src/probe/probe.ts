@@ -62,8 +62,8 @@ const nativeCancel = window.clearTimeout.bind(window);
 /**
  * The source each image was last seen decoded with, so each picture is waited on once and not on every frame.
  *
- * It is kept by source rather than by element, because a pane clip shows a new frame in the same
- * image on every step, and each of those frames has to be decoded before the step is captured.
+ * It is kept by source rather than by element, because a page may give an image a new source on any
+ * step, and the new picture has to be decoded before the step is captured.
  */
 const decoded = new WeakMap<HTMLImageElement, string>();
 
@@ -587,7 +587,6 @@ export function report(): Record<ReportField, unknown> {
     cues,
     words,
     motions: view?.motions ?? [],
-    reveals: view?.reveals ?? [],
   };
 }
 

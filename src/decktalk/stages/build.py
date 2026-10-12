@@ -127,7 +127,7 @@ def build(
         if Stage.RECORD in plan:
             # A refused program is refused before narrate makes a take, as `record` refuses it before
             # the first program starts.
-            programs.admitted(inputs.settings.record, inputs.programs(only, force=force))
+            programs.admitted(inputs.settings.record, inputs.programs(only))
         if Stage.ASSEMBLE in plan:
             require_a_drawing_page(inputs)
         _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)

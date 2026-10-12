@@ -95,43 +95,19 @@ class Box(Model):
 
 
 class MotionLane(Model):
-    """One declared motion, loop, region or pane clip as the recorder saw it, which verify masks and measures on.
-
-    A reveal is a lane of kind `reveal`: every element one cue revealed or changed, sampled from the
-    cue for as long as a cue may move, departing on the cue. Its `departs` and `arrives` are the cue's
-    second and the end of that span, never the seconds a page happened to step, so pieces join to the
-    one pass. The report keeps reveals apart from the
-    lanes, because verify measures a reveal as a step in the whole frame and never masks it. A film's
-    landings file carries them, so a pane that plays the film measures each reveal on its box.
+    """One declared motion, loop or region as the recorder saw it, which verify masks and measures on.
 
     The box is in the recording's own pixels, the union of where the element was on every frame it
-    moved, so a mask over it hides the whole lane and nothing else. `rest` is where the element stood
-    the first frame it was seen, exactly as the browser laid it out, and `moved` the first second it
-    stood anywhere else, so whether an element held still over a span is read from the two rather than
-    from rounded pixels. A pane clip's lane is the pane from its cue on, and names the project file it
-    played.
+    moved, so a mask over it hides the whole lane and nothing else.
     """
 
     id: str = Field(description="The lane's own name, which no cue shares.")
-    kind: Literal["motion", "loop", "region", "clip", "reveal"] = Field(
-        description="A motion, a loop, a region a frame hook draws in, a pane clip, or a reveal a film carries."
-    )
+    kind: Literal["motion", "loop", "region"] = Field(description="A motion, a loop or a region a frame hook draws in.")
     box: Box | None = Field(None, description="The box the lane swept, in the recording's pixels, or null when unseen.")
     size: Size | None = Field(None, description="How big the moving element is, in the recording's pixels.")
     departs: float | None = Field(None, description="The first second the lane moved, or null when it never did.")
     arrives: float | None = Field(None, description="The last second the lane moved, or null when it never did.")
-    rest: Box | None = Field(
-        None,
-        description="Where the element stood the first frame the recorder saw it, to a fraction of a pixel, or null "
-        "when unseen.",
-    )
-    moved: float | None = Field(
-        None,
-        description="The first second the element stood anywhere but `rest` or at another size, or null when it "
-        "held still for as long as it was seen.",
-    )
     landings: tuple[Landing, ...] = Field((), description="Every cue the lane lands on, which verify measures.")
-    clip: str | None = Field(None, description="The project file a pane clip played, or null for any other lane.")
 
 
 class ElementRow(Model):
@@ -181,14 +157,12 @@ class ElementRow(Model):
 
 
 class MotionRow(Model):
-    """One motion, loop or pane clip a slide declares, with the cue ids it departs and arrives on."""
+    """One motion or loop a slide declares, with the cue ids it departs and arrives on."""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    kind: Literal["motion", "loop", "clip"] = Field(
-        description="A motion between two cues, a loop for the whole slide, or a pane clip from one cue."
-    )
-    name: str = Field(description="The @keyframes the element moves through, or the project file a pane clip plays.")
+    kind: Literal["motion", "loop"] = Field(description="A motion between two cues, or a loop for the whole slide.")
+    name: str = Field(description="The @keyframes the element moves through.")
     departs: str | None = Field(None, alias="from", description="The cue id the motion departs at, or null.")
     arrives: str | None = Field(None, alias="to", description="The cue id the motion arrives at, or null.")
     ease: str | None = Field(None, description="How the motion moves between its cues, or null for a loop.")
@@ -216,7 +190,7 @@ class MeasuredScene(Model):
         default_factory=dict, description="The cue ids of the cues each slide declares, keyed by the slide id."
     )
     motions: dict[str, tuple[MotionRow, ...]] = Field(
-        default_factory=dict, description="Every motion, loop and pane clip each slide declares, keyed by the slide id."
+        default_factory=dict, description="Every motion and loop each slide declares, keyed by the slide id."
     )
     spans: dict[str, float] = Field(
         default_factory=dict, description="How long each moment and class change plays, keyed by its cue id."
@@ -235,7 +209,6 @@ class PageReport(Model):
     cues: tuple[CueRow, ...] = Field((), description=REPORT["cues"])
     words: tuple[WordRow, ...] = Field((), description=REPORT["words"])
     motions: tuple[MotionLane, ...] = Field((), description=REPORT["motions"])
-    reveals: tuple[MotionLane, ...] = Field((), description=REPORT["reveals"])
     unreadable: tuple[str, ...] = Field(
         (), description="One sentence per row this contract could not read, which is a page that went its own way."
     )
@@ -247,7 +220,6 @@ ROWS: dict[str, type[Model]] = {
     "cues": CueRow,
     "words": WordRow,
     "motions": MotionLane,
-    "reveals": MotionLane,
 }
 """Each list field of the report against the model one of its rows has to be, which is what `read` walks."""
 
@@ -300,18 +272,6 @@ class Recording(Model):
         description="How many times the pages that recorded it were moved, which is what recording it cost, or 0 "
         "when a command drew it.",
     )
-
-    def pane_clips(self) -> tuple[MotionLane, ...]:
-        """Every pane clip the page played from its cue, which is a clip lane naming a file the origin served it.
-
-        The lane is the page's word and the served file is the origin's, so a page that names a file it
-        never played, or a file the origin would not serve it, plays nothing in the film.
-        """
-        return tuple(
-            lane
-            for lane in self.report.motions
-            if lane.kind == "clip" and lane.clip is not None and lane.clip in self.assets and lane.landings
-        )
 
 
 def _rows(field: str, given: object) -> tuple[list[Model], list[str]]:
@@ -405,25 +365,18 @@ def _swept(groups: Sequence[Sequence[MotionLane]]) -> tuple[MotionLane, ...]:
 
 
 def _lane(seen: Sequence[MotionLane]) -> MotionLane:
-    """One lane as several pages saw it, joined into the lane one page stepping every second would have seen.
-
-    It stands where the earliest page first saw it, and it moved at the first second any page saw it
-    move, or at the first second a later page saw it standing anywhere else.
-    """
-    drawn = [lane for lane in seen if lane.box is not None and lane.departs is not None and lane.arrives is not None]
-    if not drawn:
+    """One lane as several pages saw it, joined into the lane one page stepping every second would have seen."""
+    moved = [lane for lane in seen if lane.box is not None and lane.departs is not None and lane.arrives is not None]
+    if not moved:
         return seen[0]
-    boxes = [lane.box for lane in drawn if lane.box is not None]
+    boxes = [lane.box for lane in moved if lane.box is not None]
     left, top = min(box.x for box in boxes), min(box.y for box in boxes)
     right, bottom = max(box.x + box.w for box in boxes), max(box.y + box.h for box in boxes)
-    first = min(drawn, key=lambda lane: lane.departs if lane.departs is not None else 0.0)
-    moved = [lane.moved for lane in drawn if lane.moved is not None]
-    moved += [lane.departs for lane in drawn if lane.rest != first.rest and lane.departs is not None]
+    first = min(moved, key=lambda lane: lane.departs if lane.departs is not None else 0.0)
     return first.model_copy(
         update={
             "box": Box(x=left, y=top, w=right - left, h=bottom - top),
-            "arrives": max(lane.arrives for lane in drawn if lane.arrives is not None),
-            "moved": min(moved, default=None),
+            "arrives": max(lane.arrives for lane in moved if lane.arrives is not None),
         }
     )
 
@@ -434,8 +387,8 @@ def joined(reports: Sequence[PageReport]) -> PageReport:
     Each page loaded the section and stepped every second work was due before its own frames, so
     every cue that ran and every warning raised before a page's last frame is in its report, and the
     page that recorded the last frames saw the section end. What a page measures only on the frames
-    it draws, the lanes a motion swept, the boxes a reveal was drawn in and the second a line's first
-    word was shown, is joined from every page. `reports` is in frame order.
+    it draws, the lanes a motion swept and the second a line's first word was shown, is joined from
+    every page. `reports` is in frame order.
     """
     if len(reports) == 1:
         return reports[0]
@@ -446,7 +399,6 @@ def joined(reports: Sequence[PageReport]) -> PageReport:
             "cues": _once([report.cues for report in reports]),
             "words": _first_shown([report.words for report in reports]),
             "motions": _swept([report.motions for report in reports]),
-            "reveals": _swept([report.reveals for report in reports]),
             "unreadable": tuple(dict.fromkeys(line for report in reports for line in report.unreadable)),
         }
     )

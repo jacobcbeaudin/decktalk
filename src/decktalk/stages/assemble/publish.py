@@ -21,7 +21,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Takes, Unreadable, words_beside
+from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Takes
 from decktalk.captions import (
     CAPTION_MAX_CHARS,
     CaptionCue,
@@ -150,13 +150,12 @@ def spoken_cues(words: Sequence[SpokenWord]) -> list[CaptionCue]:
     return cues
 
 
-def clip_words(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[tuple[SpokenWord, ...]]:
-    """The words inside every clip the film plays with sound, one list per clip, on the film's clock.
+def clip_words(inputs: Inputs, rows: list[Rendered]) -> list[tuple[SpokenWord, ...]]:
+    """The words inside every clip section the film plays with sound, one list per clip, on the film's clock.
 
     Every clip's words are the file beside it, `<clip>.words.json`, which `decktalk clip` writes
-    beside every clip it cuts and every build writes beside its film: a clip section's from its
-    start, and a pane clip's from the pane's cue for as long as the clip plays there. A slate, a clip
-    with no audio and a clip with no words file beside it add nothing.
+    beside every clip it cuts and every build writes beside its film, moved to the section's start.
+    A slate, a clip with no audio and a clip with no words file beside it add nothing.
     """
     starts = rendered_starts(rows)
     found: list[tuple[SpokenWord, ...]] = []
@@ -166,40 +165,19 @@ def clip_words(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[tuple[Spo
             words = inputs.clip_words(section) if row.audio is not None else None
             if words is not None:
                 found.append(inner_words(words, starts[row.number], row.seconds))
-        elif isinstance(section, PageSection):
-            found += _pane_words(run, row, starts[row.number])
     return [words for words in found if words]
 
 
-def _pane_words(run: Run, row: Rendered, start: float) -> list[tuple[SpokenWord, ...]]:
-    """The words of every pane clip one page section played with sound, over the span the mix plays its sound."""
-    found: list[tuple[SpokenWord, ...]] = []
-    for play in row.panes:
-        if not play.has_audio:
-            continue
-        try:
-            words = ClipWords.parse(words_beside(play.path))
-        except Unreadable as unread:
-            run.note(
-                f"Section {row.number} plays the pane clip {play.clip}, and {unread}, so its speech has no captions.",
-                level=Level.WARNING,
-            )
-            continue
-        if words is not None:
-            found.append(inner_words(words, start + play.start, play.seconds))
-    return found
-
-
-def clip_captions(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[CaptionCue]:
-    """Cues for the speech inside every clip the film plays, a clip section's and a pane clip's alike."""
-    return [cue for words in clip_words(inputs, run, rows) for cue in spoken_cues(words)]
+def clip_captions(inputs: Inputs, rows: list[Rendered]) -> list[CaptionCue]:
+    """Cues for the speech inside every clip section the film plays."""
+    return [cue for words in clip_words(inputs, rows) for cue in spoken_cues(words)]
 
 
 def film_words(narrated: Mapping[int, Sequence[SpokenTurn]], inside: Sequence[Sequence[SpokenWord]]) -> ClipWords:
     """Every word the film says, the narration's and every clip's, in the order they start, on the film's clock.
 
-    This is what the film carries beside itself as `<name>.words.json`, so a pane that plays it in
-    another film captions its speech there as this film captions it.
+    This is what the film carries beside itself as `<name>.words.json`, so a clip section that plays
+    it in another film captions its speech there as this film captions it.
     """
     words = [word for turns in narrated.values() for turn in turns for word in turn.words]
     words += [word for clip in inside for word in clip]
@@ -388,8 +366,8 @@ def transcript_sections(
     paragraph inside it. A section in more than one voice, which `dialogue_turns` gives, is one
     paragraph per turn instead, each naming its voice.
 
-    `inside` is the speech inside every clip the film plays, a clip section's or a pane clip's, on
-    the film's clock as `clip_words` reads it for the captions. Each clip's is one paragraph in the
+    `inside` is the speech inside every clip section the film plays, on the film's clock as
+    `clip_words` reads it for the captions. Each clip's is one paragraph in the
     section it starts in, naming nobody, and every paragraph of a section is in the order the film
     plays it, a turn by its first word in `narrated` and a clip by its own first word.
     """

@@ -1,23 +1,18 @@
 ---
 title: Play a clip
-description: Play a video of your own as one section of the film or in a pane of a page, make one at build time, and cut a piece of the finished film into a video of its own.
+description: Play a video of your own as one section of the film, and cut a piece of the finished film into a video of its own.
 ---
 
-A clip is one thing in DeckTalk, which is a short video file. The word is used four ways on this page
+A clip is one thing in DeckTalk, which is a short video file. The word is used two ways on this page
 and means the same thing each time.
 
 - A `[[section]]` with `clip = "media/intro.mp4"` plays a video file you supply, with its own audio,
   as one section of the film. The voice says nothing there, because the clip carries its own sound.
-- A pane with `data-clip` plays a video file inside a page section, framed and labelled by the page,
-  while the voice keeps going and the page keeps moving around it.
-- A `[[clip]]` makes a video file at build time with a command, for footage a project draws from its
-  own sources or cannot keep as a file.
 - `decktalk clip` writes a video file cut from a section of the finished film, with its own audio and
   its own words file, so a piece of the film can be played again or handed to somebody else.
 
-One noun names a short video file whoever made it, so a clip you supply, a clip a command makes, a
-film DeckTalk built and a clip DeckTalk cuts are the same kind of thing, and a section or a pane
-plays any of them the same way.
+One noun names a short video file whoever made it, so a clip you supply, a film DeckTalk built and a
+clip DeckTalk cuts are the same kind of thing, and a clip section plays any of them the same way.
 
 ## A section that plays your own video
 
@@ -103,108 +98,12 @@ where a moment of the narration plays.
 - The narration does not depend on how long a clip runs. After you replace a clip file, run
   `decktalk assemble` and then `decktalk verify`, and nothing is voiced or recorded.
 
-## A clip in a pane
+## Play a film DeckTalk built
 
-A clip section plays full frame with the voice paused. A pane plays the same file inside a page
-section instead: the page frames it, labels it and draws over it, its own motions keep running, and
-the voice keeps going over the clip's own sound. This is the motion example's fourth section.
-
-{/* input: src/decktalk/template/examples/motion/deck/index.html, slide 4.1 */}
-```html deck/index.html
-<style>
-  .pane { left: 120px; top: 300px; width: 960px; height: 540px; border-radius: 12px; overflow: hidden; background: var(--ink); }
-  .tag { left: 136px; top: 316px; padding: 14px 20px; border-radius: 10px; background: var(--ground); color: var(--ink); font: 600 28px/1 var(--mono); }
-</style>
-
-<div class="pane" data-clip="deck/clips/film.mp4" data-clip-from="play" data-describe="the film plays in its pane"></div>
-<p class="tag">film.mp4 · its own sound</p>
-<p class="line">section 4 · the voice keeps going</p>
-```
-
-{/* input: src/decktalk/template/examples/motion/cues.json, section 4 */}
-```json cues.json
-{ "id": "4.1:play", "phrase": "when I say play", "occurrence": 1 }
-```
-
-- `data-clip` names the clip as a path from the project root, and the file has to be one the page may
-  load, so keep it under the deck directory or among the declared assets. `data-clip-from` names the
-  cue it starts on, which joins the slide's cues like a motion's and needs its row in `cues.json`.
-- The clip fills the pane at the pane's own shape, so give the pane the clip's proportions. The pane's
-  corners and clipping apply to it, and everything the slide draws after the clip is drawn over it,
-  which is how the tag sits on the film. A child placed over it inside the pane works the same way.
-- Before its cue the pane shows the clip's first frame, from its cue it plays, and once the clip has
-  played the pane holds its last frame. Make the clip at the film's own rate, `video.fps`, so every
-  one of its frames is one frame of the pane.
-- The clip's sound joins the mix at its cue's second, beside the voice, and plays until the clip ends
-  or the page stops being recorded. It is matched to the narration's loudness and the music ducks
-  under it. The narration does not pause for it, so write the script around the clip's own speech.
-- Every picture on a slide that plays a pane clip is drawn on a compositor layer of its own, as the
-  clip's picture is, so a picture a cue shows beside the clip never draws the others again.
-- The pane moves with the page. The recorder draws the frame of the clip showing at each second, so a
-  camera move that carries the pane carries the clip with it, frame for frame. Verify measures the
-  clip's own landings only while the pane holds still from its cue to the clip's end, so let the
-  camera leave once the clip has played. The section need not be cut there.
-- The clip's speech is captioned from the words file beside it, `<clip>.words.json`, from the pane's
-  cue for as long as the clip plays there, in the `.srt`, the `.vtt` and the captioned copy alike. A
-  clip with no words file beside it adds no caption. See
-  [Caption the speech inside a clip](#caption-the-speech-inside-a-clip).
-- A captioned copy, which `[output] captioned` asks for, draws its captions over the finished film, so
-  they sit over a pane clip like over anything else, and it copies the film's sound, the clip's
-  matched sound included.
-
-What verify measures is in [Verify](/reference/verify#a-pane-clip): the pane is masked from every
-reveal after its cue, its cue is measured as a departure, and the clip's own landings are measured on
-the film's clock.
-
-### Play a film DeckTalk built
-
-A film DeckTalk built writes its landings beside itself, as `build/final/<name>.landings.json`: every
-landing its own verify measures, its reveals and its motions alike, on the film's own clock. It writes
-its words there too, as `build/final/<name>.words.json`: every word the film says, as its captions show
-it, with its voice and its turn. Copy the film and both files into the deck under one name, such as
-`deck/clips/larkbill.mp4`, `deck/clips/larkbill.landings.json` and `deck/clips/larkbill.words.json`,
-and a pane that plays the film has verify measure the film's own landings in this film too, moved to
-the pane's cue and into its box, and has its speech captioned on this film's clock.
-
-## A clip the project makes
-
-A clip a project cannot keep as a file, such as one in a package, or one drawn from the film's own
-sources, is made at build time. A `[[clip]]` names the file and the command that writes it, and
-`record` runs the command before it records anything, whenever the file is not there.
-
-{/* input: src/decktalk/template/examples/motion/decktalk.toml */}
-```toml decktalk.toml
-[[clip]]
-file = "deck/clips/film.mp4"
-command = ["{python}", "render/make_film", "{out}", "{landings}", "{ffmpeg}", "{fps}"]
-```
-
-| Placeholder | What it is replaced by |
-|---|---|
-| `{out}` | Where the command writes the clip, a file beside it under a hidden name, which `record` moves onto the clip once the command has finished. |
-| `{landings}` | Where the command may write the clip's own landings, which is `<clip>.landings.json` beside it. |
-| `{words}` | Where the command may write the words spoken inside the clip, which is `<clip>.words.json` beside it and captions the clip in a pane. |
-| `{python}` | The Python this run is. |
-| `{ffmpeg}` | The ffmpeg this run encodes with. |
-| `{fps}`, `{width}` and `{height}` | The film's rate and frame size, so the clip can be made to match them. |
-
-- The command is a program the project names, so it runs only on a machine that allows it through
-  `record.programs`, which refuses it by default. It runs with your user's rights and can read every
-  file you can, `.env` included.
-  [Programs a project names](/requirements#programs-a-project-names) says how to allow it, and
-  `decktalk check` lists it before anything runs.
-- The command runs in an empty scratch folder, with every word that names a project file by a relative
-  path handed over as that file's absolute path, and with the scrubbed environment and no proxy, so a
-  credential in your shell does not reach it. A command that fails, outruns `tools.timeout_seconds`
-  or writes nothing stops the run with its own words. It never leaves a half-written clip behind.
-- A clip already there is kept. Delete it, or run `decktalk record --force`, to make it again.
-- A machine whose `record.page_policy` is `untrusted` runs no program a project names, so it refuses a
-  `[[clip]]` whose file is not there.
-- The made file is a project file like any other, so a pane or a clip section plays it, and a page
-  section that plays it is recorded again when it changes.
-
-`render/make_film` in the motion example composes an ffmpeg filter graph and needs nothing beyond the
-standard library. Add the clip's directory to `.gitignore`, as the example does, since a build makes it.
+A film DeckTalk built writes its words beside itself, as `build/final/<name>.words.json`: every word
+the film says, as its captions show it, with its voice and its turn. Copy the film and that file into
+the project under one name, such as `media/larkbill.mp4` and `media/larkbill.words.json`, and a clip
+section that plays the film has its speech captioned on this film's clock.
 
 ## Caption the speech inside a clip
 
@@ -238,21 +137,12 @@ A take's own `<digest>.words.json` in `takes/` has this shape, and so does the f
 `data-voice` and `data-turn` in the captioned copy, so a page sets it by its voice, and no caption
 file names them.
 
-A clip in a pane needs no key. Its words file sits beside it under its name, `<clip>.words.json`,
-and its speech is captioned from the pane's cue on the film's clock, as far as the clip plays there.
-A word that starts once the clip has stopped playing is left out, and a pane clip with no words file
-beside it, or with no audio, adds no caption. A words file beside a pane clip that does not read is
-said once on the stream and adds no caption.
-
-Two captions are never on screen at once, so where the voice and a clip speak together each caption
-ends where the next one starts.
-
 ## Cut a clip out of the film
 
 `decktalk clip` cuts a span of one built page section into its own file. The picture is a run of whole
 frames of `build/sections/NN.mp4` and the sound is the finished film's over the same span, so a clip
-is a piece of the film rather than a second render of it: it carries the voice, the sound a pane clip
-plays there and the score, as the film mixed them.
+is a piece of the film rather than a second render of it: it carries the voice, the effects and the
+score, as the film mixed them.
 
 The clock is the section's own. Zero is where the section starts, and the lead of silence before its
 first word is part of the span like anything else.
@@ -359,9 +249,7 @@ there. Each refusal names the command that makes what is missing.
 
 ## Related
 
-- **Look up every section key and `[[clip]]`:** [decktalk.toml](/reference/decktalk-toml)
-- **Read what a pane may draw over its clip:** [The page contract](/concepts/page-contract#a-pane-clip)
-- **Read how a pane clip is measured:** [Verify](/reference/verify#a-pane-clip)
+- **Look up every section key:** [decktalk.toml](/reference/decktalk-toml)
 - **Read the mix the clip's sound joins:** [Sound](/concepts/sound)
 - **Rebuild after you replace a clip:** [Rebuild one section](/guides/rebuild-one-section)
 - **Read the command's own flags:** [CLI](/reference/cli#decktalk-clip)

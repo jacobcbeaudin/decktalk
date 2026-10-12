@@ -1,23 +1,18 @@
-/*! Declared motion: a thing that moves from one cue to another, a loop, a region a frame hook draws in, and a pane clip.
+/*! Declared motion: a thing that moves from one cue to another, a loop, and a region a frame hook draws in.
  *
  * A moment is a reveal of half a second or less, measured as a step in the picture. A motion is the
  * other noun: it can run for any length, its length is the seconds between two cues and never a
  * number in markup, and it is declared on the element it moves, so verify can mask it from every
  * reveal and measure its own departure and arrival instead. A loop turns for as long as its slide is
- * on screen and is masked and never a landing. A frame hook draws inside a region it names. A pane clip
- * plays a project file inside its element from one cue, frame by frame on the section clock, with the
- * page drawn over it, and is masked from that cue and measured for its departure on it.
+ * on screen and is masked and never a landing. A frame hook draws inside a region it names.
  *
  * Anything that keeps moving past the half second a cue may still move and declares none of these is
  * undeclared motion, which is exactly what makes verify's control dishonest, so the page reports it.
  */
 
-import { CLASS } from "./canvas.ts";
-import { earliest, every, now, round, schedule } from "./clock.ts";
+import { earliest, every, round } from "./clock.ts";
 import {
   ATTRS,
-  CLIP_FRAMES,
-  cueId,
   DUE_SLACK_SECONDS,
   type Ease,
   MEASURABLE_SPAN_SECONDS,
@@ -95,25 +90,17 @@ function cssTiming(ease: Ease): string {
 /** One thing the page declared as moving, which is what verify masks and what a landing is measured on. */
 type Lane = {
   readonly id: string;
-  readonly kind: "motion" | "loop" | "region" | "clip";
+  readonly kind: "motion" | "loop" | "region";
   readonly region: Region;
   readonly from: number | null;
   readonly to: number | null;
   readonly cues: { readonly from: string | null; readonly to: string | null };
-  /** The project file a pane clip plays, which no other lane has. */
-  readonly clip?: string;
 };
 
 /** Every lane the page has declared since its clock started. */
 const lanes: Lane[] = [];
 
-/** An element's place and size in the frame, exactly as the browser lays it out, fractions of a pixel kept. */
-type Rect = { x: number; y: number; w: number; h: number };
-
-/**
- * Where one lane was seen while the recorder stepped: the box it swept, the seconds it was alive, where it
- * stood the first time it was seen, and the first second it stood anywhere else.
- */
+/** Where one lane was seen while the recorder stepped: the box it swept and the seconds it was alive. */
 type Swept = {
   left: number;
   top: number;
@@ -123,14 +110,7 @@ type Swept = {
   height: number;
   first: number;
   last: number;
-  rest: Rect;
-  moved: number | null;
 };
-
-/** Whether a laid-out box is exactly the rect an element was first seen at, which is a still element at any pixel. */
-function standsAt(box: DOMRect, rest: Rect): boolean {
-  return box.left === rest.x && box.top === rest.y && box.width === rest.w && box.height === rest.h;
-}
 
 /** What the recorder's steps saw of each lane, keyed by the lane's id. */
 const swept = new Map<string, Swept>();
@@ -146,12 +126,8 @@ function regionOf(one: Lane): Element | null {
   return resolve(one.region);
 }
 
-/**
- * Whether a lane is moving at one second: a motion between its two cues, a pane clip from its cue on,
- * and anything else while it is on the page.
- */
+/** Whether a lane is moving at one second: a motion between its two cues, anything else while it is on the page. */
 function alive(one: Lane, seconds: number): boolean {
-  if (one.kind === "clip") return one.from !== null && seconds >= one.from - DUE_SLACK_SECONDS;
   if (one.from !== null && one.to !== null)
     return seconds >= one.from - DUE_SLACK_SECONDS && seconds <= one.to + DUE_SLACK_SECONDS;
   return true;
@@ -161,9 +137,7 @@ function alive(one: Lane, seconds: number): boolean {
  * Note where every live lane is at one stepped second, which is what verify masks and measures on.
  *
  * The recorder calls this once a frame after the timeline has been sought, so a box read here is
- * where the frame shows the element, and the union over every frame is the whole lane it swept. The
- * first box is kept exactly as it was laid out, and the first second the element stands anywhere else is
- * noted, so a pane on a fraction of a pixel that never moves is still, and one that moves says when.
+ * where the frame shows the element, and the union over every frame is the whole lane it swept.
  */
 export function sample(seconds: number): void {
   for (const one of lanes) {
@@ -171,14 +145,9 @@ export function sample(seconds: number): void {
     const el = regionOf(one);
     if (el) note(one.id, el, seconds);
   }
-  for (const one of revealed) {
-    if (seconds < one.at - DUE_SLACK_SECONDS || seconds > one.at + MEASURABLE_SPAN_SECONDS + DUE_SLACK_SECONDS)
-      continue;
-    for (const el of one.els) if (el.isConnected) note(one.id, el, seconds);
-  }
 }
 
-/** Widen what one lane or reveal swept by where one element is drawn at one stepped second. */
+/** Widen what one lane swept by where its element is drawn at one stepped second. */
 function note(id: string, el: Element, seconds: number): void {
   const box = el.getBoundingClientRect();
   if (!box.width || !box.height) return;
@@ -193,12 +162,9 @@ function note(id: string, el: Element, seconds: number): void {
       height: box.height,
       first: seconds,
       last: seconds,
-      rest: { x: box.left, y: box.top, w: box.width, h: box.height },
-      moved: null,
     });
     return;
   }
-  if (seen.moved === null && !standsAt(box, seen.rest)) seen.moved = seconds;
   seen.left = Math.min(seen.left, box.left);
   seen.top = Math.min(seen.top, box.top);
   seen.right = Math.max(seen.right, box.right);
@@ -238,95 +204,39 @@ export function stillUntil(seconds: number): number | null {
 /** One lane as the recording log keeps it: what moved, the box it swept, when it moved and where it lands. */
 type LaneRow = {
   id: string;
-  kind: Lane["kind"] | "reveal";
+  kind: Lane["kind"];
   box: { x: number; y: number; w: number; h: number } | null;
   size: { w: number; h: number } | null;
   departs: number | null;
   arrives: number | null;
-  rest: Rect | null;
-  moved: number | null;
   landings: { cue: string; kind: "depart" | "arrive"; at: number }[];
-  clip: string | null;
 };
 
 /** Every lane the recorder saw, in the order the page declared them, which the probe's report carries. */
 export function report(): LaneRow[] {
   return lanes.map((one) => {
+    const seen = swept.get(one.id);
     const landings: LaneRow["landings"] = [];
     if (one.cues.from && one.from !== null) landings.push({ cue: one.cues.from, kind: "depart", at: round(one.from) });
     if (one.cues.to && one.to !== null) landings.push({ cue: one.cues.to, kind: "arrive", at: round(one.to) });
-    const seen = swept.get(one.id);
-    return { ...row(one.id, one.kind, seen), landings, clip: one.clip ?? null };
-  });
-}
-
-/**
- * Every cue that revealed or changed an element while the recorder stepped, as a lane departing on that cue.
- *
- * Verify measures a reveal of the film it is in as a step in the whole frame, so these are never
- * masked or measured there. They are what the film carries beside itself, so a pane that plays it in
- * another film measures each reveal on the box it was drawn in.
- *
- * A reveal departs on its cue and may move for the half second a cue may, which is the span it is
- * sampled over, so those are its seconds. The seconds a page happened to step inside that span are
- * not: a build crosses still frames in one step, and a section recorded in pieces steps the first
- * second of every piece, so a sampled last second would say where the steps fell rather than what
- * the reveal did.
- */
-export function reveals(): LaneRow[] {
-  return revealed.map((one) => {
-    const seen = swept.get(one.id);
+    const box = seen
+      ? {
+          x: Math.round(seen.left),
+          y: Math.round(seen.top),
+          w: Math.round(seen.right) - Math.round(seen.left),
+          h: Math.round(seen.bottom) - Math.round(seen.top),
+        }
+      : null;
     return {
-      ...row(one.id, "reveal", seen),
-      departs: seen ? round(one.at) : null,
-      arrives: seen ? round(one.at + MEASURABLE_SPAN_SECONDS) : null,
-      landings: [{ cue: one.cue, kind: "depart", at: round(one.at) }],
-      clip: null,
+      id: one.id,
+      kind: one.kind,
+      box,
+      size: seen ? { w: Math.round(seen.width), h: Math.round(seen.height) } : null,
+      departs: seen ? round(seen.first) : null,
+      arrives: seen ? round(seen.last) : null,
+      landings,
     };
   });
-}
-
-/** What the recorder saw of one lane or reveal, its box rounded to the recording's pixels and its rest kept whole. */
-function row(id: string, kind: LaneRow["kind"], seen: Swept | undefined): Omit<LaneRow, "landings" | "clip"> {
-  const box = seen
-    ? {
-        x: Math.round(seen.left),
-        y: Math.round(seen.top),
-        w: Math.round(seen.right) - Math.round(seen.left),
-        h: Math.round(seen.bottom) - Math.round(seen.top),
-      }
-    : null;
-  return {
-    id,
-    kind,
-    box,
-    size: seen ? { w: Math.round(seen.width), h: Math.round(seen.height) } : null,
-    departs: seen ? round(seen.first) : null,
-    arrives: seen ? round(seen.last) : null,
-    rest: seen ? seen.rest : null,
-    moved: seen && seen.moved !== null ? round(seen.moved) : null,
-  };
-}
-
-/** One cue that revealed or changed elements, the second it was due, and every element it changed. */
-type Revealed = { readonly id: string; readonly cue: string; readonly at: number; readonly els: Element[] };
-
-/** Every cue that revealed or changed an element since the clock started, in the order they ran. */
-const revealed: Revealed[] = [];
-
-/**
- * Note that a cue due at `at` revealed or changed one element, so each step samples where it is drawn.
- *
- * It is sampled for the longest a cue may still move, which covers every entrance, exit and class
- * change the contract lets a page declare.
- */
-export function reveal(el: Element, cue: string, at: number): void {
-  const one = revealed.find((row) => row.cue === cue);
-  if (one) {
-    if (!one.els.includes(el)) one.els.push(el);
-    return;
-  }
-  revealed.push({ id: `reveal-${revealed.length + 1}`, cue, at, els: [el] });
 }
 
 /** Every lane declared so far, which the probe samples while the recorder steps. */
@@ -426,8 +336,6 @@ export function undeclaredIn(slideEl: Element, slideId: string): void {
 /** What a mounted slide tells the motions about the clock, which is when each of its cues is due. */
 type Timing = {
   readonly frozen: boolean;
-  /** Whether the recorder steps the clock, which is the one driver a pane clip is drawn frame by frame under. */
-  readonly recorded: boolean;
   /** The second a cue id is due, or null when the page does not know it. */
   at(cue: string): number | null;
 };
@@ -443,12 +351,6 @@ type Timing = {
 export function wire(el: HTMLElement, slide: Slide, timing: Timing, on: (cue: string, run: () => void) => void): void {
   for (const target of el.querySelectorAll(MOVING_SELECTOR)) {
     const moving = target as HTMLElement;
-    const clip = written(moving, ATTR.clip);
-    if (clip) {
-      el.classList.add(CLASS.paned);
-      paneClip(moving, clip, slide, timing, on);
-      continue;
-    }
     const loop = written(moving, ATTR.loop);
     if (timing.frozen) {
       // A still has no clock, so a loop rests and a motion that has departed shows where it ends.
@@ -480,100 +382,6 @@ export function wire(el: HTMLElement, slide: Slide, timing: Timing, on: (cue: st
       moving.style.animation = `${name} ${end - start}s ${cssTiming(ease)} 0s 1 normal both`;
     });
   }
-}
-
-// ---- the pane clips ------------------------------------------------------------------------------
-
-/**
- * How a pane clip's picture fills its pane, which is the whole of it at the pane's own shape.
- *
- * The picture is always its own compositor layer. An image whose source changes every frame may or
- * may not be promoted to one depending on when it decoded, and the two paths draw the edge of a
- * rounded pane's clip differently, so a frame would carry which path the browser took.
- */
-const PANE_FILL = "display:block;width:100%;height:100%;object-fit:fill;pointer-events:none;will-change:transform";
-
-/**
- * The second on a pane clip's own clock that one section second shows, which is its first frame until its cue.
- *
- * It is written to the millisecond, the precision every second a page reports carries, so the origin
- * reads the frame showing at that second from the clip's frame rate and nothing else.
- */
-function clipSecond(seconds: number, start: number): number {
-  return round(Math.max(0, seconds - start));
-}
-
-/** The origin path of the frame of a pane clip showing at one second on its own clock. */
-function clipFrameUrl(clip: string, second: number): string {
-  return `${CLIP_FRAMES}${second}/${clip.split("/").map(encodeURIComponent).join("/")}`;
-}
-
-/**
- * Play one pane clip inside its element: frame by frame from the origin on the stepped clock, as a video in a preview.
- *
- * The clip is the element's first child, so everything the element and the slide draw after it is
- * drawn over it. Under the recorder each step sets the frame showing at that second, which the origin
- * decodes from the clip itself, so the picture is a function of the second and the step waits for the
- * frame to be decoded like any other image. The frames are drawn from its cue on, so every step from the
- * cue is a change and every step before it is not. A still shows the clip's first frame. A person's preview
- * plays the clip as a video from its cue, which is the one place a page may play anything at its own
- * rate, because a preview is never recorded.
- */
-function paneClip(
-  el: HTMLElement,
-  clip: string,
-  slide: Slide,
-  timing: Timing,
-  on: (cue: string, run: () => void) => void,
-): void {
-  const local = written(el, ATTR.clipFrom);
-  const from = local ? cueId(slide.id, local) : null;
-  const start = from === null ? null : timing.at(from);
-  if (!timing.frozen && (from === null || start === null)) {
-    warn("PAGE_MOTION_CUE_UNKNOWN", slide.id, from, { attr: ATTR.clip, value: clip });
-  }
-  if (!timing.frozen && !timing.recorded) {
-    const video = document.createElement("video");
-    video.src = `/${clip}`;
-    video.preload = "auto";
-    video.playsInline = true;
-    video.style.cssText = PANE_FILL;
-    el.prepend(video);
-    if (from !== null && start !== null) {
-      on(from, () => {
-        video.currentTime = Math.max(0, now() - start);
-        // A browser refuses sound before a person has touched the page, and a silent preview still shows the clip.
-        video.play().catch(() => {
-          video.muted = true;
-          return video.play().catch(() => undefined);
-        });
-      });
-    }
-    return;
-  }
-  const img = document.createElement("img");
-  img.alt = "";
-  img.style.cssText = PANE_FILL;
-  if (timing.recorded) {
-    img.addEventListener("error", () => warn("PAGE_CLIP_UNREADABLE", slide.id, from, { value: clip }), { once: true });
-  }
-  el.prepend(img);
-  const show = (second: number) => {
-    const url = clipFrameUrl(clip, second);
-    if (img.getAttribute("src") !== url) img.src = url;
-  };
-  show(0);
-  if (timing.frozen || from === null || start === null) return;
-  lane({ kind: "clip", region: el, from: start, to: null, cues: { from, to: null }, clip });
-  // The pane holds the clip's first frame until its cue, so the frame hook that plays it starts there.
-  // A step before the cue draws nothing new, and the recorder writes its frame again rather than capturing it.
-  schedule(start, "reveal", clip, () =>
-    every((seconds) => {
-      if (!img.isConnected) return false;
-      show(clipSecond(seconds, start));
-      return true;
-    }),
-  );
 }
 
 // ---- the script's own motions ---------------------------------------------------------------------

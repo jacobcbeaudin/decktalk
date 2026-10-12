@@ -248,10 +248,10 @@ The policy is read by every launch that opens a project's page, which is `record
 
 ## Programs a project names
 
-A project can name programs as well as pages: a section's `render_command` draws its picture, and a
-`[[clip]]` table's `command` writes a clip at build time. A program runs with your user's rights and
-can read every file you can, the project's `.env` included. So cloning someone else's deck and
-building it would run their code as you, and `[record] programs` decides whether it does.
+A project can name programs as well as pages: a render section's `render_command` draws its picture.
+A program runs with your user's rights and can read every file you can, the project's `.env`
+included. So cloning someone else's deck and building it would run their code as you, and
+`[record] programs` decides whether it does.
 
 | Value | What `record` and `build` do with a project's programs |
 |---|---|

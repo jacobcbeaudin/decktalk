@@ -21,12 +21,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from decktalk.artifacts import FilmSection, Placements, Takes, film_lanes
-from decktalk.artifacts.recordings import LANDINGS
+from decktalk.artifacts import Placements, Takes
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.events import Unit
-from decktalk.inputs import Inputs, RecordedSection
+from decktalk.inputs import Inputs
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
@@ -177,7 +176,7 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     offsets = narration_offsets([row.section for row in rows], takes, starts)
     uncaptioned_sounds(inputs, run)
     narrated = narrated_turns(inputs, takes, offsets)
-    inside = clip_words(inputs, run, rows)
+    inside = clip_words(inputs, rows)
     clips = [cue for words in inside for cue in spoken_cues(words)]
     spoken = sorted(build_captions(inputs, narrated) + clips, key=lambda cue: cue.start)
     cues = with_sound_captions(spoken, sound_captions(inputs, starts))
@@ -186,29 +185,10 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     placements = placements_of(inputs, rows)
     placements.write(paths["placements"])
     write_transcript_page(inputs, paths["transcript"], placements, takes, narrated=narrated, inside=inside)
-    write_landings(inputs, rows, paths["landings"])
     film_words(narrated, inside).write(paths["words"])
-    for name in ("srt", "vtt", "chapters", "placements", "transcript", "landings", "words"):
+    for name in ("srt", "vtt", "chapters", "placements", "transcript", "words"):
         run.wrote(paths[name])
     return placements, cues
-
-
-def write_landings(inputs: Inputs, rows: list[Rendered], out: Path) -> None:
-    """Every landing the film's verify measures, on the film's own clock, beside the film.
-
-    A pane that plays this film in another film reads them there, so its reveals and its motions are
-    measured in that film too. A clip section's own footage declares nothing to this project, so its
-    landings are not here.
-    """
-    starts = rendered_starts(rows)
-    skipped = {(block.number, cue.id) for block in inputs.cues() for cue in block.cues if not cue.verify}
-    sections: list[FilmSection] = []
-    for row in rows:
-        log = inputs.recording_log(row.key) if isinstance(row.section, RecordedSection) else None
-        if log is not None:
-            off = {cue for number, cue in skipped if number == row.number}
-            sections.append(FilmSection(start=starts[row.number], log=log, plays=row.panes, skipped=off))
-    out.write_bytes(LANDINGS.dump_json(film_lanes(sections), indent=1))
 
 
 def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:

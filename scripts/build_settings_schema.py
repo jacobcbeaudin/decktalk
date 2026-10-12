@@ -70,7 +70,6 @@ FAMILY_SENTENCE = (
 DOCUMENT_SENTENCES = {
     "project": "The film itself: its name, its deck and the files it is built from.",
     "section": "One section of the script, in the order the film plays them.",
-    "clip": "One clip the project makes at build time: the project file and the command that writes it.",
     "transition": "How one section is joined to the next.",
 }
 """One sentence for each table that is project content, which the document parser owns the keys of."""
@@ -207,7 +206,7 @@ def document_table(name: str) -> dict[str, Any]:
         **({"properties": held} if (held := content_of(name)) else {}),
         "additionalProperties": True,
     }
-    if name not in ("section", "clip"):
+    if name != "section":
         return body
     return {"type": "array", "description": DOCUMENT_SENTENCES[name], "x-kind": "document", "items": body}
 

@@ -4,9 +4,9 @@
 
 The picture is a run of whole frames of `build/sections/NN.mp4` and the sound is the finished film's
 over the same span, so a clip is a piece of the film rather than a second render of it: it carries
-the narration, every turn of a dialogue, the sound a pane clip plays and the score, as the film mixed
-them. The words file beside it lists every word wholly inside the span, in seconds after the clip
-starts, which is what a `[[section]]` playing this clip needs to caption it.
+the narration, every turn of a dialogue, the effects and the score, as the film mixed them. The
+words file beside it lists every word wholly inside the span, in seconds after the clip starts,
+which is what a `[[section]]` playing this clip needs to caption it.
 
 The clock is the section's own: zero is where the section starts, and the silence a section's lead
 puts before its first word is part of the span like anything else. It is read through `words`, so

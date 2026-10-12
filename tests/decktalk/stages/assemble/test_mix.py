@@ -19,8 +19,6 @@ from decktalk.events import FindingRaised
 from decktalk.findings import Code
 from decktalk.inputs.markers import Marker
 from decktalk.media import ffmpeg
-from decktalk.media.pagereport import Box, Landing, MotionLane, Size
-from decktalk.stages.assemble.cut import rendered_starts
 from decktalk.stages.assemble.mix import (
     LAVFI,
     LOOP,
@@ -29,7 +27,6 @@ from decktalk.stages.assemble.mix import (
     MixInput,
     MixPlan,
     delay,
-    embedded_sounds,
     marker_times,
     matched_gains,
     max_expr,
@@ -42,17 +39,14 @@ from decktalk.stages.assemble.mix import (
     speech_spans,
 )
 from support.media_cards import write_tone_with_tail
-from support.pages import a_report, write_log
 
 from .conftest import (
     MID_CLIP_TOML,
-    PAGES_TOML,
     cue_times,
     open_run,
     rendered,
     spoken,
     take_index,
-    with_panes,
     write_project,
 )
 
@@ -295,28 +289,6 @@ def test_a_clip_beside_a_placeholder_narration_is_matched_to_the_master_s_target
     measured_as(monkeypatch, {clip.name: -31.0})
     gains = matched_gains(inputs, takes, [Embedded(clip, 2.0, 3.0, "clip02")])
     assert gains == {clip: pytest.approx(inputs.settings.audio.target_lufs + 31.0)}
-
-
-def test_a_pane_clip_s_sound_lands_at_its_cue_and_stops_where_its_page_stops_recording(tmp_path, monkeypatch):
-    """The narration keeps going through a pane clip, so its sound joins at the cue and the music ducks under it."""
-    inputs = write_project(tmp_path, PAGES_TOML)
-    clip = tmp_path / "deck" / "clips" / "film.mp4"
-    clip.parent.mkdir(parents=True)
-    clip.write_bytes(b"film")
-    monkeypatch.setattr(ffmpeg, "has_audio", lambda _path: True)
-    monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.0)
-    lane = MotionLane(
-        id="clip-1", kind="clip", box=Box(x=0, y=0, w=960, h=540), size=Size(w=960, h=540), departs=0.8,
-        arrives=2.4, landings=(Landing(cue="2.1:play", kind="depart", at=0.8),), clip="deck/clips/film.mp4",
-    )  # fmt: skip
-    write_log(inputs, 2, report=a_report(motions=[lane]), requested_seconds=2.4, assets=["deck/clips/film.mp4"])
-    write_log(inputs, 3, report=a_report(motions=[lane.model_copy(update={"clip": "deck/clips/gone.mp4"})]))
-    rows = with_panes(inputs, rendered(inputs, THREE_PAGES))
-    (sound,) = embedded_sounds(rows, rendered_starts(rows))
-    # Section 2 opens at 2.0 s, the clip starts 0.8 s into it, and the page stops recording at 2.4 s.
-    assert (sound.path, sound.at, sound.seconds, sound.pane) == (clip, 2.8, 1.6, True)
-    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
-    assert (2.8, 4.4) in speech_spans(rows, takes, rendered_starts(rows), [sound])
 
 
 def test_a_music_bed_the_project_names_and_has_not_got_is_an_error(tmp_path):

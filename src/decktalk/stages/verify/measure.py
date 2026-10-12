@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, PaneLandings, pane_landings
+from decktalk.artifacts import CueTimes
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, RenderSection
@@ -28,7 +28,6 @@ from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, MotionCheck, SkipReason, section_key
 from decktalk.settings import CLICK_LEVEL_DBFS
 from decktalk.settings.numbers import reference_lead_seconds
-from decktalk.stages import played_clips
 from decktalk.stages.verify import motion
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
@@ -63,11 +62,6 @@ def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:
         starts[section.number] = at
         at += ffmpeg.probe_duration(cut)
     return starts, at if starts else ffmpeg.probe_duration(film)
-
-
-def section_spans(starts: dict[int, float], total: float) -> dict[int, float]:
-    """How long each section plays in the film: from its start to the next section's, or to the film's end."""
-    return {number: min((t for t in starts.values() if t > at), default=total) - at for number, at in starts.items()}
 
 
 def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
@@ -229,7 +223,7 @@ def planned_cues(
     """For each named cue, the row it is skipped with, or the probes it will be measured by.
 
     `lanes` is every section's lanes, read once for the whole film, so a section with many cues reads
-    its recording log and probes its pane clips once rather than once a cue.
+    its recording log once rather than once a cue.
     """
     cue_times = inputs.cue_times()
     return [
@@ -343,21 +337,16 @@ def unmeasured_render(inputs: Inputs, section: int) -> bool:
     return log is None or not log.recording.report.motions
 
 
-def section_panes(inputs: Inputs, section: int, seconds: float) -> PaneLandings:
-    """The landings inside every pane clip one section played, in a section `seconds` long, each clip probed once."""
-    log = inputs.recording_log(section_key(section))
-    return pane_landings(() if log is None else played_clips(log.recording, seconds, inputs.root))
-
-
-def section_lanes(inputs: Inputs, section: int, sec_start: float, panes: PaneLandings) -> list[motion.Lane]:
-    """Every lane one section's recording reported and every landing inside its pane clips, on the film's clock."""
+def section_lanes(inputs: Inputs, section: int, sec_start: float) -> list[motion.Lane]:
+    """Every lane one section's recording reported, on the film's clock at the probe's size."""
     log = inputs.recording_log(section_key(section))
     if log is None:
         return []
     video = inputs.settings.video
     recorded = Size(video.width, video.height)
-    rows = (*log.recording.report.motions, *panes.lanes)
-    return motion.lanes_of(rows, start=sec_start, recorded=recorded, probe=frame_size(inputs.settings))
+    return motion.lanes_of(
+        log.recording.report.motions, start=sec_start, recorded=recorded, probe=frame_size(inputs.settings)
+    )
 
 
 def revealing_cues(inputs: Inputs, section: int) -> set[str]:
@@ -508,7 +497,7 @@ def landing_checks(
                 size=frame_size(settings), settings=settings,
             )  # fmt: skip
             for landed in measured:
-                if landed.inner is None and (section, landed.cue) in skipped:
+                if (section, landed.cue) in skipped:
                     continue
                 judged = motion.finding(
                     landed, settings=settings, fps=settings.video.fps, film=inputs.relative(film), section=section
@@ -523,7 +512,6 @@ def landing_checks(
                         spoken=landed.spoken,
                         shown=landed.shown,
                         offset_seconds=landed.offset_seconds,
-                        clip=landed.inner,
                     )  # fmt: skip
                 )
     return tuple(sorted(rows, key=lambda row: row.spoken))
@@ -566,8 +554,6 @@ __all__ = [
     "revealing_cues",
     "unmeasured_render",
     "section_lanes",
-    "section_panes",
-    "section_spans",
     "want_cues",
     "want_landings",
 ]

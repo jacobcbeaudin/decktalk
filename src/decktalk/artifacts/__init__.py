@@ -9,8 +9,7 @@ name is the JSON key, and `Stored` is the one place a file is read from disk or 
                                                       under build/narrate/, and an aligner's under takes/aligned/)
     build/narrate/takes.json           takes.py       the take index and where each take sits in the narration
     build/cue-times.json               cue_times.py   every cue resolved against those words
-    build/recordings/NN.json           recordings.py  what `record` did, judged and measured, and the lanes
-                                                      a film carries beside itself as its landings
+    build/recordings/NN.json           recordings.py  what `record` did, judged and measured
     build/final/placements.json        placements.py  where every section sits in the finished film
     build/sections/NN.json             placements.py  what each section video was encoded from
 
@@ -22,16 +21,7 @@ from __future__ import annotations
 
 from decktalk.artifacts.cue_times import CueTimes
 from decktalk.artifacts.placements import Placement, Placements
-from decktalk.artifacts.recordings import (
-    FilmSection,
-    Luma,
-    PaneLandings,
-    PanePlay,
-    RecordingChecks,
-    RecordingLog,
-    film_lanes,
-    pane_landings,
-)
+from decktalk.artifacts.recordings import Luma, RecordingChecks, RecordingLog
 from decktalk.artifacts.stored import (
     Stored,
     Unreadable,
@@ -86,8 +76,6 @@ __all__ = [
     "CueTimes",
     "EstimatedWords",
     "Luma",
-    "PaneLandings",
-    "PanePlay",
     "Placed",
     "PlaceholderInputs",
     "Placement",
@@ -108,11 +96,8 @@ __all__ = [
     "alignment_match",
     "content_digest",
     "file_digest",
-    "FilmSection",
-    "film_lanes",
     "is_placeholder",
     "on_section_clock",
-    "pane_landings",
     "take_file",
     "SpokenWord",
     "words_beside",

@@ -101,8 +101,6 @@ that never moves a pixel and `from the page` is a span read off the page or off 
 | `data-motion-ease` | element | `firm`, `glide`, `settle`, `spring` | `firm` |  | 0 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify. |
 | `data-loop` | element | an `@keyframes` name |  |  | 0 | [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | The element turns through these `@keyframes` for as long as its slide is on screen, masked and never a landing. |
 | `data-loop-seconds` | element | seconds | `1` | 0.2 to 60 in steps of 0.04 | 0 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How long one turn of the loop takes. |
-| `data-clip` | element | a project path |  |  | 0 | [`PAGE_CLIP_UNREADABLE`](/reference/findings/PAGE_CLIP_UNREADABLE) | The element is a pane that plays this project file, a clip with its own sound, drawn under the page and masked from every reveal check. |
-| `data-clip-from` | element | a local cue name |  |  | 0 | [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | The pane clip starts playing, picture and sound, at this cue, and shows its first frame before it. |
 | `data-scene` | scene | an id |  |  | 0 | [`PAGE_SCENE_EMPTY`](/reference/findings/PAGE_SCENE_EMPTY) | Declares the scene a section names, on the wrapper that holds its slides. |
 | `data-name` | scene | a description |  |  | 0 | none | The scene's name in the index and in the catalog. |
 | `data-slide` | slide | an id |  |  | 0 | [`PAGE_SLIDE_NO_ID`](/reference/findings/PAGE_SLIDE_NO_ID) | Declares a slide on a template. Its id qualifies every moment written inside it. |
@@ -214,14 +212,13 @@ verify can measure. `settle` and `spring` ease to rest, so an arrival on either 
 cue `cues.json` marks `"verify": false`, and anywhere else is
 [`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE).
 
-Four more things on a page may move for longer than a moment, and each is declared too.
+Three more things on a page may move for longer than a moment, and each is declared too.
 
 | Declaration | What moves | Where it is written |
 |---|---|---|
 | A loop | An element that turns for as long as its slide is on screen. | `data-loop` names its `@keyframes` and `data-loop-seconds` one turn's length. |
 | A script motion | Whatever `draw(progress, seconds)` draws on each frame between two cue ids, and nothing after the arrival. | `DeckTalk.motion(el, { from, to, ease, draw })`. |
 | A region | Whatever a frame hook draws on each frame from the section second. | `DeckTalk.frame(fn, { region })`. |
-| A pane clip | A clip with its own sound, playing inside the element from one cue. | `data-clip` names the project file and `data-clip-from` the cue it starts on. |
 
 [Things that move](/guides/motion) shows each of them in a working deck.
 
@@ -240,92 +237,36 @@ starts. A frame hook with no region is undeclared from the call that registers i
 A script can also change the picture in one step, with no animation at all, such as a `setTimeout`
 that shows an element. Verify reads that as a reveal nobody cued, or a mask hides it. So the recorder
 watches what the page changes between two frames, outside every cue, frame hook and animation the
-runtime ran, and a change that sits inside no declared motion, loop, region or pane clip and shows in the frame
+runtime ran, and a change that sits inside no declared motion, loop or region and shows in the frame
 is [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED). Make the change in a cue's
 handler, draw it from a frame hook with a region, or declare it as a motion.
 
 A `<video>` or an `<audio>` element is refused outright as
 [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA), because it plays at its own rate
-and not on the stepped clock. Footage plays in a pane with `data-clip`, or full frame in a clip
-section, and a picture another program draws plays in a render section.
+and not on the stepped clock. Footage plays in a clip section, and a picture another program draws
+plays in a render section.
 
-On a still, which has no clock, a loop rests in its own style, a motion whose departure has fired
-is drawn where it ends, and a pane clip shows its first frame.
-
-### A pane clip
-
-A pane clip is footage with its own sound playing inside a page, under everything the page draws
-around it and over it, while the voice keeps going. The element names the clip as a project path and
-the cue it starts on.
-
-```html deck/index.html
-<div class="pane" data-clip="deck/clips/film.mp4" data-clip-from="play" data-describe="the film plays in its pane"></div>
-<p class="tag">film.mp4 · its own sound</p>
-```
-
-- **The picture.** The runtime puts the clip's picture inside the element as its first child, filling
-  it at the element's own shape, so give the pane the clip's proportions. Everything the slide draws
-  after the clip, a child placed over it or a later sibling such as the tag above, is drawn over the
-  clip, and the pane's own corners and clipping apply to it. Under the recorder each frame is the
-  frame of the clip showing at that second, which the origin decodes from the file, so the pane moves
-  and scales with everything around it and the recording is still a function of its seconds.
-- **The pictures beside it.** The clip's picture is a compositor layer of its own, and Chromium lays
-  out a picture that overlaps it together with it, so a picture that first shows beside the clip, a
-  button a cue fades in, would draw the slide's other pictures again a few levels lighter or darker
-  with nothing on the page changed. No check can name that change, because no script made it, so the
-  runtime prevents it: a slide that plays a pane clip carries `dt-paned`, and every `<img>` on it is
-  drawn on a layer of its own (`will-change: transform`, in a `:where()` rule). A page that turns that
-  off for a picture takes the risk back.
-- **The clock.** Before its cue the pane shows the clip's first frame. From the cue it shows the frame
-  of the clip's own clock, `section second - cue second`, and once the clip has played it holds its
-  last frame. A clip made at the film's own rate shows every one of its frames. The recorder captures
-  every frame from the cue on, because each shows a new frame of the clip, so the cue ends any still
-  stretch. The still frames before the cue are written again rather than captured, as for any frame
-  nothing changed on.
-- **The sound.** `assemble` lays the clip's sound in the mix from its cue's second, beside the voice,
-  until the clip ends or the page stops being recorded. It is matched to the narration's loudness and
-  the music ducks under it, as for a clip section. [Sound](/concepts/sound) is the whole mix.
-- **What verify does.** The pane is a lane from its cue on, masked from every reveal check and
-  measured for its departure on its cue. The landings the clip carries beside it, in
-  `<clip>.landings.json`, are measured too, on the film's clock from the cue. A clip whose own first
-  frames are still has no departure to measure, so mark its cue `"verify": false`.
-- **The preview.** A person's browser plays the clip as a video from its cue, because a preview is
-  never recorded.
-
-A file the origin cannot decode into a picture is
-[`PAGE_CLIP_UNREADABLE`](/reference/findings/PAGE_CLIP_UNREADABLE) when the page is recorded. The
-clip is a file the page loaded, so editing it records the section again.
+On a still, which has no clock, a loop rests in its own style and a motion whose departure has fired
+is drawn where it ends.
 
 ### The lane report
 
-While the recorder steps a section, the runtime samples every declared motion, loop, region and pane
-clip on each frame and keeps one **lane** for each. The recording log carries the lanes as
+While the recorder steps a section, the runtime samples every declared motion, loop and region on
+each frame and keeps one **lane** for each. The recording log carries the lanes as
 `recording.report.motions`, and verify masks and measures from them rather than from any file kept
 by hand.
 
 | Field | What it holds |
 |---|---|
 | `id` | The lane's own name, such as `motion-1`, which no cue shares. |
-| `kind` | `motion`, `loop`, `region` or `clip`, or `reveal` for a row of `reveals`. |
+| `kind` | `motion`, `loop` or `region`. |
 | `box` | The union of every box the element filled on every frame it was alive, in the recording's pixels, or null when it was never seen. |
 | `size` | The element's own width and height, which is the area a landing is measured against. |
 | `departs` and `arrives` | The first and the last second the lane was alive on the section clock. |
-| `rest` | Where the element stood on the first frame it was seen, exactly as the browser laid it out, fractions of a pixel kept, or null when it was never seen. |
-| `moved` | The first second the element stood anywhere but `rest` or at another size, or null when it held still for as long as it was seen. A pane clip's landings are measured only when this is null or no earlier than the clip's end. |
-| `landings` | Each cue a motion lands on, as its cue id, `depart` or `arrive`, and the second the cue was due. A pane clip departs on its cue. A loop and a region have none. |
-| `clip` | The project file a pane clip played, or null for every other lane. A pane clip counts only when the origin served the page that file. |
+| `landings` | Each cue a motion lands on, as its cue id, `depart` or `arrive`, and the second the cue was due. A loop and a region have none. |
 
-The report also keeps `recording.report.reveals`, a lane of kind `reveal` for each cue that revealed
-or changed an element: every such element, sampled from the cue's second for as long as a cue may
-move, with one `depart` landing on the cue. Its `departs` is the cue's second and its `arrives` half a
-second later, the span it is sampled over, whichever seconds the recorder stepped inside it, so a section
-recorded in pieces reports it as one pass does. Verify measures a reveal of its own film as a step in the
-whole frame, so it never masks or measures these. The `<name>.landings.json` a build writes beside its
-film carries them, so a pane that plays the film in another film measures each reveal on its box.
-
-A render section's command writes its lanes in this same shape, and so does a clip's own
-`<clip>.landings.json` and the `<name>.landings.json` every build writes beside its film, so verify
-reads one shape whoever drew the picture. [Verify](/reference/verify#motions) says how a cue is measured with the lanes masked
+A render section's command writes its lanes in this same shape, so verify reads one shape whoever
+drew the picture. [Verify](/reference/verify#motions) says how a cue is measured with the lanes masked
 and how each landing is measured on its own lane.
 
 ## Cue ownership

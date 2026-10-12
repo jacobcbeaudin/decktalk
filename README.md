@@ -162,7 +162,6 @@ my-lesson.vtt              captions, as WebVTT
 my-lesson.chapters.txt     one chapter per section
 my-lesson-transcript.html  a transcript page
 my-lesson-poster.png       a poster frame
-my-lesson.landings.json    every landing verify measures, on the film's clock
 my-lesson.words.json       every word the film says, on the film's clock
 my-lesson-captioned.mp4    the film with its captions drawn in, when [output] captioned asks
 placements.json            where every section sits in the film

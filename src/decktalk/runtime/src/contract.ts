@@ -222,11 +222,9 @@ export const CODES = {
   PAGE_MOTION_UNDECLARED:
     "{value} keeps moving past the half second a cue may still move and declares no motion, loop or region, so verify cannot mask it.",
   PAGE_MOTION_CUE_UNKNOWN:
-    "The motion or pane clip names the cue {cue}, which no slide declares, so it never starts or never lands.",
+    "The motion names the cue {cue}, which no slide declares, so it never starts or never lands.",
   PAGE_REALTIME_MEDIA:
-    "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so play it in a pane with data-clip.",
-  PAGE_CLIP_UNREADABLE:
-    "The pane clip {value} on slide {slide} could not be read as a picture, so the pane plays nothing.",
+    "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so use a clip section.",
   PAGE_FRAME_THREW: "A frame hook the deck registered threw {value}, so it stopped drawing from that frame on.",
   PAGE_WAIT_REJECTED: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
   PAGE_WAIT_UNSETTLED: "A promise the page waited for never settled, so the page was drawn without it.",
@@ -288,7 +286,6 @@ export type Kind =
   | "pairs"
   | "id"
   | "names"
-  | "path"
   | "tex";
 
 /** What turning an attribute changes, published so an agent can tell a control from a label. */
@@ -638,31 +635,6 @@ export const ATTRS = {
     affects: ["motion"],
     summary: "How long one turn of the loop takes.",
   },
-  "data-clip": {
-    name: "data-clip",
-    on: ["element"],
-    kind: "path",
-    values: [],
-    default: null,
-    range: null,
-    code: "PAGE_CLIP_UNREADABLE",
-    span: 0,
-    affects: ["motion", "catalog"],
-    summary:
-      "The element is a pane that plays this project file, a clip with its own sound, drawn under the page and masked from every reveal check.",
-  },
-  "data-clip-from": {
-    name: "data-clip-from",
-    on: ["element"],
-    kind: "cue",
-    values: [],
-    default: null,
-    range: null,
-    code: "PAGE_MOTION_CUE_UNKNOWN",
-    span: 0,
-    affects: ["cue-order", "motion", "catalog"],
-    summary: "The pane clip starts playing, picture and sound, at this cue, and shows its first frame before it.",
-  },
   "data-scene": {
     name: "data-scene",
     on: ["scene"],
@@ -786,9 +758,7 @@ export const REPORT = {
   catalog: "One entry per scene, with its slides, its cues and the measured box of every element.",
   cues: "When each cue was due, when it ran, and the second of the frame that showed it.",
   words: "Each synced line, when its cue ran, when the voice reaches it and when its first word showed.",
-  motions:
-    "Every declared motion, loop, region and pane clip, the box it swept, when it moved and the cues it lands on.",
-  reveals: "Every cue that revealed or changed an element, the box it was drawn in and the second the cue was due.",
+  motions: "Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on.",
 } as const;
 
 export type ReportField = keyof typeof REPORT;
@@ -838,16 +808,6 @@ export const ENGINE_PATH = "/__decktalk/";
  * the origin answers this one alias from the build directory and the page plays the film's timing.
  */
 export const PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
-
-/**
- * The path a recorded page asks its own origin for one frame of a pane clip under.
- *
- * The full path is this, the second on the clip's own clock, a slash and the clip's project path. The
- * origin decodes the clip itself and answers with the frame showing at that second, so a stepped page
- * draws exactly the frame of the second it was moved to and the browser never plays the clip at its
- * own rate.
- */
-export const CLIP_FRAMES = `${ENGINE_PATH}clip/`;
 
 /** The custom property on the root element that carries `motion.scale` into a page, from the recorder or the author. */
 export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
@@ -1003,7 +963,6 @@ export const CONTRACT = {
   doneAttr: DONE_ATTR,
   enginePath: ENGINE_PATH,
   previewCueTimes: PREVIEW_CUE_TIMES,
-  clipFrames: CLIP_FRAMES,
   motionScaleProperty: MOTION_SCALE_PROPERTY,
   canvasWidth: CANVAS_WIDTH,
   canvasHeight: CANVAS_HEIGHT,

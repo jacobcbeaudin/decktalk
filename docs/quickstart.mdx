@@ -177,14 +177,14 @@ cache paths.
 
     {/* sample: build, decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run 14c7e2c91a71, events build/events/14c7e2c91a71.jsonl
+    run cbcfff886822, events build/events/cbcfff886822.jsonl
          Narrate    0:00
              Cue    0:00
           Record    0:03
     The project declares no score for this run, so there is nothing to generate.
            Score    0:00
     The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
-        Assemble    0:03
+        Assemble    0:02
           Verify    0:02
            Built build/final/my-lesson.mp4, $0.00, 3 findings
     script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
@@ -224,7 +224,6 @@ cache paths.
     my-lesson-poster.png
     my-lesson-transcript.html
     my-lesson.chapters.txt
-    my-lesson.landings.json
     my-lesson.mp4
     my-lesson.srt
     my-lesson.vtt
@@ -309,7 +308,7 @@ decktalk serve
 
 {/* sample: serve, decktalk serve, in a fresh decktalk init my-lesson, the line it prints before it is stopped */}
 ```text
-Serving http://127.0.0.1:51783
+Serving http://127.0.0.1:65298
 ```
 
 `serve` answers from the project directory on 127.0.0.1, which is the origin the recorder uses, so
