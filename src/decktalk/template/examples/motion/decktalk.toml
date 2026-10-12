@@ -21,12 +21,14 @@ page = "deck/index.html"
 scene = "2"
 
 # A section a program draws rather than a page. The voice reads it like any other section and keeps
-# going through it, and `record` runs the command with the section's word and cue times.
+# going through it. `record` runs the command only on a machine whose record.programs is "ask" or
+# "run" (decktalk config set record.programs ask --scope machine), and refuses it by default, because
+# a program runs with your rights. Read render/draw_bars before you allow it.
 [[section]]
 number = 3
 chapter = "A picture from elsewhere"
 render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landings}", "{ffmpeg}"]
-hold_seconds = 1.0     # the page plays on this long after the narration
+hold_seconds = 1.0     # the picture plays on this long after the narration
 
 [narration]
 tail_seconds = 1.0  # silence kept after the last word of a section, so a cut breathes

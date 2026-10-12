@@ -51,8 +51,9 @@
         "pages": [
           "index",
           "quickstart",
+          "guides/first-deck",
           "requirements",
-          "guides/first-deck"
+          "examples"
         ]
       },
       {
@@ -73,6 +74,71 @@
         ]
       },
       {
+        "group": "Guides",
+        "pages": [
+          {
+            "group": "Write",
+            "pages": [
+              "guides/writing-for-the-ear",
+              "guides/dialogue"
+            ]
+          },
+          {
+            "group": "Slides",
+            "pages": [
+              "guides/design-a-slide",
+              "guides/slide-recipes",
+              "guides/motion",
+              "guides/page-by-hand"
+            ]
+          },
+          {
+            "group": "Sound and footage",
+            "pages": [
+              "guides/effects-on-a-cue",
+              "guides/clip-section"
+            ]
+          },
+          {
+            "group": "Ship",
+            "pages": [
+              "guides/rebuild-one-section",
+              "guides/accessible-video",
+              "guides/ci-and-offline"
+            ]
+          }
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/script-md",
+          "reference/decktalk-toml",
+          "reference/cues-json",
+          "reference/runtime",
+          "reference/cli",
+          "reference/configuration",
+          "reference/verify",
+          "reference/artifacts",
+          "reference/python-api",
+          "reference/stability",
+          "reference/what-leaves-your-machine",
+          "reference/trust",
+          "reference/measured",
+          "reference/glossary"
+        ]
+      },
+      {
+        "group": "Agents",
+        "pages": [
+          "reference/card",
+          "agents/agents-md",
+          "agents/json",
+          "agents/skills",
+          "agents/install"
+        ]
+      },
+      {
         "group": "Design decisions",
         "pages": [
           "decisions/overview",
@@ -82,50 +148,6 @@
           "decisions/the-provider-interface",
           "decisions/the-skills-contract",
           "decisions/no-compatibility-while-alpha"
-        ]
-      },
-      {
-        "group": "Guides",
-        "pages": [
-          "guides/writing-for-the-ear",
-          "guides/design-a-slide",
-          "guides/slide-recipes",
-          "guides/rebuild-one-section",
-          "guides/dialogue",
-          "guides/clip-section",
-          "guides/effects-on-a-cue",
-          "guides/motion",
-          "guides/accessible-video",
-          "guides/ci-and-offline",
-          "guides/page-by-hand"
-        ]
-      },
-      {
-        "group": "Reference",
-        "pages": [
-          "reference/cli",
-          "reference/verify",
-          "reference/measured",
-          "reference/script-md",
-          "reference/decktalk-toml",
-          "reference/cues-json",
-          "reference/runtime",
-          "reference/configuration",
-          "reference/stability",
-          "reference/artifacts",
-          "reference/what-leaves-your-machine",
-          "reference/python-api",
-          "reference/glossary"
-        ]
-      },
-      {
-        "group": "Agents",
-        "pages": [
-          "agents/skills",
-          "agents/install",
-          "agents/agents-md",
-          "agents/json",
-          "reference/card"
         ]
       },
       {

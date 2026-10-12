@@ -152,7 +152,7 @@ occurrence, because an occurrence is a count a later edit to the script silently
 of the lesson example names its occurrence anyway, so a phrase the script repeats later can never
 move a picture by accident.
 
-## offset, which moves a cue off the start of its word
+## `offset_seconds`, which moves a cue off the start of its word
 
 `offset_seconds` adds seconds to the resolved second. A positive value moves the cue later and a negative
 value moves it earlier.
@@ -161,9 +161,9 @@ value moves it earlier.
 { "id": "1.4:downhill", "phrase": "steps downhill", "offset_seconds": 0.2 }
 ```
 
-<Frame caption="A positive offset moves the cue time after the start of its word.">
-  <img className="block dark:hidden" src="/images/cue-offset-light.svg" alt="The words &quot;it steps downhill&quot; sit in boxes as long as each word is spoken. A line at the start of &quot;steps&quot; marks the cue time with offset 0. An accent line 0.2 s later marks offset 0.2. An arrow pointing earlier marks a negative offset, for text read aloud." />
-  <img className="hidden dark:block" src="/images/cue-offset-dark.svg" alt="The words &quot;it steps downhill&quot; sit in boxes as long as each word is spoken. A line at the start of &quot;steps&quot; marks the cue time with offset 0. An accent line 0.2 s later marks offset 0.2. An arrow pointing earlier marks a negative offset, for text read aloud." />
+<Frame caption="A positive offset_seconds moves the cue time after the start of its word.">
+  <img className="block dark:hidden" src="/images/cue-offset-light.svg" alt="The words &quot;it steps downhill&quot; sit in boxes as long as each word is spoken. A line at the start of &quot;steps&quot; marks the cue time with offset_seconds 0. An accent line 0.2 s later marks offset_seconds 0.2. An arrow pointing earlier marks a negative offset_seconds, for text read aloud." />
+  <img className="hidden dark:block" src="/images/cue-offset-dark.svg" alt="The words &quot;it steps downhill&quot; sit in boxes as long as each word is spoken. A line at the start of &quot;steps&quot; marks the cue time with offset_seconds 0. An accent line 0.2 s later marks offset_seconds 0.2. An arrow pointing earlier marks a negative offset_seconds, for text read aloud." />
 </Frame>
 
 - **A positive offset of 0.1 to 0.2 seconds.** The reveal lands just after the word starts, while the

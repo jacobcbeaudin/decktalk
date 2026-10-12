@@ -15,10 +15,10 @@ DeckTalk reads the ElevenLabs API key from the environment or from `.env` in the
 
 ## A project's programs can read your key
 
-A project can name programs: a section's `render_command` and a `[[clip]]` table's `command`. A
+A project can name programs: a render section's `render_command`, which draws the section's picture. A
 program runs with your user's rights and can read every file you can, the `.env` that holds your key
 included. DeckTalk refuses a project's programs by default: `record` and `build` stop before any of
-them starts, and `decktalk check` lists each one. A machine allows them with `[record] programs`
+them starts, and `decktalk check` lists each one. A machine allows them with `record.programs`
 (`ask` or `run`), which no project file can set, and `record.page_policy = "untrusted"` refuses them
 whatever it says. A program gets the scrubbed environment, with no key and no proxy variable, and runs
 in an empty scratch folder, but DeckTalk hides no file from it, so allow a project's programs only

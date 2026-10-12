@@ -52,7 +52,7 @@ exits 1.
 
 | Command | What it answers |
 |---|---|
-| `decktalk doctor` | Whether this machine has Chromium, ffmpeg, ffprobe and KaTeX, and whether an API key is set. |
+| `decktalk doctor` | Whether this machine has Chromium, ffmpeg, ffprobe and KaTeX, and whether the key of each provider bought with one is set. |
 | `decktalk status` | What is written, what is built and what is stale in this project. |
 | `decktalk check` | Whether `script.md`, `cues.json` and the pages hold together, and what the narration of a voiced run would cost. |
 
@@ -149,6 +149,9 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | What you saw | The code | What to do about it |
 |---|---|---|
 | A command said ffmpeg or Chromium is missing or failed | [TOOL](/reference/errors/TOOL) | [A missing toolchain](#a-missing-toolchain) |
+| A first download is slow, or stopped part way | [TOOL](/reference/errors/TOOL) | [A missing toolchain](#a-missing-toolchain) |
+| A recording stopped and named where the page was stuck, or its renderer crashed | [TOOL](/reference/errors/TOOL) | [A recording that stopped at its deadline](#a-recording-that-stopped-at-its-deadline) |
+| A build refused to start a program the project names | [PROGRAM_NAMED](/reference/findings/PROGRAM_NAMED), [INPUT](/reference/errors/INPUT) | [A program the project names](#a-program-the-project-names) |
 | `doctor` listed a component with no version and no path | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | A file the project names is not on disk | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | A sound the score describes plays as silence | [SOUND_MISSING](/reference/findings/SOUND_MISSING) | [A missing toolchain](#a-missing-toolchain) |
@@ -164,6 +167,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | The film is black somewhere, stops moving, or a section is short | [RECORD_BLACK](/reference/findings/RECORD_BLACK), [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | [A recording that opens black or runs short](#a-recording-that-opens-black-or-runs-short) |
 | Something on the page threw, or a wait never settled | [PAGE_RENDER_THREW](/reference/findings/PAGE_RENDER_THREW), [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW), [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW), [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW), [PAGE_FRAME_THREW](/reference/findings/PAGE_FRAME_THREW), [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED), [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | [A recording that opens black or runs short](#a-recording-that-opens-black-or-runs-short) |
 | A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
+| A motion, a loop or a frame hook is reported, or a cue beside it reads as early | [PAGE_MOTION_UNDECLARED](/reference/findings/PAGE_MOTION_UNDECLARED), [PAGE_CHANGE_UNDECLARED](/reference/findings/PAGE_CHANGE_UNDECLARED), [MOTION_OFF](/reference/findings/MOTION_OFF), [MOTION_NO_EDGE](/reference/findings/MOTION_NO_EDGE), [MOTION_MASK_LARGE](/reference/findings/MOTION_MASK_LARGE), [MOTION_EASE_UNMEASURABLE](/reference/findings/MOTION_EASE_UNMEASURABLE), [PAGE_MOTION_CUE_UNKNOWN](/reference/findings/PAGE_MOTION_CUE_UNKNOWN), [PAGE_MOTION_UNFINISHED](/reference/findings/PAGE_MOTION_UNFINISHED), [PAGE_REALTIME_MEDIA](/reference/findings/PAGE_REALTIME_MEDIA) | [A motion verify cannot measure](#a-motion-verify-cannot-measure) |
 | A motion was still playing when the next cue was read | [PAGE_MOTION_OVERRUN](/reference/findings/PAGE_MOTION_OVERRUN), [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN), [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | [A late landing](#a-late-landing) |
 | A cut slices a word, or the picture pops at a seam | [CUT_SPEECH](/reference/findings/CUT_SPEECH), [CUT_POP](/reference/findings/CUT_POP) | [A late landing](#a-late-landing) |
 | The film is too quiet, too loud or too peaky | [MIX_LOUDNESS](/reference/findings/MIX_LOUDNESS) | [A loudness miss](#a-loudness-miss) |
@@ -177,7 +181,9 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | An equation shows its source, or an error where the maths should be | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING), [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A word-synced line, a count, a stagger or a spotlight has nothing to work on | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND), [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY), [PAGE_SPOTLIGHT_EMPTY](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | The script is not ready for a voice to read it | [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED), [SCRIPT_SPOKEN_SYMBOL](/reference/findings/SCRIPT_SPOKEN_SYMBOL), [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
-| A section plays a placeholder because its take is not on disk | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | [A take that is missing](#a-take-that-is-missing) |
+| A voice direction names no voice, or a voice reads nothing | [SCRIPT_VOICE_UNKNOWN](/reference/findings/SCRIPT_VOICE_UNKNOWN), [SCRIPT_VOICE_UNMARKED](/reference/findings/SCRIPT_VOICE_UNMARKED), [SCRIPT_VOICE_BARE](/reference/findings/SCRIPT_VOICE_BARE), [VOICE_UNUSED](/reference/findings/VOICE_UNUSED) | [A voice direction that names no voice](#a-voice-direction-that-names-no-voice) |
+| A turn plays a placeholder because its take is not on disk | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | [A take that is missing](#a-take-that-is-missing) |
+| A voiced turn plays silence, or its last word is cut | [TAKE_SILENT](/reference/findings/TAKE_SILENT), [TAKE_WORD_CUT](/reference/findings/TAKE_WORD_CUT), [TAKE_UNALIGNED](/reference/findings/TAKE_UNALIGNED) | [A take that plays silence or cuts a word](#a-take-that-plays-silence-or-cuts-a-word) |
 
 Every code links to its own page, which carries that code's sentence, its severity and the settings
 keys that move it. The rest of this page says what to change.
@@ -234,7 +240,7 @@ builds with no flag and no key.
 
 | What you want | What to pass |
 |---|---|
-| No buying at all | `--no-spend`, which plays every take on disk and a placeholder with real word times wherever a take is missing |
+| No buying at all | `--no-spend`, which plays every take on disk and a placeholder with estimated word times wherever a take is missing |
 | Spend without being asked | `--spend` |
 | Spend up to a ceiling | `--max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars |
 | Know the price first | `decktalk check`, which prices the narration and buys nothing, and `decktalk score --no-spend` for the sound |
@@ -271,7 +277,7 @@ the reason when it could not be reached.
 1. Read the status in the message. A 401 is a key ElevenLabs does not accept, and a 429 or a 5xx is
    ElevenLabs being busy, which a later run usually gets past.
 2. Run the same command again. Each take is written to the takes directory as soon as it is voiced,
-   so the sections already voiced are found on disk and the run pays only for the rest. When the
+   so the turns already voiced are found on disk and the run pays only for the rest. When the
    message says the request was possibly charged, its reply broke after it was sent, so check the
    account's usage first: running again buys that take once more.
 3. A key that is not set at all is not this code. It is an `INPUT` error naming
@@ -444,6 +450,29 @@ one of these:
    recording holds one frame for every step of the section clock, so a short one is an encode that
    ended early rather than a page that was slow.
 
+## A recording that stopped at its deadline
+
+**What you see.** `error[TOOL]` saying a page stopped answering, ran past its deadline, or that its
+renderer crashed. The message names the page and what it was doing when it stopped: a load, a step,
+a capture, a still or a report. `record` also names the section and the frame.
+
+Every call into a page is held to `record.page_deadline_seconds`, 15 seconds by default, which is many
+times the longest a step takes, so only a page that stopped answering reaches it. A recording as a
+whole is held to `record.deadline_slowdown` times what this machine's measured
+`record.chunk_startup_seconds` and `record.step_seconds` say it should take, 30 times by default, so a
+page that answers every call and never gets on still stops.
+
+**What to do.**
+
+1. Look for a script that spins the page's main thread, or a font or an image that never arrives.
+   `decktalk serve` and the browser's own tools show it.
+2. On a slow or loaded machine, raise `record.page_deadline_seconds` or `record.deadline_slowdown`
+   with `decktalk config set KEY VALUE --scope machine`, or for one run with
+   `DECKTALK_RECORD_PAGE_DEADLINE_SECONDS` and `DECKTALK_RECORD_DEADLINE_SLOWDOWN`.
+3. A chunk whose renderer crashed is recorded again in a fresh page, up to `record.renderer_retries`
+   times, once by default, and gives the same frames, because a frame is a function of its index. A
+   renderer is most often killed for memory, so lower `record.concurrency` when the crash repeats.
+
 ## A late landing
 
 The whole point of DeckTalk is that a picture arrives on its word. These codes are how it says a
@@ -503,6 +532,29 @@ picture continues the one before it. The last frame of the previous section and 
 this one are compared, and more than `verify.cut_change_max_percent` of the frame differing means the
 promise was not kept. Either make the two pictures actually continue, or drop the promise and let the
 boundary be an ordinary cut, which `[transition]` dips through.
+
+## A motion verify cannot measure
+
+**What you see.** One of the motion codes: something on the page moves that nothing declared, a
+motion names a cue that never fires, or a declared motion lands away from its word.
+
+| Code | Severity | The change that clears it |
+|---|---|---|
+| [PAGE_MOTION_UNDECLARED](/reference/findings/PAGE_MOTION_UNDECLARED) | error | Declare it as a motion or a loop, or give its frame hook a region. |
+| [PAGE_CHANGE_UNDECLARED](/reference/findings/PAGE_CHANGE_UNDECLARED) | error | Make the change in a cue's handler, draw it from a frame hook with a region, or declare it as a motion. |
+| [PAGE_MOTION_CUE_UNKNOWN](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | error | Correct the cue name, add its row to `cues.json`, or list a script's cue in `data-owns`. |
+| [PAGE_MOTION_UNFINISHED](/reference/findings/PAGE_MOTION_UNFINISHED) | error | Move the arrival to a later cue, or end the change by the arrival. |
+| [PAGE_REALTIME_MEDIA](/reference/findings/PAGE_REALTIME_MEDIA) | error | Play the footage as a clip section, or draw the picture in a render section. |
+| [MOTION_EASE_UNMEASURABLE](/reference/findings/MOTION_EASE_UNMEASURABLE) | error | Make the ease `firm`, or mark the arrival cue `"verify": false`. |
+| [MOTION_OFF](/reference/findings/MOTION_OFF) | error | Read the offset in the message, and look at the cue's phrase as you would for `CUE_OFF`. |
+| [MOTION_NO_EDGE](/reference/findings/MOTION_NO_EDGE) | error | Make the ease `firm`. |
+| [MOTION_MASK_LARGE](/reference/findings/MOTION_MASK_LARGE) | warning | Make the moving thing smaller or move the cue away from it, so the reveal is judged on more of the picture. |
+
+Everything that moves for longer than a moment is declared: `data-motion` or `data-loop` in the
+markup, `DeckTalk.motion` from a script, or `DeckTalk.frame` with the region it draws in. Verify masks
+what is declared out of every cue and measures a motion's own departure and arrival. Footage belongs
+in a clip section, and a picture a program draws belongs in a render section.
+[What verify does with each](/guides/motion#what-verify-does-with-each) gives the measurement.
 
 ## A loudness miss
 
@@ -576,7 +628,27 @@ project clears this.
 Under `untrusted`, a request for another origin is refused rather than sent, so a page that loads a
 font or a library from a CDN renders without it. The run still names that host as `PAGE_CDN_ASSET`,
 and the fix is the one above: put the file beside the page.
-[A page someone else wrote](/requirements#a-page-someone-else-wrote) says what the policy does.
+[A page someone else wrote](/reference/trust#a-page-someone-else-wrote) says what the policy does.
+
+## A program the project names
+
+**What you see.** `PROGRAM_NAMED` from `decktalk check`, once for each program the project names, and
+`error[INPUT]` from `record` when this machine does not allow it to run.
+
+A render section's `render_command` is a program, and it runs with your user's rights, so it can
+read every file you can, `.env` included. `record.programs` is the machine's to set, and a project
+cannot allow its own programs: `refuse`, the default, runs none of them, `ask` runs them when a person
+at a terminal says yes, and `run` runs them without asking. Under the `untrusted` page policy no
+program runs whatever it says.
+
+**What to do.**
+
+1. Read the program the finding names before you allow it.
+2. Allow it for one run with `decktalk build --no-spend --set record.programs=run`, or with
+   `DECKTALK_RECORD_PROGRAMS=run` in the environment.
+3. To be asked each run, run `decktalk config set record.programs ask --scope machine`.
+
+[Programs a project names](/reference/trust#programs-a-project-names) says how far a program is trusted.
 
 ## A page the contract refuses
 
@@ -636,7 +708,7 @@ separated by a vertical bar, and the transcript prints it.
 |---|---|---|
 | [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED) | error | Fill in the unfinished text on the line the message names with the words you mean. |
 | [SCRIPT_SPOKEN_SYMBOL](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | Write the symbol out as the voice must say it. |
-| [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | Set `[elevenlabs] model` to one that renders `[pause N]`, such as `eleven_multilingual_v2`, or take the timed pauses out of the section. |
+| [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | Set the model of the voice that reads the pause, `[voices.NAME] model` or its provider table's, to one that renders `[pause N]`, such as `eleven_multilingual_v2`, or take the timed pauses out of its turns. |
 
 All three come from `decktalk check` reading `script.md`, so all three are free to find and all
 three are found before a credit is spent. This is the cheapest check there is, and running it in a
@@ -649,10 +721,26 @@ paragraph, and it lists every such line at once. It does not refuse an unfilled 
 `SCRIPT_SPOKEN_SYMBOL` is a warning because sometimes you do mean the symbol. Write out what the voice
 must say, and [Writing for the ear](/guides/writing-for-the-ear) is the guide for it.
 
-`SCRIPT_PAUSE_DROPPED` names a section with a `[pause N]` on a model that renders no timed pause,
-and `narrate` refuses to buy a take that would lose the pause. Move to a model that renders one, or
+`SCRIPT_PAUSE_DROPPED` names a section and a voice whose turns hold a `[pause N]` on a model that
+renders no timed pause, once per section and voice, and `narrate` refuses to buy a take that would
+lose the pause. Move to a model that renders one, or
 write a `[beat]`, which every model reads. [script.md](/reference/script-md#directions-and-placeholders) names the
 models.
+
+## A voice direction that names no voice
+
+| Code | Severity | The change that clears it |
+|---|---|---|
+| [SCRIPT_VOICE_UNKNOWN](/reference/findings/SCRIPT_VOICE_UNKNOWN) | error | Name a voice the project declares as a `[voices.NAME]` table, or reword a line that opens with the word voice. |
+| [SCRIPT_VOICE_UNMARKED](/reference/findings/SCRIPT_VOICE_UNMARKED) | error | Put a `[voice NAME]` line before the first turn of the section. |
+| [SCRIPT_VOICE_BARE](/reference/findings/SCRIPT_VOICE_BARE) | warning | Write the direction as `[voice NAME]` rather than the bare name. |
+| [VOICE_UNUSED](/reference/findings/VOICE_UNUSED) | warning | Hand a turn to the voice, or remove its `[voices.NAME]` table. |
+
+Every voice a script hands a turn to needs a `[voices.NAME]` table, and in a section that names a
+voice, every turn opens with a `[voice NAME]` line. A line holding only a note that is exactly a
+voice's name, such as `[guest]`, plays as a beat and hands nothing over. All four come from
+`decktalk check` reading `script.md` against `decktalk.toml`, so `decktalk check --no-pages` finds them
+before anything is bought. [Write a dialogue](/guides/dialogue#check-it-before-you-build) shows each.
 
 ## A take that is missing
 
@@ -660,16 +748,33 @@ models.
 |---|---|---|
 | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | warning | Run the command the message names. For a provider that bills it is `decktalk narrate --section N --spend`. For a free provider that could not be reached, start its server, then run `decktalk narrate --section N`. |
 
-A run with `--no-spend` plays every take on disk and puts a placeholder in each section whose take is
-missing, which is one `TAKE_MISSING` per section. It is a warning because the film is still whole and
-only that section's timing is estimated, so a draft build exits 0. Pass `--fail-on warning` to make a
+A run with `--no-spend` plays every take on disk and puts a placeholder in each turn whose take is
+missing, which is one `TAKE_MISSING` per turn, and one per section when one voice reads it. It is a
+warning because the film is still whole and only that turn's timing is estimated, so a draft build exits 0. Pass `--fail-on warning` to make a
 missing take fail a run.
 
-A take is found by its text, its voice, its model and its voice settings, so a section reports it after any of
+A take is found by its text, its voice, its model and its voice settings, so a turn reports it after any of
 those changed, and on a fresh clone whose takes were never committed. Without a voice id no voiced take
 can be matched at all, and the run says so in one line before the findings. Set `[voices.narrator] id` in
 `decktalk.toml`, which is a published name rather than a secret and is committed with the project,
 and the takes on disk play again.
+
+## A take that plays silence or cuts a word
+
+These three come from `narrate`, on the run that makes the take, and each names the turn.
+
+| Code | Severity | The change that clears it |
+|---|---|---|
+| [TAKE_SILENT](/reference/findings/TAKE_SILENT) | warning | Run `decktalk narrate --turn N.T --spend` to buy that turn again, or lower `[narration] sound_end_noise_dbfs` if the take holds quiet speech. |
+| [TAKE_WORD_CUT](/reference/findings/TAKE_WORD_CUT) | warning | Lower `[narration] sound_end_noise_dbfs` so the take's sound end is measured after its last word, then run `decktalk narrate` again. |
+| [TAKE_UNALIGNED](/reference/findings/TAKE_UNALIGNED) | warning | Start the aligner the voice uses, then run `decktalk narrate` again. |
+
+A take is cut at its sound end, the point after which it stays under
+`[narration] sound_end_noise_dbfs` for at least `[narration] sound_end_min_run_seconds`. A take with
+no sound above that level plays its turn as silence, and a word placed after it is never heard. A
+take whose voice sent no word times is timed by the aligner, and one no aligner timed plays
+estimated words. [Voice one turn again](/guides/rebuild-one-section#voice-one-turn-again) buys a
+single turn.
 
 ## When the answer is not a code
 

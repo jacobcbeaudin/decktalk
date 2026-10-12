@@ -99,19 +99,27 @@ each voice reads and what it costs.
   with the nearest name.
 - [`SCRIPT_VOICE_UNMARKED`](/reference/findings/SCRIPT_VOICE_UNMARKED): a section that names a voice has a
   turn no direction opens.
-- [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE): a note such as `[guest]` is exactly a voice's
-  name, so it plays as a beat. Write `[voice guest]`.
+- [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE): a line holding only a note such as `[guest]`
+  is exactly a voice's name, so it plays as a beat. Write `[voice guest]`. The same note inside a
+  paragraph is [`SCRIPT_UNFINISHED`](/reference/findings/SCRIPT_UNFINISHED).
 - [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED): a declared voice reads no turn.
 
-`decktalk status` names the voices of every section and the take state of every turn, and
-`decktalk words` heads each turn's words with its voice.
+`decktalk status` names the voices of every section, `decktalk --json status` carries the take state
+of every turn under each section's `turns`, and once `decktalk narrate` has run, `decktalk words`
+heads each turn's words with its voice.
 
 ## Build it
 
 `decktalk build --no-spend` plays a placeholder for every turn with no voiced take, so the pacing and
-the cues are real before anything is bought. A voice with no id plays placeholders whatever the run
-may spend, and the `TAKE_MISSING` finding of its turns names the `[voices.NAME] id` to set. With both
-ids set and the key in `.env`, `decktalk build --spend` buys every turn's take.
+the cues are real before anything is bought. A voice with no id cannot be bought: `--no-spend` plays
+its placeholders and the `TAKE_MISSING` finding of each of its turns names the `[voices.NAME] id` to
+set, and `--spend` stops at `narrate` with an [`INPUT`](/reference/errors/INPUT) error naming the
+voice, before anything is bought. With both ids set and the key in `.env`, `decktalk build --spend`
+buys every turn's take.
+
+A voiced take that holds no sound plays its turn as silence and is reported as
+[`TAKE_SILENT`](/reference/findings/TAKE_SILENT), a warning that names the turn, so
+`decktalk narrate --turn N.T --spend` buys that turn again.
 
 ## Related
 

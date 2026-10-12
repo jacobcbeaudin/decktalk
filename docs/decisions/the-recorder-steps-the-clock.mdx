@@ -171,8 +171,11 @@ the film's own quality, and a lossy pass here would put the encoder's ringing in
   reads the stepped time. An animation's or a transition's end event is the exception, because the
   browser sends it from a frame it draws when it likes, so a page that changes what it shows on one
   records a frame that depends on the frames before it.
-- A recording is never searched for its start, never retried for a stall, and never corrected for
-  a machine's presentation timing. A recording log with no checks is a recording that never
+- A recording is never searched for its start and never corrected for a machine's presentation
+  timing. A page that stops answering is stopped at `record.page_deadline_seconds` with a `TOOL`
+  error rather than retried, and only a chunk whose renderer crashed is recorded again in a fresh
+  page, `record.renderer_retries` times, which gives the same frames because a frame is a function
+  of its index. A recording log with no checks is a recording that never
   finished, and the next run records it again.
 - The rate a section is stepped at is `video.fps`, so every page range is written in frames of the
   slowest rate a film may use, `SLOWEST_FPS`, which is 25.

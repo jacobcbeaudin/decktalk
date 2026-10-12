@@ -3,7 +3,8 @@ title: Quickstart
 description: Install DeckTalk, build the starter film with no account, then add your own voice.
 ---
 
-Three lines take a machine with nothing on it to a finished film.
+On macOS and Windows, three lines take a machine with nothing on it to a finished film. On Linux, run
+`decktalk install` after the first line, for Chromium's system libraries.
 
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
@@ -118,13 +119,8 @@ the one thing in DeckTalk that costs money.
 
 ## Chromium and ffmpeg
 
-DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them. It fetches
-both itself, one time per machine, the first time a command needs one. The run announces each
-download as it starts and reports the bytes as they arrive, so a long first build says what it is
-waiting on. Under `--events` the same thing is one `tool.fetch` line per step on stderr, naming the
-`tool` and the `bytes` that have arrived of its `total_bytes`, as
-[the event stream](/agents/json#the-event-stream) lists.
-
+DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them, and
+fetches both itself, one time per machine, the first time a command needs one.
 `decktalk install` makes both downloads up front instead, and does nothing else.
 
 ```console
@@ -163,7 +159,7 @@ cache paths.
     | `decktalk.toml` | The project file: one `[[section]]` per script section, plus the voice, the mix and the score. |
     | `cues.json` | One row per moment on a page, naming the spoken phrase it lands on. |
     | `deck/index.html` | The slides. They load the runtime and KaTeX from `/__decktalk/`, which DeckTalk serves, so the project holds no copy of either. |
-    | `.env.example` | The one ElevenLabs variable a voiced run reads, the API key, as a placeholder. |
+    | `.env.example` | The one ElevenLabs variable a voiced run reads, the API key, with `<your-elevenlabs-key>` where your key goes. |
     | `AGENTS.md` | The rules an agent working in this project follows, written when the directory has none. |
     | `.agents/skills/` | Six packaged skills, with `.claude/skills` beside them. |
 
@@ -295,8 +291,9 @@ Three sections on one page, one scene each, every slide written as markup inside
 | 2. How it works | `deck/index.html?scene=2` | A heading, one displayed equation typeset by KaTeX, the same average as two lines of Python, and a closing band. |
 | 3. Close | `deck/index.html?scene=3` | The idea, the line about rebuilding one part, and the end card. |
 
-Open `deck/index.html` in a browser for the scene index, which lists every scene and every slide
-with the cues it declares.
+Open `deck/index.html` under the origin `decktalk serve` prints, such as
+`http://127.0.0.1:65298/deck/index.html`, for the scene index, which lists every scene and every
+slide with the cues it declares.
 
 <Frame caption="The starter's scene index, with every slide and the cue ids it declares.">
   <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. Under it are Scene 1 Open, Scene 2 How it works and Scene 3 Close, each with a play link, and under each one its slides with the seconds each slide holds for and the cue ids of its cues, such as 1.1:title and 1.1:files." />
@@ -340,7 +337,7 @@ film.
       </Tab>
     </Tabs>
 
-    Replace the placeholder with your key, and write the id of the voice that reads the script as
+    Write your key after the `=` in place of `<your-elevenlabs-key>`, and write the id of the voice that reads the script as
     `[voices.narrator] id` in `decktalk.toml`.
 
     ```dotenv .env
@@ -447,7 +444,8 @@ film.
 
     `--spend` approves the spend. `--max-cost N` refuses the whole run before the first paid call
     when the most it can cost is over N US dollars, and the refusal names the figure that would let
-    it through. A ceiling of five cents on this project reads:
+    it through. It approves nothing on its own: it is a ceiling on the spend `--spend` approves. A
+    ceiling of five cents on this project reads:
 
     {/* sample: build-over-the-ceiling, decktalk build --spend --max-cost 0.05, on the starter with [voices.narrator] id set and no API key, which exits 2 before any request */}
     ```text
@@ -460,9 +458,10 @@ film.
     and draws nothing. A run within it draws the storyboard next, so it is there to read before you
     approve.
 
-    On a terminal, `decktalk build` with neither flag prints the price and asks. With no terminal
-    there is nobody to ask, so it refuses rather than guessing, and the refusal carries the price, so
-    one call prices the run.
+    On a terminal, `decktalk build` with neither flag prints the price and asks. Answer no and the
+    run goes on as `--no-spend` would, with a placeholder wherever a take is missing and silence where
+    a sound is unbought. With no terminal there is nobody to ask, so it refuses rather than guessing,
+    and the refusal carries the price, so one call prices the run.
 
     {/* sample: build-no-terminal, decktalk build --no-input, on the starter with [voices.narrator] id set and no API key, which exits 2 */}
     ```text
@@ -479,6 +478,7 @@ film.
 ## Next
 
 - **Write a section of your own:** [Your first deck](/guides/first-deck)
+- **Start from a finished project:** [Examples](/examples)
 - **Know what a machine needs and what it costs:** [Requirements and costs](/requirements)
 - **Make the script time well:** [Writing for the ear](/guides/writing-for-the-ear)
 - **Rebuild only what changed:** [Rebuild one section](/guides/rebuild-one-section)

@@ -19,13 +19,14 @@ second fills a bar from script. Its third is drawn by a Python script rather tha
 
 That script is a program the project names, and a machine refuses a project's programs until you
 allow them, because a program runs with your user's rights and can read every file you can, your
-`.env` included. Read `render/draw_bars`, then build the example with it allowed for that one run:
+`.env` included. Read `render/draw_bars`, then build the example on placeholders with it allowed
+for that one run:
 
 ```console
-decktalk build --set record.programs=run
+decktalk build --no-spend --set record.programs=run
 ```
 
-[Programs a project names](/requirements#programs-a-project-names) says how to allow them on a
+[Programs a project names](/reference/trust#programs-a-project-names) says how to allow them on a
 machine instead.
 
 ## Choose the noun
@@ -216,6 +217,9 @@ alone, so a recorded frame and a preview frame of the same second are the same p
 </script>
 ```
 
+The sample is drawn for the wide canvas. On a square or vertical frame, size the canvas from
+`--dt-width`, which the runtime puts on `:root`.
+
 The pictures above the voice line still arrive with `data-in` on their words, and verify measures
 each of them with the voice line masked out.
 
@@ -257,13 +261,13 @@ It is narrated exactly like a page section. Its take decides its length, `cue` r
 its words, and the voice runs straight through it. That is the difference from a clip section,
 which carries its own sound and pauses the narration while it plays.
 
-`record` writes the section's motion document and runs the command once, from the project root, with
-each placeholder in it replaced.
+`record` writes the section's motion document and runs the command once, in an empty scratch folder,
+with each `{name}` word in it replaced.
 
-| Placeholder | What it becomes |
+| Word | What it becomes |
 |---|---|
 | `{motion}` | The motion document the command reads, `build/recordings/render/NN/motion.json`. |
-| `{out}` | Where the command writes the section's video, which is `build/recordings/NN.mp4`. |
+| `{out}` | Where the command writes the section's video, a hidden draft beside `build/recordings/NN.mp4` that `record` moves onto it once the command exits. |
 | `{landings}` | Where the command may write its landings, `build/recordings/render/NN/landings.json`. |
 | `{python}` | The Python this run of DeckTalk is running on. |
 | `{ffmpeg}` | The ffmpeg this run encodes with. |
@@ -287,7 +291,7 @@ The numbers above show the shape and are not from a real run. A renderer keys a 
 frame `round(cue * fps)`.
 
 The command is a program the project names, so it runs only on a machine that allows it through
-`record.programs`, as [programs a project names](/requirements#programs-a-project-names) says. It
+`record.programs`, as [programs a project names](/reference/trust#programs-a-project-names) says. It
 runs with your user's rights and can read every file you can, `.env` included. It runs in an empty
 scratch folder rather than the project, a word that names a project file by a relative path such as
 `render/draw_bars` is handed to it as that file's absolute path, and it is given the scrubbed

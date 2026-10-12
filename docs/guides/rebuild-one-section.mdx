@@ -15,8 +15,8 @@ those two keys hold, how to read them before a run, and the three ways to ask fo
 offered.
 
 <Frame caption="An edit to one sentence of section 2: a plain build voices and records section 2, keeps the take and the recording of sections 1 and 3, and joins every section into one mp4.">
-  <img className="block dark:hidden" src="/images/edit-cycle-light.svg" alt="Three section columns of one project. In script.md, the word &quot;average&quot; in section 2 becomes &quot;mean&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
-  <img className="hidden dark:block" src="/images/edit-cycle-dark.svg" alt="Three section columns of one project. In script.md, the word &quot;average&quot; in section 2 becomes &quot;mean&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
+  <img className="block dark:hidden" src="/images/edit-cycle-light.svg" alt="Three section columns of one project. In script.md, the word &quot;numbers&quot; in section 2 becomes &quot;values&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
+  <img className="hidden dark:block" src="/images/edit-cycle-dark.svg" alt="Three section columns of one project. In script.md, the word &quot;numbers&quot; in section 2 becomes &quot;values&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
 </Frame>
 
 ## Name the sections with `--section`
@@ -123,8 +123,9 @@ inside the build directory or a directory that holds it is refused when the proj
 the tool cache. A placeholder take, the take index and the joined narration are always under
 `build/narrate/`, because a build makes them again for nothing.
 
-A section that is voiced again costs the characters of its whole text and not only the changed
-sentence, so `decktalk check` is the call that prices an edit before you run it.
+A turn that is voiced again costs the characters of its whole text and not only the changed
+sentence, and a section one voice reads is one turn, so `decktalk check` is the call that prices an
+edit before you run it.
 
 ## What makes a recording stale
 
@@ -187,9 +188,10 @@ refused over them.
 
 | You changed | Voiced again | Recorded again |
 |---|---|---|
-| A sentence of section N in `script.md` | section N | section N, named by the turn the sentence is in |
+| A sentence of section N in `script.md` | the turn the sentence is in, which is all of section N when one voice reads it | section N, named by the turn the sentence is in |
 | The heading of section N | nothing | nothing |
 | A cue phrase of section N in `cues.json` | nothing | section N, because the resolved cues are in the page URL |
+| A word a cue phrase of section N waits for | nothing until the phrase is fixed | nothing: the build stops at `cue` with `CUE_UNRESOLVED`, whose fix names the nearest phrase |
 | A slide inside the scene section N plays | nothing | every section that plays that scene |
 | The head, a style or a script of a page | nothing | every section of that page |
 | An image or a stylesheet the page loads | nothing | every section whose log lists that file |
@@ -316,7 +318,7 @@ script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced 
 Found 3 findings, 0 errors.
 ```
 
-On the starter that second build took under half a second. What a build compares is a digest of every
+On the starter that second build took under a second. What a build compares is a digest of every
 file the two stages read and the options they ran with, kept in
 [`build/kept.json`](/reference/artifacts#build-kept-json), never a file time. Inside `assemble` each
 section video has a key of its own in `build/sections/NN.json`, so an edit to one section encodes that
@@ -371,7 +373,7 @@ what a run is allowed to buy.
 A take that reads a word with the wrong stress, or stretches a pause, is bought again one turn at a
 time. `--turn N.T` names turn T of section N, counted from one. A section one voice reads is one turn,
 so its whole text is `N.1`, and a [dialogue](/guides/dialogue) has one turn per voice direction, the
-same numbers `decktalk status` shows in its `turns` rows.
+same numbers `decktalk --json status` lists under each section's `turns`.
 
 ```console
 decktalk narrate --turn 4.2 --spend

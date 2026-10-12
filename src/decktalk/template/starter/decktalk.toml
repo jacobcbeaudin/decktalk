@@ -9,7 +9,7 @@ cues = "cues.json"     # which spoken phrase each moment on the page lands on
 build = "build"        # everything generated, and git-ignored
 
 # One [[section]] per "## N." section of the script, in order. A page section records one scene of
-# an HTML page. A section can also be a `clip` of your own video, which names a file instead.
+# an HTML page. A section can also be a `clip` of your own video, or a `render_command` a program draws.
 
 [[section]]
 number = 1

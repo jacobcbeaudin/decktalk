@@ -54,7 +54,7 @@ Then every picture waits for its own word.
 
 ```html deck/index.html
 <template data-slide="1.2" data-preview-seconds="12" data-describe="the two files you write, and the promise">
-  <div class="card" style="left: 120px; top: 300px" data-in="script"
+  <div class="card first" data-in="script"
        data-describe="a card for script.md, the file that holds what you say">
     <div class="k">script.md</div>
     <div class="v">what you will say</div>
@@ -76,7 +76,7 @@ raises begins with `CUE`.
 
 ```console
 decktalk cue                 # resolve every section
-decktalk cue --section 2,4   # resolve these sections and leave the rest of the file alone
+decktalk cue --section 2,3   # resolve these sections and leave the rest of the file alone
 decktalk cue --json          # the result as one flat object, carrying run, sections and file
 ```
 
@@ -127,7 +127,7 @@ phrase that spans one still matches. [script.md](/reference/script-md) has the r
 ## Which sections have cues
 
 Every section key in `cues.json` must name a `[[section]]` in `decktalk.toml`, and a key that names
-no section fails the load with the file and the line. A section may have no cues at all. A clip
+no section fails the load with an error naming the section. A section may have no cues at all. A clip
 section is never read by the voice, so its rows resolve to nothing and the stage passes over them
 rather than judging them.
 

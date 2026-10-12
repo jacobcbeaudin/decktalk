@@ -29,6 +29,9 @@ there and fetches nothing, so it is safe to leave in a job forever.
   under `--json` or `--no-input`, it fetches nothing unless `--fix` is passed, and on a terminal
   otherwise it offers once to fetch what is missing. Its `cache` field is the directory to cache, read
   from the machine rather than guessed.
+- Each download prints a line as it starts, with its size when the host states it, progress lines as
+  it arrives, and a `Fetched` line with what arrived, so a job log shows a fetch is still moving.
+  [Roughly how large](/requirements#roughly-how-large) has the sizes.
 
 After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
 `--no-spend` never does. A free provider such as `dtsp` is still called under `--no-spend` once a voice is named, on the
@@ -170,6 +173,55 @@ as `DECKTALK_VIDEO_PRESET`. It sits above `decktalk.toml` and below `--set`.
 default, its safe range and the hazard of leaving that range, which is what to run when a job and a
 laptop disagree.
 
+## Size the machine
+
+The keys below say how much work this machine takes on at once and how long it waits, which are the
+keys to change on a runner with fewer CPUs or less memory than a laptop. They describe the machine rather than
+the film, so they are [machine keys](/reference/configuration#keys-only-a-machine-may-set).
+
+| Key | Default | What it decides |
+|---|---|---|
+| `record.concurrency` | `0` | How many recorders `record` runs at once, each a Chromium of its own. Zero chooses from the CPU this process may use: one recorder per three CPUs, at most four. Inside a container that is the container's CPU quota, not the host's core count. |
+| `record.chunk_frames_min` | `50` | Fewest frames `record` puts in one chunk when it splits a section across its recorders. |
+| `record.chunk_startup_seconds` | `0.2` | How long one chunk takes to start on this machine, which `record` weighs against `step_seconds` when it splits a section. |
+| `record.step_seconds` | `0.014` | How long one recorder takes to step its page once on this machine, the capture of its frame included. |
+| `record.encode_threads` | `0` | Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. The frames are the same whatever it is. |
+| `record.page_deadline_seconds` | `15` | Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming where it was stuck. `record` names the section and the frame, and every other command that opens a page holds it to the same deadline. |
+| `record.deadline_slowdown` | `30` | How many times slower than `chunk_startup_seconds` and `step_seconds` a chunk, and the whole run, may record before `record` stops it. |
+| `record.renderer_retries` | `1` | How many more times `record` records a chunk in a fresh page when the page's renderer crashed. |
+| `narration.concurrency` | `2` | How many turns `narrate` voices at once. |
+| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. With `narration.timeout_seconds` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request. |
+| `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before DeckTalk stops it. |
+
+A recording waits for every frame it steps, so a frame drawn slowly is late on the clock of the
+run and never on the clock of the film. `record.concurrency` set above this machine's share therefore
+costs speed and never correctness: a starved machine records slower, and every reveal still lands on
+its word.
+
+A page that stops answering is held to its deadlines instead. A call into it that outlives
+`record.page_deadline_seconds`, such as a step of a page that spins its main thread, closes the page
+and stops the run with a TOOL error naming the section and the frame, and a chunk or a run that takes
+`record.deadline_slowdown` times its expected time is stopped the same way. `check`, `storyboard`,
+`cue` and `assemble` hold every call into the pages they open to the same deadline, so no page can
+hold a build open.
+
+```console
+decktalk config set record.concurrency 2 --scope machine
+```
+
+A `decktalk.toml` that sets any of them is refused by name, because a project travels and a
+limit that suits one machine is wrong on the next:
+
+{/* sample: machine-key-in-project, decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
+```text
+error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
+  hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --scope machine`.
+  docs: https://docs.decktalk.ai/reference/errors/INPUT
+```
+
+Each also has its environment variable, such as `DECKTALK_RECORD_CONCURRENCY`, which is how a job
+sets one for a container it does not keep.
+
 ## A GitHub Actions job
 
 ```yaml .github/workflows/video.yml
@@ -242,10 +294,17 @@ set to false, so it is a single file that plays in the browser, and it takes its
 the same run that made it and its findings already decide the build's exit code. A job does not need
 a second command to gate on the film.
 
-`--no-spend` plays every take the repository holds and a placeholder for each section whose take a
+`--no-spend` plays every take the repository holds and a placeholder for each turn whose take a
 provider that bills would sell, so the measurement covers the recording, the encode and the mix and not only the
 cue times, on a job that spends nothing and holds no key. A job whose voice is the free `dtsp` and
 that runs `decktalk-voice` beside it gets every missing take voiced under the same flag.
+
+A project with a render section names a program, and the runner refuses it as any machine does by
+default: `record.programs` is `refuse`, and `ask` refuses too without a terminal, so the build is
+refused before its first stage with [`INPUT`](/reference/errors/INPUT). A job whose project's programs you have read
+allows them with `DECKTALK_RECORD_PROGRAMS: run` in the build step's `env`. Never set it on a job that
+builds a fork's pull request, because the program runs with the job's rights.
+[Programs a project names](/reference/trust#programs-a-project-names) says why.
 
 ### Build with the takes you committed
 
@@ -279,17 +338,17 @@ job is handed nothing at all. A project that keeps the id out of the file hands 
 `DECKTALK_VOICES_NARRATOR_ID` instead, and still leaves the key out.
 
 A run with `--no-spend` plays every take on disk and never builds a voice that bills, so it reads no
-key. Each section whose take is missing plays a placeholder and is reported as
-[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), once per section, with the command that buys its
-take. A free provider is the exception: once a voice is named it makes the missing takes, and when its server is not running
-each section plays a placeholder whose finding says to start it rather than to buy anything. That finding is a warning, because the film is still a whole film with estimated timing in that
+key. Each turn whose take is missing plays a placeholder and is reported as
+[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), once per turn, which is once per section when one
+voice reads it, with the command that buys its take. A free provider is the exception: once a voice
+is named it makes the missing takes, and when its server is not running each turn plays a placeholder whose finding says to start it rather than to buy anything. That finding is a warning, because the film is still a whole film with estimated timing in that
 section, so the default `--fail-on error` builds it and exits 0 and the finding sits in
 `build.json` for the job summary. A job that must fail on a missing take passes `--fail-on warning`, and
 `--allow` carries on past any other warning it accepts.
 
 A pull request from a fork runs the fork's page on your runner. Under the default
 `record.page_policy` that page reaches the network as it would in a browser.
-[A page someone else wrote](/requirements#a-page-someone-else-wrote) explains the policy that refuses it.
+[A page someone else wrote](/reference/trust#a-page-someone-else-wrote) explains the policy that refuses it.
 
 ### Cue timing on a hosted runner
 
@@ -299,6 +358,15 @@ a time and draws each frame at its own second, so a reveal shows on the same fra
 as on your own machine, and [`CUE_OFF`](/reference/findings/CUE_OFF) fails the job above exactly as
 it fails a build on your desk. DeckTalk's own end-to-end suite holds every reveal to its frame on
 every runner it runs on.
+
+A slower runner does have limits. One call into a page that takes longer than
+`record.page_deadline_seconds`, 15 seconds by default, stops the run with a
+[`TOOL`](/reference/errors/TOOL) error naming the section and the frame. A recording more than
+`record.deadline_slowdown` times slower, 30 by default, than this machine's
+`record.chunk_startup_seconds` and `record.step_seconds` stops the same way. A chunk whose renderer
+crashed is recorded again in a fresh page up to `record.renderer_retries` times, once by default.
+On a runner much slower than the machine those step times were set for, raise the limits with
+`DECKTALK_RECORD_PAGE_DEADLINE_SECONDS` and `DECKTALK_RECORD_DEADLINE_SLOWDOWN`.
 
 ## Build offline
 

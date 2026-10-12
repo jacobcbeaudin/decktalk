@@ -39,7 +39,6 @@ A change to a file format or to the page contract raises the minor version. The 
 
 A page loads the runtime of the engine that opens it, which DeckTalk serves at
 `/__decktalk/decktalk-runtime.js`, so upgrading DeckTalk upgrades every project's runtime with it.
-Rewrite a project's pages wherever the release changed the page contract.
 """
 
 # A heading names a version, optionally a prerelease suffix such as `-rc1`, optionally a compare

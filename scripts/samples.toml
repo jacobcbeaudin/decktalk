@@ -221,7 +221,7 @@ key = "findings.1.fix"
 # ---- a project file the loader refuses or reads past -------------------------------------------
 
 [machine-key-in-project]
-page = "docs/requirements.mdx"
+page = "docs/guides/ci-and-offline.mdx"
 what = "decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3"
 edits = [["decktalk.toml", "[audio]\n", "[record]\nconcurrency = 2\n\n[audio]\n"]]
 run = [["status"]]
@@ -336,7 +336,7 @@ grep = "SCRIPT_UNFINISHED|^Found"
 
 [check-json-findings]
 page = "docs/agents/json.mdx"
-what = 'decktalk check --no-pages --json, on a starter whose line 14 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers"'
+what = 'decktalk check --no-pages --json, on a starter whose line 17 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers"'
 edits = [
     ["script.md", "This is DeckTalk. [beat]", "This is DeckTalk [VERSION]. [beat]"],
     ["cues.json", '"phrase": "the average"', '"phrase": "the mean of the numbers"'],
@@ -778,9 +778,10 @@ stream = "both"
 
 [first-deck-build]
 page = "docs/guides/first-deck.mdx"
-what = "decktalk build --no-spend, on the same project, which exits 0"
-edits = [
-    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+what = "decktalk build --no-spend, on the same project built once before the four pastes, which exits 0"
+run = [
+    ["build", "--no-spend"],
+    { edit = ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
 
 ## 4. One more section
 
@@ -788,16 +789,16 @@ edits = [
 
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
-'''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
+'''] },
+    { edit = ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
 chapter = "One more section"
 page = "deck/index.html"
 scene = "4"
-'''],
-    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+'''] },
+    { edit = ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
   <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
     <p class="eyebrow">One more section</p>
 
@@ -812,8 +813,8 @@ scene = "4"
     </p>
   </template>
 </div>
-</body>'''],
-    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+</body>'''] },
+    { edit = ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
       ]
     }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
       ]
@@ -822,9 +823,7 @@ scene = "4"
       "cues": [
         { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
       ]
-    }'''],
-]
-run = [
+    }'''] },
     ["check", "--section", "4", "--no-frames", "--fix"],
     { edit = ["cues.json", '"phrase": ""', '"phrase": "the picture waits"'] },
     ["build", "--no-spend"],

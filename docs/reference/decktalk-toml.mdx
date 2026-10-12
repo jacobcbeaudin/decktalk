@@ -151,7 +151,7 @@ them or none fails the load.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `number` | integer | required | The section number. A page section's number must match a `## N.` heading in the script. |
+| `number` | integer | required | The section number. A page or render section is narrated from the `## N.` heading with its number, and one with none plays silent. |
 | `chapter` | string | the script heading, then `Section N` | The chapter title, which names this section in the chapter markers, in the transcript and on the slate a missing clip plays. Consecutive sections with the same title share one marker. |
 | `seamless` | boolean | `false` | This section opens on the picture the section before it ended on. `verify` compares the two frames across the cut and raises `CUT_POP` when the join shows. It may not be set on the first section. |
 
@@ -165,7 +165,7 @@ them or none fails the load.
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. Between 0 and 5, as `[narration] lead_seconds` is. |
 | `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. Between 0 and 10, as `[narration] tail_seconds` is. |
 | `with_ambience` | boolean | `false` | Play the ambience bed under this section. |
-| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `freeze`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
+| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `freeze`, `cues`, `words`, `turns`, `caption`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
 
 `lead_seconds` and `tail_seconds` are placed when the takes are joined and are never sent to the
 voice, so changing either voices nothing. The section starts where its silence starts, so
@@ -175,7 +175,7 @@ at zero. A change reaches the clock when `narrate` joins the takes again: until 
 [script.md](/reference/script-md) has the whole rule.
 
 `record` sets `t0` itself so that the page starts its clock on the recorder's signal, and it fills
-`cues` and `words` from what `cue` and `narrate` resolved unless the section names them. A frozen
+`cues`, `words` and `turns` from what `cue` and `narrate` resolved unless the section names them. A frozen
 frame, which `storyboard` and `check` draw, sets `cues`, `t0`, `freeze`, `after` and `before` itself,
 so those five are dropped from a section's `params` rather than passed through.
 
@@ -207,9 +207,9 @@ applies only to a page section.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `render_command` | list of strings | required | The program and its arguments, run once from the project root when `record` draws the section. Each placeholder in a word is replaced before it runs. |
+| `render_command` | list of strings | required | The program and its arguments, run once in an empty scratch folder when `record` draws the section, with every word that names a project file handed over as its absolute path. Each `{name}` in a word is replaced before it runs. |
 
-| Placeholder | What it becomes |
+| Word | What it becomes |
 |---|---|
 | `{motion}` | The section's motion document, `build/recordings/render/NN/motion.json`, which holds the frame rate, the size, the length, every spoken word and every cue's second on the section clock. |
 | `{out}` | The video the program writes, which is the section's recording. |
@@ -230,8 +230,8 @@ refuses them by default, and never under `record.page_policy = "untrusted"`. It 
 rights and can read every file you can, `.env` included: the scrubbed environment it is given keeps a
 credential in the shell from it, and nothing keeps a file on disk from it. It runs in an empty
 scratch folder, and a word that names a project file by a relative path is handed over as that
-file's absolute path. [Programs a project names](/requirements#programs-a-project-names) says how to
-allow them. A section whose program writes no landings is drawn and played, and verify measures none
+file's absolute path. `check` raises `PROGRAM_NAMED` for every program a project names.
+[Programs a project names](/reference/trust#programs-a-project-names) says how to allow them. A section whose program writes no landings is drawn and played, and verify measures none
 of its cues.
 [A render section](/guides/motion#a-render-section) shows the whole contract.
 
@@ -321,12 +321,13 @@ changing one makes the next voiced build voice again every turn that voice reads
 not. `base_url` is machine-scoped, so it is set in this machine's file and a `decktalk.toml` that
 sets it is refused.
 
-`[dtsp]` holds `base_url` and `model` for the local voice, which speaks the DeckTalk speech protocol
+`[dtsp]` holds `model`, and the machine-scoped `base_url` and `handshake_seconds`, for the local voice, which speaks the DeckTalk speech protocol
 to `decktalk-voice`, a separate local server that is not part of this repository. `base_url` is
-machine-scoped like ElevenLabs's, so only this machine names where the script is sent. The local voice bills nothing, so buying its takes asks for no
+machine-scoped like ElevenLabs's, so only this machine names where the script is sent, and
+`handshake_seconds` is how long the server has to say which aligner it serves. The local voice bills nothing, so buying its takes asks for no
 `--spend`, and a build still asks about a score it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a
 name with an ElevenLabs take of the same words. [Configuration](/reference/configuration#dtsp) has
-both keys.
+all three keys.
 
 ## `[score]`
 

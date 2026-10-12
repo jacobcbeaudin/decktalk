@@ -166,7 +166,8 @@ cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the w
 Found 1 finding, 1 error.
 ```
 
-The row is in the file:
+The row is in the file. `--fix` writes it on one line as
+`{"id": "4.1:waits", "phrase": ""},`, and the block below lays it out like the rows around it:
 
 {/* sample: first-deck-fixed-cues, cues.json after the --fix above */}
 ```json cues.json
@@ -213,10 +214,11 @@ on past one code.</Tip>
 decktalk build --no-spend
 ```
 
-{/* sample: first-deck-build, decktalk build --no-spend, on the same project, which exits 0 */}
+{/* sample: first-deck-build, decktalk build --no-spend, on the same project built once before the four pastes, which exits 0 */}
 ```text
 run 022764e35e5e, events build/events/022764e35e5e.jsonl
      Narrate    0:00
+Read deck/index.html as it is now, because it changed since it was recorded.
          Cue    0:00
       Record    0:17
 The project declares no score for this run, so there is nothing to generate.

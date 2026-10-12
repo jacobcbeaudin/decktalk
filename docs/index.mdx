@@ -1,25 +1,27 @@
 ---
 title: Narrated presentations, cut to the word
 sidebarTitle: Overview
-description: Make a narrated video from a markdown script and HTML slides, where every picture lands on its word.
+description: Make a narrated video from a Markdown script and HTML slides, where every picture lands on its word.
 "og:image": "https://docs.decktalk.ai/images/og.png"
 ---
 
 <img className="dt-hero block dark:hidden" src="/images/hero-light.svg" width="1000" height="248" alt="A playhead moves along the narration “A bowl. A ball. One. Two, three.” with a tick under each word. A bowl and a ball appear on the slide on their words. On each count word, the ball steps down the bowl and a box fills with that word's start time: 4.49 s, 5.26 s, and 5.77 s." noZoom />
 <img className="dt-hero hidden dark:block" src="/images/hero-dark.svg" width="1000" height="248" alt="A playhead moves along the narration “A bowl. A ball. One. Two, three.” with a tick under each word. A bowl and a ball appear on the slide on their words. On each count word, the ball steps down the bowl and a box fills with that word's start time: 4.49 s, 5.26 s, and 5.77 s." noZoom />
 
-DeckTalk turns a markdown script, HTML slides and your voice into one narrated mp4. You write the
+DeckTalk turns a Markdown script, HTML slides and your voice into one narrated mp4. You write the
 words in `script.md` and the pictures in an HTML page. `cues.json` names the spoken phrase each
 picture lands on, and the finished film is measured against that promise before you are told it is
 built.
 
 ## Start here
 
-Three pages take you from an empty machine to a section of your own.
+Two pages take you from an empty machine to a section of your own.
 
 - [Quickstart](/quickstart) installs DeckTalk and builds the starter film with no account and no spend.
-- [Requirements and costs](/requirements) covers what a machine needs, what it downloads, and which commands spend money.
 - [Your first deck](/guides/first-deck) writes one section across the four files, then checks, builds and verifies it.
+
+[Requirements and costs](/requirements) covers what a machine needs, what it downloads, and which
+commands spend money, and [Examples](/examples) lists the finished projects `decktalk init` writes.
 
 ## Understand the model
 
@@ -29,12 +31,21 @@ Three pages take you from an empty machine to a section of your own.
 - [Writing for the ear](/guides/writing-for-the-ear) gives every picture a word worth landing on.
 - [Sound](/concepts/sound) covers the music, the ambience bed and the effects.
 
+## What a section can be
+
+- A page of slides, where every reveal lands on its word: [Your first deck](/guides/first-deck).
+- A conversation between voices, each turn its own take: [Write a dialogue](/guides/dialogue).
+- Something that moves between two words, or a picture a program draws: [Things that move](/guides/motion).
+- A video of your own, playing with its own sound: [Play a clip](/guides/clip-section).
+- Any frame shape, wide, square or vertical: [Design a slide](/guides/design-a-slide).
+
 ## Look something up
 
 - [CLI reference](/reference/cli) lists every command, flag, exit code, error code and finding code.
 - [Configuration](/reference/configuration) lists every setting with its range, its unit and the failures it moves.
 - [Verify](/reference/verify) defines every measurement the finished film is judged by.
 - [What leaves your machine](/reference/what-leaves-your-machine) names every host DeckTalk contacts and what each request carries.
+- [Pages and programs you did not write](/reference/trust) says how far a recording trusts a page and which programs a project may start.
 
 <div className="dt-note">
 

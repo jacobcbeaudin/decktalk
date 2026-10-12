@@ -17,9 +17,8 @@ the closing band lands.
 
 ## Before you start
 
-- Resolve the cues once, with any build or with `decktalk narrate --no-spend` and then
-  `decktalk cue`. An effect plays at the second its cue resolved to, so a cue that has never been
-  resolved has no second to sit on, and `cue` needs the words `narrate` writes.
+- Build the project once, with `decktalk build --no-spend`. An effect plays at the second its cue
+  resolved to, and `assemble` mixes over the recordings that build leaves.
 - Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one costs money for every
   second of audio asked for, at the US dollars per minute `[score.effects] dollars_per_minute` states.
 - Bring your own audio file instead if you have one. Any file ffmpeg can read works, it needs no key,

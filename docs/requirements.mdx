@@ -60,10 +60,12 @@ nothing on PATH either.
 
 The browser is the large one. Playwright 1.63 fetches it in three parts, the browser, its headless
 shell and a small ffmpeg of its own, and its installer states each part's size as it starts, which is the
-size DeckTalk announces. On macOS on Apple silicon the parts are 191.0, 98.8 and 1.1 MB, 291 MB in all,
-and they come to 318 MB on Linux x86-64 and 327 MB on Windows. The pinned ffmpeg arrives as two
+size DeckTalk announces. On macOS on Apple silicon the parts are 190.9, 98.9 and 1.0 MB, 291 MB in all.
+On Linux x86-64 and on Windows they come to about 318 and 327 MB, which are the sizes of the same
+three archives on Playwright's host rather than a measured install. The pinned ffmpeg arrives as two
 archives of 28.2 and 28.1 MB on macOS on Apple silicon, and as one archive of 125.8 MB on Linux x86-64
-and 168.3 MB on Windows. In a pipe each download prints a line as it starts, with its size, a line as
+and 168.3 MB on Windows, so a first run fetches about 347 MB on macOS on Apple silicon, about 445 MB on
+Linux x86-64 and about 495 MB on Windows. In a pipe each download prints a line as it starts, with its size, a line as
 it ends, and lines between as it arrives. For ffmpeg those come every ten seconds whatever the speed of
 the link, while bytes keep arriving. Chromium's come from Playwright's installer, which owns that
 download and reports each part at every tenth, so on a slow link they can be further apart. An ffmpeg
@@ -159,148 +161,15 @@ before you trust those limits on it.
 
 `decktalk doctor` prints the Chromium revision and the ffmpeg build a run would use, so a machine's
 owner can read what a recording will launch before it launches. [What leaves your
-machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts.
+machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts, and
+[Size the machine](/guides/ci-and-offline#size-the-machine) lists the machine keys that say how much
+work a machine takes on at once and how long it waits.
 
-### How hard a machine is driven
+## Pages and programs
 
-The keys below say how much work this machine takes on at once and how long it waits. They describe
-the machine rather than the film, so they are machine keys like the ones above.
-
-| Key | Default | What it decides |
-|---|---|---|
-| `record.concurrency` | `0` | How many recorders `record` runs at once, each a Chromium of its own. Zero chooses from the CPU this process may use: one recorder per three CPUs, at most four. Inside a container that is the container's CPU quota, not the host's core count. |
-| `record.chunk_frames_min` | `50` | Fewest frames `record` puts in one chunk when it splits a section across its recorders. |
-| `record.chunk_startup_seconds` | `0.2` | How long one chunk takes to start on this machine, which `record` weighs against `step_seconds` when it splits a section. |
-| `record.step_seconds` | `0.014` | How long one recorder takes to step its page once on this machine, the capture of its frame included. |
-| `record.encode_threads` | `0` | Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. The frames are the same whatever it is. |
-| `record.page_deadline_seconds` | `15` | Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming where it was stuck. `record` names the section and the frame, and every other command that opens a page holds it to the same deadline. |
-| `record.deadline_slowdown` | `30` | How many times slower than `chunk_startup_seconds` and `step_seconds` a chunk, and the whole run, may record before `record` stops it. |
-| `record.renderer_retries` | `1` | How many more times `record` records a chunk in a fresh page when the page's renderer crashed. |
-| `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
-| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. With `narration.timeout_seconds` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request. |
-| `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
-
-A recording waits for every frame it steps, so a frame drawn slowly is late on the clock of the
-run and never on the clock of the film. `record.concurrency` set above this machine's share therefore
-costs speed and never correctness: a starved machine records slower, and every reveal still lands on
-its word.
-
-A page that stops answering is held to its deadlines instead. A call into it that outlives
-`record.page_deadline_seconds`, such as a step of a page that spins its main thread, closes the page
-and stops the run with a TOOL error naming the section and the frame, and a chunk or a run that takes
-`record.deadline_slowdown` times its expected time is stopped the same way. `check`, `storyboard`,
-`cue` and `assemble` hold every call into the pages they open to the same deadline, so no page can
-hold a build open.
-
-```console
-decktalk config set record.concurrency 2 --scope machine
-```
-
-A `decktalk.toml` that sets any of them is refused by name, because a project travels and a
-limit that suits one machine is wrong on the next:
-
-{/* sample: machine-key-in-project, decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
-```text
-error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
-  hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --scope machine`.
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
-```
-
-Each also has its environment variable, such as `DECKTALK_RECORD_CONCURRENCY`, which is how a job
-sets one for a container it does not keep.
-
-## A page someone else wrote
-
-A deck is a web page, and its script runs in the Chromium that records it. On your own machine that
-page is your own work, so by default it is trusted: it reaches the network the way it would in your
-browser, and a font or a library it loads from another origin is reported as
-[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) rather than stopped.
-
-A service that renders pages other people wrote cannot extend that trust, because a trusted page
-reaches anything the machine can reach, a cloud metadata endpoint included. `[record] page_policy`
-says how far a page is trusted. It is the machine's to set, so a project file that names it is
-refused and a project someone else wrote cannot trust its own page.
-
-| Value | What the page may do |
-|---|---|
-| `trusted` | The default. The page reaches the network as a browser would, through the machine's own proxy. |
-| `untrusted` | Chromium runs with its sandbox on, and every request that is not for the project's own origin is refused, through every channel a page can open. |
-
-```console
-decktalk config set record.page_policy untrusted --scope machine
-```
-
-Under `untrusted`, three things hold at once.
-
-- **The sandbox is on, or nothing runs.** A Chromium that cannot start its sandbox is refused with a
-  `TOOL` error. The run never falls back to a browser without one.
-- **No request leaves the origin.** The page is served at the project's own origin, and a request for
-  any other one is aborted before it reaches the network, whatever its scheme. The browser is also
-  pointed at a proxy that answers nothing, and WebRTC may not send UDP past it, which closes the
-  channels request routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. The recording
-  still names every host the page reached for, as `PAGE_CDN_ASSET`.
-- **The browser environment is scrubbed.** Chromium is handed only the variables that say where a
-  file, a display, a locale or a proxy is, so a key the host holds never reaches the process that runs
-  a page's script. ffmpeg and ffprobe are handed the same set. This holds under `trusted` too.
-
-The policy is read by every launch that opens a project's page, which is `record`, `check`,
-`storyboard` and the poster `assemble` draws.
-
-## Programs a project names
-
-A project can name programs as well as pages: a render section's `render_command` draws its picture.
-A program runs with your user's rights and can read every file you can, the project's `.env`
-included. So cloning someone else's deck and building it would run their code as you, and
-`[record] programs` decides whether it does.
-
-| Value | What `record` and `build` do with a project's programs |
-|---|---|
-| `refuse` | The default. Nothing runs, and the run stops with an `INPUT` error that names each program, the key and how to allow it. |
-| `ask` | On a terminal the run lists every program it would start, word for word, and asks once. A yes runs them for that run alone. Without a terminal, under `--no-input` or under `--json`, the run refuses. |
-| `run` | Every program runs without asking. |
-
-The key is the machine's to set, so a project file that names it is refused. `untrusted` refuses
-every program whatever `programs` says. A refusal comes before any program starts and, in a build,
-before the first stage.
-
-```console
-decktalk check                                          # lists every program as PROGRAM_NAMED
-decktalk build --set record.programs=run                # allow them for this one run
-decktalk config set record.programs ask --scope machine # ask on every run on this machine
-```
-
-`DECKTALK_RECORD_PROGRAMS=run` allows them for every command a job runs. Read the programs that
-[`PROGRAM_NAMED`](/reference/findings/PROGRAM_NAMED) lists before you allow them.
-
-A program runs in an empty scratch folder rather than in the project, and a word of its command that
-names a project file by a relative path is handed over as that file's absolute path. It gets the
-scrubbed environment with no proxy variable, because a proxy URL can carry a password. None of that
-keeps it from a file: DeckTalk hides no file from a program on any platform, `.env` included, so a
-machine that allows a project's programs trusts that project's author with every file the user can
-read.
-
-### The sandbox in a Linux container
-
-Chromium's sandbox needs user namespaces. In a Linux container that takes two things, and a container
-missing either one refuses an untrusted run.
-
-- **A user other than root.** Chromium refuses its sandbox to root, so run the render as an ordinary
-  user.
-- **A seccomp profile that allows user namespaces.** Docker's default profile blocks the calls the
-  sandbox makes. A render running as an ordinary user under the default profile is still refused, and
-  the same render under a profile that allows those calls launches.
-
-The refusal names both:
-
-```text
-error[TOOL]: could not launch Chromium with its sandbox on (...).
-  hint: An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than root and a seccomp profile that allows user namespaces.
-  docs: https://docs.decktalk.ai/reference/errors/TOOL
-```
-
-The engine's refusal is defence in depth. A service that renders strangers' pages still runs each
-render in a network namespace with no egress of its own, because the machine is where the boundary
-belongs.
+A deck is a web page and a render section is a program, and both run with your rights when you build.
+[Pages and programs you did not write](/reference/trust) says how far each is trusted, and how to
+build a project someone else wrote.
 
 ## What a voiced run needs
 
@@ -321,8 +190,9 @@ as unset, so `.env.example` as it ships approves nothing.
 
 A voice's id is `[voices.NAME] id` in `decktalk.toml`, and `DECKTALK_VOICES_<NAME>_ID`, such as
 `DECKTALK_VOICES_NARRATOR_ID`, in the environment overrides it for anyone who keeps it out of the file.
-A film may mix voices and providers, so `decktalk check` prices each provider's turns on a row of its own. It is committed with the project because it grants
-nothing: a voice cloned on an ElevenLabs account is usable only with that account's key.
+A voice's id is committed with the project because it grants nothing: a voice cloned on an ElevenLabs
+account is usable only with that account's key. A film may mix voices and providers, so
+`decktalk check` prices each provider's turns on a row of its own.
 
 DeckTalk never prints the key. No value read from `.env` or from the environment reaches a `--json`
 payload, a log line or an error message, and an error that quotes a reply from the service has every
@@ -331,18 +201,19 @@ key is set and never what it is.
 
 ## What spends and what does not
 
-Two things call ElevenLabs. The `narrate` stage sends each section's text and gets speech back, and
+Two things call ElevenLabs. The `narrate` stage sends each turn's text and gets speech back, and
 `decktalk score` generates the music, the ambience bed and the effects.
 
 | Command | When it spends |
 |---|---|
-| `decktalk build` | When the run is voiced. It voices each section whose text or voice settings changed, and every section when the cache is empty. |
-| `decktalk narrate` | The same sections as a build, for that stage alone. |
+| `decktalk build` | When the run is voiced. It voices each turn whose text or voice settings changed, and every turn when the cache is empty. |
+| `decktalk narrate` | The same turns as a build, for that stage alone. |
 | `decktalk score` | For each part whose request changed or whose file is missing. |
 
 No library or command call spends without approval. On the command line the flags are `--no-spend`, which plays every take on disk, writes
 placeholder narration where a take is missing and buys nothing, `--spend`, which approves the spend,
-and `--max-cost N`, which puts a ceiling on it. A free provider such as `dtsp` makes its takes under
+and `--max-cost N`, which puts a ceiling on a spend something else approved and approves nothing
+itself. A free provider such as `dtsp` makes its takes under
 either flag once a voice is named, because it costs nothing. With neither flag, a build with something to buy
 prices the run and asks on a terminal, once, about its takes and its sounds added together. Without a
 terminal it refuses and names the two flags that answer, so a script or a CI job cannot spend by
@@ -353,12 +224,12 @@ Everything else spends nothing: `init`, `install`, `doctor`, `status`, `check`, 
 `storyboard`, `serve`, `config`, `schema`, `cue`, `record`, `assemble`, `verify`, `clip`, and any
 `build` with `--no-spend`.
 
-A voiced section costs the characters of its whole text, so an edit costs every changed section in
-full rather than the changed sentence. The starter's three sections are 476 characters and make 50
-seconds of film, which is the order of magnitude to expect: a script is cheap and a long film is a
-few thousand characters. `decktalk check --json` gives the exact figure for your own script. A take
-is named by the digest of its text and its voice settings, so an unchanged section is read from the
-cache and a new voice id voices every section again.
+A voiced turn costs the characters of its whole text, so an edit costs every changed turn in full
+rather than the changed sentence. A section read by one voice is one turn. The starter's three
+sections are 476 characters and make 50 seconds of film, which is the order of magnitude to expect: a
+script is cheap and a long film is a few thousand characters. `decktalk check --json` gives the exact
+figure for your own script. A take is named by the digest of its text and its voice settings, so an
+unchanged turn is read from the cache and a new voice id voices every turn that voice reads again.
 
 <Warning>`--replace-voiced` with `--spend` voices a section again and plays the new take in place of
 the one you already have, and `--replace-score` with `--spend` buys every bought sound again. They are the

@@ -240,14 +240,14 @@ src/decktalk/
     katex/               The pinned KaTeX release the pages typeset with, which the origin serves beside the runtime
     runtime/             decktalk-runtime.js, the page contract every deck loads, decktalk-probe.js and contract.json
     skills/              The six packaged skills a project keeps in .agents/skills/
-    template/            The starter, the lesson example and the AGENTS.md that `decktalk init` writes
+    template/            The starter, the three examples and the AGENTS.md that `decktalk init` writes
 ```
 <!-- layout:end -->
 
 The test for `src/decktalk/stages/verify/plan.py` is `tests/decktalk/stages/verify/test_plan.py`,
 and `tests/contract/test_layout.py` fails on a module that has no mirrored file. A test that belongs
 to no module goes in `tests/contract/`, which is a closed list. `tests/platform/` holds what exists
-only because there are three platforms, `tests/e2e/` the three suites that build a whole project, and
+only because there are three platforms, `tests/e2e/` the suites that build a whole project, and
 `tests/support/` what several tests share. [ARCHITECTURE.md](ARCHITECTURE.md) says why the package
 has this shape, and [RELEASING.md](RELEASING.md) says how CI judges a change and how a release ships.
 

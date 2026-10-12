@@ -69,8 +69,8 @@ would cost, so an author sees the findings and the money before a single second 
 at before anything is bought.
 
 A take is named by a digest of its text, its voice, its model and its settings, so an edit voices only
-the sections whose words changed. A recording is kept when its page, its words, its cues and every
-local file it loads are unchanged, and when the motion settings that shaped it have not moved. Paid
+the turns whose words changed. A recording is kept when its page, its words, its cues and every
+local file it loads are unchanged, and when the motion settings that shaped it have not moved. Voiced
 takes are the only expensive thing in the tree, and caching them by content is what makes the tenth
 edit cheap.
 

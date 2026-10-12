@@ -15,14 +15,17 @@ each element arrive on the second its cue was given.
 ## Where a page gets it
 
 DeckTalk opens every page at a local origin, and the engine answers every path under `/__decktalk/`
-on that origin itself, from the installed package. Two things live there:
+on that origin itself, from the installed package. Four things live there:
 
 | Path | What it is |
 |---|---|
 | `/__decktalk/decktalk-runtime.js` | The runtime of the engine that opened the page. |
 | `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js` | The pinned KaTeX release, with the fonts its stylesheet loads under `/__decktalk/katex/fonts/`. |
+| `/__decktalk/cue-times.json` | The cue times of the last run, which a previewed page reads. |
+| `/__decktalk/canvas.json` | The canvas the project lays its page out on, which a previewed page reads. |
 
-`record`, `check`, `storyboard`, the poster `assemble` draws and `decktalk serve` all open the page
+`record`, `check`, `storyboard`, `cue` when a section's recording no longer stands, the poster and
+the captioned copy's captions `assemble` draws, and `decktalk serve` all open the page
 at that origin, so every one of them plays the runtime of the engine that is running, and a project
 holds no copy that could fall behind it. A build needs no network to draw a page.
 
@@ -47,7 +50,7 @@ Thirteen modules make the runtime. Each owns one thing, and nothing imports the 
 | `contract.ts` | The grammar: every attribute, every page code, every query key, the report field list and the two units. Nothing here touches the DOM. |
 | `index.ts` | The facade. It reads the probe's telemetry sink once, hands it to the seam, and publishes `window.DeckTalk` and `window.__decktalk`. |
 | `scene.ts` | Scenes, slides, the markup reader and the cue order every check is written against. It is the only module that reads markup. |
-| `modes.ts` | The four things a page can be doing, and the one URL that decides which. It is the only module that touches the URL. |
+| `modes.ts` | The five things a page can be doing, and the one URL that decides which. It is the only module that touches the URL. |
 | `reveal.ts` | The four moments, the class moment, the swap, and the sentence each of them writes into the transcript. |
 | `canvas.ts` | The canvas a deck is drawn on, the fit into the window, the heads-up display and the one generated stylesheet. |
 | `clock.ts` | The section clock's origin, the queue of work sorted by the second it is due, and the animation frame loop that drains it. It holds no DOM. |
@@ -58,7 +61,7 @@ Thirteen modules make the runtime. Each owns one thing, and nothing imports the 
 | `telemetry.ts` | The seam between the page and the recorder, which is one interface, one no-op default and one setter. |
 | `warn.ts` | Everything the page could not honour, recorded once each and echoed to the console. |
 
-A twelfth file, `src/decktalk/runtime/src/probe/probe.ts`, is a bundle of its own. It imports the
+A fourteenth file, `src/decktalk/runtime/src/probe/probe.ts`, is a bundle of its own. It imports the
 contract and the telemetry seam and nothing else, which is what keeps the runtime free of everything
 only a command needs.
 
@@ -280,7 +283,7 @@ The recorder holds it as `window.__decktalkProbe`.
 
 Three more are read by the runtime, and only when the probe is there: `recorder` is the telemetry
 sink, read once at startup, `freezeCues(order, slide, warn)` narrows a frozen slide's cues to the
-stop the URL names, and `measure(catalog, stage)` adds one measured box per element onto the
+stop the URL names, and `measure(catalog, canvas)` adds one measured box per element onto the
 catalog.
 
 ### One `report()` call
@@ -296,7 +299,7 @@ uv run python -c "from decktalk import page; print(page.REPORT)"
 | Field | What it carries |
 |---|---|
 | `version` | The runtime version the page carries. |
-| `mode` | Which of index, preview, record and freeze the page is in. |
+| `mode` | Which of index, preview, record, freeze and caption the page is in. |
 | `scene` | The scene the page is playing, or null on the index page. |
 | `slide` | The slide on screen, or null when none is mounted. |
 | `warnings` | Every distinct warning the page reported, as code, message, slide, cue and attr. |
@@ -424,13 +427,15 @@ its canvas before any script of it runs, and a page previewed in a browser asks 
 | `#dt-pan` | The layer slides are mounted into, which is where every reveal is drawn. |
 | `#dt-hud` | The heads-up display, drawn only under `?hud=1`. |
 | `#dt-style` | The runtime's own stylesheet. |
+| `#dt-captions` | The band the captions of the captioned copy are drawn in, inside the canvas. |
 | `--dt-width`, `--dt-height` | The custom properties on `:root` that hold the canvas's size in CSS pixels, which a stylesheet lays the page out by. |
 | `data-dt-shape` | The attribute on `:root` naming the canvas's shape: `wide`, `square` or `vertical`. |
 | `--dt-motion-scale` | The custom property on `:root` that slows every length down. |
 | `--dt-span` | The custom property each element's own motion length is written into. |
 
 The classes the runtime puts on what it draws are `dt-slide`, `dt-leaving`, `dt-arriving`,
-`dt-hidden`, `dt-shown`, `dt-back`, `dt-front`, `dt-word`, `dt-frozen` and `dt-reduced`.
+`dt-hidden`, `dt-shown`, `dt-back`, `dt-front`, `dt-word`, `dt-frozen`, `dt-reduced`, `dt-captioning`,
+`dt-caption` and `dt-caption-line`.
 
 ## Related
 

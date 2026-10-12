@@ -25,6 +25,7 @@ import tomlkit
 
 import build_settings_schema
 import generated
+from decktalk.cli import catalog
 from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, MEMBER
 from decktalk.settings.layers import machine_config_path
 
@@ -92,6 +93,13 @@ can read.
 """
 
 
+def set_commands() -> str:
+    """The commands that take `--set`, in the order the command line lists them, as a sentence names them."""
+    named = [f"`{row['command']}`" for row in catalog.walk() if any("--set" in p["opts"] for p in row["params"])]
+    *before, last = named
+    return f"{', '.join(before)} and {last}"
+
+
 def layers() -> str:
     """Which value wins, naming the variables and the machine file's place on each system as the code does."""
     home = Path("~")
@@ -107,7 +115,7 @@ A project key is set by these, each overriding the ones before it:
 1. The default in the table below.
 2. The same table in the project's `decktalk.toml`.
 3. The environment variable each key publishes, such as `{BY_ID["video.preset"].environment}`.
-4. `--set table.key=value`, on any command, for one run.
+4. `--set table.key=value`, for one run, on {set_commands()}.
 
 A machine key is set the same way, with the per-machine settings file in place of `decktalk.toml`.
 

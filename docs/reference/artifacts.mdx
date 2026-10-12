@@ -90,7 +90,7 @@ Everything else a run writes is under the build directory:
 my-lesson/build/
   narrate/
     takes.json                  which section plays which take, and the clock the join makes
-    placeholder-<digest>.mp3      a placeholder for a section with no voiced take yet
+    placeholder-<digest>.mp3    a placeholder for a turn with no voiced take yet
     placeholder-<digest>.words.json  its estimated words
     narration.mp3               the takes joined into one track, which assemble mixes under the picture
   cue-times.json                every cue resolved to a second on its own section's clock
@@ -121,13 +121,16 @@ my-lesson/build/
     <name>-poster.png           the opening slide as a lossless PNG
     <name>-captioned.mp4        the film with its captions drawn in, when [output] captioned asks
     <name>.words.json           every word the film says, on the film's own clock
-    placements.json                   where every section sits in the finished film
+    placements.json             where every section sits in the finished film
   events/
     <run>.jsonl                 one JSON line per event of one run
   kept.json                     what the last assemble and verify read, wrote and found
   .lock                         locked by the one run that is writing, and left in place
   .lock.owner                   the process and the run holding the lock, removed when it ends
 ```
+
+When `[output] timestamped_copy` asks for it, `final/` also keeps `<name>-<YYYYMMDD-HHMM>.mp4`, a
+copy of the film named with the minute it was taken.
 
 `<name>` is `[project] name`, which is what the film is named after. `NN` is a section's key, which
 is its number padded to two digits, so section 3 is `03`. `<run>` is the twelve hex characters that
@@ -217,7 +220,7 @@ same way whether this run voiced its take or found it cached.
 
 A take is identified by its input digest and by nothing else. The index maps a section to a piece of
 content and never the other way round, so renumbering a section rewrites one row and moves no file,
-and two sections with the same words share one take.
+and two turns with the same words and the same voice share one take.
 
 The digest of a voiced take is taken over exactly these, joined by newlines in this order.
 
@@ -246,12 +249,12 @@ A placeholder take is named the same way over its own three inputs, which are th
 at, how long a declared pause is held, and the text it stands in for. Its digest carries the prefix
 `placeholder-`, so a run that writes placeholders can never overwrite a voiced take.
 
-A take is current when the current inputs name its digest. Each spoken section's take state is read
-from that rule alone: `voiced` when a voiced take of the current inputs is held, `unchecked` when a
+A take is current when the current inputs name its digest. Each turn's take state is read
+from that rule alone, and a section takes the worst state of its turns: `voiced` when a voiced take of the current inputs is held, `unchecked` when a
 voiced take of this text is held and no voice is named to match it, `stale` when the take index's
-voiced take for the section or its text is held under another digest, `placeholder` when only a
-placeholder of the current text is held, and `missing` when nothing the section could play is held.
-`status`, `check`, `narrate` and `watch` read the same five states. `stale` lasts until a run that
+voiced take for the turn or its text is held under another digest, `placeholder` when only a
+placeholder of the current text is held, and `missing` when nothing the turn could play is held.
+`status`, `check`, `narrate` and `build --watch` read the same five states. `stale` lasts until a run that
 does not spend rewrites the take index to the placeholder it plays.
 
 ## `takes/<digest>.words.json`
@@ -268,7 +271,10 @@ written under, so a take is still found after the voice moves to another format.
 not read, or whose take does not match them, is skipped wherever it is found, moved aside as
 `<name>.unreadable`, or as `<name>.<n>.unreadable` with the first number free for both files when that
 name is taken, when a good copy replaces it, and never copied or deleted. When no copy anywhere is
-good, the run is refused with a sentence, because the next step would buy the take again. Words
+good, the run is refused with a sentence, because the next step would buy the take again. A words
+file that records no audio print was written before the print and can never be told good, so its
+take counts as not held: a run that may spend buys it again, as it buys a take no place holds, and
+moves the old pair aside when it writes the new one. Words
 DeckTalk estimated for a placeholder take are a cache under `build/narrate/`, like the rest of
 `build/`.
 
@@ -416,6 +422,9 @@ runs, so it shows the section split as a machine of twelve or more CPUs splits i
 | `recording.load_seconds` | How long the page took to load and paint before its first step. |
 | `recording.page_errors` | Uncaught exceptions, or the one line for no runtime at all. |
 | `recording.report` | What the page said about itself, read once as it was recorded. |
+| `recording.undeclared` | Every element a script changed the picture in with nothing declared to explain it, with `what`, `at` and `frames`. |
+| `recording.pieces` | The first frame of each piece the video was joined from, one piece when one page recorded it whole. |
+| `recording.steps` | How many times the pages that recorded it were stepped, or 0 when a command drew it. |
 | `findings` | Every judgement the page and the frames made, each a whole finding. |
 | `checks` | What the frames measured, or null when none were. A log with no checks is a recording that never finished, and the next run records it again. |
 
@@ -424,7 +433,8 @@ and the checks over the frames are one list a reader dispatches on by code.
 
 `made_from` is what decides whether a section is recorded again. Its parts are every turn's words,
 voice and word times, the markup of the one scene the section plays, the rest of its page, which
-every scene shares, the content of every file the page loaded, its resolved cues, its length, the
+every scene shares, the content of every file the page loaded, its scene and its own query
+parameters, its resolved cues, its length, the
 frame geometry, the colour scheme, the page policy, the motion setting and the engine. A section
 none of whose parts moved would be recorded again for nothing, so it is kept, and a section whose
 parts moved is named by them. [Rebuild one section](/guides/rebuild-one-section#what-makes-a-recording-stale)
@@ -471,9 +481,10 @@ rather than a real run.
 
 A render section is drawn by its `render_command` rather than recorded from a page, and it still
 leaves `NN.mp4` and `NN.json`. Its `recording.url` is `render:` followed by the command, its report
-carries only `motions`, which are the landings its program wrote, and its `digest` is taken over the
-command, the motion document and the content of every project file the command names. So editing
-the program, a word of the narration or a cue's second draws the section again.
+carries only `motions`, which are the landings its program wrote, and its `made_from` holds its
+turns' words, voices and word times, the command, the content of every project file the command
+names, the motion document and the engine. So editing the program, a word of the narration or a
+cue's second draws the section again.
 
 Beside them, under `build/recordings/render/NN/`, are the two files the program trades with
 `record`.
@@ -552,8 +563,8 @@ encode the same arguments differently.
 
 ## `build/stills/`
 
-Every frozen frame `check`, `storyboard` and the poster draw, kept by what drew it, so one state of
-a page is drawn once whichever of the three asks for it first. `<key>.png` is named by a digest of
+Every frozen frame `check`, `storyboard`, the poster and the captioned copy's captions draw, kept by
+what drew it, so one state of a page is drawn once whichever of them asks for it first. `<key>.png` is named by a digest of
 everything the caller knows before the page opens: the URL, the frame size, the colour scheme, the
 motion settings, the content of the page file and the engine version. `<key>.json` beside it names
 every project file the page went on to load, with its digest then, because a picture or a module the

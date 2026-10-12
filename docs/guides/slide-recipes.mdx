@@ -27,6 +27,10 @@ A moment inside `<template data-slide="4.1">` is qualified with that slide id, s
 is the [cue id](/concepts/cues#the-cue-id) `4.1:title` and that is what `cues.json` carries. The recipes use the starter's own
 custom properties, such as `--ink` and `--accent`, and its `.eyebrow` class.
 
+The recipes are laid out on the wide canvas, 1920 by 1080. For a square or vertical project, write
+their widths and left edges against `--dt-width`, as the starter does: `var(--span)` for `1680px` and
+`var(--margin)` for `120px`.
+
 ## A title that arrives on its word
 
 The heading and the bar under it are one element with one cue, so the whole block lands together.
@@ -144,7 +148,7 @@ reveal, so neither needs a second element.
 <style>
   .r-formula { position: absolute; left: 120px; top: 360px; width: 820px; height: 280px;
                box-sizing: border-box; display: grid; place-items: center;
-               border: 10px solid var(--ink); border-radius: 20px; font: 500 58px/1 var(--mono); }
+               border: 10px solid var(--ink); border-radius: 20px; font: 500 44px/1.2 var(--mono); }
   .r-code { position: absolute; left: 1000px; top: 360px; width: 800px; height: 280px;
             box-sizing: border-box; padding: 36px 40px; border-radius: 20px;
             background: var(--ink); color: #fff; font: 500 32px/52px var(--mono); white-space: pre; }
@@ -250,7 +254,7 @@ makes it a display equation on its own line.
 <style>
   .r-eq { position: absolute; left: 120px; top: 360px; width: 1680px; height: 280px;
           box-sizing: border-box; display: grid; place-items: center;
-          border-radius: 20px; background: #f4f4f5; }
+          border-radius: 20px; background: var(--ink); color: #fff; }
   .r-eq .katex { font-size: 58px; }
 </style>
 
@@ -288,9 +292,9 @@ the contract has no word for.
 <style>
   .r-guess { position: absolute; left: 1120px; top: 490px; width: 680px; margin: 0;
              padding: 30px 38px; box-sizing: border-box; border-radius: 20px;
-             background: #f4f4f5; font: 700 72px/1.1 var(--mono);
+             background: var(--ink); color: #fff; font: 700 72px/1.1 var(--mono);
              transition: background-color .2s ease, color .2s ease; }
-  .r-guess.stale { background: var(--mute); color: #e4e4e7; }
+  .r-guess.stale { background: #e4e4e7; color: var(--mute); }
   .r-guess.live { background: #22c55e; color: #052e16; }
   :where(.dt-reduced) .r-guess { transition-duration: 0s; }
 </style>

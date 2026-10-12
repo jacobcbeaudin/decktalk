@@ -53,8 +53,8 @@ for each of them.
 
 The load refuses a file that is not valid JSON, a file with no top-level `sections` object, a section
 key that is not a number, a section number that `decktalk.toml` does not declare, a section whose
-value is not an object, a row with a key no cue reads, a row with no `id` or no `phrase`, and a row
-whose `id` is empty. Each refusal names the file, and a JSON syntax error names the line as well. A
+value is not an object, a row with a key no cue reads, a row with no `id` or no `phrase`, a row
+whose `id` is empty, and a row whose `occurrence` is below 1. Each refusal names the file, and a JSON syntax error names the line as well. A
 row whose `phrase` is empty loads, and `CUE_UNRESOLVED` says it has no phrase yet.
 
 ## The keys of one row

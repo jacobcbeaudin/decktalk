@@ -242,7 +242,7 @@ The same call on a project whose script still holds an unfilled blank and whose 
 phrase the script does not speak. It exits 1, and `error` is null, because both of these are
 judgements about the project rather than a reason the command could not run.
 
-{/* sample: check-json-findings, decktalk check --no-pages --json, on a starter whose line 14 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers" */}
+{/* sample: check-json-findings, decktalk check --no-pages --json, on a starter whose line 17 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers" */}
 ```json
 {
   "schema": 1,
@@ -551,15 +551,19 @@ rather than by the lines around it.
 | `run.done` | A run closed, and why when it did not finish. | `outcome`, `elapsed_seconds`, `error`, `dropped` |
 | `stage.start` | A stage began, with its place in the run's plan. | `stage`, `index`, `count` |
 | `stage.done` | A stage ended. | `stage`, `outcome`, `elapsed_seconds` |
-| `section.start` | One section of a stage began. | `stage`, `section` |
-| `section.done` | One section of a stage ended. | `stage`, `section`, `outcome`, `elapsed_seconds` |
+| `section.start` | One section of a stage began. | `stage`, `section`, `turn` |
+| `section.done` | One section of a stage ended. | `stage`, `section`, `turn`, `outcome`, `elapsed_seconds` |
 | `stage.progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
 | `finding.raised` | A judgement was made, carried as it was found. | `finding` |
 | `cost.priced` | A cost was worked out. | `cost` |
-| `take.charged` | The provider was paid for one take, or may have been when `possibly_charged` is true. A free provider writes none. | `section`, `digest`, `characters`, `dollars`, `possibly_charged` |
+| `take.charged` | The provider was paid for one take, or may have been when `possibly_charged` is true. A free provider writes none. | `section`, `turn`, `digest`, `voice`, `provider`, `characters`, `dollars`, `possibly_charged` |
 | `sound.charged` | The sound provider was paid for one request, or may have been when `possibly_charged` is true. | `name`, `kind`, `digest`, `seconds`, `dollars`, `possibly_charged` |
 | `tool.fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
 | `run.log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
+
+`turn` is the turn of its section a line is about, counted from one. `narrate` names it on its
+section lines and on every `take.charged`, and a stage that does not work by turns leaves it null.
+`voice` is the voice's name in `decktalk.toml`, and `provider` the speech provider that voice names.
 
 `outcome` is `ran`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
 and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had

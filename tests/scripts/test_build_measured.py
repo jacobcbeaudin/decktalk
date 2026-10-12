@@ -118,3 +118,9 @@ def test_a_recount_that_differs_between_repeats_is_shown_as_a_range() -> None:
 def test_data_of_an_unknown_schema_is_refused() -> None:
     with pytest.raises(SystemExit, match="schema"):
         build_measured.page({**DATA, "schema": 2})
+
+
+@pytest.mark.parametrize(("value", "printed"), [(24.5, "25 ms"), (23.5, "24 ms"), (24.4, "24 ms"), (49.0, "49 ms")])
+def test_a_landing_distance_rounds_a_half_up_as_a_reader_rounds_it(value: float, printed: str) -> None:
+    """A median of 24.5 ms printed as 24 ms reads as a different measurement, so a half goes up, never to even."""
+    assert build_measured.ms(value) == printed

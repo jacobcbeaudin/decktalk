@@ -114,7 +114,8 @@ drawn, so a misspelling is a finding rather than an attribute nothing reads.
 
 `decktalk schema page` prints this same table as JSON, with each row's `on`, `kind`, `values`,
 `default`, `range`, `code`, `span`, `affects` and `summary`, and beside it the entrance, exit, word,
-count, attention and slide word sets with their lengths, `measurable_span_seconds` and `slowest_fps`.
+count, attention and slide word sets with their lengths, the `query` keys, the `t0_signal` value,
+`measurable_span_seconds` and `slowest_fps`.
 The table above and the schema are written from one registry, so the page cannot say something the
 registry does not.
 
@@ -361,11 +362,11 @@ sequenceDiagram
     R->>P: open page.html?scene=N&cues=…&words=…&t0=signal
     Note over P: the runtime picks its mode and mounts the first cued slide
     R->>P: await document.fonts.ready and window.__decktalk.ready
-    R->>P: await window.__decktalkProbe.started(15), every animation started
+    R->>P: await window.__decktalkProbe.started(deadline), every animation started
     R->>P: hold the page clock still
     loop for each frame k of the section's frames in the film, its hold included
         R->>P: run the page's timers and animation frames on to frame k
-        R->>P: window.__decktalkProbe.step(k / fps, 15)
+        R->>P: window.__decktalkProbe.step(k / fps, deadline)
         Note over P: every cue due by k / fps fires, every frame hook draws, every animation is held
         P-->>R: answer once the step is laid out, painted and committed, with its fonts and images in
         alt a step since the last capture changed the picture
@@ -379,6 +380,9 @@ sequenceDiagram
     end
     R->>P: read the page's one report back
 ```
+
+`deadline` is `record.page_deadline_seconds`, 15 by default, the seconds the page has to answer each
+call before the recorder stops it.
 
 With `t0=signal` in the URL the page's section clock moves only when the recorder steps it. A
 browser preview has no `t0=signal`, so its clock starts when the page loads and plays in real time.

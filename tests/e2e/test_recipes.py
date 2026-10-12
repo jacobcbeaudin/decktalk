@@ -70,12 +70,20 @@ def pasted(root: Path, heading: str) -> list[str]:
     return [row["id"] for row in rows]
 
 
-def test_an_element_that_steps_back_and_returns_on_a_cue_passes_check_as_written(tmp_path):
-    """Recipe 4.4's return to the front is a cue of its own, and a still after it shows the panel at full strength."""
+RECIPES_A_STILL_JUDGES = (
+    "An element that steps back while a second comes to the front",
+    "A class change the page's own stylesheet animates",
+)
+"""Recipes whose change is a colour or a strength rather than a shape, so a still either side of a cue can miss it."""
+
+
+@pytest.mark.parametrize("heading", RECIPES_A_STILL_JUDGES)
+def test_a_recipe_whose_change_is_a_colour_passes_check_as_written(tmp_path, heading):
+    """Recipe 4.4's return to the front and recipe 4.8's class changes each change enough of a still to be seen."""
     home = tmp_path / HOSTILE_DIRECTORY
     home.mkdir()
     root = written(home, STARTER)
-    ids = pasted(root, "An element that steps back while a second comes to the front")
+    ids = pasted(root, heading)
     checked = decktalk("--project", str(root), "check", "--section", str(SECTION), "--fail-on", "never", cwd=home)
     assert checked["frames_compared"] is True, checked
     named = [row for row in checked["findings"] if row.get("location", {}).get("cue") in ids]

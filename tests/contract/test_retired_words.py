@@ -36,8 +36,14 @@ DOCS = REPO / "docs"
 SKILLS = SRC / "skills"
 """The packaged skills a project keeps in `.agents/skills/`, read as the Markdown an agent loads."""
 
-FRONT = (REPO / "README.md", SRC / "template" / "AGENTS.md")
-"""The repository's front page and the AGENTS.md `init` writes into every project, read as Markdown."""
+FRONT = (
+    REPO / "README.md",
+    REPO / "ARCHITECTURE.md",
+    REPO / "CONTRIBUTING.md",
+    REPO / "SECURITY.md",
+    SRC / "template" / "AGENTS.md",
+)
+"""The front page, the three pages it links beside it, and the AGENTS.md `init` writes, read as Markdown."""
 
 HISTORY = frozenset({DOCS / "changelog.mdx"})
 """The published changelog, which records the words a release used and is never rewritten."""
@@ -177,7 +183,8 @@ def test_no_docs_page_or_skill_uses_a_retired_word() -> None:
     assert not found, "Retired words in the docs and the skills:\n" + "\n".join(found)
 
 
-def test_the_readme_and_the_agents_file_init_writes_are_read() -> None:
-    """The front page and the file every new project's agent reads first meet a reader as surely as a docs page."""
+def test_the_front_files_and_the_agents_file_init_writes_are_read() -> None:
+    """The front page, the files it links and the AGENTS.md a new project gets meet a reader as a page does."""
     read = {text.where for text in page_texts()}
-    assert {"README.md", "src/decktalk/template/AGENTS.md"} <= read
+    front = {"README.md", "ARCHITECTURE.md", "CONTRIBUTING.md", "SECURITY.md", "src/decktalk/template/AGENTS.md"}
+    assert front <= read

@@ -3,24 +3,24 @@ title: How it works
 description: Understand the six stages DeckTalk runs, what each one reads and writes, and why they run in that order.
 ---
 
-`decktalk build` turns a markdown script and HTML pages into one mp4 in six stages. To build your
+`decktalk build` turns a Markdown script and HTML pages into one mp4 in six stages. To build your
 first video, follow the [Quickstart](/quickstart).
 
 <Frame caption="Each panel names the stages it runs, in order.">
   <picture className="block dark:hidden">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-light-stacked.svg" />
-    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and score, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
+    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a Markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and score, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
   </picture>
   <picture className="hidden dark:block">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-dark-stacked.svg" />
-    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and score, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
+    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a Markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and score, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
   </picture>
 </Frame>
 
 A project is four files, and DeckTalk writes everything else.
 
 1. `script.md` holds what the voice says, where each `## N.` heading starts section N.
-2. `decktalk.toml` maps each section to a page and a scene, or to a clip of your own video.
+2. `decktalk.toml` maps each section to a page and a scene, to a clip of your own video, or to a program that draws it.
 3. `cues.json` gives every moment the page declares the spoken phrase it lands on.
 4. The page, such as `deck/index.html`, holds the scenes and their slides.
 
@@ -135,7 +135,7 @@ take. It is a warning, so the default threshold still builds the film.
   default, and adds each declared pause, beat, lead and tail.
 - Every other stage runs as usual, so a build that does not spend exercises the cues, the pages, the
   recording, the encode and the checks.
-- `cue` marks a section whose words are estimated, because its seconds are placeholders too.
+- `cue` marks a section whose words are estimated, because its seconds are estimated too.
 - The clicks are what lets `verify` compare the picture with the sound, so `CUE_OFF` still reports a
   reveal that misses its word.
 - A sound the score describes and has not bought plays as silence, reported once as

@@ -30,6 +30,8 @@ cue name. No attribute says when a cue fires, because `cues.json` owns that.
   html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); }
   body { width: 100vw; height: 100vh; overflow: hidden; }
   #dt-canvas { background: var(--ground); }
+  h1 { position: absolute; left: 120px; top: 190px; margin: 0; padding: 24px 40px; border-radius: 18px;
+       background: var(--accent); color: #fff; font: 700 96px/1.1 var(--sans); }
 </style>
 </head>
 
@@ -259,14 +261,14 @@ request for `Media/Intro.mp4` is refused when the project declared `media/intro.
 platform alike. The recorder opens the page under the same rule, so a page that previews cleanly
 records cleanly.
 
-From the URL it prints:
+Open the page by its path under that origin, such as `http://127.0.0.1:56257/deck/mine.html`:
 
 - The page with no query lists every scene and every slide, and links a preview and a still of each.
-- `?scene=1` previews that scene. Once `decktalk cue` has run, the preview asks the origin for the
+- `deck/mine.html?scene=1` previews that scene. Once `decktalk cue` has run, the preview asks the origin for the
   cue times that run resolved and plays the film's own timing. With none to find, it fires each cue
   a second apart so a deck whose cues have never been resolved still shows its whole self.
-- `?scene=1&speed=4&hud=1` reviews a long scene quickly with the clock and the cue list on screen.
-- `?freeze=1.1` freezes one slide with its cues fired.
+- `deck/mine.html?scene=1&speed=4&hud=1` reviews a long scene quickly with the clock and the cue list on screen.
+- `deck/mine.html?freeze=1.1` freezes one slide with its cues fired.
 
 ## Put the page in the project
 

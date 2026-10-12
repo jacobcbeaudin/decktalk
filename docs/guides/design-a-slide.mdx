@@ -198,12 +198,12 @@ travel, no scale and no overshoot. The film keeps its length, its captions and i
 reduced build and the ordinary build are the same film with the motion taken out.
 
 ```console
-decktalk build --set motion.reduce=true
+decktalk build --no-spend --set motion.reduce=true
 ```
 
 There is no flag for it, because no flag duplicates a settings key. `motion.scale` is the companion
-setting, a multiplier from 0.25 to 4 on every declared span, and a scaled span is clamped at the
-measurable ceiling rather than obeyed, so slowing a deck down cannot delete its own checks.
+setting, a multiplier from 0.25 to 4 on every declared span. A scale that carries a span past half a
+second earns `PAGE_MOTION_OVERRUN`, so slowing a deck down is judged like any other overrun.
 
 The runtime can only reduce the motion it owns. A `data-class` hands the change to the page's own
 stylesheet, and that stylesheet owes the reduced form. The lesson example writes both halves.
@@ -235,7 +235,8 @@ decktalk storyboard --slide 1.2
 
 `decktalk check` judges the written files and the pages together, opens no recording, spends nothing
 and prices what a voiced build would cost. It freezes each slide either side of each cue and reports
-the changed share, and every finding on this page comes out of that one command. `--no-frames` keeps
+the changed share. Every finding on this page except `PAGE_APPEAR_TOO_LONG`, which needs the voice's
+clock and comes from `record`, comes out of that one command. `--no-frames` keeps
 the browser and drops the freeze comparison, and `--no-pages` judges the written files with no
 browser at all and then says which judgements it could not reach.
 

@@ -17,7 +17,7 @@ browser unless the machine sets `record.page_policy = "untrusted"`, and that a p
 names runs only when the machine sets `record.programs` to `ask` or `run`. Such a program runs with
 your user's rights and can read every file you can, `.env` included, and it reaches whatever your
 user can reach. The default is `refuse`, and `decktalk check` lists every program a project names, as
-[programs a project names](/requirements#programs-a-project-names) says.
+[programs a project names](/reference/trust#programs-a-project-names) says.
 
 ## Requests that carry your content
 
@@ -119,7 +119,7 @@ and none of them is a DeckTalk feature you have to wait for.
   for it.
 - **Refuse what a page reaches for.** Set `record.page_policy` to `untrusted` with
   `decktalk config set record.page_policy untrusted --scope machine` when the machine records pages
-  it should not trust with the network. [A page someone else wrote](/requirements#a-page-someone-else-wrote)
+  it should not trust with the network. [A page someone else wrote](/reference/trust#a-page-someone-else-wrote)
   says what that policy holds.
 
 [Requirements and costs](/requirements) has the full managed-machine section, with the package index

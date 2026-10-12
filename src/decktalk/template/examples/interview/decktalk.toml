@@ -32,7 +32,7 @@ tail_seconds = 1.3  # silence kept after the last word of a section, so a cut br
 voice = "narrator"  # the default voice, which reads every section no [voice NAME] line names
 
 # One [voices.NAME] table per voice, each with the provider's id of that voice. Both ids are empty
-# until you set them, so a build without spending plays a placeholder for every turn.
+# until you set them, so a run that does not spend plays a placeholder for every turn.
 [voices.narrator]
 provider = "elevenlabs"
 id = ""   # the narrator's voice id, a published name rather than a secret, so commit it

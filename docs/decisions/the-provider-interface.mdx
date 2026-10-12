@@ -98,7 +98,7 @@ no secret names.
 ### Take identity and money
 
 A take's digest is the sha256 of six fields joined by newlines: the adapter's name, the voice id,
-the model, the output format, the take identity as compact JSON with sorted keys, and the rendered
+the model, the output format, the take identity as JSON with sorted keys and Python's default separators, and the rendered
 text. Every field but the text refuses a newline, and the text is last, so no two sets of inputs
 share a payload and no existing digest moves.
 
