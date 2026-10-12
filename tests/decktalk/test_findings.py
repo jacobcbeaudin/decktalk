@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 import decktalk
+from decktalk.errors import ErrorCode
 from decktalk.findings import (
     DOCTOR,
+    REPORTED_WHEN,
     Applicability,
     Code,
     CommandFix,
@@ -23,6 +26,7 @@ from decktalk.findings import (
     judge,
 )
 from decktalk.pipeline import Stage
+from decktalk.settings import BY_ID
 
 # The list the design froze before the fork, so this file and contract.ts carry the same members.
 RUNTIME_CODES = (
@@ -305,3 +309,47 @@ def test_every_command_a_code_names_is_one_the_tree_has() -> None:
 
     commands = {str(row["command"]) for row in catalog.walk()}
     assert {command for code in Code for command in code.raised_in} <= commands
+
+
+def test_every_command_a_code_names_says_what_it_judges_the_code_from() -> None:
+    """A code's page names each command that reports it and when, so every such command has that clause."""
+    assert {command for code in Code for command in code.raised_in} <= set(REPORTED_WHEN)
+
+
+def test_cue_no_onset_names_both_conditions_that_raise_it() -> None:
+    """`cue` raises it for a phrase resolved to its section's start, and `verify` for a change no frame stepped."""
+    sentence = Code.CUE_NO_ONSET.sentence
+    assert "section's start" in sentence
+    assert "picture changed" in sentence
+
+
+DOTTED = re.compile(r"`([a-z_]+\.[a-z_]+)`")
+"""A key written in its dotted form in backticks, which is how a remedy names a setting."""
+
+FILE_NAMES = frozenset({"script.md", "cues.json", "decktalk.toml", "katex.min.css", "katex.min.js"})
+"""Backticked words with a dot that are file names and not keys."""
+
+
+@pytest.mark.parametrize("code", [*Code, *ErrorCode], ids=str)
+def test_every_key_a_remedy_names_in_dotted_form_is_a_setting(code: Code | ErrorCode) -> None:
+    """`--set` and `config set` take a dotted key, so a key written that way must be one they accept.
+
+    A `[mix]` level of decktalk.toml is not a setting, and a remedy that wrote it dotted sent the reader
+    to a `--set` the loader refuses.
+    """
+    named = {key for key in DOTTED.findall(code.remedy) if key not in FILE_NAMES}
+    assert named <= set(BY_ID), sorted(named - set(BY_ID))
+
+
+def test_a_remedy_that_allows_programs_for_a_build_says_it_spends_nothing() -> None:
+    """A build with no terminal and no spend flag is refused on its price, so the line has to say --no-spend."""
+    for code in Code:
+        for line in re.findall(r"`decktalk build [^`]*`", code.remedy):
+            assert "--no-spend" in line or "--spend" in line, (code.name, line)
+
+
+def test_the_approval_remedy_says_spend_approves_and_max_cost_only_caps() -> None:
+    """`--max-cost` alone is refused on a terminal-less run, so it is never the flag that approves."""
+    remedy = ErrorCode.APPROVAL.remedy
+    assert "Pass `--spend` to approve a spend" in remedy, remedy
+    assert "`--max-cost N` for a ceiling, to approve" not in remedy

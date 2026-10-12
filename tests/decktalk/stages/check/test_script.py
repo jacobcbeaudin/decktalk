@@ -75,6 +75,13 @@ def test_a_digit_is_a_warning_against_its_section() -> None:
     assert "41" in found.message
 
 
+def test_a_spoken_symbol_is_named_without_the_punctuation_after_it() -> None:
+    """The comma after "R&D" is how the sentence reads, not part of the word the voice may misread."""
+    (section,) = parse_script("## 3. Three\n\nOur R&D, at 41.\n")
+    (found,) = symbol_findings([section], script=WHERE)
+    assert "speaks 2 words holding a digit or a symbol, which are 41, R&D." in found.message
+
+
 def test_a_section_written_out_in_words_is_left_alone() -> None:
     (section,) = parse_script("## 3. Three\n\nAbout forty one percent of them.\n")
     assert symbol_findings([section], script=WHERE) == []

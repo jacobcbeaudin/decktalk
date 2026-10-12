@@ -12,8 +12,8 @@ a voice's name, and `VOICE_UNUSED` is a warning and names a voice the project de
 is read by.
 
 Three codes cover the rest. `SCRIPT_UNFINISHED` is an error and names everything a voiced run would read out
-or silently swallow: what `narrate` refuses, and unfinished text such as `[NUMBER]`, which `narrate`
-sends as it stands. `SCRIPT_SPOKEN_SYMBOL` is a
+or silently swallow: what `narrate` refuses, headings that do not ascend among them, and unfinished text
+such as `[NUMBER]`, which `narrate` sends as it stands. `SCRIPT_SPOKEN_SYMBOL` is a
 warning and names a word holding a digit or a symbol, because "41" may be exactly what the author
 wants the voice to try. `SCRIPT_PAUSE_DROPPED` is an error and names a section whose timed pause the
 voice's model does not render, which `narrate` refuses to build the voice for.
@@ -27,6 +27,7 @@ from pathlib import Path
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.script import ScriptSection, parse_script
 from decktalk.locate import locate
+from decktalk.results import counted
 from decktalk.settings import PROJECT_FILE
 from decktalk.stages.narrate.plan import DROPPED_PAUSE_HINT, Dropped
 from decktalk.stages.narrate.script_rules import (
@@ -34,6 +35,8 @@ from decktalk.stages.narrate.script_rules import (
     PLACEHOLDER_RE,
     Misread,
     VoiceLine,
+    ascending,
+    heading_line,
     script_refusals,
     shown,
     spoken_lines,
@@ -81,6 +84,26 @@ def placeholder_findings(markdown: str, *, script: Path) -> list[Finding]:
     ]
 
 
+def order_findings(markdown: str, sections: Sequence[ScriptSection], *, script: Path) -> list[Finding]:
+    """One error when the headings do not ascend, which `narrate` refuses with the same sentence.
+
+    The order is judged over every section of the script, whatever a run selects, because `narrate`
+    refuses the whole script for it.
+    """
+    out_of_order = ascending(sections)
+    if out_of_order is None:
+        return []
+    where = script.as_posix()
+    line = heading_line(markdown, out_of_order.second)
+    return [
+        judge(
+            Code.SCRIPT_UNFINISHED,
+            f"{out_of_order.what}. {out_of_order.hint}",
+            Location(where=where, file=script, line=line, section=out_of_order.second.number),
+        )
+    ]
+
+
 def symbol_findings(sections: Iterable[ScriptSection], *, script: Path) -> list[Finding]:
     """One warning per section whose spoken words hold a digit or a symbol.
 
@@ -96,8 +119,8 @@ def symbol_findings(sections: Iterable[ScriptSection], *, script: Path) -> list[
         found.append(
             judge(
                 Code.SCRIPT_SPOKEN_SYMBOL,
-                f"section {section.number} speaks {len(tokens)} word(s) holding a digit or a symbol, which are "
-                f"{shown(tokens)}. Write them the way the voice should say them.",
+                f"section {section.number} speaks {counted(len(tokens), 'word')} holding a digit or a symbol, which "
+                f"are {shown(tokens)}. Write them the way the voice should say them.",
                 Location(where=where, file=script, section=section.number),
             )
         )
@@ -195,6 +218,7 @@ def script_findings(markdown: str, sections: Sequence[ScriptSection], *, script:
 
 
 __all__ = [
+    "order_findings",
     "pause_findings",
     "placeholder_findings",
     "placeholder_rows",

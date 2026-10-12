@@ -58,7 +58,7 @@ def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_p
     with pytest.raises(InputError) as info:
         load_markers(path, tmp_path)
     # A machine-readable payload carries no path from outside the project, so the line goes in its own slot.
-    assert str(info.value).startswith("markers.json is not valid JSON:")
+    assert str(info.value).startswith("markers.json is not valid JSON on line 1:")
     assert info.value.location is not None
     assert info.value.location.file == Path(path.name) and info.value.location.line == 1
 

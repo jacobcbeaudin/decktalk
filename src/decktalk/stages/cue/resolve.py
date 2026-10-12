@@ -75,8 +75,11 @@ def resolve_cue(cue: Cue, spoken: Spoken, found: Sequence[int]) -> float | None:
     return max(SECTION_START_SECONDS, round(anchor + cue.offset_seconds, SECOND_DIGITS))
 
 
-def ambiguity(cue: Cue, spoken: Spoken, found: Sequence[int]) -> str | None:
+def ambiguity(cue: Cue, spoken: Spoken, found: Sequence[int], *, section: int) -> str | None:
     """The sentence for a phrase that occurs more than once on a cue that names no occurrence, or None.
+
+    `section` is the number of the section the phrase is spoken in, which a cue id does not carry: it
+    begins with the id of its slide.
 
     It is a sentence and not a judgement because the cue does resolve: it takes the first occurrence,
     which is what the author most often meant, and the frozen code list holds no code for a choice
@@ -86,8 +89,8 @@ def ambiguity(cue: Cue, spoken: Spoken, found: Sequence[int]) -> str | None:
         return None
     times = ", ".join(f"{spoken.words[start].start:.2f}s" for start in found)
     return (
-        f"{cue.phrase!r} occurs {len(found)} times in section {cue.id.split(':', 1)[0]}, at {times}, and the cue "
-        'takes the first. Set "occurrence" on the cue to choose another.'
+        f"{cue.phrase!r} occurs {len(found)} times in section {section}, at {times}, and cue {cue.id} takes the "
+        'first. Set "occurrence" on the cue to choose another.'
     )
 
 
@@ -193,7 +196,7 @@ def resolve_sections(
             matched = [] if spoken is None else occurrences(cue, spoken)
             seconds = None if spoken is None else resolve_cue(cue, spoken, matched)
             rows.append(CueTime(id=cue.id, phrase=cue.phrase, seconds=seconds, nudge_seconds=cue.offset_seconds))
-            said = None if spoken is None else ambiguity(cue, spoken, matched)
+            said = None if spoken is None else ambiguity(cue, spoken, matched, section=block.number)
             if said is not None:
                 notes.setdefault(block.number, []).append(said)
             if seconds is None:

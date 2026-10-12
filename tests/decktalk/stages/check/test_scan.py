@@ -146,7 +146,7 @@ def test_a_frozen_share_is_judged_against_the_frame_it_was_read_on(
     assert all(one.location.file is not None for one in found)
 
 
-def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: Path, drawn: Drawn) -> None:
+def test_a_cue_only_a_handler_serves_is_passed_over_rather_than_judged(tmp_path: Path, drawn: Drawn) -> None:
     """A still fires cues and runs no handler, so a `data-owns` cue draws nothing however well it plays."""
     inputs = a_project(tmp_path)
     drawn.share = 0.0
@@ -155,7 +155,38 @@ def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: P
     section = inputs.document.page_sections[0]
     found = landing_findings(a_sheet(inputs, run), section, entry_of({"1.1": ["1.1:a"]}), SLIDES, TIMES, skipped=set())
     assert [one.location.cue for one in found] == ["1.1:a"]
-    assert any("1.1:b" in line and "runs no handler" in line for line in said)
+    assert any("1.1:b" in line and "only a handler serves it" in line for line in said)
+
+
+def test_a_class_change_is_measured_because_a_still_applies_it(tmp_path: Path, drawn: Drawn) -> None:
+    """A still runs every class change up to its cue, so a `data-class` cue is a reveal a check can measure."""
+    inputs = a_project(tmp_path)
+    drawn.share = 0.0
+    run = a_run(tmp_path)
+    said = notes(run)
+    section = inputs.document.page_sections[0]
+    entry = entry_of({"1.1": ["1.1:a"]})
+    entry = entry.model_copy(update={"spans": {"1.1:a": 0.4, "1.1:b": 0.0}})
+    found = landing_findings(a_sheet(inputs, run), section, entry, SLIDES, TIMES, skipped=set())
+    assert [one.location.cue for one in found] == ["1.1:a", "1.1:b"]
+    assert not any("1.1:b" in line for line in said)
+
+
+def test_a_cue_only_a_motion_serves_is_passed_over_and_says_so(tmp_path: Path, drawn: Drawn) -> None:
+    """A motion is what serves its cue, so the line names the motion rather than claiming nothing declares it."""
+    inputs = a_project(tmp_path)
+    drawn.share = 0.0
+    run = a_run(tmp_path)
+    said = notes(run)
+    section = inputs.document.page_sections[0]
+    entry = entry_of({"1.1": ["1.1:a"]})
+    moving = {"1.1": [{"kind": "motion", "name": "glide", "from": "1.1:a", "to": "1.1:b", "ease": "firm"}]}
+    entry = MeasuredScene.model_validate({**entry.model_dump(by_alias=True), "motions": moving})
+    landing_findings(a_sheet(inputs, run), section, entry, SLIDES, TIMES, skipped=set())
+    line = next(line for line in said if "1.1:b" in line)
+    assert "motion" in line
+    assert "no_slide" not in line
+    assert "no element declares" not in line
 
 
 def test_a_cue_the_cue_file_opts_out_of_is_never_measured(tmp_path: Path, drawn: Drawn) -> None:

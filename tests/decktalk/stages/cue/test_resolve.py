@@ -122,12 +122,22 @@ def test_a_finding_carries_the_cue_file_it_is_about_when_the_caller_names_one() 
     assert found[0].location.file == Path("cues.json")
 
 
+def test_a_repeated_phrase_names_the_section_and_the_cue_rather_than_the_slide() -> None:
+    """A cue id begins with its slide, such as 1.2, which is not the section the phrase is spoken in."""
+    said = ambiguity(*heard(Cue(id="1.2:a", phrase="one"), SPOKEN), section=1)
+    assert said is not None
+    assert "in section 1," in said and "section 1.2" not in said
+    assert "cue 1.2:a takes the first" in said
+
+
 def test_a_repeated_phrase_is_ambiguous_only_when_the_cue_names_no_occurrence() -> None:
-    said = ambiguity(*heard(Cue(id="1.1:a", phrase="one"), SPOKEN))
+    said = ambiguity(*heard(Cue(id="1.1:a", phrase="one"), SPOKEN), section=1)
     assert said is not None and "occurs 2 times" in said and "1.00s, 2.10s" in said
-    assert ambiguity(*heard(Cue(id="1.1:a", phrase="one", occurrence=1, occurrence_set=True), SPOKEN)) is None
-    assert ambiguity(*heard(Cue(id="1.1:a", phrase="ten"), SPOKEN)) is None
-    assert ambiguity(*heard(Cue(id="1.1:a", phrase="$start"), SPOKEN)) is None
+    assert (
+        ambiguity(*heard(Cue(id="1.1:a", phrase="one", occurrence=1, occurrence_set=True), SPOKEN), section=1) is None
+    )
+    assert ambiguity(*heard(Cue(id="1.1:a", phrase="ten"), SPOKEN), section=1) is None
+    assert ambiguity(*heard(Cue(id="1.1:a", phrase="$start"), SPOKEN), section=1) is None
 
 
 def test_resolving_a_section_says_which_occurrence_a_cue_took_and_matches_each_cue_once(monkeypatch) -> None:

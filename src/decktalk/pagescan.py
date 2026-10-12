@@ -54,6 +54,21 @@ def measured_rows(entry: MeasuredScene) -> list[ElementRow]:
     return [row for slide in entry.elements.values() for row in slide]
 
 
+def revealing_cues(entry: MeasuredScene) -> set[str]:
+    """Every cue of one scene the page reveals something at, which is a moment or a class change.
+
+    The catalog's spans name exactly those cues, because every moment and every class change declares
+    the length it plays, and a still runs both up to the cue it is frozen at. A cue that only a motion
+    or a handler serves reveals nothing a frame difference can read.
+    """
+    return set(entry.spans) | {cue for row in measured_rows(entry) for cue in row.moments.values() if cue}
+
+
+def motion_cues(entry: MeasuredScene) -> set[str]:
+    """Every cue a motion of one scene departs or arrives on."""
+    return {cue for rows in entry.motions.values() for row in rows for cue in (row.departs, row.arrives) if cue}
+
+
 def slide_cues(entry: MeasuredScene | None) -> Slides | None:
     """Each slide of one scene with the cues it declares, or None when the page published no such scene.
 
@@ -258,9 +273,11 @@ __all__ = [
     "description_findings",
     "ease_findings",
     "measured_rows",
+    "motion_cues",
     "motion_findings",
     "overlap_findings",
     "page_findings",
+    "revealing_cues",
     "scene_cues",
     "scene_entry",
     "slide_cues",

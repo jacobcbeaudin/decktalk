@@ -186,7 +186,7 @@ def test_the_slate_still_key_keeps_its_bytes(monkeypatch: pytest.MonkeyPatch, tm
         "Café",
         "Your clip goes here",
         "section 3: slate",
-        "drop it at media/clip.mp4 and run `decktalk assemble`",
+        "drop it at media/clip.mp4 and run decktalk assemble",
         video.width,
         video.height,
         video.slate_color,

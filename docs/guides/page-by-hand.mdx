@@ -233,7 +233,8 @@ plays one against the section clock, or it freezes one slide.
 `after` and `before` are answered by the probe that `decktalk check` and `decktalk storyboard` inject
 into the page. A page you open yourself with `?freeze=1.1` freezes that slide with every one of its
 cues fired, and a cue those two keys name that the slide does not declare is
-[`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN).
+[`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) on the page's own console.
+No command reports it, because `storyboard` draws a panel only for a cue the slide declares.
 
 ## Open the page yourself
 

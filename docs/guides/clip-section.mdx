@@ -174,6 +174,9 @@ first word is part of the span like anything else.
     | `--gain-db DB` | `0` | Lifts or cuts the clip's audio, so a clip can match the film it is played beside. |
     | `--hold-seconds SECONDS` | `0` | Holds the last frame this long, in silence, after the span, rounded to whole frames. |
 
+    A `clip` without `--end` is refused as a [`USAGE`](/reference/errors/USAGE) error, which exits 2,
+    before anything is read.
+
     The span is rounded outward to whole frames, because a clip that began part way through a frame
     would play its first frame twice. At the default twenty-five frames a second, that is a fortieth
     of a second either way.

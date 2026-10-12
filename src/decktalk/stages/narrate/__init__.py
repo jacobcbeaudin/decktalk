@@ -368,13 +368,7 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[ScriptSection]:
     sections = inputs.script()
     out_of_order = ascending(sections)
     if out_of_order is not None:
-        first, second = out_of_order
-        raise InputError(
-            f"the script heading for section {second.number} comes after section {first.number}, "
-            "so the sections do not ascend and the narration would be joined in an order nothing else agrees with.",
-            hint=f"Move '## {second.number}. {second.title}' after '## {first.number}. {first.title}'.",
-            location=at(inputs.script_path, inputs.root),
-        )
+        raise InputError(f"{out_of_order.what}.", hint=out_of_order.hint, location=at(inputs.script_path, inputs.root))
     where = inputs.relative(inputs.script_path).as_posix()
     check_script(where, inputs.script_path.read_text(encoding="utf-8"), tuple(inputs.voices))
     wanted = selects(only)

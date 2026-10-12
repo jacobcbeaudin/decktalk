@@ -24,6 +24,7 @@ from decktalk.media import audio, ffmpeg
 from decktalk.media.audio import FULL_SCALE, gain
 from decktalk.media.frames import Decoded, Mask, Size, Wanted
 from decktalk.pagescan import measured_rows, scene_entry
+from decktalk.pagescan import revealing_cues as entry_reveals
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, MotionCheck, SkipReason, section_key
 from decktalk.settings import CLICK_LEVEL_DBFS
@@ -352,10 +353,9 @@ def section_lanes(inputs: Inputs, section: int, sec_start: float) -> list[motion
 def revealing_cues(inputs: Inputs, section: int) -> set[str]:
     """Every cue of a section the page reveals something at, which is a moment or a class change.
 
-    The catalog's spans name exactly those cues, because every moment and every class change declares
-    the length it plays. A cue that is only a motion's departure or arrival, or one only a handler
-    serves, reveals nothing a frame difference can read, so a landing among them is measured on its
-    own lane rather than as a step in the frame.
+    A cue that is only a motion's departure or arrival, or one only a handler serves, reveals nothing
+    a frame difference can read, so a landing among them is measured on its own lane rather than as a
+    step in the frame.
     """
     found = inputs.document.section(section)
     log = inputs.recording_log(section_key(section))
@@ -363,9 +363,7 @@ def revealing_cues(inputs: Inputs, section: int) -> set[str]:
     if log is None or scene is None:
         return set()
     entry = scene_entry(log.recording.report.catalog, scene)
-    if entry is None:
-        return set()
-    return set(entry.spans) | {cue for row in measured_rows(entry) for cue in row.moments.values() if cue}
+    return set() if entry is None else entry_reveals(entry)
 
 
 def _measured(inputs: Inputs, run: Run, film: Path, decoded: Decoded, cue: Probed, *, clicks: bool) -> CueCheck:
@@ -430,8 +428,8 @@ def _judge(
             judge(
                 Code.CUE_NO_ONSET,
                 f"{changed:.2f} percent of the picture changed at {cue} and no frame rose by the "
-                f"{verify.onset_rise_points:.3f} percentage points an onset must, so its second is the "
-                "section's start rather than its word's.",
+                f"{verify.onset_rise_points:.3f} percentage points an onset must, so the reveal has no second "
+                "to compare with the word.",
                 where,
                 stage=Stage.VERIFY,
             )

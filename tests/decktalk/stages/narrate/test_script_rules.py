@@ -94,8 +94,8 @@ def test_headings_that_ascend_are_in_the_one_order_the_index_holds() -> None:
 def test_headings_that_count_backwards_name_the_pair_that_does_not_ascend() -> None:
     out_of_order = ascending(parse_script("## 2. Two\n\nx\n\n## 1. One\n\ny\n"))
     assert out_of_order is not None
-    first, second = out_of_order
-    assert (first.number, second.number) == (2, 1)
+    assert (out_of_order.first.number, out_of_order.second.number) == (2, 1)
+    assert out_of_order.hint == "Move '## 1. One' after '## 2. Two'."
 
 
 # ---- voice directions ---------------------------------------------------------------------------

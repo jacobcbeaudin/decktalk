@@ -29,8 +29,8 @@ there and fetches nothing, so it is safe to leave in a job forever.
   under `--json` or `--no-input`, it fetches nothing unless `--fix` is passed, and on a terminal
   otherwise it offers once to fetch what is missing. Its `cache` field is the directory to cache, read
   from the machine rather than guessed.
-- Each download prints a line as it starts, with its size when the host states it, progress lines as
-  it arrives, and a `Fetched` line with what arrived, so a job log shows a fetch is still moving.
+- Each download prints a line as it starts, progress lines as it arrives, with its size once the
+  host states it, and a `Fetched` line with what arrived, so a job log shows a fetch is still moving.
   [Roughly how large](/requirements#roughly-how-large) has the sizes.
 
 After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
@@ -85,8 +85,8 @@ stderr with neither in the other's way.
 
 {/* sample: status-events, decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson */}
 ```jsonl
-{"event":"run.start","time":"2026-10-07T17:45:08.206670Z","seq":0,"run":"8949fdfca49b","events_file":"build/events/8949fdfca49b.jsonl"}
-{"event":"run.done","time":"2026-10-07T17:45:08.209288Z","seq":1,"run":"8949fdfca49b","outcome":"ran","elapsed_seconds":0.003,"error":null,"dropped":0}
+{"event":"run.start","time":"2026-10-12T17:22:59.257818Z","seq":0,"run":"8af0714d363d","events_file":"build/events/8af0714d363d.jsonl"}
+{"event":"run.done","time":"2026-10-12T17:22:59.264693Z","seq":1,"run":"8af0714d363d","outcome":"ran","elapsed_seconds":0.007,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. A `stage.done` and a `section.done` each carry an `outcome` of `ran`,
@@ -144,7 +144,7 @@ reach, so a docs-only job, a pre-commit hook and a container with no Chromium ca
 The voice narrator reads 3 turns of 476 characters on elevenlabs, at $0.30 per 1,000 characters.
 The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 no page was opened, so these judgements were not reached: CUE_UNLISTED, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
-frames were asked for and no page was opened, so no frame was frozen either.
+No frame was frozen, because no page was opened.
 Checking script.md, cues.json.
 This run costs $0.15 for 476 characters at $0.30 per 1,000 characters.
 ```

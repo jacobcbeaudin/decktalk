@@ -23,7 +23,7 @@ from decktalk.machine.run import Run
 from decktalk.media import frames
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
-from decktalk.pagescan import Slides, ease_findings, measured_rows, slide_findings
+from decktalk.pagescan import Slides, ease_findings, measured_rows, motion_cues, revealing_cues, slide_findings
 from decktalk.pictures.address import Freeze
 from decktalk.pictures.sheet import Sheet
 from decktalk.results import SkipReason
@@ -103,17 +103,6 @@ def drawn_cues(entry: MeasuredScene) -> set[str]:
     }
 
 
-def element_cues(entry: MeasuredScene) -> set[str]:
-    """Every cue an element of this scene declares, which is every cue a frozen frame can show.
-
-    A still fires the cues up to the one it is frozen at and runs no handler, so a cue that only a
-    handler serves, which is what `data-owns` declares, draws nothing in a frozen frame however well
-    it plays in the film. Such a cue is unmeasurable from a still rather than a reveal that failed,
-    and `verify` measures it on the finished film where the handler does run.
-    """
-    return {cue_id for row in measured_rows(entry) for cue_id in row.moments.values() if cue_id}
-
-
 def landing_findings(
     sheet: Sheet,
     section: PageSection,
@@ -127,13 +116,13 @@ def landing_findings(
     settings = sheet.inputs.settings
     size = {"level": settings.verify.probe_diff_luma, **asdict(frame_size(settings))}
     strokes = drawn_cues(entry)
-    declared = element_cues(entry)
+    revealing, moving = revealing_cues(entry), motion_cues(entry)
     found: list[Finding] = []
     for pair in plan_frames(slides, times, settings.video.fps):
         if (section.number, pair.cue) in skipped:
             continue
-        if pair.cue not in declared:
-            _say_handler_only(sheet.run, section, pair)
+        if pair.slide is not None and pair.cue not in revealing:
+            _say_unrevealed(sheet.run, section, pair, moved=pair.cue in moving)
             continue
         if not pair.measured:
             _say_why(sheet.run, section, pair)
@@ -161,11 +150,20 @@ def _judged(
     return [judge(code, share_message(code, pair.cue, share, sheet.inputs.settings), place)]
 
 
-def _say_handler_only(run: Run, section: PageSection, pair: FramePair) -> None:
-    """Why a cue no element declares is passed over, which is that a still runs no handler."""
+def _say_unrevealed(run: Run, section: PageSection, pair: FramePair, *, moved: bool) -> None:
+    """Why a cue no moment or class change names is passed over, which is that a still cannot show what serves it.
+
+    A still fires every moment and class change up to the cue it is frozen at, shows a motion only
+    where it ends, and runs no handler, so the cue is measured on the film where it plays.
+    """
+    serves = (
+        "only a motion serves it, which a frozen frame shows at rest rather than moving"
+        if moved
+        else "only a handler serves it, which a frozen frame does not run"
+    )
     run.note(
-        f"section {section.number}, cue {pair.cue}: not measured ({SkipReason.NO_SLIDE.value}), because no element "
-        "declares it and a frozen frame runs no handler, so `decktalk verify` measures it on the film instead."
+        f"section {section.number}, cue {pair.cue}: not measured, because no moment or class change names it and "
+        f"{serves}, so `decktalk verify` measures it on the film instead."
     )
 
 

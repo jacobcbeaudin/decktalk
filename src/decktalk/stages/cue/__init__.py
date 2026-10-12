@@ -144,8 +144,16 @@ def _catalogs(inputs: Inputs, run: Run) -> dict[int, tuple[MeasuredScene, ...]]:
             changed.append(section)
     if not changed:
         return out
+    # The page may be just as it was, because an edited turn makes a recording stale too, so the line
+    # names the recordings that no longer stand and leaves what moved to `record`, which says it.
     pages = list(dict.fromkeys(section.page for section in changed))
-    run.note(f"Read {', '.join(pages)} as it is now, because it changed since it was recorded.")
+    numbers = ", ".join(str(section.number) for section in changed)
+    which = (
+        f"the recording of section {numbers} no longer stands"
+        if len(changed) == 1
+        else f"the recordings of sections {numbers} no longer stand"
+    )
+    run.note(f"Read {', '.join(pages)} as it is now, because {which}.")
     with pictures(inputs, run) as made:
         reports = made.page().reports(pages)
     for section in changed:

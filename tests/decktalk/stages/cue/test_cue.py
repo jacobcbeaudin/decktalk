@@ -236,6 +236,23 @@ def test_a_page_changed_since_its_recording_is_judged_as_it_is_now(tmp_path: Pat
     assert "1.1:c" in found[Code.CUE_UNLISTED].message
 
 
+def test_reading_a_page_again_says_which_recording_no_longer_stands(
+    tmp_path: Path, live: Live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An edit to the script alone makes a recording stale without touching the page, so the line names
+    the recording that no longer stands rather than saying the page changed."""
+    inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "there"}]}})
+    a_recording(inputs, 1, "1", {"1.1": ["1.1:a"]})
+    live.publishes("1", {"1.1": ["1.1:a"]})
+    why = "Section 1: the words of turn 1.1 changed since it was recorded"
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: why)
+    run = a_run(tmp_path)
+    said = notes(run)
+    cue(inputs, run)
+    assert "Read deck/index.html as it is now, because the recording of section 1 no longer stands." in said, said
+    assert not any("because it changed" in line for line in said), said
+
+
 def test_a_page_nothing_has_recorded_is_left_unjudged(tmp_path: Path, live: Live) -> None:
     """A catalog nobody published cannot say a row is unknown, so nothing is guessed about it."""
     inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "9.9:x", "phrase": "there"}]}})

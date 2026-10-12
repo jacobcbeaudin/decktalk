@@ -5,10 +5,10 @@ because an error means DeckTalk could not run at all. Every judgement in the pro
 these, so a reader dispatches on a code and never on the absence of one.
 
 `Code` is the closed list of every judgement DeckTalk can make. A member carries its own sentence,
-its severity, the side that raises it and the commands that report it, so those facts live once and the docs page,
-the JSON Schema and the printed line are three renderings of one row. A code never spells its own
-severity, because an agent dispatching on a code would then meet two codes for one condition and
-have to know that one is the other's hedge.
+its remedy, its severity, the side that raises it and the commands that report it, so those facts
+live once and the docs page, the JSON Schema and the printed line are three renderings of one row.
+A code never spells its own severity, because an agent dispatching on a code would then meet two
+codes for one condition and have to know that one is the other's hedge.
 
 `MODEL` is the configuration every frozen model in the package shares, and `ProjectPath` is how
 every path is serialised. Both are declared here because the finding is the lowest model in the
@@ -62,8 +62,9 @@ CONTRACT_SUBJECTS = frozenset({"PAGE", "RECORD"})
 class RaisedBy(Enum):
     """Which side of the product reports a condition, which decides who owns its test.
 
-    A runtime code is reported by the page itself and owes a browser test. A python code is measured
-    by a stage from a file, a frame or the catalog the page published.
+    A runtime code is reported by the page itself and owes a browser test. A python code is judged
+    by a command from the project's files, a frame or the catalog the page published. Which commands
+    report a code, and when, is the code's own `raised_in`.
     """
 
     sentence: str
@@ -75,7 +76,7 @@ class RaisedBy(Enum):
         return member
 
     RUNTIME = "runtime", "the page reports it from the browser"
-    PYTHON = "python", "DeckTalk measures it from what the run produced"
+    PYTHON = "python", "DeckTalk judges it itself"
 
 
 CHECK = "check"
@@ -87,11 +88,36 @@ STATUS = "status"
 DOCTOR = "doctor"
 """The command that reports the machine, which names a tool file the machine lists and the disk lacks."""
 
-PAGE_REPORTERS = (CHECK, Stage.RECORD.value, Stage.VERIFY.value)
-"""The commands that report every code the page raises itself.
+SERVE = "serve"
+"""The command that serves the pages to a browser, whose console says what a preview could not play."""
 
-`check` and `record` open the page, and `verify` reports again what each recording log carries.
+PAGE_REPORTERS = (CHECK, Stage.RECORD.value, Stage.VERIFY.value)
+"""The commands that report a code the page raises from its markup alone.
+
+`check` reads the index page, which reads every slide's markup and lays each slide out once, `record`
+reads the scene it played, and `verify` reports again what each recording log carries.
 """
+
+PLAYED = (Stage.RECORD.value, Stage.VERIFY.value)
+"""The commands that report a code only a played scene can raise: `record`, and `verify`, which repeats its log.
+
+A cue firing, a word timed, a slide mounted, a handler or a frame hook run and every frame a recording
+draws: none of these happens on the index page `check` reads.
+"""
+
+REPORTED_WHEN: dict[str, str] = {
+    CHECK: "when it judges the project's files before a build",
+    STATUS: "when it compares the files the project lists with the disk",
+    DOCTOR: "when it looks over the tools this machine has",
+    Stage.NARRATE.value: "when it makes or keeps the narration takes",
+    Stage.CUE.value: "when it resolves each cue phrase against the takes",
+    Stage.RECORD.value: "when it records the pages",
+    Stage.SCORE.value: "when it buys or keeps the score's sounds",
+    Stage.ASSEMBLE.value: "when it cuts and mixes the film",
+    Stage.VERIFY.value: "when it measures the finished film and reads back each recording log",
+    SERVE: "when a scene's preview plays in your browser, which says it in the page's console",
+}
+"""Each command that reports a finding, with when in its run it does, which a code's page says beside its name."""
 
 
 class Code(Enum):
@@ -107,6 +133,8 @@ class Code(Enum):
     """
 
     sentence: str
+    remedy: str
+    """What to change so the code clears, which its docs page says under What to do."""
     severity: Severity
     raised_by: RaisedBy
     raised_in: tuple[str, ...]
@@ -116,16 +144,19 @@ class Code(Enum):
         cls,
         code: str,
         sentence: str,
+        remedy: str,
         raised_by: RaisedBy = RaisedBy.RUNTIME,
         raised_in: tuple[str, ...] = PAGE_REPORTERS,
         severity: Severity = Severity.ERROR,
     ) -> Code:
-        # A row that names no severity is an error and one that names no side is the page's, which
-        # `check` and `record` report when they open it and `verify` repeats from the recording log,
-        # because most rows are reported by all three, and a row that differs says so where it is written.
+        # A row that names no severity is an error and one that names no side is the page's, raised
+        # from its markup, which `check` and `record` report when they open it and `verify` repeats
+        # from the recording log. A row that differs says so where it is written, and
+        # tests/contract/test_reporters.py opens a page carrying each runtime code to hold every row to it.
         member = object.__new__(cls)
         member._value_ = code
         member.sentence = sentence
+        member.remedy = remedy
         member.severity = severity
         member.raised_by = raised_by
         member.raised_in = raised_in
@@ -148,155 +179,233 @@ class Code(Enum):
     PAGE_ATTR_UNKNOWN = (
         "PAGE_ATTR_UNKNOWN",
         "An element carries a data attribute the contract does not declare, so nothing reads it.",
+        "Spell the attribute the way `decktalk schema page` spells it, or take it off the element.",
     )
     PAGE_BAD_VALUE = (
         "PAGE_BAD_VALUE",
         "An attribute's value is outside the range the contract publishes for it.",
+        "Put the value back inside the range the message quotes, which `decktalk schema page` publishes for every "
+        "attribute.",
     )
     PAGE_MOMENT_UNKNOWN = (
         "PAGE_MOMENT_UNKNOWN",
         "An element outside every slide template names a moment, so no slide owns its cue and it never plays.",
+        "Move the element into the slide template whose cue it names, or take the moment attribute off it.",
     )
     PAGE_MOMENT_ORDER = (
         "PAGE_MOMENT_ORDER",
         "An element's exit is declared at or before its own entrance, so the exit never plays.",
+        "Give the exit a cue that fires later than the entrance on the same element.",
     )
     PAGE_CUE_UNKNOWN = (
         "PAGE_CUE_UNKNOWN",
         "A cue fired that no reveal, no handler and no slide in the deck declares, so nothing answered it.",
+        "Name the cue in a moment attribute on the slide that plays it, or take its row out of `cues.json`.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_NO_OWNER = (
         "PAGE_NO_OWNER",
         "A cue the scene plays is owned by none of its slides, so nothing is mounted for it.",
+        "Name the cue in a moment attribute on one of the scene's slides, or list it in that slide's `data-owns`.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_SCENE_EMPTY = (
         "PAGE_SCENE_EMPTY",
         "A scene holds no slide template, so its section has no slide to show.",
+        "Add a `<template data-slide>` to the scene, or remove the scene.",
     )
     PAGE_SLIDE_NO_ID = (
         "PAGE_SLIDE_NO_ID",
         "A slide template carries no id, so no cue and no section can name it.",
+        "Give the template a `data-slide` value.",
     )
     PAGE_SLIDE_DOUBLED = (
         "PAGE_SLIDE_DOUBLED",
         "Two slide templates carry the same id, so a cue that names it is ambiguous.",
+        "Rename one of the two slides, and rename its cues in `cues.json` with it.",
     )
     PAGE_SLIDE_UNUSED = (
         "PAGE_SLIDE_UNUSED",
         "No section plays this slide, so nothing on it reaches the film.",
+        "Have a section play the slide's scene, or delete the slide. `--allow PAGE_SLIDE_UNUSED` carries a run past "
+        "it while the slide is still being wired up.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_TEMPLATE_IGNORED = (
         "PAGE_TEMPLATE_IGNORED",
         "A template nested inside a slide declares no slide of its own, so nothing ever mounts it.",
+        "Give the nested template its own `data-slide`, or take it out of the slide.",
     )
     PAGE_WORDS_NOT_FOUND = (
         "PAGE_WORDS_NOT_FOUND",
         "An element syncs to words the transcript does not hold, so word timing cannot start.",
+        "Make the element's text words the script really speaks in that section, which `decktalk words --section N` "
+        "lists.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_KATEX_MISSING = (
         "PAGE_KATEX_MISSING",
         "The page asks for KaTeX and the library is not loaded, so every formula shows its source.",
+        "Link `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js`, which DeckTalk serves on the "
+        "page's own origin.",
     )
     PAGE_KATEX_ERROR = (
         "PAGE_KATEX_ERROR",
         "KaTeX refused a formula, so the element shows the readable text the author wrote in its place.",
+        "Correct the TeX the message quotes. The element's own text is what a viewer sees until then.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_FREEZE_CUE_UNKNOWN = (
         "PAGE_FREEZE_CUE_UNKNOWN",
         "A freeze was asked for a cue the slide does not declare, so no frame could be made.",
+        "Name a cue the slide declares. `decktalk storyboard --after` and `--before` draw a panel only for a cue a "
+        "chosen slide declares.",
+        RaisedBy.RUNTIME,
+        (),
     )
     PAGE_RENDER_THREW = (
         "PAGE_RENDER_THREW",
         "A slide's render threw, so the slide is drawn without what the render would have written.",
+        "Fix the slide's render. Open the page with `decktalk serve`, and the browser console shows what it threw.",
     )
     PAGE_ENTER_THREW = (
         "PAGE_ENTER_THREW",
         "A slide's enter threw, so its opening moment never ran.",
+        "Fix the slide's enter. Open the page with `decktalk serve`, and the browser console shows what it threw.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_SLIDE_HANDLER_THREW = (
         "PAGE_SLIDE_HANDLER_THREW",
         "A slide's own moment handler threw, so that moment did not play.",
+        "Fix that slide's own handler for the cue the message names. Open the page with `decktalk serve`, and the "
+        "browser console shows what it threw.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_HANDLER_THREW = (
         "PAGE_HANDLER_THREW",
         "A moment handler threw, so the change it was to make never happened.",
+        "Fix the handler registered for the cue the message names. Open the page with `decktalk serve`, and the "
+        "browser console shows what it threw.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_MOTION_UNDECLARED = (
         "PAGE_MOTION_UNDECLARED",
         "Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it.",
+        "Declare it as a motion with `data-motion` or `DeckTalk.motion`, or as a loop with `data-loop`, or give its "
+        "frame hook the region it draws in.",
     )
     PAGE_MOTION_CUE_UNKNOWN = (
         "PAGE_MOTION_CUE_UNKNOWN",
         "A motion names a cue no slide declares, so it never starts or never lands.",
+        "Correct the cue name, add its row to `cues.json`, or list a script's cue in `data-owns`.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_REALTIME_MEDIA = (
         "PAGE_REALTIME_MEDIA",
         "A page holds a video or an audio element, which plays at its own rate and not on the stepped clock.",
+        "Play the footage as a clip section, or draw the picture in a render section.",
     )
     PAGE_FRAME_THREW = (
         "PAGE_FRAME_THREW",
         "A frame hook threw, so whatever it drew stopped moving from that frame on.",
+        "Fix the function handed to `DeckTalk.frame`. Open the page with `decktalk serve`, and the browser console "
+        "shows what it threw.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_WAIT_REJECTED = (
         "PAGE_WAIT_REJECTED",
         "A wait the page declared was rejected, so the runtime carried on without what it waited for.",
+        "Fix whatever the page asked the runtime to wait for. Open the page with `decktalk serve`, and the browser "
+        "console shows why it rejected.",
     )
     PAGE_WAIT_UNSETTLED = (
         "PAGE_WAIT_UNSETTLED",
         "A wait the page declared never settled inside its budget, so the runtime carried on without it.",
+        "Find the wait that never settles, such as a font or an image that never arrives, and make it settle or take "
+        "it out.",
     )
     PAGE_CLASS_UNDESCRIBED = (
         "PAGE_CLASS_UNDESCRIBED",
         "An element changes class with no description, so the transcript cannot say what changed.",
+        "Add a pair of the cue and what the class change shows to the element's `data-describe-class`.",
     )
     PAGE_CLASS_NOT_REDUCED = (
         "PAGE_CLASS_NOT_REDUCED",
         "A class change declares no reduced form, so a reduced render would animate anyway.",
+        "Make the page's stylesheet honour `prefers-reduced-motion` for that class, and look at it with `--set "
+        "motion.reduce=true`.",
+        RaisedBy.RUNTIME,
+        (CHECK,),
     )
     PAGE_SWAP_AMBIGUOUS = (
         "PAGE_SWAP_AMBIGUOUS",
         "A swap finds no element or several elements leaving at its cue, so it cannot tell which one it replaces.",
+        "Give the arriving element and the one it replaces a cue they share, with exactly one element leaving on it.",
     )
     PAGE_PREVIEW_AMBIGUOUS = (
         "PAGE_PREVIEW_AMBIGUOUS",
         "Two sections name one scene, so a preview cannot choose whose cue times to play.",
+        "Give the two sections different scenes.",
+        RaisedBy.RUNTIME,
+        (SERVE,),
     )
     PAGE_APPEAR_TOO_LONG = (
         "PAGE_APPEAR_TOO_LONG",
         "A line shown with data-words=appear holds more words than one cue can carry one at a time.",
+        "Shorten the line, or change its `data-words` from `appear` to `highlight`.",
+        RaisedBy.RUNTIME,
+        PLAYED,
     )
     PAGE_STAGGER_EMPTY = (
         "PAGE_STAGGER_EMPTY",
         "An element staggers its children and has none, so the stagger plays nothing.",
+        "Give the container children, or take `data-stagger` off it.",
     )
     PAGE_SPOTLIGHT_EMPTY = (
         "PAGE_SPOTLIGHT_EMPTY",
         "A spotlight container has no child with a cue, so nothing comes to the front.",
+        "Give a child of the container a cue, or take `data-spotlight` off it.",
     )
     PAGE_MOTION_UNFINISHED = (
         "PAGE_MOTION_UNFINISHED",
         "A script motion still changes its picture after it arrives, and nothing draws it past its arrival, "
         "so the picture stops where the arrival left it.",
+        "Move the arrival to a later cue, or end the change by the arrival.",
         RaisedBy.RUNTIME,
-        (Stage.RECORD.value, Stage.VERIFY.value),
+        PLAYED,
     )
 
     # Measured in Python, about the page.
     PAGE_MOTION_OVERRUN = (
         "PAGE_MOTION_OVERRUN",
         "A motion span runs past the measurable ceiling, so the cue it carries cannot be verified.",
+        "Shorten `data-in-seconds` on the element, or lower `motion.scale`. Something meant to move for longer than "
+        "half a second is declared as a motion or a loop.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
     PAGE_STAGGER_OVERRUN = (
         "PAGE_STAGGER_OVERRUN",
         "A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact.",
+        "Shorten `data-stagger`, or stagger fewer children.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
     PAGE_THIN_DRAW = (
         "PAGE_THIN_DRAW",
         "A frozen slide draws less of the picture than a change must cross to be seen.",
+        "Make what the slide draws on its cue larger, such as a longer or thicker stroke, so the change crosses the "
+        "floor `verify.changed_share_min_percent` sets.",
         RaisedBy.PYTHON,
         (CHECK,),
         Severity.WARNING,
@@ -304,12 +413,14 @@ class Code(Enum):
     PAGE_NO_DESCRIPTION = (
         "PAGE_NO_DESCRIPTION",
         "An element changes the picture and describes nothing, so the transcript loses the change.",
+        "Add `data-describe` to the element, or add it empty to say the element is decorative.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
     PAGE_SWAP_APART = (
         "PAGE_SWAP_APART",
         "A swap's two halves land far enough apart that a viewer sees the gap between them.",
+        "Move the two halves of the swap closer together, or keep the gap when the jump is deliberate.",
         RaisedBy.PYTHON,
         (CHECK,),
         Severity.WARNING,
@@ -317,6 +428,8 @@ class Code(Enum):
     PAGE_CDN_ASSET = (
         "PAGE_CDN_ASSET",
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
+        "Download the asset into `deck/` and point the page at the local copy. For equations, link the KaTeX DeckTalk "
+        "serves at `/__decktalk/katex/`.",
         RaisedBy.PYTHON,
         PAGE_REPORTERS,
     )
@@ -324,26 +437,32 @@ class Code(Enum):
         "PAGE_CHANGE_UNDECLARED",
         "A script changed the picture outside every cue, motion, loop and frame hook, so verify cannot mask it "
         "and may read it as a reveal.",
+        "Make the change in a cue's handler, draw it from a frame hook with a region, or declare it as a motion.",
         RaisedBy.PYTHON,
-        (Stage.RECORD.value, Stage.VERIFY.value),
+        PLAYED,
     )
     RECORD_BLACK = (
         "RECORD_BLACK",
         "A recorded frame is black, so the film shows nothing at that moment.",
+        "Open the page with `decktalk serve` and make it draw something visible at that second. A slide whose every "
+        "element waits for a later cue shows nothing until the first one.",
         RaisedBy.PYTHON,
-        (Stage.RECORD.value, Stage.VERIFY.value),
+        PLAYED,
     )
     RECORD_TRUNCATED = (
         "RECORD_TRUNCATED",
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
+        "Record the section again with `decktalk record --section N`, because a short stepped recording is an encode "
+        "that ended early.",
         RaisedBy.PYTHON,
-        (Stage.RECORD.value, Stage.VERIFY.value),
+        PLAYED,
     )
 
     # Measured in Python, about a declared motion.
     MOTION_EASE_UNMEASURABLE = (
         "MOTION_EASE_UNMEASURABLE",
         "A motion eases to rest on an arrival verify would measure, and an ease to rest has no edge to measure.",
+        'Make the ease `firm`, or mark the arrival cue `"verify": false`.',
         RaisedBy.PYTHON,
         (CHECK,),
     )
@@ -351,18 +470,21 @@ class Code(Enum):
     MOTION_OFF = (
         "MOTION_OFF",
         "A declared motion departed or arrived outside the offset limit of the word it was promised to.",
+        "Read the offset in the message, and check the cue's phrase with `decktalk words` as you would for `CUE_OFF`.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
     )
     MOTION_NO_EDGE = (
         "MOTION_NO_EDGE",
         "A declared motion came to rest before its word, so it has no edge on its cue a viewer sees it land on.",
+        "Make the ease `firm`, so the motion is still moving when it lands on its word.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
     )
     MOTION_MASK_LARGE = (
         "MOTION_MASK_LARGE",
         "Declared motion covered so much of the frame at a cue that verify measured less of the picture than usual.",
+        "Make the moving thing smaller, or move the cue away from it, so the reveal is judged on more of the picture.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
         Severity.WARNING,
@@ -372,18 +494,24 @@ class Code(Enum):
     CUE_UNLISTED = (
         "CUE_UNLISTED",
         "The page declares a moment that cues.json does not list, so nothing gives it a second.",
+        "Add the row to `cues.json`, or run `decktalk check --fix`, which writes it with an empty `phrase` for you to "
+        "fill.",
         RaisedBy.PYTHON,
         (CHECK, Stage.CUE.value),
     )
     CUE_UNKNOWN = (
         "CUE_UNKNOWN",
         "cues.json lists a cue no page declares, so nothing plays it.",
+        "Draw the element that declares the cue, correct the id, or delete the row. `--allow CUE_UNKNOWN` carries a "
+        "build past a slide not drawn yet.",
         RaisedBy.PYTHON,
         (CHECK, Stage.CUE.value),
     )
     CUE_UNRESOLVED = (
         "CUE_UNRESOLVED",
         "The cue's phrase is not spoken in its section, so there is no second to place it at.",
+        "Change the row's `phrase` to words the section really speaks, which `decktalk words --section N` lists, or "
+        "change the script.",
         RaisedBy.PYTHON,
         (CHECK, Stage.CUE.value, Stage.VERIFY.value),
     )
@@ -391,18 +519,26 @@ class Code(Enum):
         "CUE_STALE",
         "The cue times on disk were placed from a different cues.json than the project's, so the film "
         "is judged against moments nobody asked for until the project is built again.",
+        "Run `decktalk build`, which places every cue again and records only the sections whose cue times moved.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
     )
     CUE_OFF = (
         "CUE_OFF",
         "The change lands further from its word than verify.cue_offset_max_ms allows.",
+        "Read how far off the message says the change landed. One late cue is usually a phrase on the wrong word, "
+        "which `decktalk words` shows and `occurrence` picks, and a whole late section is usually motion on a clock "
+        "of its own, which belongs in `DeckTalk.frame`.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
     )
     CUE_NO_ONSET = (
         "CUE_NO_ONSET",
-        "The cue resolved with no measured onset, so its second is the section's start and not its word's.",
+        "A cue has no onset DeckTalk can measure: its phrase resolved to its section's start rather than to a "
+        "word, or the picture changed at it and no frame rose as far as an onset must.",
+        "Anchor the cue on a word the section speaks, rather than on its start or an `offset_seconds` that pulls it "
+        'there, or mark the row `"verify": false`. When the picture changed and no frame rose, make the change arrive '
+        "faster, so one frame carries most of it.",
         RaisedBy.PYTHON,
         (CHECK, Stage.CUE.value, Stage.VERIFY.value),
         Severity.WARNING,
@@ -410,12 +546,15 @@ class Code(Enum):
     CUE_NO_CHANGE = (
         "CUE_NO_CHANGE",
         "Nothing in the picture changed at the cue's second, so the reveal never happened.",
+        "Look at the two frames the message names, then make the reveal bigger, or give the element a moment "
+        "attribute for the cue that fired. `decktalk storyboard --before CUE --after CUE` freezes that pair.",
         RaisedBy.PYTHON,
         (CHECK, Stage.VERIFY.value),
     )
     CUE_THIN_CHANGE = (
         "CUE_THIN_CHANGE",
         "Less of the picture changed at the cue than a visible reveal must cross.",
+        "Make the reveal bigger, so more of the frame changes on its cue.",
         RaisedBy.PYTHON,
         (CHECK, Stage.VERIFY.value),
         Severity.WARNING,
@@ -423,6 +562,8 @@ class Code(Enum):
     CUE_OVERLAP = (
         "CUE_OVERLAP",
         "Two cues resolve close enough together that a viewer cannot tell them apart.",
+        "Move one of the two cues to a phrase further from the other, or shorten the first moment so it is over "
+        "before the second begins.",
         RaisedBy.PYTHON,
         (CHECK, Stage.CUE.value),
         Severity.WARNING,
@@ -430,12 +571,14 @@ class Code(Enum):
     SCRIPT_UNFINISHED = (
         "SCRIPT_UNFINISHED",
         "The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out.",
+        "Fill in the unfinished text on the line the message names with the words you mean.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
     SCRIPT_SPOKEN_SYMBOL = (
         "SCRIPT_SPOKEN_SYMBOL",
         "The script holds a symbol the voice reads as its name rather than as the thing it means.",
+        "Write the symbol out as the voice must say it.",
         RaisedBy.PYTHON,
         (CHECK,),
         Severity.WARNING,
@@ -443,6 +586,8 @@ class Code(Enum):
     SCRIPT_PAUSE_DROPPED = (
         "SCRIPT_PAUSE_DROPPED",
         "The script asks for a timed pause the voice's model does not render, so a voiced run would drop it.",
+        "Set the voice's model, `[voices.NAME] model` or its provider table's, to one that renders `[pause N]`, such "
+        "as `eleven_multilingual_v2`, or write a `[beat]`, which every model reads.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
@@ -450,12 +595,15 @@ class Code(Enum):
         "SCRIPT_VOICE_UNKNOWN",
         "A voice direction names no voice the project declares, or a line opens with the word voice and is not a "
         "voice direction.",
+        "Declare the voice as a `[voices.NAME]` table in `decktalk.toml`, correct the name in the direction, or "
+        "reword a line that opens with the word voice.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
     SCRIPT_VOICE_UNMARKED = (
         "SCRIPT_VOICE_UNMARKED",
         "A section that names a voice starts a turn no voice direction names.",
+        "Put a `[voice NAME]` line before the first turn of the section.",
         RaisedBy.PYTHON,
         (CHECK,),
     )
@@ -463,6 +611,7 @@ class Code(Enum):
         "SCRIPT_VOICE_BARE",
         "A note is exactly the name of a voice the project declares, so it plays as a beat rather than handing the "
         "turns after it to that voice.",
+        "Write the direction as `[voice NAME]` rather than the bare name.",
         RaisedBy.PYTHON,
         (CHECK,),
         Severity.WARNING,
@@ -470,6 +619,7 @@ class Code(Enum):
     VOICE_UNUSED = (
         "VOICE_UNUSED",
         "The project declares a voice no turn of the script is read by.",
+        "Hand a turn to the voice with a `[voice NAME]` line, or remove its `[voices.NAME]` table.",
         RaisedBy.PYTHON,
         (CHECK,),
         Severity.WARNING,
@@ -478,6 +628,8 @@ class Code(Enum):
     TAKE_MISSING = (
         "TAKE_MISSING",
         "A section's take is not on disk, so a placeholder plays in its place until its voice makes one.",
+        "Run the command the message names. For a provider that bills it is `decktalk narrate --section N --spend`, "
+        "and for a free provider that could not be reached, start its server and run `decktalk narrate --section N`.",
         RaisedBy.PYTHON,
         (Stage.NARRATE.value,),
         Severity.WARNING,
@@ -486,6 +638,7 @@ class Code(Enum):
         "TAKE_UNALIGNED",
         "A take came with no word times and no aligner timed them, so its section plays estimated words. Only "
         "narrate raises it.",
+        "Start the aligner the voice uses, then run `decktalk narrate` again.",
         RaisedBy.PYTHON,
         (Stage.NARRATE.value,),
         Severity.WARNING,
@@ -494,6 +647,8 @@ class Code(Enum):
         "TAKE_WORD_CUT",
         "A take's words place a word after the take's sound ends, where the narration cuts the take, so the word is "
         "never heard. Only narrate raises it.",
+        "Lower `narration.sound_end_noise_dbfs` so the take's sound end is measured after its last word, then run "
+        "`decktalk narrate` again.",
         RaisedBy.PYTHON,
         (Stage.NARRATE.value,),
         Severity.WARNING,
@@ -502,6 +657,8 @@ class Code(Enum):
         "TAKE_SILENT",
         "A voiced take holds no sound above the level its sound end is measured at, so its turn plays silence. Only "
         "narrate raises it, on the run that makes the take.",
+        "Run `decktalk narrate --turn N.T --spend` to buy that turn again, or lower `narration.sound_end_noise_dbfs` "
+        "when the take holds quiet speech.",
         RaisedBy.PYTHON,
         (Stage.NARRATE.value,),
         Severity.WARNING,
@@ -509,18 +666,25 @@ class Code(Enum):
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",
+        "Raise `narration.tail_seconds`, the silence kept after a section's last word, so the cut falls after the "
+        "speech has ended.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
     )
     CUT_POP = (
         "CUT_POP",
         "The picture steps at a section cut, so the film pops on the seam.",
+        "Make the two pictures either side of the cut continue, or drop `seamless = true` from the section so the cut "
+        "dips through `[transition]`.",
         RaisedBy.PYTHON,
         (CHECK, Stage.VERIFY.value),
     )
     MIX_LOUDNESS = (
         "MIX_LOUDNESS",
         "The mixed film misses the loudness it was mastered to.",
+        "Judge loudness on a voiced build, then settle a bed that fights the voice with `[mix] music_db`, "
+        "`music_duck_db` and `ambience_db` in decktalk.toml. Change `audio.target_lufs` only for a platform that "
+        "asks for another.",
         RaisedBy.PYTHON,
         (Stage.ASSEMBLE.value,),
         Severity.WARNING,
@@ -529,6 +693,7 @@ class Code(Enum):
         "SOUND_MISSING",
         "A sound the `[score]` table declares has not been bought, so silence plays where it would until a run "
         "with --spend buys it.",
+        "Run `decktalk score --spend` to buy it, or `decktalk score --no-spend` to see its price first.",
         RaisedBy.PYTHON,
         (Stage.SCORE.value, Stage.ASSEMBLE.value),
         Severity.WARNING,
@@ -536,6 +701,8 @@ class Code(Enum):
     FILE_MISSING = (
         "FILE_MISSING",
         "A file the project names is not on disk.",
+        "Write the file or correct the path the project names. For a tool file `decktalk doctor` names, run `decktalk "
+        "install` or `decktalk doctor --fix`.",
         RaisedBy.PYTHON,
         (CHECK, STATUS, DOCTOR, Stage.ASSEMBLE.value),
     )
@@ -543,6 +710,8 @@ class Code(Enum):
         "PROGRAM_NAMED",
         "The project names a program that recording starts with your user's rights, so it can read every file "
         "you can, .env included.",
+        "Read the program before you allow it. Allow it for one run with `decktalk build --no-spend --set "
+        "record.programs=run`, or be asked each run after `decktalk config set record.programs ask --scope machine`.",
         RaisedBy.PYTHON,
         (CHECK,),
         Severity.WARNING,
@@ -745,6 +914,7 @@ __all__ = [
     "Finding",
     "Fix",
     "Location",
+    "REPORTED_WHEN",
     "RaisedBy",
     "Severity",
     "Threshold",

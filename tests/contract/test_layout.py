@@ -68,6 +68,7 @@ ALLOW = {
     "contract/test_retired_words.py": (
         "The **Not** column of `docs/reference/glossary.mdx`, held against the help, the docs and the skills."
     ),
+    "contract/test_reporters.py": "The commands each runtime code names, held to a page opened as each opens it.",
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": (

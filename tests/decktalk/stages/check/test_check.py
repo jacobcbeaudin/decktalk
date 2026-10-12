@@ -53,6 +53,16 @@ def test_a_run_with_no_pages_says_which_judgements_it_could_not_reach(tmp_path: 
     assert all(code.name in missed for code in (*NEEDS_A_PAGE, *NEEDS_A_FRAME))
 
 
+def test_a_run_with_no_pages_never_says_frames_were_asked_for(tmp_path: Path) -> None:
+    """Nobody asks for frames on `check --no-pages`, so the line says what happened and nothing about asking."""
+    inputs = a_project(tmp_path, cues=CUES)
+    run = a_run(tmp_path)
+    said = notes(run)
+    check(inputs, run, pages=False)
+    assert not any("asked for" in line for line in said)
+    assert "No frame was frozen, because no page was opened." in said
+
+
 def test_a_run_prices_what_a_voiced_build_would_cost(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues=CUES)
     result = check(inputs, a_run(tmp_path), pages=False)
@@ -147,6 +157,10 @@ def test_a_script_that_cannot_be_read_is_a_judgement_and_not_a_refusal(tmp_path:
     (tmp_path / "script.md").unlink()
     result = check(inputs, a_run(tmp_path), pages=False)
     assert Code.FILE_MISSING in {one.code for one in result.findings}
+    # The reason is a whole sentence of its own, so it follows a colon and ends with one full stop.
+    [missing] = [one for one in result.findings if one.code is Code.FILE_MISSING]
+    assert missing.message.endswith(": script.md is not there."), missing.message
+    assert ".)" not in missing.message and ".." not in missing.message
 
 
 def test_a_moment_the_cue_file_does_not_list_is_judged_from_the_catalog(tmp_path: Path, drawn: Drawn) -> None:
@@ -387,3 +401,16 @@ def test_a_page_that_spins_its_main_thread_stops_the_check_with_a_tool_error(tmp
     inputs = a_spinning_project(tmp_path)
     with pytest.raises(ToolError, match="stopped answering"):
         check(inputs, a_run(tmp_path))
+
+
+def test_a_script_whose_headings_do_not_ascend_is_the_error_narrate_would_refuse(tmp_path: Path) -> None:
+    """`narrate` refuses headings that count backwards, so a check meets the same rule with the heading's line."""
+    backwards = "# Demo\n\n## 2. Two\n\nSecond section speaks as well.\n\n## 1. One\n\nHello there again.\n"
+    inputs = a_project(tmp_path, cues=CUES, script=backwards)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    found = [one for one in result.findings if "do not ascend" in one.message]
+    assert len(found) == 1
+    assert found[0].code is Code.SCRIPT_UNFINISHED
+    assert found[0].severity is Severity.ERROR
+    assert found[0].location.line == 7
+    assert "## 1. One" in found[0].message

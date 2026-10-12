@@ -54,7 +54,13 @@ from decktalk.stages.check.scan import (
     seam_findings,
     static_findings,
 )
-from decktalk.stages.check.script import pause_findings, script_findings, unused_voices, voice_findings
+from decktalk.stages.check.script import (
+    order_findings,
+    pause_findings,
+    script_findings,
+    unused_voices,
+    voice_findings,
+)
 from decktalk.stages.cost import Buy, cost_of
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
@@ -119,7 +125,8 @@ def check(
     spoken = [one for one in parsed if one.number not in inputs.document.clip_numbers and wanted(one.number)]
     markdown = current_text(inputs.script_path)
     voiced = _voice_findings(inputs, markdown, parsed, script) if parsed else []
-    for found in (*voiced, *script_findings(markdown, spoken, script=script)):
+    ordered = order_findings(markdown, parsed, script=script)
+    for found in (*voiced, *ordered, *script_findings(markdown, spoken, script=script)):
         run.found(found)
 
     extra = _named_pages(inputs, paths)
@@ -193,10 +200,11 @@ def _script_sections(inputs: Inputs, run: Run) -> list[ScriptSection]:
         return list(inputs.script())
     except InputError as refused:
         where = inputs.relative(inputs.script_path)
+        reason = str(refused).rstrip(".")
         run.found(
             judge(
                 Code.FILE_MISSING,
-                f"{where.as_posix()} cannot be read as a script, so nothing was planned from it ({refused}).",
+                f"{where.as_posix()} cannot be read as a script, so nothing was planned from it: {reason}.",
                 Location(where=where.as_posix(), file=where),
             )
         )
@@ -315,7 +323,7 @@ def _unreached(run: Run, *, frames: bool) -> Look:
     missed = ", ".join(code.name for code in (*NEEDS_A_PAGE, *NEEDS_A_FRAME))
     run.note(f"no page was opened, so these judgements were not reached: {missed}.")
     if frames:
-        run.note("frames were asked for and no page was opened, so no frame was frozen either.")
+        run.note("No frame was frozen, because no page was opened.")
     return Look()
 
 

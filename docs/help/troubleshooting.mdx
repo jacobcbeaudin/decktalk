@@ -32,8 +32,8 @@ The voice narrator reads 3 turns of 476 characters on elevenlabs, at $0.30 per 1
 The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, deck/index.html.
 This run costs $0.15 for 476 characters at $0.30 per 1,000 characters.
-cues.json: CUE_UNLISTED the deck declares 12 moment(s) and there is no cues.json, so nothing gives any of them a second.
-  fix (safe): Write cues.json with a row for each of the 12 moment(s) the deck declares, each waiting for the words you write in its `phrase`.
+cues.json: CUE_UNLISTED the deck declares 12 moments and there is no cues.json, so nothing gives any of them a second.
+  fix (safe): Write cues.json with one row per moment the deck declares, 12 in all, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```
 
@@ -110,7 +110,7 @@ its findings are printed and in the JSON, the money narrate already spent is in 
 
 {/* sample: build-stopped, decktalk build --no-spend, on a fresh decktalk init my-lesson whose cue 3.1:idea waits for "a phrase nobody says", which exits 1 */}
 ```text
-run 7f4bb775b9d2, events build/events/7f4bb775b9d2.jsonl
+run eedf1df8eb8e, events build/events/eedf1df8eb8e.jsonl
      Narrate    0:00
          Cue    0:00
 Cue made 1 finding that the build stops on, so the build stopped before record rather than carry it into the film.
@@ -151,6 +151,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | A command said ffmpeg or Chromium is missing or failed | [TOOL](/reference/errors/TOOL) | [A missing toolchain](#a-missing-toolchain) |
 | A first download is slow, or stopped part way | [TOOL](/reference/errors/TOOL) | [A missing toolchain](#a-missing-toolchain) |
 | A recording stopped and named where the page was stuck, or its renderer crashed | [TOOL](/reference/errors/TOOL) | [A recording that stopped at its deadline](#a-recording-that-stopped-at-its-deadline) |
+| A command said a file, a key or an argument it reads is missing or malformed | [INPUT](/reference/errors/INPUT) | [An input error](#an-input-error) |
 | A build refused to start a program the project names | [PROGRAM_NAMED](/reference/findings/PROGRAM_NAMED), [INPUT](/reference/errors/INPUT) | [A program the project names](#a-program-the-project-names) |
 | `doctor` listed a component with no version and no path | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | A file the project names is not on disk | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
@@ -208,24 +209,36 @@ fetches both the first time a command needs them and keeps them in a per-user ca
    installs through sudo, so it may ask for a password. A build never does that, because a build
    runs unattended and a password prompt is a hang rather than a question. That is why a Chromium
    that will not launch says to run `decktalk install`.
-4. A download that stalls stops with `error[TOOL]` saying how many bytes of ffmpeg arrived and that
+4. A download that stalls stops with `error[TOOL]` saying how much of ffmpeg arrived and that
    the next run resumes from there. Run `decktalk install` again: it asks for the rest rather than
    the whole archive, and checks the pinned SHA-256 on all of it. On a link too slow to finish, set
-   `[tools] ffmpeg` and `[tools] ffprobe` to a build you already have.
+   `tools.ffmpeg` and `tools.ffprobe` to a build you already have.
 
-**The settings.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
-`[tools] cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `[tools] chromium` records with a browser the
+**The settings.** `tools.ffmpeg` and `tools.ffprobe` name binaries the machine already has.
+`tools.cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `tools.chromium` records with a browser the
 machine already has and skips the Chromium download entirely. All four are machine keys, so set them
 with `decktalk config set KEY VALUE --scope machine`, because a `decktalk.toml` that sets one is
 refused. Set
 `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror when a proxy blocks Playwright's own host, and set
-`[tools] cache_dir` when the home directory is read-only or the browser is shared.
+`tools.cache_dir` when the home directory is read-only or the browser is shared.
 
 `FILE_MISSING` is also what a stage raises when a file the project names is not on disk, such as an
 audio file of your own that a `[[mix.effect]]` row cues or a clip a section names. There the fix is
 to write the file or correct the path. A sound the score describes and has not bought yet is
 [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) instead, a warning that plays silence in its
 place, and `decktalk score --spend` buys it.
+
+## An input error
+
+**What you see.** `error[INPUT]`, naming the file, the key or the argument and what is wrong with it.
+The command exits 3 and makes nothing.
+
+**What to do.** Correct what the message names and run the command again. The hint says where to
+look: the line of a `decktalk.toml` that is not valid TOML, or the sections there are when a
+`--section` names one that is not. A key that belongs to the machine, such as `record.concurrency`,
+is refused in `decktalk.toml` with this code, and the hint names the
+`decktalk config set KEY VALUE --scope machine` line that moves it. A program this machine does not
+allow is also `INPUT`: see [A program the project names](#a-program-the-project-names).
 
 ## A refused command line
 
@@ -242,11 +255,17 @@ builds with no flag and no key.
 |---|---|
 | No buying at all | `--no-spend`, which plays every take on disk and a placeholder with estimated word times wherever a take is missing |
 | Spend without being asked | `--spend` |
-| Spend up to a ceiling | `--max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars |
+| Spend up to a ceiling | `--spend --max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars. `--max-cost` alone approves nothing |
 | Know the price first | `decktalk check`, which prices the narration and buys nothing, and `decktalk score --no-spend` for the sound |
 
 `--no-input` never prompts. It takes the safe default, or it refuses and names the flag that would
 have answered, which is what makes a non-interactive run deterministic.
+
+`APPROVAL` also refuses four steps that are not a spend: `init` into a directory that holds files
+(pass `--overwrite`), a Chromium install whose system libraries need a password nobody gave, a run
+that may spend and would open an untrusted page (voice in a run of its own first), and a
+`--max-cost` that cannot price the run because nothing states the rate. Each hint names the command
+that approves it.
 
 In the library there is no terminal to ask, so nothing spends without `spend=True`, and
 `ApprovalRequired` is raised rather than money being spent.
@@ -522,7 +541,7 @@ every attribute with its range. `motion.scale` multiplies every declared length,
 is what pushes a deck that was fine over the ceiling.
 
 **`CUT_SPEECH` and `CUT_POP`** are about the cuts rather than the reveals. A cut that slices a word
-means the section's narration did not have room to finish, and `[narration] tail_seconds` is the
+means the section's narration did not have room to finish, and `narration.tail_seconds` is the
 silence kept after the last word of a section so that a cut breathes.
 `verify.cut_max_dbfs` and `verify.cut_window_seconds` are how quiet, and for how long, a cut has to
 be to pass.
@@ -610,7 +629,7 @@ It is an error and it carries no fix, because only you can decide what the local
 ## A sandbox that will not start
 
 **What you see.** `error[TOOL]: could not launch Chromium with its sandbox on`, on a machine whose
-`[record] page_policy` is `untrusted`.
+`record.page_policy` is `untrusted`.
 
 An untrusted page runs only inside Chromium's sandbox, and a machine that cannot start it is refused
 rather than given a browser without one. The sandbox is a property of the machine, so no edit to the
@@ -633,7 +652,7 @@ and the fix is the one above: put the file beside the page.
 ## A program the project names
 
 **What you see.** `PROGRAM_NAMED` from `decktalk check`, once for each program the project names, and
-`error[INPUT]` from `record` when this machine does not allow it to run.
+`error[INPUT]` from `build` or `record`, before anything runs, when this machine does not allow it.
 
 A render section's `render_command` is a program, and it runs with your user's rights, so it can
 read every file you can, `.env` included. `record.programs` is the machine's to set, and a project
@@ -679,7 +698,7 @@ contract either declares a thing or it does not.
 | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND) | Make the element's text words the script really speaks in that section. |
 | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING) | Link `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js`, which DeckTalk serves on the page's origin. |
 | [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | Correct the TeX the message quotes. The element's own text is the fallback a reader sees meanwhile. |
-| [PAGE_FREEZE_CUE_UNKNOWN](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | Name a cue the slide declares in `--after` or `--before`. |
+| [PAGE_FREEZE_CUE_UNKNOWN](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | Name a cue the slide declares. No command reports this code, because `decktalk storyboard --after` and `--before` draw a panel only for a cue a chosen slide declares, so only the page's own console says it. |
 | [PAGE_CLASS_UNDESCRIBED](/reference/findings/PAGE_CLASS_UNDESCRIBED) | Add the matching pair to `data-describe-class`. |
 | [PAGE_CLASS_NOT_REDUCED](/reference/findings/PAGE_CLASS_NOT_REDUCED) | Make your stylesheet honour `prefers-reduced-motion` for that class. |
 | [PAGE_NO_DESCRIPTION](/reference/findings/PAGE_NO_DESCRIPTION) | Add `data-describe`, or add it empty to say the element is decorative. |
@@ -765,12 +784,12 @@ These three come from `narrate`, on the run that makes the take, and each names 
 
 | Code | Severity | The change that clears it |
 |---|---|---|
-| [TAKE_SILENT](/reference/findings/TAKE_SILENT) | warning | Run `decktalk narrate --turn N.T --spend` to buy that turn again, or lower `[narration] sound_end_noise_dbfs` if the take holds quiet speech. |
-| [TAKE_WORD_CUT](/reference/findings/TAKE_WORD_CUT) | warning | Lower `[narration] sound_end_noise_dbfs` so the take's sound end is measured after its last word, then run `decktalk narrate` again. |
+| [TAKE_SILENT](/reference/findings/TAKE_SILENT) | warning | Run `decktalk narrate --turn N.T --spend` to buy that turn again, or lower `narration.sound_end_noise_dbfs` if the take holds quiet speech. |
+| [TAKE_WORD_CUT](/reference/findings/TAKE_WORD_CUT) | warning | Lower `narration.sound_end_noise_dbfs` so the take's sound end is measured after its last word, then run `decktalk narrate` again. |
 | [TAKE_UNALIGNED](/reference/findings/TAKE_UNALIGNED) | warning | Start the aligner the voice uses, then run `decktalk narrate` again. |
 
 A take is cut at its sound end, the point after which it stays under
-`[narration] sound_end_noise_dbfs` for at least `[narration] sound_end_min_run_seconds`. A take with
+`narration.sound_end_noise_dbfs` for at least `narration.sound_end_min_run_seconds`. A take with
 no sound above that level plays its turn as silence, and a word placed after it is never heard. A
 take whose voice sent no word times is timed by the aligner, and one no aligner timed plays
 estimated words. [Voice one turn again](/guides/rebuild-one-section#voice-one-turn-again) buys a
@@ -788,6 +807,8 @@ Some things are not judgements. Use the stream.
 - `events.keep_runs` prunes the oldest files, and its default is 20.
 - `-v` puts debug lines on stderr and prints the traceback of a bug. `error[INTERNAL]` means a bug in
   DeckTalk, and `-v` is what turns it into something worth reporting.
+- `error[CANCELLED]`, exit 130, means the run was stopped, by Ctrl-C or by the caller's `cancel`.
+  Every turn voiced before the stop is on disk, so running the command again buys only the rest.
 - `decktalk status` reports where the project stands and what to run next.
 
 ## Related

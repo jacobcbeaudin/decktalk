@@ -217,7 +217,7 @@ def test_a_slate_fits_the_frame(tmp_path, size):
         title="A chapter whose name runs on for a while",
         sub="Your clip goes here",
         eyebrow="section 12: slate",
-        foot="drop it at media/a-clip-with-a-long-descriptive-name.mp4 and run `decktalk assemble`",
+        foot="drop it at media/a-clip-with-a-long-descriptive-name.mp4 and run decktalk assemble",
         background="0x0e1116",
     )
     with browser.chromium(policy=browser.TRUSTED, spend=False) as real:

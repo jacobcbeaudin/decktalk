@@ -37,8 +37,10 @@ style.
 
 ## Shape
 
-The file is one JSON object with a `sections` key. Every other key at the top level is read by
-nothing, which is where the starter keeps its `_comment`. Each key of `sections` is a section number
+The file is one JSON object with a `sections` key. Beside it only `_comment` may stand, which is
+where the starter keeps its comment and which nothing reads. Any other key at the top level is
+refused as an `INPUT` error naming the key, because the usual one is a section block pasted outside
+`sections`, whose cues would never fire. Each key of `sections` is a section number
 written as a string, and it must name a `[[section]]` in `decktalk.toml`. Each section is an object
 with a `cues` array and an optional `min_seconds`.
 
@@ -51,7 +53,7 @@ for each of them.
 | `cues` | array | `[]` | Every cue of this section, in any order. |
 | `min_seconds` | number | none | How many seconds of speech this section's visuals need. A section that speaks for less earns no finding: `cue` says so on its stream, because the code list holds no code for it. |
 
-The load refuses a file that is not valid JSON, a file with no top-level `sections` object, a section
+The load refuses a file that is not valid JSON, a file with no top-level `sections` object, a top-level key other than `sections` and `_comment`, a section
 key that is not a number, a section number that `decktalk.toml` does not declare, a section whose
 value is not an object, a row with a key no cue reads, a row with no `id` or no `phrase`, a row
 whose `id` is empty, and a row whose `occurrence` is below 1. Each refusal names the file, and a JSON syntax error names the line as well. A
@@ -142,7 +144,7 @@ The voice narrator reads 3 turns of 476 characters on elevenlabs, at $0.30 per 1
 The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.15 for 476 characters at $0.30 per 1,000 characters.
-cues.json: CUE_UNLISTED section 2 declares 1 moment(s) that cues.json does not list, which is 2.1:formula, so nothing gives them a second.
+cues.json: CUE_UNLISTED section 2 declares 1 moment that cues.json does not list, which is 2.1:formula, so nothing gives it a second.
   fix (safe): Add 1 row to section 2 of cues.json, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```

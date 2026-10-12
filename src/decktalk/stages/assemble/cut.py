@@ -127,7 +127,7 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
     video, policy = inputs.settings.video, inputs.settings.record.page_policy
     title, sub = inputs.chapters()[section.number], "Your clip goes here"
     eyebrow = f"section {section.number}: slate"
-    foot = f"drop it at {section.clip} and run `decktalk assemble`"
+    foot = f"drop it at {section.clip} and run decktalk assemble"
     shown = json.dumps([title, sub, eyebrow, foot, video.width, video.height, video.slate_color])
     # The key begins with the substitute's own name, so a slate never shares a name with a frame of a page.
     key = still_key((Substitute.SLATE.value, f"policy:{policy}", shown))

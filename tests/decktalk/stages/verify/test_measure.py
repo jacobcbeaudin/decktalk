@@ -173,6 +173,8 @@ def test_a_cue_whose_onset_no_frame_shows_is_reported_and_never_passed_over(
     assert rows[0].skipped is SkipReason.NO_ONSET
     assert rows[0].change_percent == pytest.approx(9.0)
     assert "9.00 percent" in found[0].message
+    assert "no second to compare with the word" in found[0].message
+    assert "section's start" not in found[0].message
 
 
 def test_a_reveal_outside_the_offset_limit_names_the_milliseconds_and_the_limit(

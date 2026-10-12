@@ -150,7 +150,7 @@ PIPELINE: tuple[StageSpec, ...] = (
         holds_api_key=False,
         opens_pages=True,
         why="Each cue phrase becomes a second on its section clock, which the recorder plays to, and is read "
-        "against the moments the page declares, opening the page when it changed since it was recorded.",
+        "against the moments the page declares, opening the page when its recording no longer stands.",
         # A section's recording log holds its page's catalog, read while that recording stands, and a
         # section nothing has recorded is left unjudged, so the first cue runs before any record.
         optional_reads=(Artifact.RECORDINGS,),

@@ -143,7 +143,7 @@ The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,
 The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
-cues.json: CUE_UNLISTED section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
+cues.json: CUE_UNLISTED section 4 declares 1 moment that cues.json does not list, which is 4.1:waits, so nothing gives it a second.
   fix (safe): Add 1 row to section 4 of cues.json, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```
@@ -216,11 +216,11 @@ decktalk build --no-spend
 
 {/* sample: first-deck-build, decktalk build --no-spend, on the same project built once before the four pastes, which exits 0 */}
 ```text
-run 022764e35e5e, events build/events/022764e35e5e.jsonl
+run ea3bec17b37b, events build/events/ea3bec17b37b.jsonl
      Narrate    0:00
-Read deck/index.html as it is now, because it changed since it was recorded.
+Read deck/index.html as it is now, because the recordings of sections 1, 2, 3 no longer stand.
          Cue    0:00
-      Record    0:17
+      Record    0:04
 The project declares no score for this run, so there is nothing to generate.
        Score    0:00
 The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.

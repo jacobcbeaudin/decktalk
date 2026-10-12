@@ -62,6 +62,9 @@ COMMENT_RE = re.compile(r"<!--")
 SYMBOL_RE = re.compile(r"[0-9$€£%&@#*/+=<>~^|]")
 """A character a reader turns into a word of its own, where a voice may say something else."""
 
+TRAILING_PUNCTUATION = ",.;:!?)\"'"
+"""What ends a word in a sentence rather than belonging to it, which a finding leaves off the word it names."""
+
 SHOWN_TOKENS = 5
 """Calibration: five words are enough to recognise the line, where the whole list would be a wall of text."""
 
@@ -208,7 +211,8 @@ def symbol_tokens(section: ScriptSection) -> tuple[str, ...]:
     The scan lives here beside the refusals because both read the same spoken text, and `check`
     raises the finding from it, so the rule has one home and the judgement has one raiser.
     """
-    return tuple(sorted({token for token in section.spoken.split() if SYMBOL_RE.search(token)}))
+    words = (token.rstrip(TRAILING_PUNCTUATION) for token in section.spoken.split())
+    return tuple(sorted({word for word in words if SYMBOL_RE.search(word)}))
 
 
 def shown(tokens: Iterable[str]) -> str:
@@ -217,21 +221,56 @@ def shown(tokens: Iterable[str]) -> str:
     return ", ".join(listed[:SHOWN_TOKENS])
 
 
-def ascending(sections: Iterable[ScriptSection]) -> tuple[ScriptSection, ScriptSection] | None:
-    """The first pair of headings whose numbers do not ascend, or None when the whole script does.
+@dataclass(frozen=True)
+class OutOfOrder:
+    """The first two headings whose numbers do not ascend, and the one sentence narrate and check say about them.
 
     The take index is the one order the narration is joined in, so a script that counts backwards
     would place its takes in an order no other reading of the project agrees with.
     """
-    return next(((first, second) for first, second in pairwise(sections) if second.number <= first.number), None)
+
+    first: ScriptSection
+    second: ScriptSection
+
+    @property
+    def what(self) -> str:
+        return (
+            f"the script heading for section {self.second.number} comes after section {self.first.number}, so the "
+            "sections do not ascend and the narration would be joined in an order nothing else agrees with"
+        )
+
+    @property
+    def hint(self) -> str:
+        first, second = self.first, self.second
+        return f"Move '## {second.number}. {second.title}' after '## {first.number}. {first.title}'."
+
+
+def ascending(sections: Iterable[ScriptSection]) -> OutOfOrder | None:
+    """The first pair of headings whose numbers do not ascend, or None when the whole script does."""
+    return next(
+        (OutOfOrder(first, second) for first, second in pairwise(sections) if second.number <= first.number), None
+    )
+
+
+def heading_line(markdown: str, section: ScriptSection) -> int:
+    """The line one section's heading sits on, which is the last heading of its number at or before its first turn."""
+    lines = [
+        number
+        for number, line in enumerate(markdown.splitlines(), start=1)
+        if (match := SECTION_RE.match(line)) and int(match.group("num")) == section.number
+        and number <= section.turns[0].line
+    ]  # fmt: skip
+    return lines[-1] if lines else section.turns[0].line
 
 
 __all__ = [
     "SYMBOL_RE",
     "Misread",
+    "OutOfOrder",
     "VoiceLine",
     "ascending",
     "check_script",
+    "heading_line",
     "script_refusals",
     "shown",
     "spoken_lines",

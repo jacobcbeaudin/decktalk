@@ -61,6 +61,23 @@ def test_an_occurrence_below_the_first_is_refused_where_it_is_written(tmp_path: 
         load_cues(path, tmp_path, {1})
 
 
+def test_a_top_level_key_the_reader_does_not_read_is_refused_by_name(tmp_path: Path) -> None:
+    """A section block pasted one brace too late lands beside `sections` and would be read by nothing,
+    so its cues would never fire and a fix would keep offering rows the reader cannot see."""
+    path = tmp_path / "cues.json"
+    path.write_text(
+        json.dumps({"sections": {"1": {"cues": []}}, "4": {"cues": [{"id": "4.1:a", "phrase": "hi"}]}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="cues.json has the key '4' outside 'sections'") as info:
+        load_cues(path, tmp_path, {1, 4})
+    assert info.value.hint is not None and "inside" in info.value.hint
+    # `_comment` is the one other key the file may hold, which every starter writes.
+    path.write_text(json.dumps({"_comment": ["notes"], "sections": {"1": {"cues": []}}}), encoding="utf-8")
+    (section,) = load_cues(path, tmp_path, {1})
+    assert section.cues == ()
+
+
 def test_a_row_with_no_id_is_still_refused(tmp_path: Path) -> None:
     path = write_cues(tmp_path, [{"id": "", "phrase": "the words"}])
     with pytest.raises(InputError, match="'id' must not be empty"):
