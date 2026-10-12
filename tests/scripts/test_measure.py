@@ -92,7 +92,7 @@ def test_the_sections_a_build_recorded_are_the_recordings_it_wrote() -> None:
     build = {
         "written": [
             "build/narrate/takes.json",
-            "build/recordings/03.webm",
+            "build/recordings/03.mp4",
             "build/recordings/03.json",
             "build/sections/03.mp4",
         ]
