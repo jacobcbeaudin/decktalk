@@ -2699,20 +2699,25 @@
      * same picture for the same second. `region` is the element or selector it draws inside, which
      * verify masks, and a hook that names none is undeclared motion. A hook that throws is reported
      * once and stops drawing.
+     *
+     * Off the stepped clock the hook draws once as it is handed over, at the second the page shows, which
+     * is zero before the clock starts. A page draws its first animation frame whenever the browser gets
+     * to it, so a hook that waited for one would be reported before `ready` on one machine and after it
+     * on another, and `check` would see a throw only by luck. The recorder's page waits for its first
+     * step, so there the hook draws first at the second that step names, as every later frame does.
      */
     frame(fn, options = {}) {
       region(options.region);
-      let told = false;
-      every((seconds2) => {
+      const hook = (seconds2) => {
         try {
           fn(seconds2);
           return true;
         } catch (err) {
-          if (!told) warn("PAGE_FRAME_THREW", null, null, { value: String(err) });
-          told = true;
+          warn("PAGE_FRAME_THREW", null, null, { value: String(err) });
           return false;
         }
-      });
+      };
+      if (waitsForSignal() || hook(started() ? now() : 0)) every(hook);
       return DeckTalk;
     },
     /**

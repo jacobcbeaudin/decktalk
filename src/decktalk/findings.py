@@ -101,8 +101,9 @@ reads the scene it played, and `verify` reports again what each recording log ca
 PLAYED = (Stage.RECORD.value, Stage.VERIFY.value)
 """The commands that report a code only a played scene can raise: `record`, and `verify`, which repeats its log.
 
-A cue firing, a word timed, a slide mounted, a handler or a frame hook run and every frame a recording
-draws: none of these happens on the index page `check` reads.
+A cue firing, a word timed, a slide mounted, a handler run and every frame a recording draws: none of
+these happens on the index page `check` reads. A frame hook is the exception, because off the stepped
+clock it draws once as it is handed over, so `check` reports one that throws.
 """
 
 REPORTED_WHEN: dict[str, str] = {
@@ -319,8 +320,6 @@ class Code(Enum):
         "A frame hook threw, so whatever it drew stopped moving from that frame on.",
         "Fix the function handed to `DeckTalk.frame`. Open the page with `decktalk serve`, and the browser console "
         "shows what it threw.",
-        RaisedBy.RUNTIME,
-        PLAYED,
     )
     PAGE_WAIT_REJECTED = (
         "PAGE_WAIT_REJECTED",

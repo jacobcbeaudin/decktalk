@@ -369,6 +369,26 @@ def test_a_frame_hook_draws_every_stepped_second(page, tmp_path):
     assert page.evaluate("() => window.seen") == [0, 0.04, 0.08]
 
 
+def test_the_index_page_reports_a_frame_hook_that_throws_before_it_is_ready(page, tmp_path):
+    """Off the stepped clock a hook draws once as it is handed over, so `check` meets a throw on every machine.
+
+    The index page draws no animation frame before it is ready, so a hook that waited for one would be
+    reported or not by the race between the frame and the probe. The hook is handed the second the
+    page shows, which is zero before the clock starts, and is never called again once it has thrown.
+    """
+    script = (
+        'DeckTalk.scene(15, { slides: [{ id: "15.1", owns: ["beat"], render: () => "<p></p>" }] });'
+        "window.handed = [];"
+        'DeckTalk.frame((t) => { window.handed.push(t); throw new Error("no"); }, { region: "p" });'
+        "window.atOnce = window.__decktalk.warnings.map((row) => row.code);"
+    )
+    opened(page, script_page(tmp_path, "index-threw.html", script))
+    assert page.evaluate("() => window.__decktalk.mode") == "index"
+    assert Code.PAGE_FRAME_THREW.value in page.evaluate("() => window.atOnce")
+    page.evaluate("() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert page.evaluate("() => window.handed") == [0]
+
+
 MOVING_SCENE = """
 <style>
   @keyframes travel { from { transform: translateX(0px) } to { transform: translateX(1000px) } }
