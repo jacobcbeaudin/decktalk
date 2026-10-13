@@ -41,9 +41,9 @@ own account's key, so the id is committed with the project.
 
 ## Can I use a voice other than ElevenLabs?
 
-Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
+Not yet. Today every voice is ElevenLabs. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
 the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
-repository. Set `provider = "dtsp"` under the voice's `[voices.NAME]` table. It needs no key and costs nothing, so it makes
+repository and is in development, not yet public. Once it is available, set `provider = "dtsp"` under the voice's `[voices.NAME]` table. It needs no key and costs nothing, so it makes
 its takes with or without `--spend`, `--no-spend` included. The server's address is
 `[dtsp] base_url`, `http://127.0.0.1:9361` by default, and only this machine sets it, so a project
 someone else wrote cannot send its script anywhere else. When the server is not running, each missing take plays a placeholder with a

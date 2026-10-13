@@ -889,7 +889,7 @@ with project.events.subscribe(meter):
 
 The voices a project can name in `[voices.NAME] provider` are a closed set of adapters in the engine:
 `elevenlabs`, the cloud voice, and `dtsp`, which speaks the DeckTalk speech protocol to
-`decktalk-voice`, a separate local server that is not part of this repository. Nothing is loaded
+`decktalk-voice`, a separate local server that is not part of this repository and is not yet public. Nothing is loaded
 from entry points, and a project file names an adapter and never code.
 
 A host can still hand `Machine.of` its own table, which is code it wrote and imported itself, and is

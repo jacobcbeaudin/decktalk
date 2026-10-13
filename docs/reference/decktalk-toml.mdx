@@ -322,7 +322,7 @@ not. `base_url` is machine-scoped, so it is set in this machine's file and a `de
 sets it is refused.
 
 `[dtsp]` holds `model`, and the machine-scoped `base_url` and `handshake_seconds`, for the local voice, which speaks the DeckTalk speech protocol
-to `decktalk-voice`, a separate local server that is not part of this repository. `base_url` is
+to `decktalk-voice`, a separate local server that is not part of this repository and is not yet public. `base_url` is
 machine-scoped like ElevenLabs's, so only this machine names where the script is sent, and
 `handshake_seconds` is how long the server has to say which aligner it serves. The local voice bills nothing, so buying its takes asks for no
 `--spend`, and a build still asks about a score it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a

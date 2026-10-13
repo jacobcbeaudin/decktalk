@@ -924,8 +924,8 @@ class DtspConfig:
     how long the server has to say which aligner it serves.
 
     `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is
-    not part of this repository. The same server times the words of a take whose voice sent none. It
-    needs no key, bills nothing, and `base_url` is the machine's to set.
+    not part of this repository and is not yet public. The same server times the words of a take whose
+    voice sent none. It needs no key, bills nothing, and `base_url` is the machine's to set.
     """
 
     base_url: str = tune(
