@@ -26,7 +26,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Generator, Iterable, Mapping
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -71,7 +71,7 @@ def browsers_dir() -> Path:
 
 
 @contextmanager
-def driver(browsers: Path) -> Iterator[Playwright]:
+def driver(browsers: Path) -> Generator[Playwright]:
     """A started Playwright driver that finds and launches the browsers in `browsers`, stopped on exit.
 
     Playwright starts its driver with a copy of this process's environment and takes no other, so

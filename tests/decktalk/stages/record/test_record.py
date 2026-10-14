@@ -10,7 +10,7 @@ again rather than assembling a picture nobody judged.
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -99,7 +99,7 @@ class Driven:
         self.counting = threading.Lock()
 
     @contextmanager
-    def chromium(self, _executable: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
+    def chromium(self, _executable: str = "", *, policy: str = "trusted", **_launch: object) -> Generator[object]:
         if self.launches_together is not None:
             self.launches_together.wait()
         with self.counting:

@@ -16,7 +16,7 @@ start and for ffmpeg to work.
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -72,7 +72,7 @@ MACHINE: ContextVar[Mapping[str, str] | None] = ContextVar("decktalk_machine_env
 
 
 @contextmanager
-def children_see(environ: Mapping[str, str]) -> Iterator[None]:
+def children_see(environ: Mapping[str, str]) -> Generator[None]:
     """Build every child environment from `environ` while this is open, which the machine opens for a run."""
     token = MACHINE.set(environ)
     try:

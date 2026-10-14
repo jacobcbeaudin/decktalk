@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import secrets
 import shutil
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -75,7 +75,7 @@ def _move_over(drafts: Mapping[Path, Path]) -> None:
 
 
 @contextmanager
-def drafted(final: Path) -> Iterator[Path]:
+def drafted(final: Path) -> Generator[Path]:
     """The hidden draft a program writes `final` under, moved onto `final` once the block finishes.
 
     The draft's name opens with a dot, which the local origin never serves and a listing of the

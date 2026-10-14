@@ -30,7 +30,7 @@ gives and the page reads as `--dt-width` and `--dt-height`.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from functools import cached_property
@@ -246,7 +246,7 @@ class ProjectPage:
     """The address the page was last pointed at, so a page drawing many captions loads once."""
 
     @contextmanager
-    def held(self, doing: str) -> Iterator[None]:
+    def held(self, doing: str) -> Generator[None]:
         """Hold one call into the page to its deadline, and fail with the watchdog's sentence once it has closed it.
 
         A call that swallows the page's failure, such as a wait to be ready that carries on without
@@ -370,7 +370,7 @@ class Pictures:
 
 
 @contextmanager
-def pictures(inputs: Inputs, run: Run) -> Iterator[Pictures]:
+def pictures(inputs: Inputs, run: Run) -> Generator[Pictures]:
     """The pictures one run makes, opened on its project and closed, with any browser it launched, on exit."""
     with ExitStack() as stack:
         yield Pictures(inputs, run.spend, stack)

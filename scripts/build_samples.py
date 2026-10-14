@@ -49,7 +49,7 @@ import sys
 import tempfile
 import threading
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -292,7 +292,7 @@ class Speaker(BaseHTTPRequestHandler):
 
 
 @contextmanager
-def fake_voice(environ: dict[str, str], scratch: Path) -> Iterator[str]:
+def fake_voice(environ: dict[str, str], scratch: Path) -> Generator[str]:
     """A `dtsp` server on a loopback port, yielding its base URL, encoding with the ffmpeg a run would find."""
     here = Machine.of(
         environ=environ,

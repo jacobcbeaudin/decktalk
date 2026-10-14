@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,7 +26,7 @@ def drawing(monkeypatch: pytest.MonkeyPatch, launched: list[tuple[str, bool]]) -
     drawn: list[FakePage] = []
 
     @contextmanager
-    def chromium(_executable: str = "", *, policy: str, spend: bool) -> Iterator[Chromium]:
+    def chromium(_executable: str = "", *, policy: str, spend: bool) -> Generator[Chromium]:
         launched.append((policy, spend))
         yield fake.opened()
 

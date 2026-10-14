@@ -20,7 +20,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -118,7 +118,7 @@ def scheme(value: str) -> ColorScheme:
 
 
 @contextmanager
-def driving(what: str) -> Iterator[None]:
+def driving(what: str) -> Generator[None]:
     """Turn a browser that would not do something into a `ToolError` saying what it would not do.
 
     A page that never loads, a context that will not open and a call the page never answered are all
@@ -218,7 +218,7 @@ class Watchdog:
     @contextmanager
     def watching(
         cls, close: Callable[[], None], *, name: str, call_seconds: float, whole_seconds: float
-    ) -> Iterator[Watchdog]:
+    ) -> Generator[Watchdog]:
         """A watchdog whose thread runs for the block, which is the recording it holds to its deadlines."""
         dog = cls(close, name, call_seconds, whole_seconds, ends=time.monotonic() + whole_seconds)
         thread = threading.Thread(target=dog.watch, daemon=True)
@@ -260,7 +260,7 @@ class Watchdog:
             raise ToolError(self.fired, hint=STOPPED_HINT)
 
     @contextmanager
-    def call(self, doing: str) -> Iterator[None]:
+    def call(self, doing: str) -> Generator[None]:
         """Hold one call into the page to its deadline, and say why it failed when the watchdog closed the page."""
         self.check()
         with self.turn:

@@ -7,7 +7,7 @@ import http.client
 import json
 import urllib.error
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from threading import Thread
 from urllib.parse import urlsplit
@@ -222,7 +222,7 @@ SHUTDOWN_POLL_SECONDS = 0.01
 def serving(
     allowed: Allowed,
     documents: dict[str, bytes] | None = None,
-) -> Iterator[str]:
+) -> Generator[str]:
     """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
     server = open_server(allowed, "127.0.0.1", 0, documents)
     with server:

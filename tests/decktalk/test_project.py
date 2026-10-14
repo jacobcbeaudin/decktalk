@@ -14,7 +14,7 @@ import subprocess
 import sys
 import types
 import urllib.request
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -560,7 +560,7 @@ def test_a_build_directory_that_is_itself_a_link_out_of_the_project_is_refused(t
 
 
 @contextmanager
-def held(build: Path, owner: str = "1 abc\n") -> Iterator[None]:
+def held(build: Path, owner: str = "1 abc\n") -> Generator[None]:
     """The build lock taken by another writer, with its note, for as long as the block runs."""
     with FileLock(build / LOCK_FILE):
         replace_all({build / OWNER_FILE: owner})

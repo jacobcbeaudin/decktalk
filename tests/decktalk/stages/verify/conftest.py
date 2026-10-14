@@ -8,7 +8,7 @@ every sample the stage would read is a value the test names.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,7 +91,7 @@ class FakeDecoded:
 
 
 @contextmanager
-def opened(root: Path) -> Iterator[Run]:
+def opened(root: Path) -> Generator[Run]:
     """One run on a machine that read nothing, which is what the facade would hand the stage."""
     machine = a_machine(root)
     with machine._run(cancel=Cancel(), spend=False, root=root) as run:
