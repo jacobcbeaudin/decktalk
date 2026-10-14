@@ -12,6 +12,7 @@ A prompt an agent cannot answer and a flag that does not exist are the same fail
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -149,6 +150,9 @@ class Session:
                 # ask every tool for no colour is honoured before any flag, `--color always` included.
                 no_color=True if flags.color is When.NEVER else None,
                 force_terminal=True if flags.color is When.ALWAYS else None,
+                # rich takes any Windows stream without VT for the legacy console and draws one column
+                # short of COLUMNS, so a pipe, which is no console, is told it is not one.
+                legacy_windows=None if on_a_terminal(stderr=stderr) else False,
                 soft_wrap=True,
             )
             for stderr in (False, True)
@@ -568,3 +572,9 @@ def of(ctx: Context) -> Session:
 
 
 __all__ = ["Globals", "Session", "Terminal", "of"]
+
+
+def on_a_terminal(*, stderr: bool) -> bool:
+    """Whether the stream a console writes to is a terminal, which a closed or missing stream is not."""
+    stream = sys.stderr if stderr else sys.stdout
+    return stream is not None and not stream.closed and stream.isatty()

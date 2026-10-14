@@ -195,7 +195,7 @@ run = [["doctor"]]
 stream = "both"
 # A long path wraps onto a second line of its cell, which names nothing but the rest of the path.
 grep = '^(?!\s{10,}\S)'
-hide = ['(?<=\s)(?:/|~|[A-Za-z]:\\)\S.*$', '(?<=^Python    )\S.*$', '(?<=^Platform  )\S.*$']
+hide = ['(?<=\s)(?:/|~|[A-Za-z]:[\\/])\S.*$', '(?<=^Python    )\S.*$', '(?<=^Platform  )\S.*$']
 
 [doctor-empty-cache]
 page = "docs/quickstart.mdx"
