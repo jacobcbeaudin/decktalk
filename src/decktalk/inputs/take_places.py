@@ -44,7 +44,7 @@ import os
 import secrets
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -386,7 +386,7 @@ class TakePlaces:
     # ---- voice --------------------------------------------------------------------------------------
 
     @contextmanager
-    def _holding(self, digest: str, witness: Witness) -> Iterator[None]:
+    def _holding(self, digest: str, witness: Witness) -> Generator[None]:
         """Hold the store's lock on this take, waiting in short turns, and check the run once it is won.
 
         A run that finds the lock held asks its witness between turns, so a cancel stops the wait, and

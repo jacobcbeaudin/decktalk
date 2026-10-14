@@ -25,7 +25,7 @@ import os
 import platform
 import sys
 import time
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -165,7 +165,7 @@ class Toolchain:
         )
 
     @contextmanager
-    def bound(self, *, cancel: Cancel | None = None) -> Iterator[None]:
+    def bound(self, *, cancel: Cancel | None = None) -> Generator[None]:
         """Bind the keys, the pair, the cache directory and a run's cancel token below the machine.
 
         A toolchain built by hand for a test may name no cache at all, and it binds only its keys,
@@ -392,7 +392,7 @@ class Machine:
         keep_runs: int | None = None,
         max_bytes: int | None = None,
         threshold: Threshold = ERRORS_FAIL,
-    ) -> Iterator[Run]:
+    ) -> Generator[Run]:
         """Open one run on the stream, write its lines beside the project, and close it however it ends.
 
         A run with no project streams and writes no file, because there is nowhere under a project

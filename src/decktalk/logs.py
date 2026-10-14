@@ -28,7 +28,7 @@ the stream it is rendering.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
@@ -70,7 +70,7 @@ HANDLING: ContextVar[bool] = ContextVar("decktalk_log_handling", default=False)
 
 
 @contextmanager
-def logging_into(receiver: Receiver, *, run: str) -> Iterator[None]:
+def logging_into(receiver: Receiver, *, run: str) -> Generator[None]:
     """Hand every record written under this context to `receiver`, and to nobody once it closes."""
     sink, place = SINK.set(receiver), WHERE.set(Where(run=run))
     try:
@@ -81,7 +81,7 @@ def logging_into(receiver: Receiver, *, run: str) -> Iterator[None]:
 
 
 @contextmanager
-def within(*, stage: Stage | None, section: int | None = None) -> Iterator[None]:
+def within(*, stage: Stage | None, section: int | None = None) -> Generator[None]:
     """Stamp every line written under this context with one stage, and one section when there is one."""
     token = WHERE.set(replace(WHERE.get(), stage=stage, section=section))
     try:

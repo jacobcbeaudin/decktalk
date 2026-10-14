@@ -16,7 +16,7 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from importlib import resources
@@ -383,7 +383,7 @@ def test_a_changed_box_with_an_edge_that_is_not_finite_stands_for_the_whole_fram
 
 
 @contextmanager
-def held(allowed: Allowed, url: str = URL, *, ready: bool = True) -> Iterator[stepping.Stepper]:
+def held(allowed: Allowed, url: str = URL, *, ready: bool = True) -> Generator[stepping.Stepper]:
     """A loaded fixture page held still on its clock, prepared the way `record_piece` prepares one.
 
     With `ready` false the page is held straight after it loads, with nothing waited on in between.

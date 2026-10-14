@@ -34,7 +34,7 @@ import shutil
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterable, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from fractions import Fraction
@@ -93,7 +93,7 @@ def bound_tools() -> ToolsConfig:
 @contextmanager
 def using_tools(
     tools: ToolsConfig, *, paths: tuple[Path, Path] | None = None, cancel: Cancel | None = None
-) -> Iterator[None]:
+) -> Generator[None]:
     """Render with the executables and the cache directory `[tools]` names, while this is open.
 
     One call binds a run to a machine's own toolchain, so nothing between the machine and an audio
@@ -393,7 +393,7 @@ def stream(*args: str, into: Sink) -> None:
 
 
 @contextmanager
-def fed(*args: str, what: str) -> Iterator[Sink]:
+def fed(*args: str, what: str) -> Generator[Sink]:
     """ffmpeg run whose input is written by the caller, for an encode of frames made one at a time.
 
     The block writes through the function it is given, and leaving the block closes the input and

@@ -64,7 +64,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import defaultdict
-from collections.abc import Collection, Iterator, Mapping, Sequence
+from collections.abc import Collection, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 
@@ -510,7 +510,7 @@ class _Progress:
     """The placeholder digests this run has written, which a second turn of the same words plays as written."""
 
     @contextmanager
-    def writing(self, digest: str) -> Iterator[bool]:
+    def writing(self, digest: str) -> Generator[bool]:
         """Hold the one writer's place for a placeholder digest, answering whether this run already wrote it.
 
         A placeholder's digest is over its words alone, so a planned placeholder and a stand-in for a

@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -253,7 +253,7 @@ class Run:
     @contextmanager
     def _timed(
         self, start: type[Event], done: type[Event], *, opening: Mapping[str, int] | None = None, **both: object
-    ) -> Iterator[Ending]:
+    ) -> Generator[Ending]:
         """Emit `start`, run the block, and emit `done` with how it ended and how long it took.
 
         A block the caller cancelled or interrupted ends as stopped, because nothing in it failed. A

@@ -11,7 +11,7 @@ where unset says exactly what happens: the override is removed and the layer bel
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated
@@ -182,7 +182,7 @@ def explain_key(
 
 
 @contextmanager
-def _told(session: sessions.Session) -> Iterator[None]:
+def _told(session: sessions.Session) -> Generator[None]:
     """Say what the machine and the project file hold that DeckTalk does not read, then run the verb.
 
     A misspelled key or `DECKTALK_` variable is ignored, so the value these verbs report is the

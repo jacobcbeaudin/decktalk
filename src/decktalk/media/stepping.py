@@ -37,7 +37,7 @@ import tempfile
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -225,7 +225,7 @@ class LosslessPipe:
 
     @classmethod
     @contextmanager
-    def feeding(cls, send: Callable[[bytes], None]) -> Iterator[LosslessPipe]:
+    def feeding(cls, send: Callable[[bytes], None]) -> Generator[LosslessPipe]:
         """A pipe whose feeder sends through `send`, which has sent every frame once the block ends.
 
         A block that raises drops what has not been sent and leaves the feeder to end on its own once
@@ -594,7 +594,7 @@ def stepping(
     color_scheme: str,
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
-) -> Iterator[tuple[Page, Assets]]:
+) -> Generator[tuple[Page, Assets]]:
     """A page on Playwright's clock in a context of its own, and what it loads, closed however this ends.
 
     A context that cannot close after the block failed leaves the block's own error to say why: a

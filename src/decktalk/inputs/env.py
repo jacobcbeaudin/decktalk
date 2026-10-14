@@ -20,7 +20,7 @@ so a host that reaches this layer without a machine gets the host's rule and nev
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -46,7 +46,7 @@ It is false until a machine says otherwise, so a read with no run in progress fa
 
 
 @contextmanager
-def reading_dotenv(allowed: bool) -> Iterator[None]:
+def reading_dotenv(allowed: bool) -> Generator[None]:
     """Read a project's `.env` or leave it unread while this is open, as the running machine decided."""
     token = DOTENV.set(allowed)
     try:

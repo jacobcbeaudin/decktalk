@@ -13,7 +13,7 @@ A prompt an agent cannot answer and a flag that does not exist are the same fail
 from __future__ import annotations
 
 import sys
-from collections.abc import Collection, Iterator, Sequence
+from collections.abc import Collection, Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -207,7 +207,7 @@ class Session:
         return terminal.is_terminal and not plain
 
     @contextmanager
-    def watching(self, events: Events, *, opening: bool = False, heard: set[str] | None = None) -> Iterator[None]:
+    def watching(self, events: Events, *, opening: bool = False, heard: set[str] | None = None) -> Generator[None]:
         """Render this call's events for as long as it runs, and leave the stream as it was found.
 
         `opening` names the run and its events file on the first line of stderr, which is what lets

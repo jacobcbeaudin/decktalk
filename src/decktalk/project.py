@@ -30,7 +30,7 @@ import logging
 import os
 import re
 import threading
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Generator, Iterable, Sequence
 from contextlib import contextmanager, nullcontext
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -663,7 +663,7 @@ class Project:
         spend: bool = False,
         max_cost: float | None = None,
         writes: bool = True,
-    ) -> Iterator[Run]:
+    ) -> Generator[Run]:
         """One run of this project, with its lines beside the build and its lock held while it writes.
 
         Every run writes its event lines under the build directory and may prune old ones, so the
@@ -692,7 +692,7 @@ class Project:
                 yield run
 
     @contextmanager
-    def _lock(self, run: Run) -> Iterator[None]:
+    def _lock(self, run: Run) -> Generator[None]:
         """Hold this project's build directory for the length of one writing run.
 
         The trigger is not a service, it is a build run by hand under a live watch loop. The lock is

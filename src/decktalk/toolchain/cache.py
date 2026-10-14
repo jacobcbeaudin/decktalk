@@ -14,7 +14,7 @@ machine by hand has already said where its tools live.
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -32,7 +32,7 @@ CACHE_FOLDER = "cache"
 
 
 @contextmanager
-def caching_in(directory: str) -> Iterator[None]:
+def caching_in(directory: str) -> Generator[None]:
     """Keep what is fetched under `directory` while this is open.
 
     An empty directory leaves the binding already in force, which is how `[tools] cache_dir` left

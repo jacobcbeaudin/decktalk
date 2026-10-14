@@ -15,7 +15,7 @@ that mints the event and nothing in between translates.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
@@ -40,7 +40,7 @@ def announce(tool: str, done_bytes: int, total_bytes: int | None = None) -> None
 
 
 @contextmanager
-def announcing(listener: Announce) -> Iterator[None]:
+def announcing(listener: Announce) -> Generator[None]:
     """Report every fetch under this context to `listener`, and to nobody once it closes."""
     token = LISTENER.set(listener)
     try:

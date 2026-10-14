@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -163,7 +163,7 @@ class Chromium:
 
 
 @contextmanager
-def chromium(executable: str = "", *, policy: str, spend: bool) -> Iterator[Chromium]:
+def chromium(executable: str = "", *, policy: str, spend: bool) -> Generator[Chromium]:
     """A launched headless Chromium and its page policy, as the machine and the project configure it, closed on exit.
 
     Under the trusted policy no proxy argument is passed. Request routing answers the local origin

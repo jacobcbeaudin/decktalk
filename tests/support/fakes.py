@@ -19,7 +19,7 @@ import io
 import os
 import subprocess
 import wave
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -264,7 +264,7 @@ class Browsed:
         return self
 
     @contextmanager
-    def chromium(self, _executable: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
+    def chromium(self, _executable: str = "", *, policy: str, **_launch: object) -> Generator[object]:
         self.policies.append(policy)
         yield object()
 

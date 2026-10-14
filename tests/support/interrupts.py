@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import signal
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
@@ -21,7 +21,7 @@ aimed_signals = pytest.mark.skipif(
 
 
 @contextmanager
-def interrupts_raise() -> Iterator[None]:
+def interrupts_raise() -> Generator[None]:
     """SIGINT raises `KeyboardInterrupt` on the main thread for the length of the block, as it does in a terminal."""
     previous = signal.signal(signal.SIGINT, signal.default_int_handler)
     try:

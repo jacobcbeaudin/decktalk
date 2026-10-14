@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -75,7 +75,7 @@ def require(tools: tuple[str, ...], cwd: Path) -> None:
 
 
 @contextmanager
-def machine_tools() -> Iterator[None]:
+def machine_tools() -> Generator[None]:
     """Bind this process's machine's cache and tools, as a run does.
 
     A call to ffmpeg or a Chromium launch outside a run has no machine to say where the fetched build
