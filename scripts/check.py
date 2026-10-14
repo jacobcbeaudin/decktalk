@@ -132,6 +132,9 @@ FLOOR = "3.12"
 
 EVERY_PYTHON = (FLOOR, "3.13", "3.14")
 
+PLATFORM_HEADROOM = 15
+"""Calibration: the minutes a macOS or Windows row gets beyond its Linux row, as Windows e2e took 28 of 30."""
+
 NODE = "22"
 """The Node every leg that lists npm runs, which is the floor `package.json` sets and ci.yml reads from the matrix."""
 
@@ -373,19 +376,19 @@ class Group:
 
 
 def elsewhere(group: Group) -> Group:
-    """The same group on macOS and Windows, gating a merge and a release rather than a pull request.
+    """The same group on macOS and Windows, gating every pull request beside the Linux leg.
 
-    A group that drives a real tool is the only kind a second platform can fail on its own, and that
-    happens a few times a year. Running all three on every push would make every change wait for
-    three legs to buy one difference, so the Linux leg gates the change and this one gates the merge,
-    which is still before a user meets it.
+    A group that drives a real tool is the only kind a second platform can fail on its own. Gating
+    only the merge found those failures on main, after the change had landed, and the repository is
+    public, so the legs cost nothing but the wait, which runs beside Linux rather than after it. The
+    two runners are slower than Linux, so the row waits longer before it is cut off.
     """
     return replace(
         group,
         name=f"{group.name}-platforms",
-        why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
+        why=f"{group.why} This row is macOS and Windows.",
         runners=(MACOS, WINDOWS),
-        when=("main",),
+        timeout=group.timeout + PLATFORM_HEADROOM,
     )
 
 
