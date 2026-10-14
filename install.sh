@@ -391,12 +391,12 @@ report() {
 	fi
 	printf '%s%s is installed.%s Next:\n' "$BOLD" "$INSTALLED" "$RESET"
 	say ""
-	printf '    %sdecktalk install%s      %s# Chromium and ffmpeg, once per machine. On Linux it asks for sudo.%s\n' "$GOLD" "$RESET" "$DIM" "$RESET"
-	printf '    %sdecktalk init my-film%s\n' "$GOLD" "$RESET"
-	printf '    %scd my-film && decktalk build --no-spend%s\n' "$GOLD" "$RESET"
+	printf '    %sdecktalk install%s      %s# Linux, or to fetch Chromium and ffmpeg now. On Linux it asks for sudo.%s\n' "$GOLD" "$RESET" "$DIM" "$RESET"
+	printf '    %sdecktalk init my-lesson%s\n' "$GOLD" "$RESET"
+	printf '    %scd my-lesson && decktalk build --no-spend%s\n' "$GOLD" "$RESET"
 	say ""
 	note "That first build needs no account and spends nothing. For your own voice, put an"
-	note "ElevenLabs key in .env, set [voice] id in decktalk.toml, and run: decktalk build"
+	note "ElevenLabs key in .env, set [voices.narrator] id in decktalk.toml, and run: decktalk build"
 	say ""
 	# One link, and the one that answers the next question. Installers that end in a paragraph get
 	# skimmed; rustup, uv, bun and deno all end in commands and at most one URL.

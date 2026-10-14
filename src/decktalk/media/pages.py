@@ -6,25 +6,32 @@ module, and the recorder learns which files the page actually loaded.
 
 Two rules hold this module to a page it does not trust. Every call into the page carries a deadline,
 because a deck's own script runs in the same thread and a page that never answers would otherwise
-hold a build for as long as it cared to. And the probe is sealed onto the window before any script
-of the page runs, so the measurements come from the instrumentation the recorder injected.
+hold a build for as long as it cared to. The deadline is kept on the browser's own timer, which the
+probe took before Playwright's clock or the page could replace it, so it fires on a page whose clock
+the recorder holds as on any other. And the probe is sealed onto the window before any script of the
+page runs, so the measurements and the deadline come from the instrumentation the recorder injected.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import re
-from collections.abc import Iterator, Mapping
+import threading
+import time
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from playwright.sync_api import BrowserContext, Page
+from playwright.sync_api import BrowserContext, CDPSession, Page
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import ToolError
-from ..page import ENGINE_PATH, MOTION_SCALE_PROPERTY
-from ..settings import COLOR_SCHEMES, MotionConfig
+from ..page import CANVAS_HEIGHT_PROPERTY, CANVAS_WIDTH_PROPERTY, ENGINE_PATH, MOTION_SCALE_PROPERTY, layout
+from ..settings import COLOR_SCHEMES, MotionConfig, RecordConfig
 from ..toolchain.assets import RUNTIME_FILE, probe_path
 from . import pagereport
 from .browser import Chromium, choice_of
@@ -34,10 +41,10 @@ from .pagereport import PageReport
 log = logging.getLogger(__name__)
 
 # decktalk-probe.js is the instrumentation every command needs from a page and no page carries:
-# the magenta cover over the first paint, the helper that says when a page has settled, the
+# the step that moves a recorded page one frame, the helper that says when a page has settled, the
 # measured catalog's boxes and the freeze that stops at one cue. It is added as an init script, so
 # it runs before the page's own scripts and the runtime finds it, and it is never a <script src>
-# in a deck. The cover is drawn only where it is asked for, so a screenshot never shows it.
+# in a deck.
 PROBE_JS = probe_path().read_text(encoding="utf-8")
 # The probe is the recorder's own instrument, so a deck cannot take its name once it is on the
 # window. This runs as the init script after the probe's own and before any script of the page.
@@ -48,48 +55,57 @@ SEAL_JS = """(() => {
   Object.freeze(probe);
   Object.defineProperty(window, "__decktalkProbe", { value: probe, writable: false, configurable: false });
 })()"""
-COVER_JS = "() => window.__decktalkProbe.cover()"
-# How much this render slows every declared length down, which the runtime reads off the root. The
-# tag is appended once the page's own sheets are in the head, so the setting decides and not a deck.
-MOTION_JS = """(() => {
+# The canvas the page is laid out on, and how much this render slows every declared length down, which
+# the runtime reads off the root. The tag is appended once the page's own sheets are in the head, so
+# the settings decide and not a deck.
+ROOT_JS = """(() => {
   const add = () => {
     const style = document.createElement("style");
-    style.id = "dt-motion";
-    style.textContent = ":root{%s:%s}";
+    style.id = "dt-root";
+    style.textContent = ":root{%s}";
     (document.head || document.documentElement).appendChild(style);
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add, { once: true });
   else add();
 })()"""
-# Remove the cover, then start the page clock on the next animation frame.
-START_JS = "() => window.__decktalkProbe.lift()"
 READY_JS = "() => window.__decktalkProbe.ready()"
 # Two animation frames after the page is ready, so what the page drew in answer to ready() has been
 # through layout and paint before a frozen frame is taken.
 PAINTED_JS = "() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))"
 REPORT_JS = "() => window.__decktalkProbe.report()"
+# Draw one caption, given as JSON, in the band of a page opened with `?caption=1`, and wait until it has painted.
+CAPTION_JS = "() => window.__decktalk.caption(%s)"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
 NO_CATALOG = (
     f"no window.__decktalk.catalog (does the page load {ENGINE_PATH}{RUNTIME_FILE}, and does it register a scene?)"
 )
 
-DEADLINE_SECONDS = 15.0
-"""Calibration: many times the longest a probe call measures, so only a page that stopped answering hits it."""
+DEADLINE_SECONDS = RecordConfig().page_deadline_seconds
+"""Truth: the default of `[record] page_deadline_seconds`, which a call from a command other than `record` is held to.
+
+`record` holds every call into its pages to the machine's own value of the key instead.
+"""
 
 ColorScheme = Literal["light", "dark", "no-preference"]
 """What a page may be told the viewer prefers, which is the closed set `[record] color_scheme` publishes."""
 
 
-def motion_scripts(motion: MotionConfig) -> list[str]:
-    """What `[motion]` asks a page for, as the scripts that put it there before the page's own run.
+def page_scripts(width: int, height: int, motion: MotionConfig) -> list[str]:
+    """What a page on a frame `width` by `height` is told before its own run: its canvas and `[motion]`'s scale.
 
-    Reduced motion is a media feature rather than an attribute, so Chromium is asked for it and the
-    same render is what a person who asked their own machine for less motion sees in a preview. The
-    scale is a custom property, because it multiplies every length the sheet plays and no query key
-    could carry it.
+    The canvas is the frame's own shape at the size `layout` gives it, and it reaches the page as two
+    custom properties on the root, which the runtime reads and the page's stylesheet lays itself out
+    by. Reduced motion is a media feature rather than an attribute, so Chromium is asked for it and
+    the same render is what a person who asked their own machine for less motion sees in a preview.
+    The scale is a custom property, because it multiplies every length the sheet plays and no query
+    key could carry it.
     """
-    return [] if motion.scale == 1 else [MOTION_JS % (MOTION_SCALE_PROPERTY, f"{motion.scale:g}")]
+    canvas_width, canvas_height = layout(width, height)
+    told = [f"{CANVAS_WIDTH_PROPERTY}:{canvas_width}px", f"{CANVAS_HEIGHT_PROPERTY}:{canvas_height}px"]
+    if motion.scale != 1:
+        told.append(f"{MOTION_SCALE_PROPERTY}:{motion.scale:g}")
+    return [ROOT_JS % ";".join(told)]
 
 
 def scheme(value: str) -> ColorScheme:
@@ -115,23 +131,164 @@ def driving(what: str) -> Iterator[None]:
         raise ToolError(f"{what} ({str(exc).splitlines()[0]}).") from exc
 
 
+STOPPED_HINT = (
+    "Look for a script that spins the page's main thread or waits on something that never arrives, or give "
+    "a slow machine more time with record.page_deadline_seconds and record.deadline_slowdown."
+)
+"""What a recording the watchdog stopped tells its reader to do."""
+
+
+def close_soon(context: BrowserContext) -> None:
+    """Close `context` from a thread other than the one driving it, which is how a call stuck in its page ends.
+
+    Playwright's sync API answers only on the thread that opened it, and that thread is blocked in the
+    stuck call. It waits by running Playwright's own event loop, so the close is handed to that loop,
+    which sends it while the call waits, and the call then fails as one whose page was closed. A
+    context already closed, or a loop already stopped, has nothing left to close.
+    """
+    impl, loop = context._impl_obj, context._loop
+
+    def start() -> None:
+        closing = asyncio.ensure_future(impl.close())
+        closing.add_done_callback(lambda done: done.cancelled() or done.exception())
+
+    try:
+        loop.call_soon_threadsafe(start)
+    except RuntimeError:
+        # silent: a stopped loop has no context left open.
+        return
+
+
+def devtools(page: Page, session: CDPSession, method: str, params: Mapping[str, Any]) -> dict[str, Any]:
+    """What `method` over `session` answers, or a Playwright error as soon as `page` has closed or crashed.
+
+    Playwright fails a call into a page once the page closes or crashes, but a command over a DevTools
+    session waits for Chromium's own answer. On Linux a renderer that crashes under a command can close
+    its page and leave the command unanswered, and closing the context then ends nothing either, so the
+    `Watchdog` could not end such a call and a recording hung on it. The command is raced against the
+    page's end on Playwright's loop, as Playwright races its own calls into a page, so it ends when the
+    page does, and the watchdog's close ends it like any other call. A page that has already ended is
+    sent nothing and answers nothing, even when a command's answer arrives with the news of its end.
+    """
+    impl, sent_over = page._impl_obj, session._impl_obj
+    ended: asyncio.Future[Any] = impl._closed_or_crashed_future
+
+    async def raced() -> dict[str, Any]:
+        if ended.done():
+            raise ended.result()
+        sent = asyncio.ensure_future(sent_over.send(method, dict(params)))
+        await asyncio.wait([sent, ended], return_when=asyncio.FIRST_COMPLETED)
+        if not ended.done():
+            return sent.result()
+        sent.cancel()
+        sent.add_done_callback(lambda done: done.cancelled() or done.exception())
+        raise ended.result()
+
+    return session._sync(raced())
+
+
+@dataclass(eq=False)
+class Watchdog:
+    """A deadline on every call into one recorded page and on the recording as a whole, held from a thread of its own.
+
+    A page whose script never yields its main thread cannot be raced from inside itself, and Playwright
+    puts no deadline on `evaluate` or on its clock, so a call is held from outside: the thread waits
+    until the call's deadline, which is `call_seconds` from its start or the recording's own end if that
+    comes first, and closes the page's context if the call is still running then. The call then fails,
+    and `call` turns that failure into a `ToolError` naming `name`, the deadline and what the call was
+    doing, which is a TOOL error at the stuck frame rather than a hang.
+    """
+
+    close: Callable[[], None]
+    name: str
+    call_seconds: float
+    whole_seconds: float
+    ends: float = 0.0
+    """When the recording as a whole must be done, on the monotonic clock."""
+    doing: str | None = None
+    """What the call in flight is doing, or None between calls."""
+    due: float = 0.0
+    """When the call in flight must be done, on the monotonic clock."""
+    fired: str | None = None
+    """The sentence a recording the watchdog stopped says, once it has closed the page."""
+    over: bool = False
+    turn: threading.Condition = field(default_factory=threading.Condition)
+
+    @classmethod
+    @contextmanager
+    def watching(
+        cls, close: Callable[[], None], *, name: str, call_seconds: float, whole_seconds: float
+    ) -> Iterator[Watchdog]:
+        """A watchdog whose thread runs for the block, which is the recording it holds to its deadlines."""
+        dog = cls(close, name, call_seconds, whole_seconds, ends=time.monotonic() + whole_seconds)
+        thread = threading.Thread(target=dog.watch, daemon=True)
+        thread.start()
+        try:
+            yield dog
+        finally:
+            with dog.turn:
+                dog.over = True
+                dog.turn.notify_all()
+            thread.join()
+
+    def watch(self) -> None:
+        """Wait on each call in turn and close the page once one outlives its deadline, which the thread runs."""
+        with self.turn:
+            while not self.over:
+                if self.doing is None:
+                    self.turn.wait()
+                    continue
+                left = self.due - time.monotonic()
+                if left > 0:
+                    self.turn.wait(left)
+                    continue
+                self.fired = (
+                    f"{self.name} ran past its deadline of {self.whole_seconds:g} seconds at {self.doing}, "
+                    "so its page was closed."
+                    if self.due >= self.ends
+                    else f"{self.name} stopped answering at {self.doing}: no answer in {self.call_seconds:g} "
+                    "seconds, so its page was closed."
+                )
+                self.close()
+                return
+
+    def check(self) -> None:
+        """Raise the watchdog's `ToolError` when it closed the page, or when the recording is past its own end."""
+        if self.fired is None and time.monotonic() >= self.ends:
+            self.fired = f"{self.name} ran past its deadline of {self.whole_seconds:g} seconds."
+        if self.fired is not None:
+            raise ToolError(self.fired, hint=STOPPED_HINT)
+
+    @contextmanager
+    def call(self, doing: str) -> Iterator[None]:
+        """Hold one call into the page to its deadline, and say why it failed when the watchdog closed the page."""
+        self.check()
+        with self.turn:
+            self.doing = doing
+            self.due = min(time.monotonic() + self.call_seconds, self.ends)
+            self.turn.notify_all()
+        try:
+            yield
+        except (PlaywrightError, ToolError) as failed:
+            if self.fired is not None:
+                raise ToolError(self.fired, hint=STOPPED_HINT) from failed
+            raise
+        finally:
+            with self.turn:
+                self.doing = None
+
+
 def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> object:
     """Run one expression in the page and refuse to wait for it past the deadline.
 
-    The expression is raced against a timer inside the page, because the page is where a deck's own
-    promises are kept and a call that hangs there hangs this build. A page whose script never yields
-    the thread at all cannot be raced from inside itself, and that is what `page.close()` on the way
-    out of the recording context is for.
+    The expression is raced by the probe's `within`, on the browser's own timer, because the page is
+    where a deck's own promises are kept and a call that hangs there hangs this build. That timer is
+    neither the page's nor Playwright's clock, so it fires on a held page and leaves the clock no
+    timer of the recorder's own to end a still stretch. A page whose script never yields the thread
+    at all cannot be raced from inside itself, so every page a command opens also holds each call to
+    a `Watchdog`, which closes the page from outside.
     """
-    raced = (
-        "async () => {"
-        f"  const answer = Promise.resolve().then({script});"
-        "  const timer = new Promise((_ok, no) => setTimeout("
-        f"    () => no(new Error('the page did not answer within {deadline_seconds:g} seconds')),"
-        f"    {deadline_seconds * 1000:.0f}));"
-        "  return await Promise.race([answer, timer]);"
-        "}"
-    )
+    raced = f"() => window.__decktalkProbe.within(Promise.resolve().then({script}), {deadline_seconds:g})"
     with driving("the page could not answer"):
         return page.evaluate(raced)
 
@@ -177,7 +334,7 @@ def open_page(
     motion = motion or MotionConfig()
     with driving("could not open a page"):
         page = chromium.browser.new_page(**view(width, height, color_scheme, motion))
-    instrument(page, *motion_scripts(motion))
+    instrument(page, *page_scripts(width, height, motion))
     return page, route_pages(page, allowed, documents, trusted=chromium.trusted)
 
 
@@ -199,17 +356,17 @@ def load(page: Page, url: str) -> None:
         page.goto(url)
 
 
-def write_frame(page: Page, out: Path) -> None:
-    """Write what `page` shows now to `out` as a PNG."""
+def write_frame(page: Page, out: Path, *, clear: bool = False) -> None:
+    """Write what `page` shows now to `out` as a PNG, with an alpha channel where it draws nothing when `clear`."""
     out.parent.mkdir(parents=True, exist_ok=True)
     with driving(f"could not write {out.name}"):
-        page.screenshot(path=str(out))
+        page.screenshot(path=str(out), omit_background=clear)
 
 
-def await_ready(page: Page) -> None:
+def await_ready(page: Page, *, deadline_seconds: float = DEADLINE_SECONDS) -> None:
     """Wait for the page's fonts and the runtime's own readiness, and carry on when it has neither."""
     try:
-        evaluate(page, READY_JS)
+        evaluate(page, READY_JS, deadline_seconds=deadline_seconds)
     except ToolError:
         log.debug("the page did not answer __decktalkProbe.ready(), so it is taken as ready")
 
@@ -245,11 +402,11 @@ CONSOLE_KINDS = frozenset(("error", "warning"))
 """The console lines of a recorded page that are kept, which are the ones an author wrote to be seen."""
 
 
-def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
+def page_errors(page: Page, caught: list[str], label: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> list[str]:
     """The page's uncaught exceptions, plus one entry when the runtime catalog is missing. Each is logged."""
     errors = list(caught)
     try:
-        if not evaluate(page, HAS_CATALOG_JS):
+        if not evaluate(page, HAS_CATALOG_JS, deadline_seconds=deadline_seconds):
             errors.append(NO_CATALOG)
     except ToolError as unanswered:
         log.debug("[page] %s  could not say whether it has a catalog: %s", label, unanswered)
@@ -259,14 +416,14 @@ def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
     return errors
 
 
-def read_report(page: Page, label: str) -> PageReport:
+def read_report(page: Page, label: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> PageReport:
     """What the page says about itself, in the one call the contract names, read into models.
 
     A page that cannot answer at all reports nothing rather than stopping the recording, because a
     recording of a page with no probe in it is still a recording and `page_errors` says so.
     """
     try:
-        answer = evaluate(page, REPORT_JS)
+        answer = evaluate(page, REPORT_JS, deadline_seconds=deadline_seconds)
     except ToolError as refused:
         return pagereport.read(None).model_copy(update={"unreadable": (str(refused),)})
     report = pagereport.read(answer)
@@ -275,6 +432,16 @@ def read_report(page: Page, label: str) -> PageReport:
     for line in report.unreadable:
         log.debug("[page] %s  %s", label, line)
     return report
+
+
+def caption_frame(page: Page, caption: Mapping[str, object] | None, out: Path) -> None:
+    """Write one caption as the page draws it in its band, over a clear frame, to `out` as a PNG.
+
+    The page must be open with `?caption=1`. The runtime answers once the caption's fonts have
+    loaded and two frames have painted, so no fixed wait is spent on top of it.
+    """
+    evaluate(page, CAPTION_JS % json.dumps(caption))
+    write_frame(page, out, clear=True)
 
 
 def screenshot(page: Page, url: str, out: Path) -> PageReport:

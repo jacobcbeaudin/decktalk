@@ -26,7 +26,7 @@ from decktalk.project import Project
 from decktalk.results import UNPRICED, BuildResult, TakeState
 
 POLL_SECONDS = 0.4
-"""How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
+"""Calibration: how long the loop sleeps between two readings of the tree, which is under an author's own pause."""
 
 
 def loop(
@@ -40,8 +40,11 @@ def loop(
     """Serve the project, build it once, and rebuild what each save touches until the caller stops.
 
     The result given back is the last build made, so a caller that stopped the loop still receives
-    the run it was watching rather than nothing. A selection the project refuses ends the loop before
-    it serves, because no save could make a section that is not there.
+    the run it was watching rather than nothing, and one stopped during its first build receives the
+    interruption as a result with no film. The first build sits under the same handling as every
+    rebuild, so an interrupt anywhere says "Stopped." and closes the origin. A selection the
+    project refuses ends the loop before it serves, because no save could make a section that is not
+    there.
     """
     project.select(only)
     origin = project.serve()
@@ -50,9 +53,10 @@ def loop(
         "Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, "
         "and a take a voice bills for goes stale rather than being bought again."
     )
-    built = _once(session, project, skip=skip, only=only, force=force)
-    seen = _stamps(project)
+    built: BuildResult | None = None
     try:
+        built = _once(session, project, skip=skip, only=only, force=force)
+        seen = _stamps(project)
         while True:
             time.sleep(POLL_SECONDS)
             fresh = _stamps(project)
@@ -63,10 +67,12 @@ def loop(
             project = project.reload()
             built = _once(session, project, skip=skip, only=_touched(project, changed) or only, force=force)
             _stale(session, project)
-    except (KeyboardInterrupt, Cancelled):
-        # silent: an interrupt is how a person ends the watch loop, and one that lands in a rebuild's
+    except (KeyboardInterrupt, Cancelled) as stopped:
+        # silent: an interrupt is how a person ends the watch loop, and one that lands in a build's
         # narrate arrives as `Cancelled`.
         session.say("Stopped.")
+        if built is None:
+            built = _nothing(ErrorInfo.of_failure(stopped))
     finally:
         origin.close()
     return built
@@ -103,7 +109,7 @@ def _once(
 
 
 def _nothing(refusal: ErrorInfo) -> BuildResult:
-    """The result a refused rebuild leaves behind, which carries the refusal and no film.
+    """The result a refused rebuild or an interrupted first build leaves behind, which carries why and no film.
 
     A run that never opened bought nothing and asked no voice how it bills, so its price is nothing
     on a bill nobody declared, at a rate nobody stated.
@@ -131,15 +137,28 @@ def _touched(project: Project, changed: Iterable[Path]) -> tuple[int, ...] | Non
 
 
 def _stale(session: sessions.Session, project: Project) -> None:
-    """Say which sections hold a stale voiced take, with the clause that says what moved."""
+    """Say which sections hold a stale voiced take, with the clause that says what moved.
+
+    A section of several turns of which exactly one is stale names that turn, and the command that
+    voices it alone, so the hint buys the one take the save left behind.
+    """
     reported = project.status()
     for row in reported.sections:
-        if row.take_state is TakeState.STALE:
-            number = row.section
+        if row.take_state is not TakeState.STALE:
+            continue
+        number = row.section
+        stale = [one for one in row.turns if one.take_state is TakeState.STALE]
+        if len(row.turns) > 1 and len(stale) == 1:
+            [one] = stale
             session.say(
-                f"Section {number} has a stale voiced take, because {row.take_reason}. "
-                f"Run decktalk narrate --section {number} --spend to voice it again."
+                f"Turn {one.turn} of section {number}, which {one.voice} reads, has a stale voiced take, because "
+                f"{one.take_reason}. Run decktalk narrate --turn {number}.{one.turn} --spend to voice it again."
             )
+            continue
+        session.say(
+            f"Section {number} has a stale voiced take, because {row.take_reason}. "
+            f"Run decktalk narrate --section {number} --spend to voice it again."
+        )
 
 
 def _stamps(project: Project) -> dict[Path, float]:

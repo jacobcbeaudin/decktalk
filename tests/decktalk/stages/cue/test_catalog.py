@@ -61,7 +61,7 @@ def test_a_moment_with_no_row_is_one_error_per_section(tmp_path: Path) -> None:
                          cues_path=path, root=tmp_path, stage=Stage.CUE)  # fmt: skip
     (judged,) = found
     assert judged.code is Code.CUE_UNLISTED and judged.stage is Stage.CUE
-    assert "2 moment(s)" in judged.message and "1.1:b, 1.1:c" in judged.message
+    assert "declares 2 moments that" in judged.message and "1.1:b, 1.1:c" in judged.message
     assert judged.location.section == 1 and judged.location.file == Path("cues.json")
 
 
@@ -98,6 +98,22 @@ def test_a_section_the_file_holds_no_block_for_gets_a_whole_block(tmp_path: Path
     sections = json.loads(path.read_text(encoding="utf-8"))["sections"]
     assert sections["2"]["cues"] == [{"id": "2.1:a", "phrase": ""}]
     assert sections["1"]["cues"] == [{"id": "1.1:a", "phrase": "hello"}]
+
+
+def test_the_scaffold_fix_writes_under_sections_whatever_else_the_file_keys_by_that_number(tmp_path: Path) -> None:
+    """A block pasted one brace too late sits beside `sections`, where the reader never looks.
+
+    The fix writes where the reader reads, so the rows it adds are listed on the next run rather than
+    added to the stray block again and again.
+    """
+    path = tmp_path / "cues.json"
+    stray = {"sections": {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]}}, "2": {"cues": []}}
+    path.write_text(json.dumps(stray, indent=2), encoding="utf-8")
+    found = cue_findings({2: ("2.1:a",)}, _cued(1, [("1.1:a", "hello")]), cues_path=path, root=tmp_path)
+    applied(path, tmp_path, found)
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written["sections"]["2"]["cues"] == [{"id": "2.1:a", "phrase": ""}]
+    assert written["2"] == {"cues": []}
 
 
 def test_two_sections_scaffolded_by_one_call_do_not_land_on_top_of_each_other(tmp_path: Path) -> None:

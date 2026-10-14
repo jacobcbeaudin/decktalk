@@ -7,9 +7,10 @@ refusal, and a file is never left in a shape the loader would refuse.
 
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Mapping, MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -21,7 +22,17 @@ from decktalk.files import current_text, replace_all
 from decktalk.findings import Location
 from decktalk.locate import refused_line
 from decktalk.results import ConfigSetResult, ConfigUnsetResult, Layer, Scope, SettingValue, counted
-from decktalk.settings import BY_ID, KEYS, PROJECT_FILE, key_named, not_a_key
+from decktalk.settings import (
+    KEYS,
+    PROJECT_FILE,
+    STATIC_KEYS,
+    TEMPLATES,
+    VOICE_NAME,
+    VOICES_TABLE,
+    key_named,
+    key_of,
+    not_a_key,
+)
 from decktalk.settings.layers import (
     ABSENT,
     Loaded,
@@ -92,7 +103,7 @@ def edit(text: str, key: str, value: str, *, scope: Scope, file: Path) -> Edited
     typed = parse_value(known, value)
     document = _document(text, file)
     previous = stated(document, key)
-    _put(document, key.split("."), typed)
+    _put(document, known.id.split("."), typed)
     return Edited(text=tomlkit.dumps(document), value=typed, previous=previous)
 
 
@@ -123,7 +134,7 @@ def write(
         replace_all({target: edited.text})
     # A write that a higher layer shadows changes the file and not the run, so the result says so
     # rather than reporting a new value the next command will not use.
-    tree = _in_force(path, scope, {key: edited.value}, environ)
+    tree = _in_force(path, scope, edited.text, environ)
     return ConfigSetResult(
         ok=True,
         written=() if dry_run else (named_file(path, scope),),
@@ -158,11 +169,11 @@ def unset(path: Path, key: str, *more: str, scope: Scope, environ: Mapping[str, 
     previous = stated(document, key)
     for one in stating:
         _take(document, one.split("."))
+    text = tomlkit.dumps(document)
     if stating:
-        text = tomlkit.dumps(document)
         validate(text, path, scope)
         replace_all({target: text})
-    tree = _in_force(path, scope, {}, environ)
+    tree = _in_force(path, scope, text, environ)
     return ConfigUnsetResult(
         ok=True,
         written=(named_file(path, scope),) if stating else (),
@@ -203,11 +214,15 @@ def _document(text: str, file: Path) -> tomlkit.TOMLDocument:
 
 
 def _put(document: MutableMapping[str, Any], parts: list[str], value: object) -> None:
-    """One key set in a parsed document, adding the tables it sits in when they are not there yet."""
+    """One key set in a parsed document, adding the tables it sits in when they are not there yet.
+
+    `[voices]` holds nothing but one table per voice, so it is added as a table that writes no
+    header of its own, and a new voice is written `[voices.NAME]` as an author writes it.
+    """
     table = document
     for part in parts[:-1]:
         if part not in table:
-            table[part] = tomlkit.table()
+            table[part] = tomlkit.table(is_super_table=table is document and part == VOICES_TABLE)
         table = cast("MutableMapping[str, Any]", table[part])
     table[parts[-1]] = value
 
@@ -247,17 +262,18 @@ def validate(text: str, path: Path, scope: Scope) -> None:
     )
 
 
-def _in_force(path: Path, scope: Scope, stated: Mapping[str, object], environ: Mapping[str, str]) -> Loaded:
+def _in_force(path: Path, scope: Scope, text: str, environ: Mapping[str, str]) -> Loaded:
     """The whole tree as it stands once a write or a removal has landed in the named file.
 
-    Only the key the call touched is handed back to the loader, because no other key in that file
-    decides this one: the layer under a settings file is the default, and the layers over it are the
-    environment and the run's own overrides. A key is scoped to one file, so the file the call left
-    alone states nothing about it either.
+    The whole file is handed back to the loader, because a key may be decided by others in it: a
+    voice's key by its provider's table and by which voices the file declares. The layers over the
+    file are the environment and the run's own overrides. A key is scoped to one file, so the file
+    the call left alone states nothing about it.
     """
+    data = tomllib.loads(text)
     return load(
-        machine=nested(stated) if scope is Scope.MACHINE else {},
-        project=nested(stated) if scope is Scope.PROJECT else {},
+        machine=data if scope is Scope.MACHINE else {},
+        project=data if scope is Scope.PROJECT else {},
         machine_path=path if scope is Scope.MACHINE else None,
         environ=environ,
     )
@@ -285,9 +301,12 @@ def key_or_table(named: str) -> None:
 
     `unset` removes a key or a whole table, so either is a name it takes. A name that is neither is
     the caller's slip, which is refused the way a reader of one key refuses it rather than reported
-    as a file that happens not to state it.
+    as a file that happens not to state it. A voice's table, `voices.NAME`, is a table of the family.
     """
-    if not any(under(one.id, named) for one in KEYS):
+    table, _, name = named.partition(".")
+    if table == VOICES_TABLE and (not name or (re.fullmatch(VOICE_NAME, name) and "." not in name)):
+        return
+    if not any(under(one.id, named) for one in KEYS) and key_of(named) is None:
         raise not_a_key(named)
 
 
@@ -304,10 +323,11 @@ def setting_value(loaded: Loaded, key: Key, *, defaults: bool = False) -> Settin
 
 
 def rows(loaded: Loaded, table: str | None, *, defaults: bool, changed: bool) -> tuple[SettingValue, ...]:
-    """Every published key as one row, filtered by the table and by whether anything overrode it."""
+    """Every key these settings hold as one row, every voice's included, filtered by the table and by whether
+    anything overrode it."""
     found = tuple(
         setting_value(loaded, key, defaults=defaults)
-        for key in KEYS
+        for key in loaded.keys
         if not (table and not under(key.id, table))
         and not (changed and loaded.layers.winner(key.id).layer is Layer.DEFAULT)
     )
@@ -323,12 +343,23 @@ def stating(path: Path, named: str, *, whole_table: bool) -> tuple[str, ...]:
     because a table is many keys at once and a person who typed one word meant one thing.
     """
     document = read_toml(path)
-    going = tuple(one.id for one in KEYS if under(one.id, named) and stated(document, one.id) is not ABSENT)
+    going = tuple(
+        one.id for one in _keys_of(document) if under(one.id, named) and stated(document, one.id) is not ABSENT
+    )
     if not going:
         raise InputError(f"{path.name} sets nothing under '{named}'.", hint="Run decktalk config list --changed.")
-    if named not in BY_ID and not whole_table:
+    if key_of(named) is None and not whole_table:
         raise InputError(
             f"'{named}' is a whole table, and removing it would take out {counted(len(going), 'key')} at once.",
             hint=f"Run decktalk config unset {named} --table to remove all of them.",
         )
     return going
+
+
+def _keys_of(document: Mapping[str, Any]) -> tuple[Key, ...]:
+    """Every key a settings file could state: the fixed keys, then every key of each voice it writes a table for."""
+    voices = document.get(VOICES_TABLE)
+    names = [name for name in voices if re.fullmatch(VOICE_NAME, name)] if isinstance(voices, Mapping) else []
+    return STATIC_KEYS + tuple(
+        replace(template, id=f"{VOICES_TABLE}.{name}.{template.name}") for name in names for template in TEMPLATES
+    )

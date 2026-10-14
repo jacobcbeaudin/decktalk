@@ -17,7 +17,10 @@ from decktalk.results import Word
 from decktalk.stages.words import words
 from support.projects import write_project
 from support.runs import a_run
-from support.takes import a_take, narrated
+from support.takes import (
+    a_take,
+    narrated,
+)
 
 TOML = """
 [project]
@@ -49,7 +52,11 @@ def an_inputs(root: Path, *, numbers: tuple[int, ...] = (1, 2), voiced: bool = T
         ]
         for number in numbers
     }
-    narrated(inputs, *(a_take(number, voiced=voiced, spoken=SPOKEN[number]) for number in numbers), words=said)
+    takes = (
+        a_take(number, voiced=voiced, spoken=SPOKEN[number], lead_seconds=inputs.lead_seconds(number))
+        for number in numbers
+    )
+    narrated(inputs, *takes, words=said)
     return inputs
 
 
@@ -103,3 +110,22 @@ def test_the_command_writes_nothing(tmp_path: Path) -> None:
     run = a_run(tmp_path)
     words(an_inputs(tmp_path), run)
     assert run.written == []
+
+
+def test_words_labels_each_turn_with_its_voice(tmp_path: Path) -> None:
+    """A dialogue section's words run on one clock, and each turn says which voice reads it and how many words."""
+    write_project(tmp_path, TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n')
+    inputs = Inputs.load(tmp_path, environ={})
+    first = a_take(1, spoken="Hello, there.", tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, voice="guest", spoken="Again.", tail_seconds=0.7, digest="0000000000000002")
+    said = {
+        (1, 1): [Word(word="Hello", start=0.0, end=0.4), Word(word="there", start=0.5, end=0.9)],
+        (1, 2): [Word(word="Again", start=0.0, end=0.4)],
+    }
+    narrated(inputs, first, second, words=said)
+    (section,) = words(inputs, a_run(tmp_path)).sections
+    assert [word.word for word in section.words] == ["Hello,", "there.", "Again."]
+    assert [(turn.turn, turn.voice, turn.word_count, turn.estimated) for turn in section.turns] == [
+        (1, "narrator", 2, False),
+        (2, "guest", 1, False),
+    ]

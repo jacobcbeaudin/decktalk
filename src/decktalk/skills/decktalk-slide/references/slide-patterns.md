@@ -115,7 +115,8 @@ the page's stylesheet has to drop the motion under the reduced-motion class or t
 
 - The canvas is 1920 by 1080, and the page is scaled to it.
 - Body text is 36 pixels or larger.
-- The bottom fifteen percent is the caption band. Keep every cued element out of it.
+- The bottom 192 pixels are the caption band, two lines of caption above a margin. Keep every cued
+  element out of them.
 - Four reveals is the most one slide should carry, and three equations is the most.
 - Scope every class name to its scene, such as `.s3-eq`, so two scenes on one page cannot collide.
 

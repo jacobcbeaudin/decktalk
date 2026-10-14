@@ -1,0 +1,42 @@
+---
+title: Examples
+description: The starter and the three finished projects decktalk init writes, and what each one teaches.
+---
+
+`decktalk init` writes the starter unless `--example` names another project. Each one builds with no
+account and no spend, the motion example once its program is allowed, and each is a whole project to
+read and change.
+
+| Example | Command | What it shows | Read with |
+|---|---|---|---|
+| starter | `decktalk init my-lesson` | Three sections on one page: reveals on their words, a step back and a return, a formula in KaTeX and a line that lights word by word. | [Quickstart](/quickstart) |
+| lesson | `decktalk init --example lesson my-lesson` | A finished lesson of about two minutes on how a model learns, on a page of its own. | [Lessons](/use-cases/lessons) |
+| interview | `decktalk init --example interview my-interview` | A narrator and a guest, two voices, whose second section is a dialogue with each turn its own take. | [Write a dialogue](/guides/dialogue) |
+| motion | `decktalk init --example motion my-motion` | Motions in the markup and from a script, a loop, a spring, and a render section whose picture a program draws. | [Things that move](/guides/motion) |
+
+Build any of them the same way, from inside the project:
+
+```console
+decktalk build --no-spend
+```
+
+The motion example's third section is a render section, and its program runs only on a machine that
+allows it. Read `render/draw_bars`, then allow it for one run:
+
+```console
+decktalk build --no-spend --set record.programs=run
+```
+
+Without it the build is refused before its first stage with an `INPUT` error naming the program.
+[Pages and programs you did not write](/reference/trust#programs-a-project-names) says how far a
+program is trusted.
+
+Every example plays a placeholder where a voice would be, because no voice id is set. To voice one,
+set each `[voices.NAME] id` in `decktalk.toml` and put your ElevenLabs key in `.env`, as the
+[quickstart](/quickstart) shows.
+
+## Next
+
+- **Build the starter step by step:** [Quickstart](/quickstart)
+- **Write one section of your own:** [Your first deck](/guides/first-deck)
+- **Pick the shape of your film:** [Technical tutorials](/use-cases/technical-tutorials), [Product demos](/use-cases/product-demos) and [Lessons](/use-cases/lessons)

@@ -8,11 +8,11 @@ directory included, handed from one to the other. The render job's build does no
 every take the voice job bought and never builds a voice. This drives exactly that split through the
 public SDK, each job a real subprocess with an environment the test chose.
 
-The voice job's provider is a stand-in that asks the machine for the key, checks it is the sentinel,
-and answers with a real tone from the pinned ffmpeg, so no request leaves the machine and nothing is
-spent. The render job records every environment a Chromium launch is handed and reports it, because
-that environment, and the job's own, are the two places a key could reach a page. The key here is
-an obvious sentinel and never a credential.
+The voice job's provider is the host's own, registered as `house`, which asks the machine for the
+key, checks it is the sentinel, and answers with a real tone from the pinned ffmpeg, so no request
+leaves the machine and nothing is spent. The render job records every environment a Chromium launch
+is handed and reports it, because that environment, and the job's own, are the two places a key
+could reach a page. The key here is an obvious sentinel and never a credential.
 """
 
 from __future__ import annotations
@@ -53,6 +53,7 @@ import decktalk
 from decktalk.machine import Machine
 from decktalk.media import browser, ffmpeg
 from decktalk.results import TakeOutcome, Word
+from decktalk.speech import Speech
 
 root, cache, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 KEY, SENTINEL = "ELEVENLABS_API_KEY", "sk-split-sentinel-not-a-credential"
@@ -80,7 +81,7 @@ class Tone:
         seconds = max(1.0, len(words) / 3)
         ffmpeg.run("-f", "lavfi", "-i", "sine=f=220:r=44100", "-t", f"{seconds:.2f}", "-c:a", "libmp3lame", str(clip))
         timed = [Word(word=w, start=i / 3, end=(i + 1) / 3) for i, w in enumerate(words)]
-        return clip.read_bytes(), timed
+        return Speech(clip.read_bytes(), tuple(timed))
 
 
 import os
@@ -89,7 +90,7 @@ here = Machine.of(
     machine_file=out.parent / "voice-machine.toml",
     cwd=root,
     cache_dir=cache,
-    speech_providers={"elevenlabs": Tone},
+    speech_providers={"house": Tone},
 )
 result = decktalk.open(root, machine=here).narrate(spend=True)
 voiced = [take.section for take in result.sections if take.outcome is TakeOutcome.VOICED]
@@ -123,7 +124,7 @@ def refuse(_context):
 
 browser.child_environment = watched
 base = Machine.from_environment()
-here = replace(base, speech_providers=replace(base.speech_providers, factories={"elevenlabs": refuse}))
+here = replace(base, speech_providers=replace(base.speech_providers, factories={"house": refuse}))
 built = decktalk.open(root, machine=here, threshold=decktalk.Threshold(stop_on=None)).build()
 takes = Takes.read(root / "build" / "narrate" / "takes.json")
 out.write_text(
@@ -166,9 +167,14 @@ def test_the_api_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> N
     voice_root = tmp_path / "voice" / "starter"
     voice_root.parent.mkdir()
     init(voice_root, machine=here, skills=False)
+    # The stand-in is the host's own voice, so the project names it by the host's name for it.
+    toml = voice_root / "decktalk.toml"
+    toml.write_text(
+        toml.read_text(encoding="utf-8").replace('provider = "elevenlabs"', 'provider = "house"'), encoding="utf-8"
+    )
 
     voiced = tmp_path / "voice" / "result.json"
-    voice_env = carried(**{KEY: SENTINEL, "DECKTALK_VOICE_ID": "house-voice"})
+    voice_env = carried(**{KEY: SENTINEL, "DECKTALK_VOICES_NARRATOR_ID": "house-voice"})
     job(VOICE_JOB, [str(voice_root), str(here.cache_dir), str(voiced)], voice_env, voice_root)
     said = json.loads(voiced.read_text(encoding="utf-8"))
     assert said["ok"] and said["voiced"], "the voice job voiced nothing"
@@ -179,7 +185,10 @@ def test_the_api_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> N
     rendered = tmp_path / "render" / "result.json"
     # The voice is a published name and travels with the project, so the render job is handed it and no key.
     render_env = carried(
-        **{MACHINE_FILE_VARIABLE: str(tmp_path / "render" / "machine.toml"), "DECKTALK_VOICE_ID": "house-voice"}
+        **{
+            MACHINE_FILE_VARIABLE: str(tmp_path / "render" / "machine.toml"),
+            "DECKTALK_VOICES_NARRATOR_ID": "house-voice",
+        }
     )
     assert KEY not in render_env
     job(RENDER_JOB, [str(render_root), str(rendered)], render_env, render_root)

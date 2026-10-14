@@ -1,10 +1,11 @@
 """The tools a stage reaches for, faked at the seam the stage imports.
 
 A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a provider that bills,
-so ffmpeg is replaced at the one module attribute the stage reads and the voice is registered in the
-table the test's runs are opened with, each fixture handing back the record of what the stage asked
+so ffmpeg is replaced at the one module attribute the stage reads and a fake voice stands in behind
+the shipped adapter's `for_context`, each fixture handing back the record of what the stage asked
 for, and `FakePage` is the page a browser seam hands a stage.
-`FakeChromium` stands one level lower, as the Playwright a launch is handed.
+`FakeChromium` stands one level lower, as the Playwright a launch is handed, and `FakeInstaller` is
+the `playwright install` a fetch starts.
 Faking the seam rather than the stage is what keeps these tests about the stage: an argument list, a
 page call or a speech request that changes shape shows up here rather than passing unread.
 
@@ -14,51 +15,140 @@ here to type the fixture it asked for or to build one of its own.
 
 from __future__ import annotations
 
+import io
 import os
-from collections.abc import Callable
-from contextlib import AbstractContextManager, nullcontext
+import subprocess
+import wave
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
+from urllib.parse import unquote, urlsplit
 
+import pytest
+from playwright.sync_api import Browser, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Page, Playwright
 
-from decktalk.media import pages
+from decktalk.errors import ProviderError
+from decktalk.media import browser, pages
+from decktalk.media.browser import TRUSTED, Chromium, PagePolicy
+from decktalk.media.origin import Assets
+from decktalk.media.pagereport import PageReport
 from decktalk.results import Word
-from decktalk.speech import DECLARED, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest
+from decktalk.speech import (
+    ALIGNERS,
+    PROVIDERS,
+    Aligner,
+    AlignerContext,
+    AlignerIdentity,
+    AlignmentRequest,
+    Speech,
+    SpeechFactory,
+    SpeechRequest,
+)
+from decktalk.speech.dtsp import Dtsp
+from decktalk.speech.elevenlabs import ElevenLabs
+from decktalk.speech.sound import SOUNDS, SoundFactory
+from decktalk.speech.sound.elevenlabs import ElevenLabsSound
+from decktalk.tomlmap import variable
 
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
 
 FAKE_VOICE_NAME = "elevenlabs"
-"""The `[voice] provider` a project under test names, which `fake_voice` answers for in place of the shipped voice.
+"""The provider a project under test reads its voice with, which `fake_voice` stands in for.
 
-A fake stands in under the shipped name, so the project reads the shipped voice's own table, its
-default model and its stated rate, and the fake is registered only on the machine of the test's runs.
+A fake stands in behind the shipped name, so the project reads the shipped voice's own table, its
+default model and its stated rate. The machine is handed the shipped factory under that name, which
+is the only factory a name DeckTalk ships may carry, and the fake answers when that factory builds
+its adapter, for the length of the test alone.
 """
 
 FREE_VOICE_NAME = "dtsp"
 """The voice DeckTalk ships that bills nothing, which a project under test names to be read by a free voice."""
 
+NARRATOR_ID = variable("voices.narrator.id")
+"""The variable that names the voice id of `narrator`, the default voice every project under test is read in."""
 
-def refusing_voices() -> dict[str, SpeechFactory]:
-    """A voice table naming every voice DeckTalk ships, each refusing to be built, for a test to put its fakes in.
+ADAPTERS: dict[str, type[ElevenLabs | Dtsp]] = {"elevenlabs": ElevenLabs, "dtsp": Dtsp}
+"""The adapter class each shipped voice factory builds through its `for_context`, which is where a fake stands in."""
 
-    A run on this table answers a fake registered under a name in place of the refusal, so a test that
-    forgot its fake fails at the build and never reaches a real adapter or a voice served on this machine.
+SOUND_ADAPTERS: dict[str, type[ElevenLabsSound]] = {"elevenlabs": ElevenLabsSound}
+"""The adapter class each shipped sound factory builds through its `for_context`, which is where a fake stands in."""
+
+
+class StandIns[F](dict[str, F]):
+    """The fakes a test stands in for the providers DeckTalk ships, by name, beside any provider of a host's own.
+
+    A name DeckTalk ships holds the fake its adapter answers with, and registering the shipped factory
+    there reaches the real adapter. Any other name is a host's own provider, handed to the machine as it is.
     """
-    return {name: _refused(name) for name in DECLARED}
+
+    def __init__(self, shipped: Mapping[str, F], fakes: Mapping[str, F]) -> None:
+        super().__init__(fakes)
+        self.shipped = shipped
+
+    @property
+    def table(self) -> dict[str, F]:
+        """The table a machine is handed: the shipped factory under each shipped name, else the test's own."""
+        return {name: self.shipped.get(name, factory) for name, factory in self.items()}
 
 
-def _refused(name: str) -> SpeechFactory:
-    """A factory that refuses to build the shipped voice `name`."""
+def stand_in(monkeypatch: pytest.MonkeyPatch) -> StandIns[SpeechFactory]:
+    """Every shipped voice adapter answering with the fake a test registers under its name, refusing till then.
 
-    def build(_context: SpeechContext) -> SpeechProvider:
-        raise AssertionError(f"the test built the shipped voice {name!r}, which it never faked")
+    A run that forgot its fake fails at the build and never reaches a real adapter or a voice served on
+    this machine. The adapters are back as they were when the test ends.
+    """
+    return _standing_in(monkeypatch, PROVIDERS, ADAPTERS)
+
+
+def stand_in_sounds(monkeypatch: pytest.MonkeyPatch) -> StandIns[SoundFactory]:
+    """Every shipped sound adapter answering with the fake a test registers under its name, refusing till then."""
+    return _standing_in(monkeypatch, SOUNDS, SOUND_ADAPTERS)
+
+
+def _standing_in[F](
+    monkeypatch: pytest.MonkeyPatch,
+    shipped: Mapping[str, F],
+    adapters: Mapping[str, type[ElevenLabs | Dtsp | ElevenLabsSound]],
+) -> StandIns[F]:
+    """Each adapter in `adapters` built by the fake under its name in the stand-ins, or by itself when asked."""
+    assert sorted(adapters) == sorted(shipped), "a shipped provider has no adapter here for a fake to stand in for"
+    fakes: StandIns[F] = StandIns(shipped, {name: cast("F", _refused(name)) for name in shipped})
+    for name, adapter in adapters.items():
+        monkeypatch.setattr(adapter, "for_context", _built_by(fakes, name, adapter.for_context))
+    return fakes
+
+
+def _built_by[F](fakes: StandIns[F], name: str, real: Callable[[Any], object]) -> Callable[[Any], object]:
+    """How the shipped adapter `name` is built while a test stands in for it: its fake, or itself when asked."""
+
+    def build(context: object) -> object:
+        factory = fakes[name]
+        return real(context) if factory is fakes.shipped[name] else cast("Callable[[Any], object]", factory)(context)
 
     return build
+
+
+def _refused(name: str, what: str = "provider") -> Callable[[Any], Any]:
+    """A factory that refuses to build the shipped `what` called `name`."""
+
+    def build(_context: object) -> object:
+        raise AssertionError(f"the test built the shipped {what} {name!r}, which it never faked")
+
+    return build
+
+
+def refusing_aligners() -> dict[str, Callable[[AlignerContext], Aligner]]:
+    """An aligner table naming the aligner DeckTalk ships, refusing to be built, for a test to put its fake in.
+
+    A run on this table that needs an aligner and was given no fake fails at the build, so no test
+    ever reaches a local server by a table it left alone.
+    """
+    return {name: _refused(name, "aligner") for name in ALIGNERS}
 
 
 @dataclass
@@ -92,11 +182,16 @@ NOTHING_REPORTED: dict[str, object] = {
 
 
 class FakePage:
-    """A Chromium page that answers every call and remembers what was asked of it."""
+    """A Chromium page that answers every call and remembers what was asked of it.
+
+    It is also a context or a page a script is added to, which is what `pages.instrument` is handed.
+    """
 
     def __init__(self) -> None:
         self.urls: list[str] = []
         self.scripts: list[str] = []
+        self.init_scripts: list[str] = []
+        self.html = ""
         self.report: dict[str, object] = dict(NOTHING_REPORTED)
 
     def page(self) -> Page:
@@ -106,8 +201,14 @@ class FakePage:
     def on(self, event: str, handler: object) -> None:
         """A recorder listens for the page's own exceptions, and this page throws none."""
 
+    def add_init_script(self, script: str) -> None:
+        self.init_scripts.append(script)
+
     def goto(self, url: str, **_kwargs: object) -> None:
         self.urls.append(url)
+
+    def set_content(self, html: str) -> None:
+        self.html = html
 
     def evaluate(self, script: str, *_args: object) -> object:
         self.scripts.append(script)
@@ -124,10 +225,77 @@ class FakePage:
         """A recorder waits in real time and a test does not, so this passes the time by skipping it."""
 
     def screenshot(self, *, path: str | Path, **_kwargs: object) -> None:
-        Path(path).write_bytes(b"")
+        Path(path).write_bytes(b"png")
 
     def close(self) -> None:
         """A page a test opened is closed the way a real one is, and closing it does nothing here."""
+
+
+@dataclass
+class Browsed:
+    """The browser `decktalk.pictures` reaches, replaced so a stage that opens pages runs whole and opens none.
+
+    Every page answers the report `reports` holds for the file it was last pointed at, or an empty
+    one, and every still is written as a few bytes. What the stage asked for is kept: the policy of
+    every launch, every file a page was loaded to read and every still with the URL it was drawn at.
+    """
+
+    reports: dict[str, PageReport] = field(default_factory=dict)
+    assets: Assets = field(default_factory=lambda: Assets(Path()))
+    page: FakePage = field(default_factory=FakePage)
+    policies: list[str] = field(default_factory=list)
+    loaded: list[str] = field(default_factory=list)
+    """Every project file a page was pointed at to be read, in order."""
+    stills: list[str] = field(default_factory=list)
+    """Every URL a still was drawn at, in order."""
+    shots: list[Path] = field(default_factory=list)
+    """Every file a still was written to, in order."""
+    documents: list[str] = field(default_factory=list)
+    """Every page of DeckTalk's own a run opened, such as a slate, as the markup it was handed."""
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> Browsed:
+        """Replace the media layer's browser and page calls with this one's, and give it back."""
+        monkeypatch.setattr(browser, "chromium", self.chromium)
+        monkeypatch.setattr(pages, "open_page", self.open_page)
+        monkeypatch.setattr(pages, "open_document", self.open_document)
+        monkeypatch.setattr(pages, "load", self.load)
+        monkeypatch.setattr(pages, "read_report", self.read_report)
+        monkeypatch.setattr(pages, "screenshot", self.screenshot)
+        return self
+
+    @contextmanager
+    def chromium(self, _executable: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
+        self.policies.append(policy)
+        yield object()
+
+    def open_page(self, *_args: object, **_kwargs: object) -> tuple[Page, Assets]:
+        return self.page.page(), self.assets
+
+    def open_document(self, _chromium: object, html: str, **_options: object) -> Page:
+        self.documents.append(html)
+        page = FakePage()
+        page.set_content(html)
+        return page.page()
+
+    def load(self, page: Page, url: str) -> None:
+        page.goto(url)
+        self.loaded.append(self.file(url))
+
+    def read_report(self, page: Page, _label: str, **_kwargs: object) -> PageReport:
+        return self.reports.get(self.file(cast("FakePage", page).urls[-1]), PageReport())
+
+    def screenshot(self, page: Page, url: str, out: Path) -> PageReport:
+        page.goto(url)
+        self.stills.append(url)
+        self.shots.append(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"png")
+        return self.read_report(page, out.stem)
+
+    @staticmethod
+    def file(url: str) -> str:
+        """The project file a page URL names."""
+        return unquote(urlsplit(url).path).lstrip("/")
 
 
 @dataclass
@@ -137,25 +305,31 @@ class FakeVoice:
     name: str = FAKE_VOICE_NAME
     requests: list[SpeechRequest] = field(default_factory=list)
     audio: bytes = b"take"
-    words: list[Word] = field(
+    words: list[Word] | None = field(
         default_factory=lambda: [Word(word="hello", start=0.0, end=0.5), Word(word="there", start=0.5, end=1.0)]
     )
+    """The words every take comes with, or None for a voice that sends no word times."""
+    model_digest: str | None = None
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         self.requests.append(request)
-        return self.audio, list(self.words)
+        return Speech(self.audio, tuple(self.words) if self.words else None, self.model_digest)
 
 
 class BareBrowser:
-    """A launched Chromium, which opens pages that carry nothing and closes without a sound."""
+    """A launched Chromium, which opens pages that answer every call and closes without a sound."""
 
     version = "0.0.0.0"
 
     def __init__(self) -> None:
         self.closed = False
 
-    def new_page(self, **_kwargs: object) -> object:
-        return object()
+    def opened(self, policy: PagePolicy = TRUSTED) -> Chromium:
+        """This browser as a Chromium launched under `policy`, which is what `chromium()` yields."""
+        return Chromium(cast("Browser", self), policy)
+
+    def new_page(self, **_kwargs: object) -> FakePage:
+        return FakePage()
 
     def close(self) -> None:
         self.closed = True
@@ -239,3 +413,110 @@ class FakeRouter:
     def page(self) -> Page:
         """This router as the page `route_pages` is handed, typed as the one it stands in for."""
         return cast("Page", self)
+
+
+FAKE_IDENTITY = AlignerIdentity(id="fake-aligner", revision="1", model_digest="sha256:0f00")
+"""Who the fake aligner says it is, unless a test names another."""
+
+
+@dataclass
+class FakeAligner:
+    """An aligner in this process: who it says it is, what it was asked, and the words it answers.
+
+    It answers `words` when a test gives them, and otherwise spreads the words it was sent evenly over
+    the WAV it was sent, or over `seconds` when the WAV holds no samples. `down` makes every request
+    fail as a server that went away does, `fails` is the failure every request raises instead,
+    `handshake` is the failure building it raises, and
+    `on_align` runs before each answer, so a test can cancel or interrupt the run mid-pass.
+    """
+
+    identity: AlignerIdentity = FAKE_IDENTITY
+    words: list[Word] | None = None
+    seconds: float = 1.0
+    requests: list[AlignmentRequest] = field(default_factory=list)
+    contexts: list[AlignerContext] = field(default_factory=list)
+    down: bool = False
+    fails: ProviderError | None = None
+    handshake: ProviderError | None = None
+    on_align: Callable[[AlignmentRequest], None] | None = None
+
+    def build(self, context: AlignerContext) -> FakeAligner:
+        """This aligner as a factory builds it, failing as `handshake` says."""
+        self.contexts.append(context)
+        if self.handshake is not None:
+            raise self.handshake
+        return self
+
+    def align(self, request: AlignmentRequest) -> list[Word]:
+        self.requests.append(request)
+        if self.on_align is not None:
+            self.on_align(request)
+        if self.down:
+            raise ProviderError("could not reach the fake aligner: Connection refused", reached=False)
+        if self.fails is not None:
+            raise self.fails
+        if self.words is not None:
+            return list(self.words)
+        seconds = _wav_seconds(request.wav) or self.seconds
+        step = seconds / len(request.words)
+        return [
+            Word(word=word, start=round(i * step, 3), end=round((i + 1) * step, 3))
+            for i, word in enumerate(request.words)
+        ]
+
+
+def _wav_seconds(wav: bytes) -> float:
+    """How long a WAV plays, or zero when it is not one or holds no samples."""
+    try:
+        with wave.open(io.BytesIO(wav), "rb") as sound:
+            return sound.getnframes() / sound.getframerate()
+    except (wave.Error, EOFError):
+        return 0.0
+
+
+@dataclass
+class FakeInstaller:
+    """`subprocess.Popen` as a Chromium fetch starts `playwright install`, which never reaches the network.
+
+    The process says `said` on its one merged output stream and exits with `code`, writing `installs`
+    first when it succeeds, as the real installer leaves the browser on disk. `hangs` makes it run past
+    any timeout until it is killed. Every command line, environment and timeout it was given is kept.
+    """
+
+    said: bytes = b""
+    code: int = 0
+    installs: Path | None = None
+    hangs: bool = False
+    commands: list[list[str]] = field(default_factory=list)
+    envs: list[dict[str, str]] = field(default_factory=list)
+    timeouts: list[float | None] = field(default_factory=list)
+    killed: bool = False
+
+    def __call__(self, cmd: list[str], *, env: Mapping[str, str], stdout: int, stderr: int) -> FakeProcess:
+        assert stdout == subprocess.PIPE and stderr == subprocess.STDOUT, (
+            "the installer's output is kept, never printed"
+        )
+        self.commands.append(list(cmd))
+        self.envs.append(dict(env))
+        return FakeProcess(self, cmd)
+
+
+class FakeProcess:
+    """One run of a `FakeInstaller`, with the three things a fetch asks of a process."""
+
+    def __init__(self, installer: FakeInstaller, cmd: list[str]) -> None:
+        self._installer, self._cmd = installer, cmd
+        self.stdout = io.BytesIO(installer.said)
+
+    def wait(self, timeout: float | None = None) -> int:
+        installer = self._installer
+        installer.timeouts.append(timeout)
+        if installer.hangs and not installer.killed:
+            raise subprocess.TimeoutExpired(self._cmd, timeout or 0)
+        if installer.installs is not None and installer.code == 0:
+            installer.installs.parent.mkdir(parents=True, exist_ok=True)
+            installer.installs.write_text("#!/bin/sh\n", encoding="utf-8")
+        return installer.code
+
+    def kill(self) -> None:
+        self._installer.killed = True

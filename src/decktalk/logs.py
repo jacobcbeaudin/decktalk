@@ -107,7 +107,7 @@ def source_of(name: str) -> str:
 
 
 KEY_DIGITS = 12
-"""How much of a cache key a decision line carries, which tells two keys apart without filling the line."""
+"""Calibration: how much of a cache key a decision line carries, which tells two keys apart without filling the line."""
 
 
 def cache_decision(

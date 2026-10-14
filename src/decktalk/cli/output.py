@@ -6,12 +6,19 @@ events: a transient live region on a terminal, plain stage lines in a pipe, and 
 `--events` writes on stderr. The file under `build/events/` is the library's, so it is written
 whichever of these is on.
 
+A download is the one wait a run makes on the network, so both readers keep the line that starts it,
+with its size, and the line that ends it, and a pipe also gets a progress line now and then, because a
+pipe has no bar.
+
 Colour and the live region are the only differences between a terminal and a pipe. The tables are the same tables, the
 error block is the same block, and nothing prints a second vocabulary for a reader who piped it.
 """
 
 from __future__ import annotations
 
+import os
+import sys
+import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +28,7 @@ from rich.console import Console, RenderableType
 from rich.console import Group as Stack
 from rich.filesize import decimal
 from rich.live import Live
+from rich.measure import Measurement
 from rich.table import Table
 from rich.text import Text
 
@@ -29,6 +37,7 @@ from decktalk.errors import ErrorInfo
 from decktalk.events import Event, Level, RunLog, RunStart, StageDone, StageProgress, StageStart, ToolFetch
 from decktalk.files import json_text
 from decktalk.findings import Applicability, Finding, Location, Severity
+from decktalk.inputs import programs
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -53,17 +62,23 @@ from decktalk.results import (
     StoryboardResult,
     TakeState,
     VerifyResult,
+    Word,
     WordsResult,
     counted,
     money,
 )
 
 STAGE_COLUMN = 12
-"""How wide the stage name sits in a progress line, right-aligned, which is wider than every stage name and every
-word that shares the column."""
+"""Calibration: how wide the stage name sits in a progress line, right-aligned, which is wider than every
+stage name and every word that shares the column."""
 
 REFRESH_PER_SECOND = 8
-"""How often the live region redraws, which is fast enough to read and slow enough not to flicker."""
+"""Calibration: how often the live region redraws, which is fast enough to read and slow enough not to flicker."""
+
+FETCH_LINE_SECONDS = 10
+"""Calibration: the most often a pipe hears how far a download has got, which is often enough that a reader
+with a command timeout of a minute or two sees it moving, and rare enough that a slow link writes a page
+rather than a book."""
 
 ERROR_STYLE = "bold red"
 WARNING_STYLE = "yellow"
@@ -95,6 +110,51 @@ class Report:
         return text
 
 
+def _fetching(event: ToolFetch, *, opened: bool) -> Text:
+    """A download's start, or how far it has got: its size when the fetcher knows it, and never one made up.
+
+    A start whose size is not known yet names the download alone, and the size it learns later rides
+    on its progress lines, so no download is started twice.
+    """
+    head = f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}"
+    if event.total_bytes is None:
+        return Text(head if not opened else f"{head}, {decimal(event.bytes)}")
+    if not opened:
+        return Text(f"{head}, about {decimal(event.total_bytes)}")
+    return Text(f"{head}, {decimal(event.bytes)} of {decimal(event.total_bytes)}")
+
+
+def _fetched(event: ToolFetch) -> Text:
+    """A download's last line, which says how much arrived."""
+    return Text(f"{'Fetched'.rjust(STAGE_COLUMN)} {event.tool}, {decimal(event.bytes)}")
+
+
+def _ended(event: ToolFetch) -> bool:
+    """Whether this line closes its download, which a fetcher says by counting every byte it stated."""
+    return event.total_bytes is not None and event.bytes == event.total_bytes
+
+
+class Downloads:
+    """Which downloads have been announced, so each is started once however its fetcher reports it.
+
+    A fetcher may learn its size after it starts, as Playwright's installer states each part's size
+    only at its first tenth, and that size is then said on the progress lines rather than as a start.
+    """
+
+    def __init__(self) -> None:
+        self._started: set[str] = set()
+
+    def opens(self, event: ToolFetch) -> bool:
+        """Whether this line is news to a reader, which is a download not yet announced."""
+        news = event.tool not in self._started
+        self._started.add(event.tool)
+        return news
+
+    def close(self, event: ToolFetch) -> None:
+        """Forget a download that ended, so a second fetch of the same tool is announced again."""
+        self._started.discard(event.tool)
+
+
 class Renderer:
     """One reader of the event stream, on the console it writes to, holding nothing open unless it says so."""
 
@@ -122,6 +182,7 @@ class Region(Renderer):
     def __init__(self, console: Console) -> None:
         super().__init__(console)
         self._rows: dict[Stage, Report] = {}
+        self._downloads = Downloads()
         self._live = Live(console=console, transient=True, refresh_per_second=REFRESH_PER_SECOND)
 
     def open(self) -> None:
@@ -143,7 +204,13 @@ class Region(Renderer):
             row = self._rows.setdefault(event.stage, Report(stage=event.stage))
             row.seconds, row.outcome = event.elapsed_seconds, event.outcome
         elif isinstance(event, ToolFetch):
-            self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {decimal(event.bytes)}"))
+            # The start and the end are printed above the region, so they stay once it is gone.
+            if self._downloads.opens(event):
+                self._console.print(_fetching(event, opened=False))
+            if _ended(event):
+                self._downloads.close(event)
+                self._console.print(_fetched(event))
+            self._live.update(_fetching(event, opened=True))
             return
         else:
             return
@@ -151,13 +218,38 @@ class Region(Renderer):
 
 
 class Lines(Renderer):
-    """The plain stage lines a pipe gets, which are the live region without the cursor movement."""
+    """The plain stage lines a pipe gets, which are the live region without the cursor movement.
+
+    `clock` is where the time between two progress lines of a download is read, which a test replaces.
+    """
+
+    def __init__(self, console: Console, *, clock: Callable[[], float] = time.monotonic) -> None:
+        super().__init__(console)
+        self._clock = clock
+        self._downloads = Downloads()
+        self._said: dict[str, float] = {}
 
     def __call__(self, event: Event) -> None:
-        """Write one line for every stage that ended, and nothing for the moments in between."""
+        """Write one line for every stage that ended and for a download's start and end, and a download's
+        progress, when it counts something, no oftener than `FETCH_LINE_SECONDS`."""
         if isinstance(event, StageDone):
             row = Report(stage=event.stage, seconds=event.elapsed_seconds, outcome=event.outcome)
             self._console.print(row.line())
+        elif isinstance(event, ToolFetch):
+            self._fetch(event)
+
+    def _fetch(self, event: ToolFetch) -> None:
+        now = self._clock()
+        if self._downloads.opens(event):
+            self._console.print(_fetching(event, opened=False))
+            self._said[event.tool] = now
+        if _ended(event):
+            self._downloads.close(event)
+            self._said.pop(event.tool, None)
+            self._console.print(_fetched(event))
+        elif event.bytes and now - self._said.get(event.tool, now) >= FETCH_LINE_SECONDS:
+            self._said[event.tool] = now
+            self._console.print(_fetching(event, opened=True))
 
 
 class Jsonl(Renderer):
@@ -266,12 +358,34 @@ def _where(location: Location) -> str:
 
 
 def render(result: Result, console: Console) -> None:
-    """The human reading of one result, which is the same reading piped as on a terminal."""
+    """The human reading of one result, which is the same reading piped as on a terminal.
+
+    The one difference is a table too wide for the line. A terminal fits it to the person's window,
+    and a pipe prints it at the width its cells need, because a reader of plain output, an agent
+    among them, has no wider window to look at and a cut path or scene is lost to it. A caller that
+    sets `COLUMNS` chose the line width, as the docs samples do, so its table fits that width.
+    """
+    whole = not console.is_terminal and COLUMNS not in os.environ
     write = RENDERERS.get(type(result))
     if write is not None:
         for piece in write(result):
-            console.print(piece)
+            if isinstance(piece, Table) and whole:
+                _whole(piece, console)
+                console.print(piece, crop=False)
+            else:
+                console.print(piece)
     finding_lines(result.findings, console)
+
+
+COLUMNS = "COLUMNS"
+"""The variable rich reads the line width from, which a caller sets to choose the width of a pipe."""
+
+
+def _whole(table: Table, console: Console) -> None:
+    """Widen `table` to the width its widest cells need when that is wider than the console's line."""
+    needed = Measurement.get(console, console.options.update_width(sys.maxsize), table).maximum
+    if needed > console.width:
+        table.width = needed
 
 
 def _table(*columns: str) -> Table:
@@ -291,7 +405,13 @@ def _init(result: InitResult) -> Iterable[RenderableType]:
     yield Text(
         f"Wrote {result.root.as_posix()} from the {result.example} example, {counted(len(result.written), 'file')}."
     )
-    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-spend", style=QUIET_STYLE)
+    if result.voices:
+        default, *others = result.voices
+        yield Text(f"Voices {', '.join((f'{default} (default)', *others))}")
+    # A machine refuses a project's programs until it is told otherwise, so the first build of a
+    # project that names one says so on its own command line rather than failing on it.
+    allowed = f" --set {programs.KEY}={programs.RUN}" if result.programs else ""
+    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-spend{allowed}", style=QUIET_STYLE)
 
 
 def _tools(tools: Iterable[Any]) -> Table:
@@ -310,18 +430,18 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
     yield _tools(result.tools)
     yield Text(f"Python    {result.python}")
     yield Text(f"Platform  {result.platform}")
-    yield Text(f"API key   {result.api_key_state.value.replace('_', ' ')}")
-    if result.bias_ms is not None:
-        yield Text(f"Bias      {result.bias_ms:.0f} ms")
+    for key in result.api_keys:
+        yield Text(f"API key   {key.provider} {key.variable} {key.state.value}")
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:
-    table = _table("Section", "Key", "Plays", "Take", "Recorded", "Assembled", "Stale")
+    table = _table("Section", "Key", "Plays", "Voices", "Take", "Recorded", "Assembled", "Stale")
     for section in result.sections:
         table.add_row(
             str(section.section),
             section.key,
             section.source,
+            ", ".join(section.voices),
             section.take_state.value if section.take_state else "",
             _yes(section.recorded),
             _yes(section.assembled),
@@ -347,10 +467,22 @@ def _check(result: CheckResult) -> Iterable[RenderableType]:
 
 def _words(result: WordsResult) -> Iterable[RenderableType]:
     for section in result.sections:
-        table = _table(f"Section {section.section}", "Start", "End")
-        for word in section.words:
-            table.add_row(word.word, f"{word.start:.2f}", f"{word.end:.2f}")
-        yield table
+        if not section.turns[1:]:
+            yield _word_table(f"Section {section.section}", section.words)
+            continue
+        at = 0
+        for turn in section.turns:
+            heading = f"Section {section.section}, turn {turn.turn}, {turn.voice}"
+            yield _word_table(heading, section.words[at : at + turn.word_count])
+            at += turn.word_count
+
+
+def _word_table(heading: str, words: Iterable[Word]) -> Table:
+    """One table of words under its heading, each with its start and its end."""
+    table = _table(heading, "Start", "End")
+    for word in words:
+        table.add_row(word.word, f"{word.start:.2f}", f"{word.end:.2f}")
+    return table
 
 
 def _storyboard(result: StoryboardResult) -> Iterable[RenderableType]:
@@ -418,7 +550,8 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
     yield Text(f"Verifying {result.film.as_posix()}, {clock(result.film_seconds)} long.")
     measured = [cue for cue in result.cues if cue.offset_seconds is not None]
     if measured:
-        table = _table("Section", "Cue", "Spoken", "Shown", "Offset")
+        # A cue measured with declared motion masked out says how much of the frame that took.
+        table = _table("Section", "Cue", "Spoken", "Shown", "Offset", "Masked")
         for cue in measured:
             table.add_row(
                 str(cue.section),
@@ -426,6 +559,19 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
                 f"{cue.spoken:.2f}",
                 "" if cue.shown is None else f"{cue.shown:.2f}",
                 f"{cue.offset_seconds:+.2f}" if cue.offset_seconds is not None else "",
+                "" if cue.masked_percent is None else f"{cue.masked_percent:.1f}%",
+            )
+        yield table
+    if result.motions:
+        table = _table("Section", "Motion", "Landing", "Spoken", "Shown", "Offset")
+        for row in result.motions:
+            table.add_row(
+                str(row.section),
+                row.cue,
+                row.kind,
+                f"{row.spoken:.2f}",
+                "" if row.shown is None else f"{row.shown:.2f}",
+                "" if row.offset_seconds is None else f"{row.offset_seconds:+.2f}",
             )
         yield table
 

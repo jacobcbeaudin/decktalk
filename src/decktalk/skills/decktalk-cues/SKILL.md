@@ -46,7 +46,7 @@ file and the patterns that work.
 - Never exclude a cue from the reveal check to make a run green, unless the reveal is small by design
   and the author has seen a frame of it and agreed.
 - Never pass a flag that allows an unresolved or unknown cue through.
-- Change the phrase or the page before the script. A script change re-voices that section.
+- Change the phrase or the page before the script. A script change re-voices the turns whose text changed.
 - Never replace a voiced take. In a project that already holds voiced takes, rehearse on placeholders
   only for the sections with no voiced take.
 

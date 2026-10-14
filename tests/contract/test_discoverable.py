@@ -11,8 +11,8 @@ The settings tree has to publish, for every key, a sentence, a default, a safe r
 scope and a nature. `tests/decktalk/settings/test_settings.py` holds that record, the generator check
 `build_settings_schema.py --check` holds the committed schema to the same keys, and this file holds
 only the range rule neither of them does. The finding codes and the error codes have to publish a
-sentence, a severity where one applies and a documentation address that follows the published
-pattern. The page contract has to publish, for every attribute, what it
+sentence, a severity where one applies, a remedy that says what to do about it and a documentation
+address that follows the published pattern. The page contract has to publish, for every attribute, what it
 is written on, what values it takes, its default, the code that names it and what it affects, or
 name it in the exemption list with the sentence saying why no value of it can change a verdict.
 """
@@ -72,18 +72,20 @@ def test_every_published_number_says_why_it_is_not_a_setting(number):
 
 
 @pytest.mark.parametrize("code", list(Code), ids=[code.name for code in Code])
-def test_every_finding_code_publishes_a_sentence_a_severity_and_an_address(code: Code):
-    """A code is the token an agent dispatches on, so each one answers what it means and where to read."""
+def test_every_finding_code_publishes_a_sentence_a_severity_a_remedy_and_an_address(code: Code):
+    """A code is the token an agent dispatches on, so each says what it means, what to do and where to read."""
     assert code.sentence and code.sentence.endswith("."), code.name
+    assert code.remedy and code.remedy.endswith(".") and code.remedy != code.sentence, code.name
     assert code.severity is not None, code.name
     assert code.raised_by in tuple(RaisedBy), code.name
     assert code.url == f"{DOCS}/reference/findings/{code.value}", code.name
 
 
 @pytest.mark.parametrize("code", list(ErrorCode), ids=[code.name for code in ErrorCode])
-def test_every_error_code_publishes_a_sentence_an_exit_code_and_an_address(code: ErrorCode):
-    """A refusal an agent cannot read is a refusal it retries, so every code says what it is and what it exits."""
+def test_every_error_code_publishes_a_sentence_an_exit_code_a_remedy_and_an_address(code: ErrorCode):
+    """A refusal an agent cannot read is one it retries, so a code says what it is, what to do and what it exits."""
     assert code.sentence and code.sentence.endswith("."), code.name
+    assert code.remedy and code.remedy.endswith(".") and code.remedy != code.sentence, code.name
     assert code.exit_code > 0, code.name
     assert code.url == f"{DOCS}/reference/errors/{code.value}", code.name
 

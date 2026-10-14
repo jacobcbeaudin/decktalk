@@ -30,8 +30,10 @@ from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, 
 from decktalk.events import Events
 from decktalk.files import json_text
 from decktalk.findings import ERRORS_FAIL, Finding, Threshold
+from decktalk.inputs import programs
 from decktalk.machine import Machine
 from decktalk.machine.run import hold_whole, raise_the_ceiling
+from decktalk.media.browser import UNTRUSTED
 from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import Cost, ErrorResult, Result, counted
@@ -49,9 +51,12 @@ SETS_ASIDE = "This sets aside every voiced take it replaces."
 BUYS_AGAIN = "This buys every bought sound it replaces again."
 """The warning a run told to replace bought sounds is asked under, because every one of them is bought again."""
 
+SPEND_QUESTION = "Spend that now? Answer no and the run goes on as --no-spend, buying nothing."
+"""The question a terminal is asked, which says what no does, because no is an answer and not a stop."""
+
 
 @dataclass(frozen=True)
-class Spending:
+class Allowance:
     """What one run may buy and what it may set aside, settled by at most one question."""
 
     spend: bool
@@ -65,6 +70,21 @@ class Spending:
 def _warnings(replace_voiced: bool, replace_score: bool) -> list[str]:
     """The warnings a question carries for what this run was told to replace, in the order the stages run."""
     return [warning for warning, told in ((SETS_ASIDE, replace_voiced), (BUYS_AGAIN, replace_score)) if told]
+
+
+@dataclass(frozen=True)
+class Retake:
+    """The turns a `narrate` run was told to voice again, by number and by the take they play, as typed."""
+
+    turns: tuple[tuple[int, int], ...] = ()
+    takes: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.turns or self.takes)
+
+
+NO_RETAKE = Retake()
+"""A run that names no turn to voice again, which is every command but `narrate` and `check`."""
 
 
 @dataclass(frozen=True)
@@ -233,14 +253,52 @@ class Session:
         """Ask one yes or no question on stderr, which is only ever called when `asks` is true."""
         return bool(typer.confirm(question, default=default, err=True))
 
-    def ask(self, question: str, *, default: str) -> str:
-        """Ask one question with a default on stderr, which is only ever called when `asks` is true."""
-        return str(typer.prompt(question, default=default, err=True))
+    def ask(self, question: str, *, default: str, choices: Sequence[str] | None = None) -> str:
+        """Ask one question with a default on stderr, which is only ever called when `asks` is true.
+
+        With `choices` the question lists them after itself and asks again until the answer is one.
+        """
+        if choices is None:
+            return str(typer.prompt(question, default=default, err=True))
+
+        def one_of(answer: str) -> str:
+            if answer not in choices:
+                raise typer.BadParameter(f"{answer!r} is not one of {', '.join(choices)}.")
+            return answer
+
+        return str(typer.prompt(f"{question} ({', '.join(choices)})", default=default, err=True, value_proc=one_of))
 
     def say(self, message: str) -> None:
         """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
         if not self.flags.quiet and not self.flags.events:
             self.err.print(message)
+
+    # ---- the programs a project names --------------------------------------------------------------
+
+    def programs(self, project: Project, *, only: Sequence[int] | None = None) -> Project:
+        """This run's project, with its programs allowed for this run alone when a person at a terminal said yes.
+
+        Only `[record] programs = "ask"` on a machine that trusts its pages asks. The question lists
+        every program the run would start, word for word, and is asked once. A yes reopens the
+        project with `record.programs=run` among this run's overrides. A no, or a run nobody can be
+        asked in, keeps the project as it was, and `record` then refuses with the key that allows it.
+        """
+        record = project.settings.record
+        if record.programs != programs.ASK or record.page_policy == UNTRUSTED or not self.asks:
+            return project
+        named = project.programs(only=only)
+        if not named:
+            return project
+        listed = "\n".join(f"  {program.named_by}: {program.shown}" for program in named)
+        question = (
+            f"This project names {counted(len(named), 'program')} that record would start with your user's rights, "
+            f"and each can read every file you can, .env included:\n{listed}\nRun them for this run?"
+        )
+        if not self.confirm(question):
+            return project
+        self._overrides = (*self._overrides, f"{programs.KEY}={programs.RUN}")
+        self.__dict__.pop("machine", None)
+        return self.project()
 
     # ---- the spend gate -----------------------------------------------------------------------
 
@@ -253,7 +311,9 @@ class Session:
         replace_voiced: bool = False,
         replace_score: bool = False,
         storyboard: bool = False,
-    ) -> Spending:
+        turns: Sequence[tuple[int, int]] = (),
+        takes: Sequence[str] = (),
+    ) -> Allowance:
         """What this run of `stages` may buy and set aside, with at most one question on a terminal.
 
         The spend is settled by `_spend`. When that asks, its question carries the warning for each
@@ -262,7 +322,9 @@ class Session:
         warning in it. A bought sound is only replaced by a run that may spend, so a run that may not
         is asked nothing about it and keeps every one. Without a terminal the flag is the authorisation,
         because a run told to replace was told so on purpose and the default without the flag keeps
-        everything.
+        everything. `turns` and `takes` name the turns a `narrate` run voices again, which the price
+        covers alone. Naming them is the authorisation to set their takes aside, so they are asked about
+        only as the spend is, under the warning that says so.
         """
         spend, asked = self._spend(
             project,
@@ -271,14 +333,15 @@ class Session:
             replace_voiced=replace_voiced,
             replace_score=replace_score,
             storyboard=storyboard,
+            retake=Retake(tuple(turns), tuple(takes)),
         )
         if asked:
-            return Spending(spend, replace_voiced=replace_voiced and spend, replace_score=replace_score and spend)
+            return Allowance(spend, replace_voiced=replace_voiced and spend, replace_score=replace_score and spend)
         voiced, score = replace_voiced, replace_score and spend
         if self.asks and (voiced or score):
             agreed = self.confirm(" ".join([*_warnings(voiced, score), "Carry on?"]))
             voiced, score = voiced and agreed, score and agreed
-        return Spending(spend, replace_voiced=voiced, replace_score=score)
+        return Allowance(spend, replace_voiced=voiced, replace_score=score)
 
     def _spend(
         self,
@@ -289,6 +352,7 @@ class Session:
         replace_voiced: bool,
         replace_score: bool,
         storyboard: bool,
+        retake: Retake,
     ) -> tuple[bool, bool]:
         """Whether this run of `stages` may buy what is missing, and whether a person was asked.
 
@@ -324,13 +388,14 @@ class Session:
         if self.spend is not None:
             if self.spend and storyboard:
                 if buying and self.max_cost is not None:
-                    self._held(project, buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
+                    self._held(project, buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score,
+                               retake=retake)  # fmt: skip
                 self._checkpoint(project, storyboard=storyboard)
             return self.spend, False
         if not buying:
             return False, False
         priced, unpriced = self._held(
-            project, buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score
+            project, buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score, retake=retake
         )
         if priced is not None and priced.free:
             self._checkpoint(project, storyboard=storyboard)
@@ -338,10 +403,13 @@ class Session:
         if priced is not None and not priced.buys and not (replace_voiced or replace_score):
             return False, False
         if not self.asks:
-            raise ApprovalRequired(_cost_sentence(priced, unpriced), hint=self._spend_hint(buying, only=only))
+            raise ApprovalRequired(
+                _cost_sentence(priced, unpriced), hint=self._spend_hint(buying, only=only, retake=retake)
+            )
         self._checkpoint(project, storyboard=storyboard)
         self.say(priced.sentence if priced is not None else _unpriced_sentence(unpriced))
-        return self.confirm(" ".join([*_warnings(replace_voiced, replace_score), "Spend that now?"])), True
+        sets_aside = replace_voiced or bool(retake)
+        return self.confirm(" ".join([*_warnings(sets_aside, replace_score), SPEND_QUESTION])), True
 
     def _held(
         self,
@@ -351,6 +419,7 @@ class Session:
         only: Sequence[int] | None,
         replace_voiced: bool,
         replace_score: bool,
+        retake: Retake,
     ) -> tuple[Cost | None, DeckTalkError | None]:
         """This run's price held to `--max-cost`, or the refusal that kept it from being priced.
 
@@ -359,36 +428,42 @@ class Session:
         is handed back, for the question and the approval refusal to name.
         """
         try:
-            priced = project.price(stages=buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
+            priced = project.price(stages=buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score,
+                                   turns=retake.turns, takes=retake.takes)  # fmt: skip
         except DeckTalkError as refused:
             if self.max_cost is not None:
                 raise
             return None, refused
-        hold_whole(priced, self.max_cost, hint=lambda most: self._over_hint(most, only=only))
+        hold_whole(priced, self.max_cost, hint=lambda most: self._over_hint(most, only=only, retake=retake))
         return priced, None
 
-    def _over_hint(self, most: float, *, only: Sequence[int] | None) -> str:
+    def _over_hint(self, most: float, *, only: Sequence[int] | None, retake: Retake) -> str:
         """The step that lets a run over its ceiling through, which needs `--spend` too when nobody can be asked."""
         if self.spend is None and not self.asks:
-            return f"Run {self._again('--spend', only=only, cap=most)}, or narrow the run with --section."
+            again = self._again("--spend", only=only, cap=most, retake=retake)
+            return f"Run {again}, or narrow the run with --section."
         return raise_the_ceiling(most)
 
-    def _spend_hint(self, buying: Sequence[Stage], *, only: Sequence[int] | None) -> str:
+    def _spend_hint(self, buying: Sequence[Stage], *, only: Sequence[int] | None, retake: Retake) -> str:
         """The two whole commands that answer a spend refusal, which is what makes a hint a hint.
 
         The first approves the cost the refusal named, so it keeps this run's selection and ceiling.
         The second says what `--no-spend` plays in place of what each stage that buys would buy.
         """
         plays = " and ".join(PLAYS[stage] for stage in buying)
-        approve = self._again("--spend", only=only, cap=self.max_cost)
-        play = self._again("--no-spend", only=only, cap=None)
+        approve = self._again("--spend", only=only, cap=self.max_cost, retake=retake)
+        if retake:
+            return f"Run {approve} to approve that cost."
+        play = self._again("--no-spend", only=only, cap=None, retake=retake)
         return f"Run {approve} to approve that cost, or {play} to play {plays}."
 
-    def _again(self, *flags: str, only: Sequence[int] | None, cap: float | None) -> str:
+    def _again(self, *flags: str, only: Sequence[int] | None, cap: float | None, retake: Retake = NO_RETAKE) -> str:
         """This run's command again with its selection, its ceiling and then `flags`, so a hint names the same run."""
         parts = [f"decktalk {self.command}"]
         if only is not None:
             parts.append("--section " + ",".join(str(number) for number in only))
+        parts += [f"--turn {section}.{turn}" for section, turn in retake.turns]
+        parts += [f"--take {take}" for take in retake.takes]
         if cap is not None:
             parts.append(f"--max-cost {cap:.2f}")
         return " ".join([*parts, *flags])

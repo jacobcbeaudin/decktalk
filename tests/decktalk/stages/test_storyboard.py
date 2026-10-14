@@ -2,54 +2,27 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import ToolError
 from decktalk.inputs import Inputs
-from decktalk.media.origin import Assets
 from decktalk.media.pagereport import PageReport
-from decktalk.page import Q
-from decktalk.results import Panel, StoryboardResult
+from decktalk.pictures.address import Freeze
+from decktalk.results import StoryboardResult
 from decktalk.settings import BY_ID
-from decktalk.stages import storyboard as stage
-from decktalk.stages.storyboard import (
-    Freeze,
-    Selection,
-    freeze_url,
-    panels_of,
-    storyboard,
-    write_page,
-)
-from support.pages import a_project, catalog
-from support.recorder import FakeContext, FakePage
+from decktalk.stages.storyboard import Selection, panels_of, storyboard
+from support.fakes import Browsed
+from support.pages import SPIN_CEILING_SECONDS, a_project, a_spinning_project, catalog
 from support.runs import a_run
 
 CUES = {"1": {"cues": [{"id": "1.1:a", "phrase": "there"}]}}
 """One cue whose phrase the demo script really speaks, so it resolves to a second."""
 
 
-@dataclass
-class Served:
-    """The project files the router answered the page with, which is what a kept still is checked against."""
-
-    paths: list[str] = field(default_factory=list)
-
-
-@dataclass
-class Opened:
-    """Every URL a run pointed a page at, and what each page of the project publishes."""
-
-    served: Served = field(default_factory=Served)
-    urls: list[str] = field(default_factory=list)
-    shots: list[Path] = field(default_factory=list)
-    reports: dict[str, PageReport] = field(default_factory=dict)
-    policies: list[str] = field(default_factory=list)
+class Opened(Browsed):
+    """The browser the stage reaches, with what each page of the project publishes."""
 
     def publishes(self, page: str, *scenes: dict) -> None:
         self.reports[page] = PageReport.model_validate({"catalog": list(scenes)})
@@ -57,44 +30,13 @@ class Opened:
 
 @pytest.fixture
 def opened(monkeypatch: pytest.MonkeyPatch) -> Opened:
-    """The browser seams `storyboard` reads, replaced so the stage runs whole and opens nothing."""
+    """The browser seams `storyboard` reaches, replaced so the stage runs whole and opens nothing."""
     made = Opened()
-
-    @contextmanager
-    def chromium(_executable: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
-        made.policies.append(policy)
-        yield object()
-
-    def open_page(*_args: object, **_kwargs: object) -> tuple[object, Served]:
-        return object(), made.served
-
-    def reports_of(_page: object, _inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
-        return {name: made.reports[name] for name in dict.fromkeys(files) if name in made.reports}
-
-    def screenshot(_page: object, url: str, out: Path, **_kwargs: object) -> None:
-        made.urls.append(url)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"png")
-        made.shots.append(out)
-
-    monkeypatch.setattr(stage, "chromium", chromium)
-    monkeypatch.setattr(stage, "open_page", open_page)
-    monkeypatch.setattr(stage, "reports_of", reports_of)
-    monkeypatch.setattr(stage, "screenshot", screenshot)
+    made.install(monkeypatch)
     return made
 
 
-# ---- the vocabulary of a frozen state ----------------------------------------------------------
-
-
-def test_a_frozen_state_asks_the_page_for_a_slide_and_a_moment() -> None:
-    assert Freeze("1.1", cue="1.1:a").query() == {Q.FREEZE: "1.1", Q.AFTER: "1.1:a"}
-    assert Freeze("1.1", before="1.1:a").query() == {Q.FREEZE: "1.1", Q.BEFORE: "1.1:a"}
-    assert Freeze("1.1").query() == {Q.FREEZE: "1.1"}
-
-
-def test_a_frozen_state_names_one_file_safely() -> None:
-    assert Freeze("4.1", cue="4.1:expand").label == "freeze-4.1-after-4.1_expand"
+# ---- the panels a run draws --------------------------------------------------------------------
 
 
 def test_a_slide_shows_the_state_it_opens_on_before_any_of_its_cues() -> None:
@@ -144,59 +86,6 @@ def test_a_second_before_the_scene_starts_names_nothing() -> None:
 
 def test_a_selector_that_matches_nothing_draws_nothing() -> None:
     assert panels_of({"1.1": ("1.1:a",)}, {"1.1:a": 1.0}, Selection.of(["9.9"], None, None, None)) == []
-
-
-def test_a_frozen_url_asks_for_a_state_and_never_for_the_recorder_clock(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    url = freeze_url(inputs.document.page_sections[0], Freeze("1.1", cue="1.1:a"), "")
-    assert "freeze=1.1" in url
-    assert "after=1.1" in url
-    assert "t0=" not in url
-
-
-def test_a_sheet_reads_each_sections_words_and_the_documents_once_however_many_states_it_draws(
-    tmp_path: Path, published: Inputs, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A storyboard draws many states of one section, and each read is a file and a validation."""
-    reads: list[str] = []
-    monkeypatch.setattr(stage, "words_query", lambda _inputs, section: reads.append(f"words {section.number}") or "")
-    documents = published.documents
-    monkeypatch.setattr(type(published), "documents", lambda self: reads.append("documents") or documents())
-    pages = {"deck/index.html": (FakePage(FakeContext(tmp_path)).page(), Assets(published.root))}
-    sheet = stage.Sheet(published, a_run(tmp_path), pages, tmp_path / "out")
-    section = published.document.page_sections[0]
-    for freeze in (Freeze("1.1"), Freeze("1.1", cue="1.1:a"), Freeze("1.1")):
-        sheet.frozen(section, freeze)
-        sheet.panel(section, freeze, None, 0.0)
-    assert reads == ["words 1", "documents"]
-
-
-# ---- the contact sheet -------------------------------------------------------------------------
-
-
-def test_the_page_names_every_panel_and_points_at_it(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    panels = [Panel(section=1, slide="1.1", cue="1.1:a", at_seconds=1.0, image=Path("build/storyboard/01/x.png"))]
-    written = write_page(inputs.workspace, panels, title="demo")
-    text = written.read_text(encoding="utf-8")
-    assert 'src="storyboard/01/x.png"' in text
-    assert "slide 1.1" in text
-    assert "cue 1.1:a" in text
-
-
-def test_markup_in_a_cue_or_a_slide_id_is_shown_as_text(tmp_path: Path) -> None:
-    # A cue id and a slide id are whatever the project's author typed, and the sheet opens in a browser.
-    inputs = a_project(tmp_path)
-    hostile = "<script>alert(1)</script>"
-    panels = [Panel(section=1, slide=f"1.1{hostile}", cue=f"1.1:{hostile}", at_seconds=1.0, image=Path("build/x.png"))]
-    text = write_page(inputs.workspace, panels, title=hostile).read_text(encoding="utf-8")
-    assert "<script>" not in text
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
-
-
-def test_the_page_sits_beside_the_stills_it_lays_out(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    assert write_page(inputs.workspace, [], title="demo") == inputs.workspace.storyboard_path
 
 
 @pytest.fixture
@@ -286,7 +175,7 @@ def test_a_changed_file_the_page_loaded_draws_its_stills_again(tmp_path: Path, o
     """The page's own markup is unchanged, and the picture it loaded is what moved."""
     inputs = a_project(tmp_path, cues=CUES)
     (tmp_path / "deck" / "hero.png").write_bytes(b"one")
-    opened.served.paths.append("deck/hero.png")
+    opened.assets.paths.append("deck/hero.png")
     opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}))
     storyboard(inputs, a_run(tmp_path), only=[1])
     drawn = len(opened.shots)
@@ -297,7 +186,7 @@ def test_a_changed_file_the_page_loaded_draws_its_stills_again(tmp_path: Path, o
 
 def test_a_different_frame_size_is_a_different_still(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues=CUES)
-    wide = Inputs.load(tmp_path, environ={}, overrides=("video.width=1280", "video.height=720"))
+    wide = Inputs.load(tmp_path, environ={}, overrides=("video.size=1280x720",))
     page = inputs.document.page_sections[0].page
     assert inputs.still_key(page, "url") != wide.still_key(page, "url")
 
@@ -319,13 +208,10 @@ def test_an_untrusted_project_draws_its_pages_untrusted(tmp_path: Path, opened: 
     assert opened.policies == ["untrusted"]
 
 
-def test_a_page_the_browser_will_not_load_is_a_tool_failure_and_not_a_bug(tmp_path: Path) -> None:
-    """A page whose navigation fails is the tool failing, so it is never reported as INTERNAL."""
-
-    class Unreachable(FakePage):
-        def goto(self, url: str, **_kwargs: object) -> None:
-            raise PlaywrightError(f"net::ERR_ABORTED at {url}\nCall log:")
-
-    inputs = a_project(tmp_path, cues=CUES)
-    with pytest.raises(ToolError, match=r"^could not load http"):
-        stage.reports_of(Unreachable(FakeContext(tmp_path)).page(), inputs, ["deck/index.html"])
+@pytest.mark.browser
+@pytest.mark.timeout(SPIN_CEILING_SECONDS)
+def test_a_page_that_spins_its_main_thread_stops_the_storyboard_with_a_tool_error(tmp_path: Path) -> None:
+    """A page whose script never yields cannot be raced from inside, so its page is closed from outside."""
+    inputs = a_spinning_project(tmp_path)
+    with pytest.raises(ToolError, match="stopped answering"):
+        storyboard(inputs, a_run(tmp_path))

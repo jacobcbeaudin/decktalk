@@ -93,7 +93,6 @@ scene = "1"
 number = 2
 chapter = "The edit"
 clip = "media/before.mov"
-words = "media/before.words.json"
 
 [[section]]
 number = 3
@@ -110,7 +109,7 @@ scene = "4"
 """Four sections where two share one chapter, which is what a shared chapter marker is read from."""
 
 
-def draw_slate(out: Path, **_named: object) -> Path:
+def draw_slate(_pictures: object, out: Path, **_named: object) -> Path:
     """A slate drawn with no browser, which writes an empty picture where the real one would."""
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(b"")
@@ -202,7 +201,7 @@ def rendered(inputs: Inputs, seconds: dict[int, float], *, audio: dict[int, Path
             section=section,
             path=inputs.workspace.section_video(section.key),
             seconds=seconds[section.number],
-            source=Path(f"build/recordings/{section.key}.webm"),
+            source=Path(f"build/recordings/{section.key}.mp4"),
             audio=audio.get(section.number),
         )
         for section in inputs.document.sections

@@ -15,7 +15,6 @@ import {
   ATTENTION,
   ATTRS,
   type Attr,
-  CAPTURE_FPS,
   CODES,
   COUNTS,
   CUE_MARK,
@@ -39,6 +38,7 @@ import {
   pairs,
   refuse,
   SLIDE_ENTRANCES,
+  SLOWEST_FPS,
   scaled,
   staggerSpan,
   TIME_MARK,
@@ -46,7 +46,7 @@ import {
 } from "../../../../src/decktalk/runtime/src/contract.ts";
 
 test("the frame step is the capture rate written the other way round", () => {
-  assert.equal(1000 / CAPTURE_FPS, FRAME_STEP_MS);
+  assert.equal(1000 / SLOWEST_FPS, FRAME_STEP_MS);
 });
 
 test("a local moment qualifies into the id cues.json carries", () => {
@@ -108,6 +108,12 @@ test("a reduced render never scales a span past the ceiling", () => {
   assert.equal(measurable(scaled(ENTRANCES.draw.seconds, 4)), true);
 });
 
+/**
+ * The ranged rows that put no span between a cue and the next one: a preview's rest, which nothing
+ * records, and a loop's turn, which is declared motion verify masks rather than a reveal it measures.
+ */
+const UNSPANNED = new Set(["data-preview-seconds", "data-loop-seconds"]);
+
 test("the page plays every declared span at the length the contract publishes", () => {
   const declared: [string, number][] = [];
   const sets = { ENTRANCES, EXITS, SLIDE_ENTRANCES, WORD_STYLES, COUNTS, ATTENTION };
@@ -116,7 +122,7 @@ test("the page plays every declared span at the length the contract publishes", 
   }
   for (const [name, row] of Object.entries(ATTRS)) {
     if (row.span !== null) declared.push([`${name} span`, row.span]);
-    if (row.range && name !== "data-preview-seconds") declared.push([`${name} range`, row.range.max]);
+    if (row.range && !UNSPANNED.has(name)) declared.push([`${name} range`, row.range.max]);
   }
   for (const [name, seconds] of declared) {
     assert.equal(scaled(seconds, 1), seconds, `${name} declares ${seconds} s and the page would play less`);
@@ -141,7 +147,7 @@ test("every attribute either carries a code or is named in the closed exemption 
 test("no span an author can declare reaches the ceiling that makes a cue unmeasurable", () => {
   for (const [name, row] of Object.entries(ATTRS)) {
     if (row.span !== null) assert.ok(measurable(row.span), `${name} declares a span at or above the ceiling`);
-    if (row.range && row.range.unit === "seconds" && name !== "data-preview-seconds") {
+    if (row.range && row.range.unit === "seconds" && !UNSPANNED.has(name)) {
       assert.ok(measurable(row.range.max), `${name} publishes a range whose top is unmeasurable`);
     }
   }

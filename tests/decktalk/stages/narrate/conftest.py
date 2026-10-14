@@ -24,14 +24,14 @@ from support.takes import a_take
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
 
-ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "DECKTALK_VOICE_ID": VOICE_ID}
+ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "DECKTALK_VOICES_NARRATOR_ID": VOICE_ID}
 """What a machine hands a project, which is the credential and the published voice name."""
 
 TOML = """
 [project]
 name = "t"
 
-[voice]
+[voices.narrator]
 provider = "elevenlabs"
 
 [elevenlabs]
@@ -78,6 +78,20 @@ Every picture waited for its word.
 """
 
 
+NARRATOR_TABLE = '[voices.narrator]\nprovider = "elevenlabs"\n'
+"""The narrator's table every project here writes, which a second voice's table is added after."""
+
+WITH_A_GUEST = TOML.replace(NARRATOR_TABLE, f'{NARRATOR_TABLE}\n[voices.guest]\nprovider = "dtsp"\nid = "af_heart"\n')
+"""The project with a free guest beside its paid narrator."""
+
+DIALOGUE = SCRIPT.replace(
+    "## 2. Middle\n\nIt steps down the bowl.\n",
+    "## 2. Middle\n\n[voice narrator]\n\nIt steps down the bowl.\n\n[pause 1]\n\n[voice guest]\n\nAnd it rolls.\n\n"
+    "[voice narrator]\n\nThen it stops.\n",
+)
+"""The script whose second section is a dialogue: the narrator, the guest after a one-second pause, the narrator."""
+
+
 @pytest.fixture
 def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
     """Write a project into its own directory and load it, so a rewrite reloads the same root."""
@@ -88,14 +102,19 @@ def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
     return build
 
 
-@pytest.fixture(autouse=True)
+SOUND_END = 0.8
+"""Where every take written here sounds till, as `quiet_sound_end` answers for its bytes."""
+
+
+@pytest.fixture
 def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
     """Where a take's sound ends is read from real bytes, which no take written here has.
 
-    The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
-    through, and every placement test measures the arithmetic rather than ffmpeg.
+    The fake encoder writes an empty file, so a test that places a take on a sound end asks for this
+    fixture, which answers the scan at the seam the stage reads it through. It is never autouse,
+    because a scan answered for every test hid the join a silent take breaks.
     """
-    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: SOUND_END)
 
 
 @pytest.fixture

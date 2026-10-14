@@ -4,10 +4,10 @@ description: Every rule of the narration script, from the numbered heading to th
 ---
 
 `script.md` holds the words the voice says, split into numbered sections. One numbered section is
-one cut of the film. `narrate` reads this file, turns each section into a spoken take, and writes
+one cut of the film. `narrate` reads this file, turns each stretch one voice reads into a spoken take, and writes
 the words that `cue`, `assemble` and `verify` all measure against. This page is the whole rule
 the parser holds you to: the heading, every bracketed direction, how a chapter title is taken, the
-silence a section carries, and the three findings a script can earn.
+silence a section carries, and the six findings a script can earn.
 
 {/* input: src/decktalk/template/starter/script.md, sections 1 and 2 */}
 
@@ -34,8 +34,7 @@ A numbered heading opens a section, and the next heading of any kind closes it.
 
 | Line | Effect |
 |---|---|
-| `## N. Title` | This opens section `N`. `N` is one or more digits followed by a full stop and a space. |
-| `## N. Title - 0:40 to 1:10` | This opens section `N` and records a time budget. The separator is one or more hyphens, en dashes or em dashes with a space on each side, and each time is written `M:SS`. |
+| `## N. Title` | This opens section `N`. `N` is one or more digits followed by a full stop and a space, and everything after it on the line is the title. |
 | `## Title` with no number | This closes the open section. The text under it is never spoken. |
 | `# Title` | This closes the open section. |
 | `---` alone on a line | This closes the open section. |
@@ -43,10 +42,6 @@ A numbered heading opens a section, and the next heading of any kind closes it.
 Text before the first numbered heading is never spoken, which is where the starter keeps its notes
 above a `---` line. A `###` heading inside a section does not close it: `narrate` removes the heading
 marks and the voice reads the heading text as prose.
-
-The budget is read into the section and no command prints it. The library exposes it as
-`ScriptSection.start`, `ScriptSection.end` and `ScriptSection.target_seconds`, so a caller that wants to hold a
-section to its budget compares those against `estimated_seconds` in `build/narrate/takes.json`.
 
 ### What the script and the project file must agree on
 
@@ -57,8 +52,11 @@ section to its budget compares those against `estimated_seconds` in `build/narra
   `script.md holds no '## N. Title' section.`
 - A numbered heading has no `[[section]]` with the same `number` in `decktalk.toml`, which is
   `script sections [4] have no [[section]] in decktalk.toml.`
+- The numbered headings do not ascend, which is `the script heading for section 2 comes after
+  section 3, so the sections do not ascend...`
 
-A page section needs a numbered heading, because that heading is the speech the recording is cut to.
+A page or render section is narrated from the `## N.` heading with its number, and one with none
+plays silent, because that heading is the speech the recording is cut to.
 A clip section needs none: the voice never reads a clip section, so a heading written for one is
 parsed and left unspoken, and the body under it can describe what the clip shows.
 
@@ -86,7 +84,7 @@ bracketed text are accepted, and every other kind is refused.
 | `[beat]` | no | Inside a paragraph this makes a beat. |
 | `[pause 3]` or `[pause 2.5]` | no | Inside a paragraph this makes a pause of that many seconds. The word `pause` is matched without case, and the seconds may be a whole number or a decimal. |
 | `[NUMBER]`, `[CLIENT_NAME]` | yes | This is an unfilled blank. It matches a capital letter followed by capitals, digits and underscores, and the voice reads its name out, which is what `SCRIPT_UNFINISHED` is for. |
-| `[the docs](https://docs.decktalk.ai)` | the text | A markdown link is replaced by its own text before anything else is read. |
+| `[the docs](https://docs.decktalk.ai)` | the text | A Markdown link is replaced by its own text before anything else is read. |
 
 A pause is data, not text: each paragraph is sent with the pause after it, and the voice's provider
 writes that pause its own way. ElevenLabs writes a beat as a space and a dash, which is the pause the
@@ -110,14 +108,14 @@ because a run that has already paid cannot take the money back. Three things are
 the line it sits on.
 
 - A bracketed span inside a paragraph that is not `[beat]`, not `[pause N]`, not a placeholder and
-  not a markdown link, because the parser would turn it into a pause nobody asked for.
+  not a Markdown link, because the parser would turn it into a pause nobody asked for.
 - An HTML comment, because the parser leaves it in the prose and the voice reads it out.
 - A brace, for the same reason.
 
 {/* sample: bracket-in-a-paragraph, decktalk narrate --no-spend --section 3, starter with [maybe] added inside a paragraph */}
 ```text
 error[INPUT]: script.md has 1 thing the voice must not receive:
-  line 29: [maybe] inside a paragraph, which becomes a pause nobody asked for
+  line 32: [maybe] inside a paragraph, which becomes a pause nobody asked for
   hint: A direction goes on a line of its own. Inside a paragraph, write [beat] or [pause N] and nothing else.
   docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```
@@ -133,12 +131,49 @@ first heading or under an unnumbered heading is left alone.
 | After a section's last prose | The direction is removed and makes no pause. |
 | Two or more in a row | They make one pause, which is the longest of them. |
 | A beat beside `[pause N]` | The timed pause wins, because it is the longer of the two. |
+| Where the voice changes | The two turns are joined across a gap of `[narration] turn_gap_seconds`, `0.3` by default. A `[pause N]` written between the two turns' prose wins, the longest one when there are several, and a beat there makes no pause of its own. The gap is placement, in neither turn's take. |
+
+## Voice directions and turns
+
+A line holding only `[voice NAME]` is a voice direction. It hands the turns after it to the voice
+`[voices.NAME]` declares in `decktalk.toml`, until the next voice direction or the next section, and
+it is never spoken. Every section starts again with the default voice, which `[narration] voice`
+names, so a section that names no voice is read by the default voice whole, exactly as before.
+
+```markdown script.md
+## 2. The interview
+
+[voice narrator]
+
+How do you write a film one sentence at a time?
+
+[voice guest]
+
+I write the sentence first, [beat] and the picture waits for it.
+```
+
+A **turn** is the stretch of one section that one voice reads, from one voice direction to the next.
+A section one voice reads is one turn. Each turn is voiced as its own take, so two turns with the
+same text and the same voice share one take, and changing one turn voices that turn alone. A voice
+direction naming the voice already reading starts no new turn.
+
+Four rules keep a direction from being misread.
+
+| Written | Result |
+|---|---|
+| `[voice gest]`, a name no `[voices.NAME]` table declares | Refused as [`SCRIPT_VOICE_UNKNOWN`](/reference/findings/SCRIPT_VOICE_UNKNOWN), with the voices there are and the nearest name. Every whole line whose bracket opens with the word voice is read as a voice direction, so `[voice]` alone and `[Voice over the title]` are refused the same way rather than kept as notes. |
+| A section that names a voice, with prose before its first direction | Refused as [`SCRIPT_VOICE_UNMARKED`](/reference/findings/SCRIPT_VOICE_UNMARKED). A section that names a voice names one before every turn, its first included. |
+| `[guest]`, a note that is exactly a voice's name | Warned about as [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE), naming `[voice guest]`. It plays as a beat, the way any note does. |
+| A voice the project declares that no turn reads | Warned about as [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED). |
+
+The captions and the transcript carry the words of each turn alone, never the voice's name, and a
+caption never spans two turns.
 
 ## What the voice receives
 
 `narrate` cleans each section in this order into paragraphs, each with the pause after it.
 
-1. A markdown link becomes its own text.
+1. A Markdown link becomes its own text.
 2. `[pause N]`, and a break tag written by hand, becomes a pause marker carrying its seconds.
 3. Every other bracketed span that is not a placeholder becomes a pause marker carrying a beat.
 4. The markers of inline code, bold and emphasis are removed.
@@ -146,13 +181,13 @@ first heading or under an unnumbered heading is left alone.
 6. The lines of a paragraph are joined with single spaces, and a blank line separates paragraphs.
 7. Each pause marker becomes the pause after the paragraph before it.
 
-The take's cache key is taken over one canonical text of those paragraphs: they are joined by a blank
+Each turn's take has a cache key taken over one canonical text of its paragraphs: they are joined by a blank
 line, a timed pause is written as a break tag after its paragraph and a beat as a dash. That text is
 also what ElevenLabs is sent and billed for.
 
 The words the voice actually says carry neither the dashes nor the pauses. Cue matching and the
 captions both read those spoken words, so write every cue phrase in `cues.json` as plain words.
-`build/narrate/takes.json` carries each section's `spoken` text, which is exactly what a cue phrase
+`build/narrate/takes.json` carries each turn's `spoken` text, which is exactly what a cue phrase
 is matched against.
 
 ## The silence around a section
@@ -170,7 +205,8 @@ ffmpeg places both when it joins the takes into one narration track. The speech 
 receives them and no take file holds them, which is what lets one take serve whatever section number
 it ends up under. `narrate` measures where the sound of a take ends from the take's own bytes, puts
 the lead before it, cuts it at that sound end and places exactly the tail after it, so a breath or a
-pause the voice left after its last word never plays.
+pause the voice left after its last word never plays. The take's words are cut at the same place, so a
+last word its voice ran on into that silence ends where the sound does.
 
 Because placement reads the take and that section's own two keys and nothing else, a section lands
 the same way whether this run voiced its take or found it cached, and an edit to one section never
@@ -191,29 +227,33 @@ estimated_seconds     = words / narration.words_per_minute * 60
 placeholder length    = words / narration.placeholder_words_per_minute * 60
                       + the seconds of every timed pause
                       + beats * narration.placeholder_beat_seconds
-section span          = lead + the take's sound end + tail
+section span          = lead + every turn's sound end + the gap after every turn but the last + tail
 ```
 
 `words` is the count of spoken words, which is the cleaned text with its dashes removed. The timed
 pause total covers every `[pause N]` and every break tag written by hand. A dash
 with a space before it counts as a beat wherever it appears, including one typed into the prose. The
 defaults are 140 words per minute, 150 for a placeholder, 0.7 seconds for a beat and for
-`tail_seconds`, and 0.5 seconds for `lead_seconds`.
+`tail_seconds`, 0.5 seconds for `lead_seconds`, and 0.3 seconds for the gap between two turns,
+`narration.turn_gap_seconds`.
 
-## The three findings a script can earn
+## The findings a script can earn
 
 `decktalk check` judges the script without voicing it, reports every line at once rather than
-stopping on the first, and prices what a voiced run would cost. Three codes cover the script.
+stopping on the first, and prices what a voiced run would cost. Six codes cover the script.
 
 | Code | Severity | What it names |
 |---|---|---|
 | `SCRIPT_UNFINISHED` | error | One line of the spoken text holds something a voiced run would read out or swallow. That is an unfilled blank such as `[NUMBER]`, and it is also each of the three things `narrate` refuses. One finding is raised per thing found, carrying the line and the section it sits in. |
-| `SCRIPT_PAUSE_DROPPED` | error | One section holds a `[pause N]` and the model in the voice provider's own table, such as `[elevenlabs] model`, renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section, and `narrate` refuses to buy the take. |
+| `SCRIPT_PAUSE_DROPPED` | error | One turn holds a `[pause N]` and the model its voice reads in, `[voices.NAME] model` or its provider table's, such as `[elevenlabs] model`, renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section and voice, and `narrate` refuses to buy the take. |
+| `SCRIPT_VOICE_UNKNOWN` | error | One voice direction names no voice the project declares, or one line opens its bracket with the word voice and is not a voice direction. `narrate` refuses the script. |
+| `SCRIPT_VOICE_UNMARKED` | error | One section names a voice and starts a turn, its first included, that no voice direction names. `narrate` refuses the script. |
+| `SCRIPT_VOICE_BARE` | warning | One note is exactly the name of a voice the project declares, such as `[guest]`, so it plays as a beat rather than handing the turns after it to that voice. The finding names `[voice guest]`. |
 | `SCRIPT_SPOKEN_SYMBOL` | warning | One section speaks a word holding a digit or one of the currency signs for dollar, euro and pound, or one of `%`, `&`, `@`, `#`, `*`, `/`, `+`, `=`, `<`, `>`, `~`, `^` and the vertical bar. One finding is raised per section, naming the first five such words. |
 
 {/* sample: open-placeholder, decktalk check --no-pages, starter with [IDEA] added to section 3, the finding line and the count */}
 ```text
-script.md:29: SCRIPT_UNFINISHED script.md line 29 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.
+script.md:32: SCRIPT_UNFINISHED script.md line 32 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.
 Found 1 finding, 1 error.
 ```
 

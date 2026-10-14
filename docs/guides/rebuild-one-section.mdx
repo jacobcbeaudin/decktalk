@@ -15,8 +15,8 @@ those two keys hold, how to read them before a run, and the three ways to ask fo
 offered.
 
 <Frame caption="An edit to one sentence of section 2: a plain build voices and records section 2, keeps the take and the recording of sections 1 and 3, and joins every section into one mp4.">
-  <img className="block dark:hidden" src="/images/edit-cycle-light.svg" alt="Three section columns of one project. In script.md, the word &quot;average&quot; in section 2 becomes &quot;mean&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
-  <img className="hidden dark:block" src="/images/edit-cycle-dark.svg" alt="Three section columns of one project. In script.md, the word &quot;average&quot; in section 2 becomes &quot;mean&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
+  <img className="block dark:hidden" src="/images/edit-cycle-light.svg" alt="Three section columns of one project. In script.md, the word &quot;numbers&quot; in section 2 becomes &quot;values&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
+  <img className="hidden dark:block" src="/images/edit-cycle-dark.svg" alt="Three section columns of one project. In script.md, the word &quot;numbers&quot; in section 2 becomes &quot;values&quot;, which edits one sentence, and sections 1 and 3 are unchanged. A plain build then runs three lanes. In the narrate lane, section 2 is voiced and sections 1 and 3 are cached. In the record lane, section 2 is recorded and sections 1 and 3 keep their recordings. In the assemble lane, one bar spans every section, which is cut and joined into one mp4." />
 </Frame>
 
 ## Name the sections with `--section`
@@ -62,15 +62,16 @@ it, and `decktalk status` shows it in its `Recorded` column.
 
 ## What makes a take stale
 
-A take is one section's speech, and it is named by the digest of exactly six things:
+A take is one turn's speech, the stretch of a section one voice reads, and it is named by the digest
+of exactly six things:
 
 1. the speech provider's name
 2. the voice id
 3. the model
 4. the output format the provider declares, which for ElevenLabs is `[elevenlabs] output_format`
-5. the take identity the provider declares, which is `[voice] speed` and the provider's own voice
+5. the take identity the provider declares, which is `[voices.NAME] speed` and the provider's own voice
    fields under the names its service reads, such as `[elevenlabs] stability`
-6. the section's text and pauses, written as one canonical text: each paragraph, a `[pause N]` as a
+6. the turn's text and pauses, written as one canonical text: each paragraph, a `[pause N]` as a
    `<break time="Ns" />` tag after it and a beat as a dash, which is exactly the text ElevenLabs is
    sent
 
@@ -106,8 +107,9 @@ and agree. It looks in two places, in this order:
    directory and never the take another project plays. It holds the spoken words of every script
    voiced on this machine, so keep it out of a synced or shared folder. Two projects that need the
    same take buy it once: a run that finds a good copy in the store once its turn comes copies it in
-   rather than buying it again, and one that finds another run still buying waits up to
-   [`narration.store_wait_seconds`](/reference/configuration#narration). A run told to replace that take
+   rather than buying it again, and one that finds another run still buying waits as long as one whole
+   take request can run, every attempt [`narration.timeout_seconds`](/reference/configuration#narration)
+   long with the waits between `narration.retries`. A run told to replace that take
    with `--replace-voiced` buys it anyway. A take bought while the takes directory cannot be written
    is kept in the take store first, and the run stops and says so, so the next run copies it in for
    nothing.
@@ -121,30 +123,50 @@ inside the build directory or a directory that holds it is refused when the proj
 the tool cache. A placeholder take, the take index and the joined narration are always under
 `build/narrate/`, because a build makes them again for nothing.
 
-A section that is voiced again costs the characters of its whole text and not only the changed
-sentence, so `decktalk check` is the call that prices an edit before you run it.
+A turn that is voiced again costs the characters of its whole text and not only the changed
+sentence, and a section one voice reads is one turn, so `decktalk check` is the call that prices an
+edit before you run it.
 
 ## What makes a recording stale
 
-A recording is one page section captured in Chromium, and its key is written into its log beside the
-webm as `digest`. It holds everything that decides what those pixels look like:
+A recording is one page section stepped through Chromium frame by frame, and its log beside the mp4
+keeps what it was made from as `made_from`: a list of named parts, each with the digest of what it
+held. Together they are everything that decides what those pixels look like:
 
-- the page URL the recorder opens, which already carries the scene, every cue resolved to its second
-  and every spoken word with its start
-- how long the section runs, which is the take's span plus the section's `record_margin_seconds`
-- the frame width, the frame height and the output frame rate
-- `[record] color_scheme`
-- `motion.reduce` and `motion.scale`, so a reduced render never reuses a full-motion recording
-- the markup of the one scene the section plays
-- the rest of the page file, which every scene of that page shares
+- each turn's words and the name of the voice that reads it, as `text:N.T` and `voice:N.T`
+- each turn's words with their start times, which the page is handed, as `words:N.T`
+- the markup of the one scene the section plays, as `scene`
+- the rest of the page file, which every scene of that page shares, as `page:` and the page
 - the content of every project file the page loaded when it was last recorded, which its log lists
-  under `assets`
+  under `assets`, each as `file:` and its path
+- the scene and the section's own `params`, every cue resolved to its second, and how long the
+  section runs, which is its frames in the narration plus its `hold_seconds`
+- the frame width, the frame height and the output frame rate, `[record] color_scheme`, the page
+  policy, and `motion.reduce` and `motion.scale`, so a reduced render never reuses a full-motion
+  recording
+- the DeckTalk version, so an upgrade records again what an older engine recorded
 
-The page joins the key in two pieces rather than as one file, and that is what makes the loop cheap
-on a real deck. A page holds every scene of a film, so a digest of the whole file would call all nine
-sections of a nine-scene page stale for one slide's edit. Editing a slide moves the scene piece and
-therefore the sections that play that scene. Editing the head, a style, a script or anything else
-outside a scene moves the shared piece and therefore every section of that page.
+A section none of whose parts moved is kept. A section whose parts moved is recorded again, and
+`status` and `record --section` say which parts moved, in one line per section:
+
+```text
+Section 2: the words of turn 2.1 changed since it was recorded, so it would be recorded again.
+```
+
+A turn is named by its section and its number within the section, so `2.1` is the first turn of
+section 2. The line names what you edited and not what followed from it: new words are timed again,
+so their times, the section's cue times and its length move with them, and those are named only when
+nothing they follow from moved. `status` reads each turn's words and voice from the script, because a
+build narrates before it records, so a sentence you edited is named before narrate has made its new
+take. `record` reads them from the take it plays, so a `record` run before narrate keeps the
+recording, which would come out the same.
+
+The page joins in two pieces rather than as one file, and that is what makes the loop cheap on a real
+deck. A page holds every scene of a film, so a digest of the whole file would call all nine sections
+of a nine-scene page stale for one slide's edit. Editing a slide moves the scene piece and therefore
+the sections that play that scene. Editing the head, a style, a script or anything else outside a
+scene moves the shared piece and therefore every section of that page. A word that appears on the
+slides of two scenes, such as a button both screens show, is an edit to both scenes.
 
 The scene is cut out of the page source as you wrote it and never out of a browser, so `status` and
 `record` can both answer whether a recording still stands without opening Chromium. A page that
@@ -166,17 +188,19 @@ refused over them.
 
 | You changed | Voiced again | Recorded again |
 |---|---|---|
-| A sentence of section N in `script.md` | section N | section N, because its words are in the page URL |
+| A sentence of section N in `script.md` | the turn the sentence is in, which is all of section N when one voice reads it | section N, named by the turn the sentence is in |
 | The heading of section N | nothing | nothing |
 | A cue phrase of section N in `cues.json` | nothing | section N, because the resolved cues are in the page URL |
+| A word a cue phrase of section N waits for | nothing until the phrase is fixed | nothing: the build stops at `cue` with `CUE_UNRESOLVED`, whose fix names the nearest phrase |
 | A slide inside the scene section N plays | nothing | every section that plays that scene |
 | The head, a style or a script of a page | nothing | every section of that page |
 | An image or a stylesheet the page loads | nothing | every section whose log lists that file |
-| `record_margin_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
-| `hold_seconds` on section N | nothing | nothing, because the hold is picture that `assemble` adds |
-| The voice id, the model, the output format, `[voice] speed` or a voice field of the provider's table | every section | every section, because every word time moves |
+| `hold_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
+| The voice id, the model, the output format, `[voices.NAME] speed` or a voice field of the provider's table | every turn that voice reads | every section that voice reads in, because its word times move |
+| `[narration] voice`, or a `[voice NAME]` line handing a turn to another voice | every turn whose voice changed | every section whose voice changed |
+| A voice's name, renamed with its `[voice NAME]` lines | nothing | nothing |
 | `motion.reduce` or `motion.scale` | nothing | every section |
-| A clip file, `[transition]` or `[mix]` | nothing | nothing |
+| A clip section's file, `[transition]` or `[mix]` | nothing | nothing |
 
 ## Read it before you run it
 
@@ -190,11 +214,11 @@ decktalk status
 
 {/* sample: status-fresh, decktalk status on a fresh starter */}
 ```text
- Section   Key   Plays                     Take      Recorded   Assembled   Stale
- ────────────────────────────────────────────────────────────────────────────────
- 1         01    deck/index.html?scene=1   missing   no         no          no
- 2         02    deck/index.html?scene=2   missing   no         no          no
- 3         03    deck/index.html?scene=3   missing   no         no          no
+ Section   Key   Plays                     Voices     Take      Recorded   Assembled   Stale
+ ───────────────────────────────────────────────────────────────────────────────────────────
+ 1         01    deck/index.html?scene=1   narrator   missing   no         no          no
+ 2         02    deck/index.html?scene=2   narrator   missing   no         no          no
+ 3         03    deck/index.html?scene=3   narrator   missing   no         no          no
 
 Next   decktalk narrate --no-spend
 ```
@@ -209,7 +233,7 @@ loop dispatches on.
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "b2ece037731a",
+  "run": "b10120b6ce1f",
   "name": "my-lesson",
   "script": "script.md",
   "cues_file": "cues.json",
@@ -221,9 +245,27 @@ loop dispatches on.
       "source": "deck/index.html?scene=1",
       "take_state": "missing",
       "take_reason": "it has no voiced take yet",
+      "turns": [
+        {
+          "turn": 1,
+          "voice": "narrator",
+          "take_state": "missing",
+          "take_reason": "it has no voiced take yet"
+        }
+      ],
+      "voices": ["narrator"],
       "recorded": false,
       "assembled": false,
       "recording_stale": false
+    }
+  ],
+  "voices": [
+    {
+      "name": "narrator",
+      "provider": "elevenlabs",
+      "default": true,
+      "named": false,
+      "billing": "per_character"
     }
   ],
   "film": null,
@@ -259,7 +301,7 @@ that made the film did.
 
 {/* sample: build-unchanged, a second decktalk build --no-spend on an unchanged starter named my-lesson */}
 ```text
-run f42dd9d969e7, events build/events/f42dd9d969e7.jsonl
+run fc4263c62d74, events build/events/fc4263c62d74.jsonl
      Narrate    0:00
          Cue    0:00
       Record    0:00
@@ -270,13 +312,13 @@ Assemble kept what it made last time, because nothing it reads has changed.
 Verify kept what it made last time, because nothing it reads has changed.
       Verify    0:00   kept
        Built build/final/my-lesson.mp4, $0.00, 3 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 3 --spend to buy its take.
 Found 3 findings, 0 errors.
 ```
 
-On the starter that second build took under half a second. What a build compares is a digest of every
+On the starter that second build took under a second. What a build compares is a digest of every
 file the two stages read and the options they ran with, kept in
 [`build/kept.json`](/reference/artifacts#build-kept-json), never a file time. Inside `assemble` each
 section video has a key of its own in `build/sections/NN.json`, so an edit to one section encodes that
@@ -285,7 +327,7 @@ section again and keeps the others.
 ## Ask for work you were not offered
 
 Three flags redo work. `--force` costs nothing, and the two replace flags buy again what you already
-own.
+own. On `narrate`, `--turn` and `--take` buy one turn again, which is the next section.
 
 `--force` builds again from nothing and never spends. It keeps every voiced take and every sound the
 score bought, and makes again everything that costs nothing. `narrate` remakes the placeholders,
@@ -307,7 +349,7 @@ that bills nothing, such as `dtsp`, voices each section it names again with or w
 
 {/* sample: replace-voiced-with-no-take, decktalk narrate --section 2 --replace-voiced --no-spend, on a fresh decktalk init my-lesson, the finding line */}
 ```text
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
 ```
 
 `--replace-score` is the same for the score. With `--spend` it buys every bought sound again,
@@ -326,6 +368,44 @@ on purpose. The safe default, in every other case, is to keep every take and eve
 `--spend` approves the price without asking. Neither of them is a way to redo work: they only decide
 what a run is allowed to buy.
 
+## Voice one turn again
+
+A take that reads a word with the wrong stress, or stretches a pause, is bought again one turn at a
+time. `--turn N.T` names turn T of section N, counted from one. A section one voice reads is one turn,
+so its whole text is `N.1`, and a [dialogue](/guides/dialogue) has one turn per voice direction, the
+same numbers `decktalk --json status` lists under each section's `turns`.
+
+```console
+decktalk narrate --turn 4.2 --spend
+decktalk narrate --turn 1.2 --turn 4.2 --spend
+decktalk narrate --take 3f9a1c --spend
+```
+
+`--take` names a turn by the take it plays: its digest, as
+[`build/narrate/takes.json`](/reference/artifacts) and a `narrate --json` result name it, or as much of
+its start as no other take shares. Both flags repeat. A turn that shares its take with another turn,
+because the two say the same words in the same voice, shares the new take too, and it is bought once.
+
+The run voices exactly the turns it names, even though a take of their text is on disk, and nothing
+else. Every other turn, of those sections and of the rest of the film, keeps the take it plays, and a
+turn of the same section that has no take yet plays a placeholder rather than being bought, so the
+price `--max-cost` holds, the bill a terminal is shown and the price an approval refusal carries
+cover the named turns alone. `decktalk check --turn 4.2` prices the same run without running it.
+`--section` and `--replace-voiced` are refused beside them, because the turns already name their
+sections.
+
+The new take plays under the take's own name, so the take index, `status` and every later stage read
+it as they read the old one. The take it replaces is a paid record, so it is never deleted: it is set
+aside in the takes directory's `rejected/` folder as `<digest>.1.mp3` with its words file
+`<digest>.1.words.json`, then `.2` for the next, and the run says where it went. To play a rejected
+take again, move its pair back over the take as `<digest>.mp3` and `<digest>.words.json`, after
+setting that pair aside the same way if you want to keep it, and run `decktalk narrate`. The take
+store keeps the take it first held, because another project may play it, so it holds the first take
+of that turn and not the new one: commit the takes directory once you keep a new take, because a
+takes directory that lost it is filled from the store with the first.
+
+`--replace-voiced` sets aside every voiced take it replaces the same way.
+
 ## Write with the build running
 
 `decktalk build --watch` is the draft loop. It serves the project itself, prints the URL, builds once
@@ -335,9 +415,9 @@ without buying, and then rebuilds on every save until you stop it.
 decktalk build --watch
 ```
 
-{/* sample: the two lines decktalk build --watch prints before its first build */}
+{/* sample: build-watch, decktalk build --watch, on a fresh decktalk init my-lesson, the lines it prints before its first build */}
 ```text
-Serving http://127.0.0.1:53017
+Serving http://127.0.0.1:51784
 Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, and a take a voice bills for goes stale rather than being bought again.
 ```
 
@@ -367,7 +447,7 @@ stage, run that stage alone and the two after it that read what it wrote.
 |---|---|
 | A slide moved and the script did not | `decktalk record --section N`, then `decktalk assemble`, then `decktalk verify --section N` |
 | A cue phrase moved | `decktalk cue`, then `decktalk record --section N`, then `decktalk assemble` |
-| A clip file, `[transition]` or a `[mix]` level moved | `decktalk assemble`, then `decktalk verify` |
+| A clip section's file, `[transition]` or a `[mix]` level moved | `decktalk assemble`, then `decktalk verify` |
 | A sound effect's prompt moved | `decktalk score --spend`, then `decktalk assemble` |
 
 `--from STAGE` and `--to STAGE` do the same thing through `build`, which is the way to say it when

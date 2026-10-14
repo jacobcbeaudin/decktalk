@@ -1,8 +1,12 @@
 /*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
  *
- * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
- * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
- * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
+ * A DeckTalk page draws onto one canvas, the project's frame laid out at a short side of
+ * `CANVAS_HEIGHT` CSS pixels and scaled to whatever window it is opened in, so an element measured
+ * on a laptop is at the pixel a recording will put it at. The canvas's size reaches the page as two custom properties on
+ * the root, which the recorder writes before any script of the page runs and a preview asks its
+ * origin for, and the runtime writes them back with the canvas's shape, so a page's stylesheet lays
+ * itself out for its own frame. This module owns that canvas, the fit, the heads-up display, and the
+ * stylesheet.
  *
  * Every rule below is generated from the registry, so a style word's length lives once. Each
  * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
@@ -14,30 +18,33 @@ import {
   ATTENTION,
   ATTRS,
   BACK_OPACITY,
+  CANVAS_HEIGHT,
+  CANVAS_HEIGHT_PROPERTY,
+  CANVAS_WIDTH,
+  CANVAS_WIDTH_PROPERTY,
   COUNTS,
   ENTRANCES,
   type Entrance,
   EXITS,
   type Exit,
   MOTION_SCALE_PROPERTY,
+  PREVIEW_CANVAS,
+  SHAPE_ATTR,
   SLIDE_ENTRANCES,
   type SlideEntrance,
   scaled,
+  shapeOf,
   WORD_STYLES,
   type WordStyle,
 } from "./contract.ts";
 
-/** The canvas every deck is laid out on, which is the frame a recording captures. */
-const CANVAS_WIDTH = 1920;
-const CANVAS_HEIGHT = 1080;
-
 /** The one easing every entrance shares, which draws a quarter of the element inside the first frame. */
 const EASE = "cubic-bezier(.2,.7,.2,1)";
 
-/** How small `pop` starts, which reads as a pop without ever being too small to recognise. */
+/** Calibration: how small `pop` starts, which reads as a pop without ever being too small to recognise. */
 const POP_ENTRY_SCALE = 0.7;
 
-/** The share of `pop` spent growing to its overshoot, the rest being the settle back to its own size. */
+/** Calibration: the share of `pop` spent growing to its overshoot, the rest being the settle back to its own size. */
 const POP_OVERSHOOT_AT = 60;
 
 /** How far `fall` travels as it leaves, which is the short distance `rise` already arrives across. */
@@ -59,7 +66,30 @@ export const CLASS = {
   frozen: "dt-frozen",
   /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
   reduced: "dt-reduced",
+  /** The class a page drawing the caption band alone puts on the root, which clears everything else. */
+  captioning: "dt-captioning",
+  /** One caption in the band, which carries `data-voice` and `data-turn` for a page to place it by. */
+  caption: "dt-caption",
+  /** One line of a caption, which carries `data-sound` when it says what is heard rather than said. */
+  captionLine: "dt-caption-line",
 } as const;
+
+/** The id of the band the captions are drawn in, inside the canvas so a page styles it in canvas pixels. */
+const CAPTIONS_ID = "dt-captions";
+
+/**
+ * Calibration: how many ems wide the longest line of a caption is, which is the most characters a
+ * caption line is made of, in the band's semibold system face at a little over half an em each, with
+ * room for a run of wide letters.
+ */
+const CAPTION_LINE_EMS = 24;
+
+/** Calibration: the band keeps a twelfth of the canvas's width clear on each side, where broadcast captions sit. */
+const CAPTION_SIDE_SHARE = 12;
+
+/** The width of one side of the band, and the width the band leaves its lines, in terms of the canvas's width. */
+const CAPTION_SIDE = `calc(var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
+const CAPTION_LINE = `(var(${CANVAS_WIDTH_PROPERTY}) - 2 * var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
 
 /** The name of the keyframes one closed word animates through, which the sheet and the runtime share. */
 function frames(family: string, word: string): string {
@@ -120,6 +150,8 @@ function rule(family: string, word: string, seconds: number, body: string, extra
  * recording holds neither of them. Every length here is therefore typography that no check reads
  * and no finding names, which is why the block is one binding rather than a number a reader has to
  * weigh one at a time.
+ *
+ * Calibration: each length was set by eye at the canvas size, and none of them moves a verdict.
  */
 const CHROME_CSS = [
   ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;" +
@@ -129,6 +161,33 @@ const CHROME_CSS = [
   ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
   ":where(#dt-index code){color:inherit;opacity:.7}\n",
   ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
+];
+
+/**
+ * The caption band as DeckTalk draws it before a page styles it: centred lines along the bottom of the frame.
+ *
+ * Every rule but the clearing ones sits inside `:where()`, so a page restyles a caption, or places
+ * one by its `data-voice` or `data-turn`, with a rule of its own. The lengths are typography no check
+ * reads, sized as broadcast captions are, so they are one binding rather than numbers weighed one at
+ * a time. The clearing rules carry `!important`, because a page's own background and picture must
+ * not reach a frame that is laid over the film, which is the one other thing a page may not argue.
+ *
+ * Each side of the band keeps a twelfth of the canvas's width clear, and its type is the broadcast size or,
+ * on a canvas too narrow for that, the size at which the longest line a caption is made of, about
+ * `CAPTION_LINE_EMS` ems of this face, still fits the band in one row.
+ *
+ * Calibration: the lengths are broadcast caption sizes on the wide canvas, and none of them moves a verdict.
+ */
+const CAPTION_CSS = [
+  `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;` +
+    `padding:0 ${CAPTION_SIDE} 72px;pointer-events:none}\n`,
+  `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;` +
+    `font-size:min(46px,calc(${CAPTION_LINE} / ${CAPTION_LINE_EMS}));` +
+    "color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}\n",
+  `:where(.${CLASS.captionLine}){display:block}\n`,
+  `:where(.${CLASS.captioning}),:where(.${CLASS.captioning}) body{background:transparent!important}\n`,
+  `:where(.${CLASS.captioning}) body{visibility:hidden!important}\n`,
+  `:where(.${CLASS.captioning} #${CAPTIONS_ID}){visibility:visible!important}\n`,
 ];
 
 /**
@@ -145,7 +204,8 @@ function sheet(): string {
     .join(",");
   const parts = [
     `:where(${declared}){display:none}\n`,
-    `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;` +
+    `:where(#dt-canvas){position:absolute;left:0;top:0;width:var(${CANVAS_WIDTH_PROPERTY});` +
+      `height:var(${CANVAS_HEIGHT_PROPERTY});` +
       "overflow:hidden;transform-origin:0 0}\n",
     ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
     `:where(.${CLASS.slide}){position:absolute;inset:0}\n`,
@@ -186,7 +246,7 @@ function sheet(): string {
   parts.push(
     `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}\n`,
   );
-  parts.push(...CHROME_CSS);
+  parts.push(...CHROME_CSS, ...CAPTION_CSS);
   return parts.join("");
 }
 
@@ -196,6 +256,10 @@ let cameraEl: HTMLElement | null = null;
 let panEl: HTMLElement | null = null;
 let hudEl: HTMLElement | null = null;
 let fitScale = 1;
+
+/** The canvas's size in CSS pixels, which is the wide canvas until the page is told another. */
+let canvasWidth = CANVAS_WIDTH;
+let canvasHeight = CANVAS_HEIGHT;
 
 /** Put the stylesheet in the document, before anything the page itself declares. */
 export function style(): void {
@@ -236,7 +300,47 @@ export function span(el: HTMLElement, seconds: number): void {
   el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds, motionScale())}s`);
 }
 
-/** Build the canvas, fit it to the window, and keep it fitted for as long as the page is open. */
+/** One length the root element declares in CSS pixels, or null when it declares none a canvas could be. */
+function declared(property: string): number | null {
+  const length = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(property));
+  return Number.isFinite(length) && length > 0 ? length : null;
+}
+
+/** Lay the canvas out at `width` by `height`, tell the page so on its root, and fit it to the window again. */
+function resize(width: number, height: number): void {
+  canvasWidth = width;
+  canvasHeight = height;
+  const root = document.documentElement;
+  root.style.setProperty(CANVAS_WIDTH_PROPERTY, `${width}px`);
+  root.style.setProperty(CANVAS_HEIGHT_PROPERTY, `${height}px`);
+  root.setAttribute(SHAPE_ATTR, shapeOf(width, height));
+  fit();
+}
+
+/**
+ * Ask the origin for the canvas a preview has not been told, and lay the page out on its answer.
+ *
+ * Nothing here may fail a page: a page opened from the file system and a server that answers with
+ * something else both keep the wide canvas.
+ */
+async function previewed(): Promise<void> {
+  try {
+    const answer = await fetch(PREVIEW_CANVAS);
+    if (!answer.ok) return;
+    const told: { width?: unknown; height?: unknown } = await answer.json();
+    const { width, height } = told;
+    if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) resize(width, height);
+  } catch {
+    return;
+  }
+}
+
+/**
+ * Build the canvas at the size the page was told, fit it to the window, and keep it fitted for as long as the page is open.
+ *
+ * A recorded page is told its canvas on its root before any script of it runs. A page told nothing is
+ * a preview, which is laid out on the wide canvas until its origin answers with the project's own.
+ */
 export function build(hud: boolean): void {
   if (canvasEl) return;
   canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
@@ -254,16 +358,19 @@ export function build(hud: boolean): void {
     document.body.appendChild(hudEl);
   }
   if (reduced()) document.documentElement.classList.add(CLASS.reduced);
-  fit();
+  const width = declared(CANVAS_WIDTH_PROPERTY);
+  const height = declared(CANVAS_HEIGHT_PROPERTY);
+  resize(width ?? CANVAS_WIDTH, height ?? CANVAS_HEIGHT);
+  if (width === null || height === null) void previewed();
   window.addEventListener("resize", fit);
 }
 
 /** Scale the canvas into the window and centre it, which is what turns a client rect into canvas pixels. */
 function fit(): void {
   if (!canvasEl) return;
-  fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
-  const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
-  const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+  fitScale = Math.min(window.innerWidth / canvasWidth, window.innerHeight / canvasHeight);
+  const x = (window.innerWidth - canvasWidth * fitScale) / 2;
+  const y = (window.innerHeight - canvasHeight * fitScale) / 2;
   canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
 }
 
@@ -306,4 +413,60 @@ export function slideSeconds(word: SlideEntrance): number {
 /** How long a count runs, which the registry owns and `motion.scale` scales like any other length. */
 export function countSeconds(word: keyof typeof COUNTS): number {
   return scaled(COUNTS[word].seconds, motionScale());
+}
+
+// ---- the caption band ------------------------------------------------------------------------------
+
+/** One caption as the engine hands it to the page: its lines, who says them, and which lines are spoken. */
+export type Caption = {
+  readonly lines: readonly string[];
+  readonly voice: string | null;
+  readonly turn: number | null;
+  /** The first line the voice speaks and the line after its last, the rest being sounds. */
+  readonly spoken: readonly [number, number];
+};
+
+/** The band, made once when the page is asked to draw captions. */
+let bandEl: HTMLElement | null = null;
+
+/** Clear everything but the caption band, which is what a page drawing captions alone shows. */
+export function captioning(): void {
+  document.documentElement.classList.add(CLASS.captioning);
+  if (bandEl || !canvasEl) return;
+  bandEl = document.createElement("div");
+  bandEl.id = CAPTIONS_ID;
+  canvasEl.appendChild(bandEl);
+}
+
+/**
+ * Draw one caption in the band, or none, and answer once its fonts have loaded and two frames have painted.
+ *
+ * The caption carries its voice and its turn as data attributes and never as text, so a page places
+ * a caption by its speaker with a rule of its own and the caption still names nobody. A font a
+ * caption is the first to use loads only once the caption is in the document, so the answer waits
+ * for the document's fonts again before it waits for the paint.
+ */
+export function showCaption(caption: Caption | null): Promise<boolean> {
+  captioning();
+  const band = bandEl as HTMLElement;
+  band.replaceChildren();
+  if (caption) {
+    const p = document.createElement("p");
+    p.className = CLASS.caption;
+    if (caption.voice !== null) p.dataset.voice = caption.voice;
+    if (caption.turn !== null) p.dataset.turn = String(caption.turn);
+    const [first, after] = caption.spoken;
+    caption.lines.forEach((text, index) => {
+      const line = document.createElement("span");
+      line.className = CLASS.captionLine;
+      line.textContent = text;
+      if (index < first || index >= after) line.dataset.sound = "";
+      p.appendChild(line);
+    });
+    band.appendChild(p);
+  }
+  const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
+  return fonts.then(
+    () => new Promise<boolean>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))),
+  );
 }

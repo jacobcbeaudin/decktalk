@@ -3,7 +3,8 @@ title: Quickstart
 description: Install DeckTalk, build the starter film with no account, then add your own voice.
 ---
 
-Three lines take a machine with nothing on it to a finished film.
+On macOS and Windows, three lines take a machine with nothing on it to a finished film. On Linux, run
+`decktalk install` after the first line, for Chromium's system libraries.
 
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
@@ -69,30 +70,30 @@ the one thing in DeckTalk that costs money.
 
   <Step title="Read the machine">
     `decktalk doctor` reports what is installed and what a run would use. This is what it prints on a
-    machine that has recorded before.
+    machine that has fetched its tools.
 
     ```console
     decktalk doctor
     ```
 
-    {/* sample: decktalk doctor, on a Mac that has recorded before, with the home folder written as ~ and the source checkout it ran from as ~/workspace/decktalk */}
+    {/* sample: doctor, decktalk doctor, on a machine that has fetched its tools, with every path, the Python and the platform written as ... */}
     ```text
      Tool       Version         Where
      ──────────────────────────────────────────────────────────────────────────────────────────────────
-     chromium   153.0.8010.12   ~/Library/Caches/decktalk/ms-playwright/chromium-1243/chrom…
-                                Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing
-     ffmpeg     8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
-     ffprobe    8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
-     katex      0.18.7          ~/workspace/decktalk/src/decktalk/katex
+     chromium   153.0.8010.12   ...
+     ffmpeg     8.1.2           ...
+     ffprobe    8.1.2           ...
+     katex      0.18.7          ...
 
-    Python    3.13.1 (~/workspace/decktalk/.venv/bin/python)
-    Platform  macOS-26.6.2-arm64-arm-64bit-Mach-O (darwin)
-    API key   missing
+    Python    ...
+    Platform  ...
+    API key   elevenlabs ELEVENLABS_API_KEY missing
     ```
 
-    `API key   missing` means `ELEVENLABS_API_KEY` is unset, which is the right state for everything up to
-    part 3. KaTeX is not a download: the pinned release ships inside the package, and DeckTalk serves
-    it to the page.
+    The paths, the Python and the platform are this machine's, so they are written as `...` here.
+    `API key   elevenlabs ELEVENLABS_API_KEY missing` means the key the narrator's provider reads is
+    unset, which is the right state for everything up to part 3. KaTeX is not a download: the pinned
+    release ships inside the package, and DeckTalk serves it to the page.
 
     On a machine that has never recorded, the `chromium`, `ffmpeg` and `ffprobe` rows read
     `missing`, and each one comes with a finding. `doctor` also prints `Chromium is not installed. Run
@@ -118,16 +119,8 @@ the one thing in DeckTalk that costs money.
 
 ## Chromium and ffmpeg
 
-DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them. It fetches
-both itself, one time per machine, the first time a command needs one. The run announces each
-download as it starts and reports the bytes as they arrive, so a long first build says what it is
-waiting on. Under `--events` the same thing is one `tool.fetch` line per step on stderr.
-
-{/* sample: DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk install --events --no-input, the first tool.fetch line of stderr */}
-```json
-{"event":"tool.fetch","time":"2026-01-01T00:00:00.000000Z","seq":2,"run":"769c5119cd83","tool":"chromium","bytes":0,"total_bytes":null}
-```
-
+DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them, and
+fetches both itself, one time per machine, the first time a command needs one.
 `decktalk install` makes both downloads up front instead, and does nothing else.
 
 ```console
@@ -151,6 +144,7 @@ cache paths.
     {/* sample: init, decktalk init my-lesson, in an empty folder */}
     ```text
     Wrote my-lesson from the starter example, 14 files.
+    Voices narrator (default)
     Next   cd my-lesson && decktalk build --no-spend
     ```
 
@@ -165,7 +159,7 @@ cache paths.
     | `decktalk.toml` | The project file: one `[[section]]` per script section, plus the voice, the mix and the score. |
     | `cues.json` | One row per moment on a page, naming the spoken phrase it lands on. |
     | `deck/index.html` | The slides. They load the runtime and KaTeX from `/__decktalk/`, which DeckTalk serves, so the project holds no copy of either. |
-    | `.env.example` | The one ElevenLabs variable a voiced run reads, the API key, as a placeholder. |
+    | `.env.example` | The one ElevenLabs variable a voiced run reads, the API key, with `<your-elevenlabs-key>` where your key goes. |
     | `AGENTS.md` | The rules an agent working in this project follows, written when the directory has none. |
     | `.agents/skills/` | Six packaged skills, with `.claude/skills` beside them. |
 
@@ -179,19 +173,19 @@ cache paths.
 
     {/* sample: build, decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run fc3e5b583fcd, events build/events/fc3e5b583fcd.jsonl
+    run cbcfff886822, events build/events/cbcfff886822.jsonl
          Narrate    0:00
              Cue    0:00
-          Record    0:22
+          Record    0:03
     The project declares no score for this run, so there is nothing to generate.
            Score    0:00
     The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
-        Assemble    0:03
+        Assemble    0:02
           Verify    0:02
            Built build/final/my-lesson.mp4, $0.00, 3 findings
-    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
-    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
-    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
+    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
+    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 3 --spend to buy its take.
     Found 3 findings, 0 errors.
     ```
 
@@ -201,8 +195,8 @@ cache paths.
     take yet and each plays a placeholder. Each is a warning, so the build still exits 0, and each
     names the command that buys its take. [Build times](/reference/measured#build-times) says how
     long this build takes on a named machine that already has Chromium and ffmpeg. Recording is the
-    long part. It runs in real time, with several sections recording at once as the machine's CPU
-    allows, so a longer film takes longer.
+    long part. It steps each section one frame at a time, with several recorders sharing the frames as
+    the machine's CPU allows, so a longer film takes longer.
 
     The two middle lines are the run explaining itself. The starter declares no score, so that
     stage has nothing to do. The loudness pass is skipped because normalising a placeholder to a
@@ -221,11 +215,16 @@ cache paths.
     ls build/final
     ```
 
-    {/* sample: ls build/final, after the build above */}
+    {/* sample: build-final, ls build/final, after decktalk build --no-spend on a fresh decktalk init my-lesson */}
     ```text
-    my-lesson-poster.png       my-lesson.mp4  placements.json
-    my-lesson-transcript.html  my-lesson.srt
-    my-lesson.chapters.txt     my-lesson.vtt
+    my-lesson-poster.png
+    my-lesson-transcript.html
+    my-lesson.chapters.txt
+    my-lesson.mp4
+    my-lesson.srt
+    my-lesson.vtt
+    my-lesson.words.json
+    placements.json
     ```
 
     `my-lesson.mp4` is the film. The name comes from `[project] name` in `decktalk.toml`. The
@@ -258,11 +257,11 @@ cache paths.
 
     {/* sample: status-built, decktalk status, after the build above */}
     ```text
-     Section   Key   Plays                     Take          Recorded   Assembled   Stale
-     ────────────────────────────────────────────────────────────────────────────────────
-     1         01    deck/index.html?scene=1   placeholder   yes        yes         no
-     2         02    deck/index.html?scene=2   placeholder   yes        yes         no
-     3         03    deck/index.html?scene=3   placeholder   yes        yes         no
+     Section   Key   Plays                     Voices     Take          Recorded   Assembled   Stale
+     ───────────────────────────────────────────────────────────────────────────────────────────────
+     1         01    deck/index.html?scene=1   narrator   placeholder   yes        yes         no
+     2         02    deck/index.html?scene=2   narrator   placeholder   yes        yes         no
+     3         03    deck/index.html?scene=3   narrator   placeholder   yes        yes         no
 
     Film   build/final/my-lesson.mp4, 0:50 long
     ```
@@ -292,8 +291,9 @@ Three sections on one page, one scene each, every slide written as markup inside
 | 2. How it works | `deck/index.html?scene=2` | A heading, one displayed equation typeset by KaTeX, the same average as two lines of Python, and a closing band. |
 | 3. Close | `deck/index.html?scene=3` | The idea, the line about rebuilding one part, and the end card. |
 
-Open `deck/index.html` in a browser for the scene index, which lists every scene and every slide
-with the cues it declares.
+Open `deck/index.html` under the origin `decktalk serve` prints, such as
+`http://127.0.0.1:65298/deck/index.html`, for the scene index, which lists every scene and every
+slide with the cues it declares.
 
 <Frame caption="The starter's scene index, with every slide and the cue ids it declares.">
   <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. Under it are Scene 1 Open, Scene 2 How it works and Scene 3 Close, each with a play link, and under each one its slides with the seconds each slide holds for and the cue ids of its cues, such as 1.1:title and 1.1:files." />
@@ -303,9 +303,9 @@ with the cues it declares.
 decktalk serve
 ```
 
-{/* sample: decktalk serve, in the starter */}
+{/* sample: serve, decktalk serve, in a fresh decktalk init my-lesson, the line it prints before it is stopped */}
 ```text
-Serving http://127.0.0.1:52203
+Serving http://127.0.0.1:65298
 ```
 
 `serve` answers from the project directory on 127.0.0.1, which is the origin the recorder uses, so
@@ -337,15 +337,15 @@ film.
       </Tab>
     </Tabs>
 
-    Replace the placeholder with your key, and write the id of the voice to speak in as `[voice] id`
-    in `decktalk.toml`.
+    Write your key after the `=` in place of `<your-elevenlabs-key>`, and write the id of the voice that reads the script as
+    `[voices.narrator] id` in `decktalk.toml`.
 
     ```dotenv .env
     ELEVENLABS_API_KEY=<your-elevenlabs-key>
     ```
 
     ```toml decktalk.toml
-    [voice]
+    [voices.narrator]
     provider = "elevenlabs"
     id = "<your voice id>"
     ```
@@ -355,7 +355,7 @@ film.
     line or an error message. The voice id is a published name rather than a secret, so it is
     committed with the project. It says which voice to speak in and grants nothing, since a cloned
     voice is usable only with its own account's key, and it is part of what names a take, so changing
-    it voices every section again. `DECKTALK_VOICE_ID` in the environment overrides it for anyone who
+    it voices every section again. `DECKTALK_VOICES_NARRATOR_ID` in the environment overrides it for anyone who
     keeps it out of the file.
 
     A value that still starts with `<` counts as unset, so the example file as it ships approves
@@ -405,6 +405,7 @@ film.
           "price_key": "elevenlabs.dollars_per_1000_characters",
           "averaged": false,
           "price_layer": "project",
+          "provider": "elevenlabs",
           "stage": "narrate"
         }
       ]
@@ -443,9 +444,10 @@ film.
 
     `--spend` approves the spend. `--max-cost N` refuses the whole run before the first paid call
     when the most it can cost is over N US dollars, and the refusal names the figure that would let
-    it through. A ceiling of five cents on this project reads:
+    it through. It approves nothing on its own: it is a ceiling on the spend `--spend` approves. A
+    ceiling of five cents on this project reads:
 
-    {/* sample: build-over-the-ceiling, decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request */}
+    {/* sample: build-over-the-ceiling, decktalk build --spend --max-cost 0.05, on the starter with [voices.narrator] id set and no API key, which exits 2 before any request */}
     ```text
     error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
       hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
@@ -456,11 +458,12 @@ film.
     and draws nothing. A run within it draws the storyboard next, so it is there to read before you
     approve.
 
-    On a terminal, `decktalk build` with neither flag prints the price and asks. With no terminal
-    there is nobody to ask, so it refuses rather than guessing, and the refusal carries the price, so
-    one call prices the run.
+    On a terminal, `decktalk build` with neither flag prints the price and asks. Answer no and the
+    run goes on as `--no-spend` would, with a placeholder wherever a take is missing and silence where
+    a sound is unbought. With no terminal there is nobody to ask, so it refuses rather than guessing,
+    and the refusal carries the price, so one call prices the run.
 
-    {/* sample: build-no-terminal, decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2 */}
+    {/* sample: build-no-terminal, decktalk build --no-input, on the starter with [voices.narrator] id set and no API key, which exits 2 */}
     ```text
     error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
       hint: Run decktalk build --spend to approve that cost, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.
@@ -475,6 +478,7 @@ film.
 ## Next
 
 - **Write a section of your own:** [Your first deck](/guides/first-deck)
+- **Start from a finished project:** [Examples](/examples)
 - **Know what a machine needs and what it costs:** [Requirements and costs](/requirements)
 - **Make the script time well:** [Writing for the ear](/guides/writing-for-the-ear)
 - **Rebuild only what changed:** [Rebuild one section](/guides/rebuild-one-section)

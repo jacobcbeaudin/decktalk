@@ -13,13 +13,12 @@ number = 1
 chapter = "How a model learns"
 page = "deck/lesson.html"
 scene = "1"
-record_margin_seconds = 0.3   # recorded past the narration, so the cut never lands on a frame that was never drawn
 hold_seconds = 1.5
 
 [narration]
 tail_seconds = 1.3
 
-[voice]
+[voices.narrator]
 provider = "elevenlabs"
 id = ""   # the voice that reads the script, a published name rather than a secret, so commit it
 speed = 1.0

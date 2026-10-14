@@ -159,7 +159,7 @@ def test_a_secret_registers_its_value_so_a_sentence_holding_it_is_redacted():
 
 def test_a_published_name_read_beside_the_key_is_held_and_not_registered():
     """A name a reader needs in every URL it is in is never redacted, even when it is held as a `Secret`."""
-    Secret("voice-canary-7f3b21", "DECKTALK_VOICE_ID")
+    Secret("voice-canary-7f3b21", "DECKTALK_VOICES_NARRATOR_ID")
     assert redact("/v1/text-to-speech/voice-canary-7f3b21") == "/v1/text-to-speech/voice-canary-7f3b21"
 
 
@@ -177,7 +177,7 @@ def test_a_short_value_is_never_registered_so_ordinary_words_survive():
         ("HOST_DB_PASSWORD", True),
         ("password_file", True),
         ("PATH", False),
-        ("DECKTALK_VOICE_ID", False),
+        ("DECKTALK_VOICES_NARRATOR_ID", False),
         ("KEYBOARD", False),
     ],
 )
@@ -216,8 +216,10 @@ CANARY_TOML = """
 [project]
 name = "canary"
 
-[voice]
+[voices.narrator]
 provider = "elevenlabs"
+
+[elevenlabs]
 dollars_per_1000_characters = 0.30
 
 [[section]]
@@ -321,7 +323,7 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     host = f"pw_canary_{secrets.token_hex(8)}"
     voice = HostileVoice(service, key)
     root = _canary_project(tmp_path / "canary", service.url_for("/v1"), key)
-    environ = {"ELEVENLABS_API_KEY": key, "DECKTALK_VOICE_ID": "voice-canary", "HOST_DB_PASSWORD": host}
+    environ = {"ELEVENLABS_API_KEY": key, "DECKTALK_VOICES_NARRATOR_ID": "voice-canary", "HOST_DB_PASSWORD": host}
     here = Machine.of(
         environ=environ,
         machine_file=tmp_path / "machine.toml",
@@ -357,7 +359,7 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
 
     # The command line in every mode a caller reads it in, against the same fake and the same key.
     monkeypatch.setenv("ELEVENLABS_API_KEY", key)
-    monkeypatch.setenv("DECKTALK_VOICE_ID", "voice-canary")
+    monkeypatch.setenv("DECKTALK_VOICES_NARRATOR_ID", "voice-canary")
     monkeypatch.setenv("HOST_DB_PASSWORD", host)
     monkeypatch.setenv(MACHINE_FILE_VARIABLE, str(tmp_path / "machine.toml"))
     printed: list[str] = []

@@ -18,6 +18,7 @@ from decktalk.cli.options import (
     restated,
     sections_of,
     shared_for,
+    turns_of,
 )
 from decktalk.findings import Severity
 from decktalk.results import BuildResult, StatusResult, WordsResult
@@ -36,6 +37,17 @@ def test_a_selection_that_names_nothing_is_a_usage_refusal() -> None:
     with pytest.raises(typer.BadParameter) as refused:
         sections_of(["three"])
     assert refused.value.param_hint == "--section"
+
+
+def test_a_turn_selection_is_parsed_by_the_library_and_kept_in_order() -> None:
+    assert turns_of(["4.2", "1.1,4.2"]) == ((4, 2), (1, 1))
+    assert turns_of(None) == turns_of([]) == ()
+
+
+def test_a_turn_selection_that_names_no_turn_is_a_usage_refusal() -> None:
+    with pytest.raises(typer.BadParameter) as refused:
+        turns_of(["4"])
+    assert refused.value.param_hint == "--turn"
 
 
 def test_a_command_that_cuts_one_piece_needs_exactly_one_section() -> None:

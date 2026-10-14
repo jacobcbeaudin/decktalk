@@ -21,11 +21,13 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts.stored import DIGEST_DIGITS, engine_digest
-from decktalk.artifacts.takes import Take, TakeInputs, Takes
-from decktalk.files import json_text, replace_all
+from decktalk.artifacts.takes import Take, TakeInputs, Takes, TimedBy
+from decktalk.files import drafted, json_text, replace_all
 from decktalk.inputs import Inputs
+from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import SoundKind
 from decktalk.settings import Settings
+from decktalk.speech.sound import SoundRequest
 from decktalk.stages import kept
 from decktalk.stages.assemble import cut
 from decktalk.stages.score import Planned
@@ -86,6 +88,19 @@ PARTING: dict[str, Any] = {"voice": "Zoë", "style": 1e-07, "nested": {"b": 1, "
 """A value with every trait on which the two spellings part: key order, spacing, a small float and non-ASCII."""
 
 
+def test_a_drafted_file_is_replaced_only_once_its_writer_has_finished(tmp_path: Path) -> None:
+    """A recording, a clip and a drawn section were each replaced by a rule of their own, and one deleted first."""
+    final = tmp_path / "recordings" / "01.mp4"
+    with drafted(final) as draft:
+        draft.write_bytes(b"first")
+    assert final.read_bytes() == b"first"
+    with pytest.raises(RuntimeError), drafted(final) as draft:
+        draft.write_bytes(b"half")
+        raise RuntimeError
+    assert final.read_bytes() == b"first"
+    assert sorted(path.name for path in final.parent.iterdir()) == ["01.mp4"]
+
+
 def test_the_helper_is_not_the_spelling_a_digest_reads() -> None:
     """If this ever passes the other way, the helper could stand in for a key, and every test below is moot."""
     assert json_text(PARTING) != json.dumps(PARTING)
@@ -109,6 +124,7 @@ def test_the_sound_request_the_ledger_keeps_keeps_its_bytes() -> None:
         prompt="rain",
         out=Path("rain.mp3"),
         endpoint="e",
+        requests=(SoundRequest(SoundKind.AMBIENCE, "rain", 1.0, "m", loop=True),),
         bodies=(PARTING,),
         digest="d",
     )
@@ -119,6 +135,7 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
     """Every file under build/ is hashed by the assemble key and by the kept record's intact check."""
     row = Take(
         section=1,
+        turn=1,
         key="01",
         chapter="Café",
         digest="0123456789abcdef",
@@ -128,6 +145,11 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
         estimated_seconds=1e-07,
         duration_seconds=2.0,
         spoken="Zoë speaks",
+        voice="narrator",
+        timed_by=TimedBy.PROVIDER,
+        alignment=None,
+        model_digest=None,
+        audio_blake3=None,
     )
     index = Takes(script="script.md", model="m", output_format="f", sections=(row,))
     written = index.write(tmp_path / "takes.json").read_text(encoding="utf-8")
@@ -164,7 +186,7 @@ def test_the_slate_still_key_keeps_its_bytes(monkeypatch: pytest.MonkeyPatch, tm
         "Café",
         "Your clip goes here",
         "section 3: slate",
-        "drop it at media/clip.mp4 and run `decktalk assemble`",
+        "drop it at media/clip.mp4 and run decktalk assemble",
         video.width,
         video.height,
         video.slate_color,
@@ -173,8 +195,9 @@ def test_the_slate_still_key_keeps_its_bytes(monkeypatch: pytest.MonkeyPatch, tm
 
 
 def test_the_cue_times_a_preview_reads_keep_their_bytes() -> None:
-    answered = Inputs.documents(SimpleNamespace(preview_cues=lambda: PARTING))  # ty: ignore[invalid-argument-type]
-    assert list(answered.values()) == [json.dumps(PARTING).encode("utf-8")]
+    held = SimpleNamespace(preview_cues=lambda: PARTING, settings=Settings())
+    answered = Inputs.documents(held)  # ty: ignore[invalid-argument-type]
+    assert answered[PREVIEW_CUE_TIMES] == json.dumps(PARTING).encode("utf-8")
 
 
 def test_an_engine_digest_is_still_taken_over_newline_joined_lines() -> None:

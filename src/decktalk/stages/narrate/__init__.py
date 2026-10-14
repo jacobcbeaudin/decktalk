@@ -1,18 +1,22 @@
-"""Stage one: `script.md` becomes one take per section, indexed by input digest.
+"""Stage one: `script.md` becomes one take per turn, indexed by input digest.
 
     takes/<digest>.<suffix>            one take, named by the content that produced it, under the
                                      suffix its voice declares for what it holds, such as .mp3
     takes/<digest>.words.json          a start and an end for every word in it
-    build/narrate/takes.json         which section plays which take, what it cost, and where each
-                                     section lands once the takes are joined
+    build/narrate/takes.json         which turn of which section plays which take, what it cost, and
+                                     where each lands once the takes are joined
     build/narrate/narration.mp3      every take joined, with each section's silence around it
 
-The take a section plays is found by content alone, so inserting a section, renumbering one or
-retitling one moves no file and voices nothing, and two sections with the same words share one take.
+A turn is the stretch of a section one voice reads, so a section with no voice direction is one turn
+and one take, and a dialogue is one take per turn, each bought from its own voice's provider at its
+own bill and joined on the section's clock with the gap the script writes where the voice changes.
+
+The take a turn plays is found by content alone, so inserting a section, renumbering one or
+retitling one moves no file and voices nothing, and two turns with the same words and voice share one take.
 Every take a voice spoke lives in the takes directory, `[narration] takes_dir`, which is `takes/`
 inside the project and which the author commits, so a fresh clone plays them with no key and
 deleting `build/` costs nothing. A take is looked for there first and then in the machine's
-`[narration] store_dir`, and one found in the second place is copied into the first, for every section
+`[narration] store_dir`, and one found in the second place is copied into the first, for every turn
 the narration plays whether or not the run selected it, so the narration is joined from the takes
 directory alone. A placeholder, the take index and the joined track stay under `build/narrate/`,
 because a build makes them again for nothing.
@@ -21,28 +25,50 @@ Every take on disk is played, voiced or placeholder, and the voice is built only
 made, so a run that makes nothing reads no key. Spend gates money and nothing else. A voice that
 declares it bills nothing, once it is named, makes every missing take whether or not the run may
 spend, and a run that may not spend never calls a voice that bills. Such a run plays a placeholder
-for each section whose take is missing: click audio sized at `placeholder_words_per_minute` plus the
+for each turn whose take is missing: click audio sized at `placeholder_words_per_minute` plus the
 declared pauses, with evenly spaced estimated words, so the whole pipeline runs offline. Each such
-section is one `TAKE_MISSING` finding, which says why its take did not play in the words the plan
+turn is one `TAKE_MISSING` finding, which says why its take did not play in the words the plan
 found, and names the command that buys it. A takes directory holding none of the takes the project
 played before is said as that, because a renamed or missing folder is not a script edit. A project
-that has paid for eight sections therefore builds its film with no key, and rehearses its ninth for
-nothing. A free voice that nothing answers is a server that is not running, so its sections play
+whose voices made eight turns therefore builds its film with no key, and rehearses its ninth for
+nothing. A free voice that nothing answers is a server that is not running, so its turns play
 placeholders too, and their findings say to start it rather than to buy anything.
 
-`TAKE_MISSING` is the one judgement this stage makes. What a script says badly is `check`'s to
-report, because a judgement belongs where an author can act on it before anything is bought, and
-what the voice must not receive at all is refused here before a single request is sent.
+A run told to voice named turns again, by number or by the take they play, voices those turns and
+nothing else, even though a take of their text is held. The new take is written under the same
+digest, because the digest names what the take was made from and that has not changed, and the take
+it replaces is set aside in the takes directory's `rejected/` folder rather than deleted, so the take
+index, `status` and every later stage read the new take as they read the old one. Each row of the
+take index records the BLAKE3 of the audio it was measured on, so a turn whose take on disk is not
+that audio, such as a rejected take moved back under its digest, is read again by the next run that
+does not select it, for nothing, rather than placed on numbers measured on other audio.
+
+A take its voice sent no word times with is timed by the aligner, `[dtsp] base_url`'s server, after
+every take is made, and its words are kept in `takes/aligned/`. A take whose aligned words are kept
+plays them without asking the server, and `--force` asks again. A take with none kept and no aligner
+answering plays estimated words with a `TAKE_UNALIGNED` finding.
+
+A take whose voice or aligner placed a word after the take's sound ends, where the join cuts it,
+plays that word with no length, with a `TAKE_WORD_CUT` finding. A voiced take with no sound at all,
+whose sound ends where it starts, plays silence of its placed length, with a `TAKE_SILENT` finding
+that names the turn to buy again.
+
+`TAKE_MISSING`, `TAKE_UNALIGNED`, `TAKE_WORD_CUT` and `TAKE_SILENT` are the four judgements this stage
+makes. What a script says badly is `check`'s to report, because a judgement belongs where an author can
+act on it before anything is bought, and what the voice must not receive at all is refused here before
+a single request is sent.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Collection, Sequence
+from collections import defaultdict
+from collections.abc import Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 
-from decktalk.artifacts import Take, Takes, is_placeholder
+from decktalk.artifacts import Take, Takes, TurnKey, is_placeholder
 from decktalk.errors import HALTS, ErrorInfo, InputError, ProviderError, as_refusal
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Finding, Location, judge
@@ -52,13 +78,13 @@ from decktalk.inputs.script import ScriptSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome, Word
-from decktalk.speech import SpeechProvider
+from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome
+from decktalk.speech import Speech, SpeechProvider
 from decktalk.stages import selects
-from decktalk.stages.cost import is_free
+from decktalk.stages.narrate.align import Unaligned, before_narrate, time_takes
 from decktalk.stages.narrate.plan import (
-    NO_VOICE_NOTE,
-    VOICE_ID_VARIABLE,
+    id_variable,
+    no_voice_note,
     placeholder_inputs,
     refuse_dropped_pauses,
     speech_provider,
@@ -77,13 +103,17 @@ from decktalk.stages.narrate.state import (
     SectionTakeState,
     TakePlan,
     TakeStates,
+    retake_turns,
+    sections_off_their_audio,
     take_states,
 )
 from decktalk.stages.narrate.takes import (
     charge_take,
-    estimated_words,
+    cut_words,
+    gap_after,
     join_takes,
     place,
+    silent_takes,
     take_row,
     write_placeholder_take,
 )
@@ -102,61 +132,65 @@ def narrate(
     only: Sequence[int] | None = None,
     force: bool = False,
     replace_voiced: bool = False,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
 ) -> NarrateResult:
-    """Speak every targeted section of the script, and time every word in it.
+    """Speak every turn of every targeted section of the script, and time every word in it.
 
     Whether the run may buy is the run's own and never a parameter here, so one gate decides it for
-    the library, the command line and a service alike. A run that may buy, or whose named voice
-    bills nothing, makes each missing take, and nothing is sent until `run.approve` has seen the price. One
-    that may not buy from a voice that bills plays every take on disk, and a placeholder with a
-    `TAKE_MISSING` finding for each take that is missing. `force` makes each placeholder again and
-    never buys a take, and `replace_voiced` is the one way a voiced take on disk is made again. The voice is
-    built only once a take must be made, and the index is written again after every take, so a run
-    that is stopped keeps everything it has already paid for.
+    the library, the command line and a service alike. A turn whose voice the run may buy from, or
+    whose named voice bills nothing, gets each missing take, and nothing is sent until `run.approve` has
+    seen the price. A turn whose voice bills while the run may not buy plays its take on disk, or a
+    placeholder with a `TAKE_MISSING` finding. `force` makes each placeholder again and never buys a
+    take. `replace_voiced` makes every turn of the targeted sections again, and `turns` and `takes`
+    name the turns to make again, by number and by the take they play, as `retake_turns` reads them:
+    the run then targets those turns' sections, voices those turns alone and keeps every other take. A
+    voiced take made again is set aside as a rejected take, never deleted. A provider is built only once
+    a take of it must be made, and the index is written again after every take, so a run that is stopped
+    keeps everything it has already paid for.
 
     A run stopped or refused once its takes are under way carries what it made as the refusal's
     `result`: every take finished so far, and the cost of those it voiced. An interrupt becomes
     `Cancelled` for that, so a caller meets a stopped narrate as it meets a cancelled one.
     """
-    targets = _targets(inputs, only)
-    free = is_free(inputs)
+    retake = turns_to_retake(inputs, only, replace_voiced=replace_voiced, turns=turns, takes=takes)
+    targets = _targets(inputs, sorted({key.section for key in retake}) if retake else only)
+    previous = inputs.takes()
+    moved = sections_off_their_audio(inputs, previous, targets)
+    targets = sorted([*targets, *moved], key=lambda section: section.number)
     # A take is made again only when the run was told to replace it. `force` never feeds this, because
     # it rebuilds what DeckTalk makes itself, and a voice's take is not.
-    states = take_states(inputs, targets, replace_voiced=replace_voiced)
+    states = take_states(
+        inputs,
+        targets,
+        replace_voiced=replace_voiced,
+        retake=retake,
+        reread=[section.number for section in moved],
+    )
     plan = states.plan(spend=run.spend, force=force)
-    previous = inputs.takes()
-    if not plan.voiced and not inputs.voice.id and previous is not None and previous.voiced_sections:
-        # Voiced takes are on disk and cannot be matched without the voice, so the run says why once. A
-        # project with no voiced take has nothing to match.
-        run.note(NO_VOICE_NOTE)
-    if any(take.outcome is TakeOutcome.VOICED and take.digest is None for take in plan.takes):
-        # A voiced take needs the voice named, so this raises the refusal that says where to name it.
-        voice_id_of(inputs)
+    _refuse_or_note_unnamed(inputs, run, plan, previous)
     missing = [
-        _take_missing(inputs, take.section, take.reason, takes_dir_gone=states[take.section.number].takes_dir_gone)
+        _take_missing(inputs, take, take.reason, takes_dir_gone=_gone(states, take))
         for take in plan.takes
         if take.digest is not None and is_placeholder(take.digest)
     ]
     _keep_unselected(inputs, run, previous, targets)
-    provider: SpeechProvider | None = None
-    sending = [take.section for take in plan.takes if take.outcome is TakeOutcome.VOICED]
-    if sending:
-        # A run that sends nothing buys nothing, so the gate is asked and the voice is built only when
-        # something would be bought, and a run that plays what is on disk reads no key at all.
-        refuse_dropped_pauses(inputs, sending)
-        run.approve(plan.cost)
-        provider = speech_provider(run, inputs)
-    progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
+    providers = _providers(inputs, run, plan)
+    progress = _Progress(rows={take.turn_key: take for take in previous.sections} if previous is not None else {})
     try:
-        rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, progress, free=free)
+        rows, made, unreached = _write_takes(inputs, run, plan.takes, providers, progress)
+        rows, unaligned = time_takes(inputs, run, rows, previous, made=set(progress.made), force=force)
         index = _index(inputs, rows)
+        cut = silent_takes(inputs, index, set(progress.made)) + cut_words(inputs, index, set(progress.made))
         run.wrote(index.write(inputs.workspace.takes_path))
         run.wrote(join_takes(inputs, index))
     except HALTS as failure:
         refusal = as_refusal(failure)
-        so_far = [progress.made[take.section.number] for take in plan.takes if take.section.number in progress.made]
+        so_far = [progress.made[take.key] for take in plan.takes if take.key in progress.made]
         with progress.lock:
-            charged, possibly = set(progress.charged), set() if free else progress.sent - progress.charged
+            charged, sent = set(progress.charged), progress.sent - progress.charged
+        # A request a free voice was sent costs nothing, so only a paid one can have been billed.
+        possibly = {take.key for take in plan.takes if take.key in sent and not take.voice.free}
         refusal.result = run.result(
             NarrateResult,
             ok=False,
@@ -170,13 +204,9 @@ def narrate(
             raise
         raise refusal from failure
     _note_what_is_missing(inputs, run, index)
-    if unreached:
-        run.note(
-            f"The voice could not be reached, so section(s) {[section.number for section in unreached]} play a "
-            f"placeholder. {inputs.voice.start_hint}, then run decktalk narrate again.",
-            level=Level.WARNING,
-        )
-    missing += [_take_missing(inputs, section, UNREACHED, unreached=True) for section in unreached]
+    _note_unreached(inputs, run, unreached)
+    missing += [_take_missing(inputs, take, UNREACHED, unreached=True) for take in unreached]
+    missing += unaligned + cut
     for found in sorted(missing, key=lambda found: found.location.section or 0):
         run.found(found)
     return run.result(
@@ -188,43 +218,146 @@ def narrate(
     )
 
 
-def _spent(states: TakeStates, plan: NarratePlan, charged: Collection[int], *, possibly: Collection[int] = ()) -> Cost:
-    """What a run of this plan reports as its cost: the sections whose charge ran, with the sections in `possibly`
-    in its ceiling, when it voices any, and its price otherwise."""
+def _gone(states: TakeStates, take: TakePlan) -> bool:
+    """Whether a planned turn plays a placeholder because the takes directory holding its take moved."""
+    section = states.get(take.section.number)
+    return section is not None and section.turns[take.turn.number - 1].takes_dir_gone
+
+
+def _refuse_or_note_unnamed(inputs: Inputs, run: Run, plan: NarratePlan, previous: Takes | None) -> None:
+    """Refuse a voiced take whose voice has no id, or say once per such voice why its takes on disk are not matched.
+
+    A voiced take needs its voice named, so the refusal says where to name it. Voiced takes on disk
+    cannot be matched without their voice, and a project with no voiced take has nothing to match.
+    """
+    sending_unnamed = [take for take in plan.takes if take.outcome is TakeOutcome.VOICED and take.digest is None]
+    if sending_unnamed:
+        voice_id_of(inputs, sending_unnamed[0].voice)
+    if previous is not None and previous.voiced_sections:
+        voices = {take.voice.name: take.voice for take in plan.takes}
+        for voice in voices.values():
+            if not voice.named:
+                run.note(no_voice_note(voice))
+
+
+def _providers(inputs: Inputs, run: Run, plan: NarratePlan) -> dict[str, SpeechProvider]:
+    """Every provider this run sends a take to, built once each, after the price has been approved.
+
+    A run that sends nothing buys nothing, so the gate is asked and a provider is built only when
+    something would be bought from it, and a run that plays what is on disk reads no key at all. Each
+    provider is built by the first voice of it that has a take to make.
+    """
+    providers: dict[str, SpeechProvider] = {}
+    sending = [take for take in plan.takes if take.outcome is TakeOutcome.VOICED]
+    if not sending:
+        return providers
+    refuse_dropped_pauses(inputs, [(take.section, take.turn) for take in sending])
+    run.approve(plan.cost)
+    for take in sending:
+        if take.voice.provider not in providers:
+            providers[take.voice.provider] = speech_provider(run, inputs, take.voice)
+    return providers
+
+
+def _note_unreached(inputs: Inputs, run: Run, unreached: Sequence[TakePlan]) -> None:
+    """Say, once per voice, which sections play a placeholder because their free voice could not be reached."""
+    down: dict[str, list[int]] = defaultdict(list)
+    for take in unreached:
+        if take.section.number not in down[take.voice.name]:
+            down[take.voice.name].append(take.section.number)
+    for name, numbers in down.items():
+        run.note(
+            f"The voice {name} could not be reached, so its turns in section(s) {numbers} play a placeholder. "
+            f"{inputs.voices[name].start_hint}, then run decktalk narrate again.",
+            level=Level.WARNING,
+        )
+
+
+def _spent(
+    states: TakeStates, plan: NarratePlan, charged: Collection[TurnKey], *, possibly: Collection[TurnKey] = ()
+) -> Cost:
+    """What a run of this plan reports as its cost: the turns whose charge ran, with the turns in `possibly` in its
+    ceiling, when it voices any, and its price otherwise."""
     return states.charged(plan, charged, possibly) if plan.voiced else plan.cost
 
 
-def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: bool = False) -> Cost:
+def price(
+    inputs: Inputs,
+    *,
+    only: Sequence[int] | None = None,
+    replace_voiced: bool = False,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
+) -> Cost:
     """What a run of this stage that may spend would buy, planned the way `narrate` plans it and sending nothing.
 
     No run is opened and no voice is built, so a build prices its takes before it buys anything. A
-    run told to replace its voiced takes is priced at every take it targets.
+    run told to replace its voiced takes is priced at every take it targets, and one told to make
+    named turns again at those turns alone.
     """
-    return take_states(inputs, _targets(inputs, only), replace_voiced=replace_voiced).plan(spend=True).cost
+    retake = turns_to_retake(inputs, only, replace_voiced=replace_voiced, turns=turns, takes=takes)
+    targets = _targets(inputs, sorted({key.section for key in retake}) if retake else only)
+    return take_states(inputs, targets, replace_voiced=replace_voiced, retake=retake).plan(spend=True).cost
+
+
+def turns_to_retake(
+    inputs: Inputs,
+    only: Sequence[int] | None,
+    *,
+    replace_voiced: bool,
+    turns: Sequence[tuple[int, int]],
+    takes: Sequence[str],
+) -> tuple[TurnKey, ...]:
+    """The turns this run was told to make again, refused beside a selection of sections or `replace_voiced`.
+
+    Naming a turn names its section, so a section selection beside it would be a second answer to one
+    question, and `replace_voiced` would make every other turn of those sections again as well.
+    """
+    if not turns and not takes:
+        return ()
+    if only is not None or replace_voiced:
+        given = "--section" if only is not None else "--replace-voiced"
+        raise InputError(
+            f"--turn and --take name the turns to voice again and their sections, so {given} beside them would "
+            "name a second set, and nothing was voiced.",
+            hint=f"Leave out {given}, or name every turn to voice again with --turn.",
+            location=at(inputs.script_path, inputs.root),
+        )
+    return retake_turns(inputs, turns, takes)
 
 
 def _take_missing(
-    inputs: Inputs, section: ScriptSection, why: str, *, unreached: bool = False, takes_dir_gone: bool = False
+    inputs: Inputs, take: TakePlan, why: str, *, unreached: bool = False, takes_dir_gone: bool = False
 ) -> Finding:
-    """The finding for one section that plays a placeholder, saying why its take did not play and what makes it.
+    """The finding for one turn that plays a placeholder, saying why its take did not play and what makes it.
 
-    What makes the take is the voice's bill: a voice that bills is bought from with `--spend`, and a
-    free one that could not be reached is started. A takes directory that is gone is pointed at first,
-    because the takes in it are already made.
+    What makes the take is the bill of the voice that reads it: a voice that bills is bought from with
+    `--spend`, and a free one that could not be reached is started. A voice with no id is named first.
+    A takes directory that is gone is pointed at first, because the takes in it are already made. A
+    section of several turns names the turn and its voice.
     """
-    number = section.number
+    number, voice = take.section.number, take.voice
     if unreached:
-        action = f"{inputs.voice.start_hint}, then run decktalk narrate --section {number}."
-    elif is_free(inputs):
-        # A free voice is called whenever a voice is named, so a free section plays a placeholder only for want of one.
-        action = f"Name the voice, then run decktalk narrate --section {number} to make its take for nothing."
+        action = f"{voice.start_hint}, then run decktalk narrate --section {number}."
+    elif voice.free:
+        # A free voice is called whenever it is named, so a free turn plays a placeholder only for want of a name.
+        action = (
+            f"Name the voice {voice.name} in [voices.{voice.name}] id, then run decktalk narrate --section {number} "
+            "to make its take for nothing."
+        )
+    elif not voice.named:
+        action = (
+            f"Name the voice {voice.name} in [voices.{voice.name}] id, then run decktalk narrate --section {number} "
+            "--spend to buy its take."
+        )
     else:
         action = f"Run decktalk narrate --section {number} --spend to buy its take."
     if takes_dir_gone:
         action = f"Point [narration] takes_dir at the folder that holds them, or {action[0].lower()}{action[1:]}"
+    turn = "" if len(take.section.turns) == 1 else f" for turn {take.turn.number}, which {voice.name} reads"
     return judge(
         Code.TAKE_MISSING,
-        f"Section {number} plays a placeholder, because {why}. {action}",
+        f"Section {number} plays a placeholder{turn}, because {why}. {action}",
         Location(where=f"section {number}", file=inputs.relative(inputs.script_path), section=number),
         stage=Stage.NARRATE,
     )
@@ -235,14 +368,9 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[ScriptSection]:
     sections = inputs.script()
     out_of_order = ascending(sections)
     if out_of_order is not None:
-        first, second = out_of_order
-        raise InputError(
-            f"the script heading for section {second.number} comes after section {first.number}, "
-            "so the sections do not ascend and the narration would be joined in an order nothing else agrees with.",
-            hint=f"Move '## {second.number}. {second.title}' after '## {first.number}. {first.title}'.",
-            location=at(inputs.script_path, inputs.root),
-        )
-    check_script(inputs.relative(inputs.script_path).as_posix(), inputs.script_path.read_text(encoding="utf-8"))
+        raise InputError(f"{out_of_order.what}.", hint=out_of_order.hint, location=at(inputs.script_path, inputs.root))
+    where = inputs.relative(inputs.script_path).as_posix()
+    check_script(where, inputs.script_path.read_text(encoding="utf-8"), tuple(inputs.voices))
     wanted = selects(only)
     spoken = [section for section in inputs.spoken() if wanted(section.number)]
     if not spoken:
@@ -259,42 +387,45 @@ def _write_takes(
     inputs: Inputs,
     run: Run,
     plans: Sequence[TakePlan],
-    provider: SpeechProvider | None,
+    providers: Mapping[str, SpeechProvider],
     progress: _Progress,
-    *,
-    free: bool,
-) -> tuple[dict[int, Take], list[SectionTake], list[ScriptSection]]:
-    """Make every take this run plans, `[narration] concurrency` at a time, checkpointing after each.
+) -> tuple[dict[TurnKey, Take], list[SectionTake], list[TakePlan]]:
+    """Make every take this run plans, one per turn, `[narration] concurrency` at a time, checkpointing after each.
 
-    The takes a plan found on disk are indexed after the pool has finished, because a section kept
-    for sharing another section's words reads the take that section is still making. A `free` voice
-    that nothing answers is a voice that is not running, so each section it would have made plays a
-    placeholder and is given back last, and no section after the first asks it again. A voice that
-    bills is not stood in for, because a take the author paid to buy is not optional. `progress` starts
-    from the rows of the take index this run started from, which it rewrites, and holds every take
-    made so far, which is what a run stopped on the way reports.
+    The takes a plan found on disk are indexed after the pool has finished, because a turn kept for
+    sharing another turn's take reads the take that turn is still making. A free voice that nothing
+    answers is a voice that is not running, so each turn it would have made plays a placeholder and is
+    given back last, and no turn after the first asks that provider again. A voice that bills is not
+    stood in for, because a take the author paid to buy is not optional. `providers` holds each provider
+    this run built, by its name. `progress` starts from the rows of the take index this run started
+    from, which it rewrites, and holds every take made so far, which is what a run stopped on the way
+    reports.
     """
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
     chapters = inputs.chapters()
+    planned = {plan.key: plan for plan in plans}
 
     def one(plan: TakePlan) -> None:
         number = plan.section.number
         chapter = chapters.get(number, plan.section.title)
-        with run.section(Stage.NARRATE, number) as ending:
-            down = progress.down if free else None
+        with run.section(Stage.NARRATE, number, turn=plan.turn.number) as ending:
+            down = progress.down[plan.voice.provider] if plan.voice.free else None
             try:
+                provider = providers.get(plan.voice.provider)
                 row, outcome = _one_take(inputs, run, plan, chapter, provider, progress, down=down)
             except ProviderError as failure:
                 if failure.possibly_charged:
                     _possibly_charged(inputs, run, plan)
                 raise
             if outcome is TakeOutcome.KEPT:
-                # A take found on disk did not run, so its section ends as kept, as its row says.
+                # A take found on disk did not run, so its turn ends as kept, as its row says.
                 ending.outcome = Outcome.KEPT
             made = SectionTake(
                 section=number,
                 key=plan.section.key,
+                turn=plan.turn.number,
+                voice=plan.voice.name,
                 outcome=outcome,
                 characters=plan.characters_sent,
                 seconds=row.duration_seconds,
@@ -304,9 +435,11 @@ def _write_takes(
             # The count is reported under the lock that raised it, so a reader of the stream sees one,
             # two, three in that order however the pool's workers finish.
             with progress.lock:
-                progress.rows[number] = row
-                progress.made[number] = made
-                _index(inputs, _placed(inputs, progress.rows, set(progress.made))).write(inputs.workspace.takes_path)
+                progress.rows[plan.key] = row
+                progress.made[plan.key] = made
+                _index(inputs, _placed(inputs, progress.rows, set(progress.made), planned)).write(
+                    inputs.workspace.takes_path
+                )
                 progress.done += 1
                 run.progress(
                     Stage.NARRATE,
@@ -317,7 +450,7 @@ def _write_takes(
                     section=number,
                 )
 
-    making = {plan.section.number: plan for plan in plans if plan.outcome is not TakeOutcome.KEPT}
+    making = {plan.key: plan for plan in plans if plan.outcome is not TakeOutcome.KEPT}
     workers = min(inputs.settings.narration.concurrency, len(making))
     if making:
         log.debug(
@@ -329,49 +462,66 @@ def _write_takes(
             },
         )
 
-    def take(_nothing: None, number: int, _halt: Halt) -> None:
+    def take(_nothing: None, key: TurnKey, _halt: Halt) -> None:
         # A take never checks the halt once it has started, because its request is paid for once it is
         # sent, so a failure, a cancel or an interrupt starts no queued take and lets every take in
         # flight finish and be indexed.
-        one(making[number])
+        one(making[key])
 
     with Pool(list(making), workers, nothing_to_open, take, run.cancel) as pool:
-        for number in making:
-            pool.result(number)
+        for key in making:
+            pool.result(key)
     for plan in plans:
         if plan.outcome is TakeOutcome.KEPT:
             one(plan)
-    made = [progress.made[plan.section.number] for plan in plans]
+    made = [progress.made[plan.key] for plan in plans]
     unreached = [
-        plan.section
+        plan
         for plan in plans
-        if plan.outcome is not TakeOutcome.PLACEHOLDER
-        and progress.made[plan.section.number].outcome is TakeOutcome.PLACEHOLDER
+        if plan.outcome is not TakeOutcome.PLACEHOLDER and progress.made[plan.key].outcome is TakeOutcome.PLACEHOLDER
     ]
-    return _placed(inputs, progress.rows, set(progress.made)), made, unreached
+    return _placed(inputs, progress.rows, set(progress.made), planned), made, unreached
 
 
 def _possibly_charged(inputs: Inputs, run: Run, plan: TakePlan) -> None:
     """Put a take whose reply broke after its request was sent on the stream, flagged as possibly charged."""
     if plan.buy is None or plan.digest is None:
         return
-    charge_take(inputs, run, plan.section, plan.digest, plan.buy, possibly=True)
+    charge_take(inputs, run, plan.section, plan.turn, plan.digest, plan.buy, possibly=True)
 
 
 @dataclass
 class _Progress:
     """What the workers of one narrate share, which every one of them changes only under its lock."""
 
-    rows: dict[int, Take]
-    made: dict[int, SectionTake] = field(default_factory=dict)
-    sent: set[int] = field(default_factory=set)
-    """The sections whose request went to the voice and was not refused outright, which the provider may bill."""
-    charged: set[int] = field(default_factory=set)
-    """The sections whose voice answered and whose charge ran, which the provider was paid for."""
+    rows: dict[TurnKey, Take]
+    made: dict[TurnKey, SectionTake] = field(default_factory=dict)
+    sent: set[TurnKey] = field(default_factory=set)
+    """The turns whose request went to its voice and was not refused outright, which the provider may bill."""
+    charged: set[TurnKey] = field(default_factory=set)
+    """The turns whose voice answered and whose charge ran, which the provider was paid for."""
     done: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
-    down: threading.Event = field(default_factory=threading.Event)
-    """Set once a free voice did not answer, so no section after it waits on the same voice again."""
+    down: defaultdict[str, threading.Event] = field(default_factory=lambda: defaultdict(threading.Event))
+    """Set, by provider, once a free voice did not answer, so no turn after it waits on that provider again."""
+    placeholders: dict[str, threading.Lock] = field(default_factory=dict)
+    """One lock per placeholder digest, held while its placeholder is written, so one digest has one writer."""
+    written: set[str] = field(default_factory=set)
+    """The placeholder digests this run has written, which a second turn of the same words plays as written."""
+
+    @contextmanager
+    def writing(self, digest: str) -> Iterator[bool]:
+        """Hold the one writer's place for a placeholder digest, answering whether this run already wrote it.
+
+        A placeholder's digest is over its words alone, so a planned placeholder and a stand-in for a
+        free voice that did not answer can share one, and the pool may reach both at once.
+        """
+        with self.lock:
+            one = self.placeholders.setdefault(digest, threading.Lock())
+        with one:
+            done = digest in self.written
+            yield done
+            self.written.add(digest)
 
 
 def _one_take(
@@ -384,16 +534,19 @@ def _one_take(
     *,
     down: threading.Event | None,
 ) -> tuple[Take, TakeOutcome]:
-    """One section's take, made or found, with what this run did about it.
+    """One turn's take, made or found, with what this run did about it.
 
-    `down` is given for a free voice alone. Once it is set, or once this section's request finds
-    nothing answering, the section plays its placeholder instead of failing the run.
+    `down` is given for a free voice alone. Once it is set, or once this turn's request finds
+    nothing answering, the turn plays its placeholder instead of failing the run.
     """
     digest = plan.digest
     if digest is None:
         raise InputError(
             f"section {plan.section.number} has no take digest, so the voice could not be set up.",
-            hint=f"Set [voice] id in decktalk.toml or export {VOICE_ID_VARIABLE}, or run with --no-spend.",
+            hint=(
+                f"Set [voices.{plan.voice.name}] id in decktalk.toml or export {id_variable(plan.voice.name)}, or "
+                "run with --no-spend."
+            ),
             location=at(inputs.workspace.takes_path, inputs.root),
         )
     kept = plan.outcome is TakeOutcome.KEPT
@@ -405,14 +558,17 @@ def _one_take(
     )
     if hit:
         inputs.take_places.keep(digest, run, section=plan.section.number)
-        voiced = not is_placeholder(digest)
-        return take_row(inputs, plan.section, chapter, digest, voiced=voiced), TakeOutcome.KEPT
+        return take_row(inputs, plan.section, plan.turn, chapter, digest), TakeOutcome.KEPT
     if down is not None and down.is_set() and plan.outcome is not TakeOutcome.PLACEHOLDER:
-        # A take the voice would make, or one another section was making, cannot come from a voice that is down.
+        # A take the voice would make, or one another turn was making, cannot come from a voice that is down.
         return _stand_in(inputs, run, plan, chapter, progress)
     if plan.outcome is TakeOutcome.VOICED:
         return _buy(inputs, run, plan, chapter, digest, provider, progress, down=down)
-    row, files = write_placeholder_take(inputs, plan.section, chapter, digest)
+    with progress.writing(digest) as written:
+        if written:
+            # Another turn of this run wrote this placeholder, such as a stand-in with the same words.
+            return take_row(inputs, plan.section, plan.turn, chapter, digest), TakeOutcome.PLACEHOLDER
+        row, files = write_placeholder_take(inputs, plan.section, plan.turn, chapter, digest)
     for path in files:
         run.wrote(path)
     return row, TakeOutcome.PLACEHOLDER
@@ -429,9 +585,9 @@ def _buy(
     *,
     down: threading.Event | None,
 ) -> tuple[Take, TakeOutcome]:
-    """Voice one section's take through the take places, or play the copy another run voiced meanwhile.
+    """Voice one turn's take through the take places, or play the copy another run voiced meanwhile.
 
-    The section is marked sent as its request goes out and charged once its charge runs, which is what a
+    The turn is marked sent as its request goes out and charged once its charge runs, which is what a
     run stopped on the way counts its cost from. A request refused outright was not billed, so it is
     unmarked again, and one whose reply broke after sending stays sent.
     """
@@ -443,42 +599,47 @@ def _buy(
             location=at(inputs.workspace.takes_path, inputs.root),
         )
     voice, ask = provider, request
+    key = plan.key
 
-    number = plan.section.number
-
-    def speak() -> tuple[bytes, Sequence[Word]]:
+    def speak() -> Speech:
         with progress.lock:
-            progress.sent.add(number)
+            progress.sent.add(key)
         try:
             return voice.speak(ask)
         except ProviderError as failure:
             if not failure.possibly_charged:
                 with progress.lock:
-                    progress.sent.discard(number)
+                    progress.sent.discard(key)
             raise
 
     def charge() -> None:
         # The voice answered, so it is paid: the take is counted before its line is written, so a stop
-        # or a failure between the two never leaves a paid take in the ceiling alone.
+        # or a failure between the two never leaves a charged take out of the ceiling.
         with progress.lock:
-            progress.charged.add(number)
-        charge_take(inputs, run, plan.section, digest, buy)
+            progress.charged.add(key)
+        charge_take(inputs, run, plan.section, plan.turn, digest, buy)
 
     try:
         outcome = inputs.take_places.voice(
-            digest, speak, charge, run, section=plan.section.number, replacing=plan.reason == REPLACED
+            digest,
+            speak,
+            charge,
+            run,
+            section=plan.section.number,
+            replacing=plan.reason == REPLACED,
+            suffix=plan.voice.output.suffix,
         )
     except ProviderError as failure:
         if down is None or failure.reached:
             raise
         down.set()
         return _stand_in(inputs, run, plan, chapter, progress)
-    return take_row(inputs, plan.section, chapter, digest, voiced=True), outcome
+    return take_row(inputs, plan.section, plan.turn, chapter, digest), outcome
 
 
 def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str, progress: _Progress) -> tuple[Take, TakeOutcome]:
-    """The placeholder one section plays because its free voice did not answer, found on disk or made now."""
-    digest = placeholder_inputs(inputs, plan.section).digest
+    """The placeholder one turn plays because its free voice did not answer, found on disk or made now."""
+    digest = placeholder_inputs(inputs, plan.turn).digest
     held = inputs.take_places.find(digest).held
     outcome = TakeOutcome.KEPT if held else TakeOutcome.PLACEHOLDER
     stand_in = replace(plan, outcome=outcome, digest=digest, request=None, buy=None)
@@ -502,29 +663,57 @@ def _keep_unselected(inputs: Inputs, run: Run, previous: Takes | None, targets: 
             inputs.take_places.keep(row.digest, run, section=row.section)
 
 
-def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[int, Take]:
-    """Every row of the index, with the ones this run did not touch placed by the same rule."""
+def _placed(
+    inputs: Inputs, rows: Mapping[TurnKey, Take], touched: Collection[TurnKey], planned: Mapping[TurnKey, TakePlan]
+) -> dict[TurnKey, Take]:
+    """Every row of the index this run can stand behind, each placed by the one rule.
+
+    A section this run made a take of keeps, in turn order up to the first it cannot stand behind, each
+    turn it made and each turn whose row from the index it started from plays the take `planned` for
+    that turn, placed on its turn of the script. So the index never names a turn the script no longer
+    has or skips one, and a run stopped while it remakes one turn keeps every other turn it holds. A
+    section none of whose turns this run made keeps the rows it had, its first taking the section's
+    lead, its last the section's tail and every other the gap it already held. A section the script no
+    longer speaks keeps none.
+    """
     spoken = {section.number for section in inputs.spoken()}
-    return {
-        number: row if number in touched else place(inputs, number, row)
-        for number, row in rows.items()
-        if number in spoken
-    }
+    making = {key.section for key in touched}
+    out: dict[TurnKey, Take] = {}
+    for number in sorted({key.section for key in rows} & spoken):
+        held = sorted((row for key, row in rows.items() if key.section == number), key=lambda row: row.turn)
+        if number in making:
+            for row in held:
+                plan = planned.get(row.turn_key)
+                standing = row.turn_key in touched or (plan is not None and plan.digest == row.digest)
+                if not standing or (row.turn > 1 and TurnKey(number, row.turn - 1) not in out):
+                    break
+                if row.turn_key not in touched and plan is not None:
+                    row = place(inputs, row, gap=gap_after(inputs, plan.section, plan.turn))
+                out[row.turn_key] = row
+            continue
+        for place_at, row in enumerate(held):
+            last = place_at == len(held) - 1
+            out[row.turn_key] = place(inputs, row, gap=None if last else row.tail_seconds)
+    return out
 
 
-def _index(inputs: Inputs, rows: dict[int, Take]) -> Takes:
-    """The take index, in section order, which is the one order the narration is joined in, under the voice in force."""
+def _index(inputs: Inputs, rows: Mapping[TurnKey, Take]) -> Takes:
+    """The take index, in section and turn order, which is the one order the narration is joined in.
+
+    Its model and format are the default voice's, and each row names the voice that reads it.
+    """
+    default = inputs.voices[inputs.default_voice]
     return Takes(
         script=inputs.relative(inputs.script_path).as_posix(),
-        model=inputs.voice.model,
-        output_format=inputs.voice.output.format,
-        sections=tuple(rows[number] for number in sorted(rows)),
+        model=default.model,
+        output_format=default.output.format,
+        sections=tuple(rows[key] for key in sorted(rows)),
     )
 
 
 def _note_what_is_missing(inputs: Inputs, run: Run, index: Takes) -> None:
     """Say which spoken sections still have no take, because the narration covers the rest alone."""
-    have = {take.section for take in index.sections}
+    have = set(index.numbers)
     missing = [section.number for section in inputs.spoken() if section.number not in have]
     if missing:
         run.note(
@@ -538,12 +727,15 @@ __all__ = [
     "SectionTakeState",
     "TakePlan",
     "TakeStates",
-    "estimated_words",
+    "Unaligned",
+    "before_narrate",
     "narrate",
     "place",
     "price",
+    "retake_turns",
     "script_refusals",
     "shown",
     "symbol_tokens",
     "take_states",
+    "turns_to_retake",
 ]

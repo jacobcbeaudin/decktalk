@@ -43,7 +43,7 @@ class StageCall[R: Result]:
 
 
 CALLS: dict[Stage, StageCall[Any]] = {
-    Stage.NARRATE: StageCall(narrate, NarrateResult, ("only", "force", "replace_voiced")),
+    Stage.NARRATE: StageCall(narrate, NarrateResult, ("only", "force", "replace_voiced", "turns", "takes")),
     Stage.CUE: StageCall(cue, CueResult, ("only",)),
     Stage.RECORD: StageCall(record, RecordResult, ("only", "force")),
     Stage.SCORE: StageCall(score, ScoreResult, ("only", "replace_score")),

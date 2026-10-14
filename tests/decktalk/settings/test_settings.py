@@ -9,7 +9,7 @@ else here holds a rule the design states in a sentence.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, get_args
 
 import jsonschema
 import pytest
@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 from decktalk.errors import InputError
 from decktalk.findings import Code
 from decktalk.results import Nature, Scope, Source
-from decktalk.settings import BY_ID, DOCUMENT_TABLES, KEYS, SHARED_TABLES, Settings
+from decktalk.settings import BY_ID, DOCUMENT_TABLES, KEYS, MEMBER, SHARED_TABLES, Settings, family, key_of
 from decktalk.settings.layers import (
     load,
     value_of,
@@ -37,10 +37,15 @@ def schema() -> dict[str, Any]:
 
 
 def subschema(document: dict[str, Any], key_id: str) -> dict[str, Any]:
-    """One key's own subschema, found by walking the tables of its dotted id."""
+    """One key's own subschema, found by walking the tables of its dotted id, a voice's name by its family."""
     body = document["properties"]
     for part in key_id.split("."):
-        body = body[part] if "properties" not in body else body["properties"][part]
+        if "properties" in body:
+            body = body["properties"][part]
+        elif part in body:
+            body = body[part]
+        else:
+            body = body["additionalProperties"]
         body = body.get("properties", body)
     return body
 
@@ -62,7 +67,7 @@ def loads(key_id: str, value: object) -> bool:
     for part in parts[:-1]:
         holder = holder.setdefault(part, {})
     holder[parts[-1]] = value
-    machine = BY_ID[key_id].scope is Scope.MACHINE
+    machine = concrete(key_id).scope is Scope.MACHINE
     try:
         load(machine=table if machine else {}, project={} if machine else table, environ={})
     except InputError:
@@ -72,10 +77,10 @@ def loads(key_id: str, value: object) -> bool:
 
 def values(key_id: str) -> st.SearchStrategy[object]:
     """Every value worth judging for a key, as its own type or as a TOML array of that type."""
-    key = BY_ID[key_id]
+    key = concrete(key_id)
     assert key.bounds is not None
     if key.bounds.items is not None:
-        return st.lists(around(key.bounds.items), max_size=3)
+        return st.lists(around(key.bounds.items, words=get_args(key.annotation)[0] is str), max_size=3)
     return around(key.bounds, words=key.annotation is str)
 
 
@@ -107,8 +112,25 @@ def around(bounds: Bounds, *, words: bool = False) -> st.SearchStrategy[object]:
 SWEEP_EXAMPLES = 40
 """How many values each key is judged at, which reaches both sides of every edge of every key."""
 
-SWEPT = [key.id for key in KEYS if key.bounds is not None]
+VOICE = "narrator"
+"""The voice a key of the voices' family is judged on, which is the default voice and needs no other table."""
+
+
+def concrete(key_id: str) -> Key:
+    """The key an id names, a template of the voices' family filled in with the voice the sweep judges it on."""
+    key = key_of(key_id.replace(MEMBER, VOICE))
+    assert key is not None
+    return key
+
+
+JUDGED = [concrete(key.id) if family(key) else key for key in KEYS]
+"""Every key, a template of the voices' family as the default voice's own, which is how the loader meets it."""
+
+SWEPT = [key.id for key in JUDGED if key.bounds is not None]
 """Every key with a range, whether a span, a set or the range of each item of an array."""
+
+DEFAULTED = [key for key in JUDGED if key.default is not None]
+"""Every key with a default of its own, which is every key but a voice's key that inherits its provider's."""
 
 
 class TestThePublishedRangeIsTheEnforcedRange:
@@ -123,18 +145,23 @@ class TestThePublishedRangeIsTheEnforcedRange:
 
     @pytest.mark.parametrize("key_id", SWEPT)
     def test_a_value_of_the_wrong_type_is_refused_by_both(self, key_id: str) -> None:
-        wrong = "a string" if BY_ID[key_id].annotation is not str else 17
+        wrong = "a string" if concrete(key_id).annotation is not str else 17
         assert loads(key_id, wrong) is False
         assert accepts(schema(), key_id, wrong) is False
 
-    @pytest.mark.parametrize("key", KEYS, ids=lambda key: key.id)
+    @pytest.mark.parametrize("key", DEFAULTED, ids=lambda key: key.id)
     def test_every_default_validates_against_its_own_subschema(self, key: Key) -> None:
         value = list(key.default) if isinstance(key.default, tuple) else key.default
         assert accepts(schema(), key.id, value), f"{key.id} default {value!r} is outside its published range"
 
-    @pytest.mark.parametrize("key", KEYS, ids=lambda key: key.id)
+    @pytest.mark.parametrize("key", DEFAULTED, ids=lambda key: key.id)
     def test_every_default_is_inside_its_own_safe_range(self, key: Key) -> None:
         assert key.bounds is None or key.bounds.holds(key.default)
+
+    def test_only_a_voices_key_that_inherits_its_providers_value_has_no_default(self) -> None:
+        """A voice that states no value reads its provider's, so its key has none of its own to publish."""
+        bare = [key.id for key in KEYS if key.default is None]
+        assert bare == [key.id for key in KEYS if family(key) and key.see_also]
 
 
 class TestTheRecordEveryKeyCarries:
@@ -213,3 +240,23 @@ class TestTheTables:
         for key in KEYS:
             for code in key.decides:
                 assert isinstance(code, Code)
+
+
+def test_the_local_server_listens_on_a_port_the_setting_gives_its_reason_for() -> None:
+    key = BY_ID["dtsp.base_url"]
+    assert key.default == "http://127.0.0.1:9361"
+    assert "9361" in key.description
+    assert "IANA" in key.description
+
+
+def test_the_handshake_has_its_own_short_wait() -> None:
+    """A port held by a process that never answers costs this wait, not the alignment request's."""
+    key = BY_ID["dtsp.handshake_seconds"]
+    assert key.default == 5
+    assert key.unit == "seconds"
+    assert key.bounds == Bounds(ge=1, le=60)
+    assert key.scope is Scope.MACHINE and key.nature is Nature.APPARATUS
+    assert key.see_also == ("dtsp.base_url", "narration.timeout_seconds")
+    assert key.default < BY_ID["narration.timeout_seconds"].default
+    assert "alignment" in BY_ID["narration.timeout_seconds"].description
+    assert "aligner" in BY_ID["narration.retries"].description

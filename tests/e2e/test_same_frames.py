@@ -1,0 +1,52 @@
+"""A shipped section recorded again and again decodes to the same frames every time.
+
+    uv run pytest -m scaffold tests/e2e/test_same_frames.py
+
+The stepped recorder promises that two recordings of one page are the same frames, and every later
+speed-up of the recorder is judged by that promise. The starter's closing section is the page that
+broke it: its end card pops in, and a frame captured before the page had drawn the step showed the
+card already settled on one run in three. So the section is recorded several times on a fresh
+project and every decoded frame of every run is compared, as rgb24, with the first.
+
+It builds a packaged project with no voice, so it carries the `scaffold` marker with the other suites
+that do.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from decktalk.template import STARTER
+from support.commands import HOSTILE_DIRECTORY, decktalk, frame_digests, written
+from support.timing_policy import FIRST_FETCH_SECONDS, budget
+
+RECORDINGS = 5
+"""How many times the section is recorded.
+
+A frame captured before the page had drawn it disagreed in about one recording in three on a loaded
+machine, so five recordings would all agree by chance about one time in six.
+"""
+
+SECTION = 3
+"""The starter's closing section, whose end card pops in."""
+
+RECORDING_SECONDS = 60
+"""A ceiling on one build or one recording of the section, so a hung page fails as a timeout."""
+
+pytestmark = [pytest.mark.scaffold, pytest.mark.timeout(budget(FIRST_FETCH_SECONDS + RECORDINGS * RECORDING_SECONDS))]
+
+
+def test_the_starters_closing_section_records_the_same_frames_every_time(tmp_path: Path) -> None:
+    home = tmp_path / HOSTILE_DIRECTORY
+    home.mkdir(parents=True)
+    root = written(home, STARTER)
+    decktalk("--project", str(root), "build", "--no-spend", cwd=home)
+    video = root / "build" / "recordings" / f"{SECTION:02d}.mp4"
+    runs = [frame_digests(video)]
+    for _ in range(RECORDINGS - 1):
+        decktalk("--project", str(root), "record", "--section", str(SECTION), "--force", cwd=home)
+        runs.append(frame_digests(video))
+    differing = [[k for k, (a, b) in enumerate(zip(runs[0], run, strict=True)) if a != b] for run in runs[1:]]
+    assert differing == [[]] * (RECORDINGS - 1)

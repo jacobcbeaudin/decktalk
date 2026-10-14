@@ -10,7 +10,9 @@ a setting are four renderings of one row.
 
 A project key is set by four layers, lowest to highest: the default here, the project's
 `decktalk.toml`, the environment variable named `DECKTALK_<TABLE>_<KEY>`, and a `--set
-table.key=value` given for one run. A machine key is set by its default, the per-machine file, its
+table.key=value` given for one run. A voice is a table the author names, `[voices.NAME]`, so its keys
+are a family: one template per key, published under `voices.<name>`, which each declared voice fills
+with its own name. A machine key is set by its default, the per-machine file, its
 variable and `--set`. `load()` returns both the resolved tree and the record of which layer set each
 key, because a caller that is told a value and not its layer cannot tell a deliberate choice from a
 default.
@@ -24,19 +26,24 @@ so a reader who cannot find a setting learns the number is deliberately not one.
     __init__.py   the tables, the key registry and the record of which layer set each key
     numbers.py    every number that is not a setting, with its formula and its reason
     layers.py     the five layers read, merged and held to their scopes, which is `load()`
+    voices.py     each voice the project declares, resolved over its provider's table
     edit.py       one key written into or removed from a settings file
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, replace
+from typing import get_type_hints
 
 from pydantic import Field
 
 from decktalk.errors import InputError
 from decktalk.findings import Code, Model
-from decktalk.results import LayerValue, Scope, SoundKind
-from decktalk.tomlmap import A_LUMA, A_PERCENT, A_SHARE, ENV_PREFIX, Bounds, Key, Nature, Source, registry, tune
+from decktalk.page import CANVAS_HEIGHT, CANVAS_WIDTH, SHAPES
+from decktalk.results import LayerValue, Scope, SoundKind, Source
+from decktalk.tomlmap import A_LUMA, A_PERCENT, A_SHARE, ENV_PREFIX, FAMILY, Bounds, Key, Nature, registry, tune
 from decktalk.tomlmap.suggest import did_you_mean
 
 PROJECT_FILE = "decktalk.toml"
@@ -50,6 +57,18 @@ COLOR_SCHEMES = ("light", "dark", "no-preference")
 VOICE_ID = r"^[A-Za-z0-9_-]*$"
 """Truth: the letters a provider's voice id is spelled in, and nothing that could leave a path segment."""
 
+VOICE_NAME = r"^[a-z][a-z0-9]*$"
+"""Truth: what a voice is called, so every name spells one shell variable and no two names spell the same one."""
+
+VOICES_TABLE = "voices"
+"""The table that holds one table per voice, each named by the voice's name."""
+
+MEMBER = "<name>"
+"""What stands for a voice's name in a key the family publishes, such as voices.<name>.id."""
+
+PROVIDER_TABLES = ("elevenlabs", "dtsp")
+"""The settings tables a shipped speech provider owns, each named after the provider, which a test holds to DECLARED."""
+
 SOME_PATH = r"^.+$"
 """Truth: a path with at least one character in it, which is what a folder that must exist is named by."""
 
@@ -59,11 +78,38 @@ HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 PAGE_POLICIES = ("trusted", "untrusted")
 """The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
-# The four constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
+PROGRAM_POLICIES = ("refuse", "ask", "run")
+"""What `record` does with a program a project names: refuse it, ask a person at a terminal first, or run it."""
+
+FRAME_SIZES = {
+    SHAPES[0]: (CANVAS_WIDTH, CANVAS_HEIGHT),
+    SHAPES[1]: (CANVAS_HEIGHT, CANVAS_HEIGHT),
+    SHAPES[2]: (CANVAS_HEIGHT, CANVAS_WIDTH),
+}
+"""The frame each named size draws, which is the wide canvas, its height squared, and the wide canvas turned upright."""
+
+FRAME_SIZE_MARK = "x"
+"""What separates the width from the height of a size written in pixels."""
+
+FRAME_SIDE_MIN = 240
+"""Truth: the shortest side a frame may have, at which the block-averaged copy verify compares is 30 blocks across."""
+
+FRAME_SIDE_MAX = 7680
+"""Truth: the longest side a frame may have, which is the width of an 8K UHD frame."""
+
+FRAME_SIDE = r"(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680"
+"""Truth: an even number of pixels from `FRAME_SIDE_MIN` to `FRAME_SIDE_MAX`, spelled with no leading zero.
+
+The film's colour is stored at half its width and half its height, so x264 refuses an odd side.
+"""
+
+FRAME_SIZE = rf"^(?:{'|'.join(FRAME_SIZES)}|(?:{FRAME_SIDE}){FRAME_SIZE_MARK}(?:{FRAME_SIDE}))$"
+"""Truth: a named size, or a width and a height in pixels, which the loader and the schema both hold a size to."""
+
+# The three constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
 # one with its unit and its reason, so the reason is written there alone.
 BLOCK_PX = 8
 GUARD_FRAMES = 1.5
-REPORT_FRAME_GAP_MS = 100
 CLICK_LEVEL_DBFS = -24.0
 
 
@@ -71,31 +117,28 @@ CLICK_LEVEL_DBFS = -24.0
 class VideoConfig:
     """These keys set the frame size and the encoding of every recording and of the final mp4."""
 
-    width: int = tune(
-        1920,
-        "Frame width in pixels, for every recording and the final mp4.",
+    size: str = tune(
+        "wide",
+        "The frame of every recording and of the final mp4: wide (1920 by 1080), square (1080 by 1080), vertical "
+        "(1080 by 1920), or WIDTHxHEIGHT in pixels. A page is laid out on a canvas of the frame's shape whose short "
+        "side is 1080 CSS pixels, which it reads as --dt-width and --dt-height, so a square copy of a project is "
+        "the project copied with this one key changed.",
         unit="pixels",
-        bounds=Bounds(ge=320, le=7680),
+        bounds=Bounds(pattern=FRAME_SIZE),
+        hazard=(
+            "An odd side cannot be encoded, because the film's colour is stored at half the frame's width and "
+            "height, and a side past the range is a frame Chromium and x264 are not held to drawing."
+        ),
         see_also=("verify.probe_width", "verify.block_width"),
-    )
-    height: int = tune(
-        1080,
-        "Frame height in pixels, for every recording and the final mp4.",
-        unit="pixels",
-        bounds=Bounds(ge=240, le=4320),
-        see_also=("verify.probe_height", "verify.block_height"),
     )
     fps: int = tune(
         25,
-        "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
+        "Frame rate of every recording and of the final mp4. The recorder steps the section clock one frame "
+        "of this rate at a time, so every frame of a film is the page at its own second.",
         unit="frames per second",
         bounds=Bounds(enum=(25, 30, 50, 60)),
-        requires="video.fps >= CAPTURE_FPS",
-        hazard=(
-            "Encoding below the rate the recorder captured at drops presented frames, which both loses "
-            "motion a viewer saw and corrupts the frames verify measures its own verdicts from."
-        ),
-        see_also=("CAPTURE_FPS",),
+        requires="video.fps >= SLOWEST_FPS",
+        see_also=("SLOWEST_FPS",),
     )
     preset: str = tune(
         "medium",
@@ -123,14 +166,41 @@ class VideoConfig:
         ),
     )
 
+    @property
+    def frame(self) -> tuple[int, int]:
+        """The frame `size` names, as its width and its height in pixels."""
+        named = FRAME_SIZES.get(self.size)
+        if named is not None:
+            return named
+        width, height = self.size.split(FRAME_SIZE_MARK)
+        return int(width), int(height)
+
+    @property
+    def width(self) -> int:
+        """The frame's width in pixels."""
+        return self.frame[0]
+
+    @property
+    def height(self) -> int:
+        """The frame's height in pixels."""
+        return self.frame[1]
+
 
 @dataclass(frozen=True)
 class NarrationConfig:
     """These keys govern how the script is turned into audio."""
 
+    voice: str = tune(
+        "narrator",
+        "The default voice: the voice that reads every section no voice direction in the script names, and every "
+        "turn of a section that names none. It names a [voices.NAME] table, and with no such table written it is a "
+        "voice at every default.",
+        bounds=Bounds(pattern=VOICE_NAME),
+        see_also=("narration.turn_gap_seconds",),
+    )
     concurrency: int = tune(
         2,
-        "How many sections `narrate` voices at once.",
+        "How many turns `narrate` voices at once.",
         bounds=Bounds(ge=1, le=8),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
@@ -138,7 +208,8 @@ class NarrationConfig:
     )
     retries: int = tune(
         3,
-        "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+        "How many more times `narrate` asks again when the voice provider or the aligner answers that it is busy or "
+        "failed.",
         bounds=Bounds(ge=0, le=10),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
@@ -166,6 +237,14 @@ class NarrationConfig:
         "speaks. A section's own `lead_seconds` replaces it.",
         unit="seconds",
         bounds=Bounds(ge=0, le=5),
+    )
+    turn_gap_seconds: float = tune(
+        0.3,
+        "Silence between two turns of a section when no timed pause is written where the voice changes. A "
+        "[pause N] written there replaces it, and neither is part of either turn's take.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=5),
+        see_also=("narration.lead_seconds", "narration.tail_seconds"),
     )
     placeholder_beat_seconds: float = tune(
         0.7,
@@ -218,39 +297,27 @@ class NarrationConfig:
     )
     context_characters: int = tune(
         1500,
-        "Characters of each neighbour section sent with a request, for continuous prosody.",
+        "Characters of the neighbouring turns sent with a request, for continuous prosody: the end of the turn "
+        "before and the start of the turn after that the same voice reads among the turns the run selects. 0 sends "
+        "no neighbouring text, so each turn is sent on its own.",
         unit="characters",
         bounds=Bounds(ge=0, le=5000),
     )
     timeout_seconds: int = tune(
         180,
-        "Seconds before a speech request times out.",
+        "Seconds before a speech or alignment request times out. With `retries` it also sets how long a run "
+        "waits while another run on this machine voices the same take into the take store: one whole take "
+        "request, every attempt this long with the waits between them, before it is refused as locked.",
         unit="seconds",
         bounds=Bounds(ge=10, le=1800),
         nature=Nature.APPARATUS,
-    )
-    store_wait_seconds: int = tune(
-        900,
-        "Seconds a run waits while another run on this machine voices the same take into the take store, before "
-        "it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus "
-        "one, with the waits between them. The default covers that at the default `timeout_seconds` and "
-        "`retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
-        unit="seconds",
-        bounds=Bounds(ge=1, le=36000),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        hazard=(
-            "Below the length of one take request, a run is refused while another run's healthy request is still "
-            "being answered."
-        ),
-        see_also=("narration.store_dir", "narration.timeout_seconds", "narration.retries"),
     )
     sound_end_noise_dbfs: float = tune(
         -35.0,
         "Level under which the tail of a take counts as silence, which is where the take's sound ends.",
         unit="dBFS",
         bounds=Bounds(ge=-60, le=-25),
-        decides=(Code.CUT_SPEECH,),
+        decides=(Code.CUT_SPEECH, Code.TAKE_WORD_CUT, Code.TAKE_SILENT),
         hazard=(
             "Above about -25 dBFS the scan calls quiet speech silence, so the take is placed early and the "
             "cut that follows it lands on a word."
@@ -262,27 +329,15 @@ class NarrationConfig:
         "Shortest run under the noise level that counts as the end of a take's sound.",
         unit="seconds",
         bounds=Bounds(ge=0.02, le=0.5),
-        decides=(Code.CUT_SPEECH,),
+        decides=(Code.CUT_SPEECH, Code.TAKE_WORD_CUT, Code.TAKE_SILENT),
         see_also=("narration.sound_end_noise_dbfs",),
     )
 
 
 @dataclass(frozen=True)
 class RecordConfig:
-    """These keys tune the headless Chromium recording and how the start of the section clock is found in it."""
+    """These keys tune how `record` opens each page section in headless Chromium and steps it frame by frame."""
 
-    settle_seconds: float = tune(
-        0.5,
-        "Shortest wait after the page is ready and before the start of the section clock.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=30),
-    )
-    cover_min_seconds: float = tune(
-        1.5,
-        "Shortest time from the start of the recorder to the start of the section clock.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=30),
-    )
     color_scheme: str = tune(
         "light",
         "Color scheme that Chromium reports to the page.",
@@ -302,95 +357,136 @@ class RecordConfig:
             "trusted page can reach anything the machine can, including a cloud metadata endpoint."
         ),
     )
+    programs: str = tune(
+        "refuse",
+        "Whether `record` runs the programs a project names, which are its render sections' `render_command`. "
+        "A program runs with your user's rights and can read every file you can, the project's `.env` "
+        "included. `refuse` runs none of them. `ask` lists every program the run "
+        "would start and runs them only when a person at a terminal answers yes, and refuses without a "
+        "terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the "
+        "`untrusted` page policy no program runs whatever this says. It is the machine's to set, so a "
+        "project cannot allow its own programs.",
+        bounds=Bounds(enum=PROGRAM_POLICIES),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "`run` executes whatever a project's decktalk.toml names as soon as `record` or `build` reaches "
+            "it, so set it only on a machine that builds projects whose programs you have read."
+        ),
+        see_also=("record.page_policy",),
+    )
     concurrency: int = tune(
         0,
-        "How many page sections `record` records at once. Zero chooses from the CPU this process may use, "
-        "which inside a container is its quota rather than the host's core count.",
+        "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a "
+        "section after another. Zero chooses from the CPU this process may use, which inside a container is "
+        "its quota rather than the host's core count.",
         bounds=Bounds(ge=0, le=16),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         hazard=(
-            "Each recording needs about two dedicated CPUs to present its frames on time, and a starved "
-            "recording stalls or lands its reveals late, so a number above the machine's share costs "
-            "correctness rather than only speed."
+            "Each recorder steps its own Chromium and its own encode, so a number above the machine's share "
+            "makes every chunk wait on the others and the run slower rather than faster."
         ),
+        see_also=("record.chunk_frames_min",),
     )
-    retries: int = tune(
-        2,
-        "How many more times `record` records a section whose frames stalled.",
-        bounds=Bounds(ge=0, le=10),
-        see_also=("record.frame_gap_max_ms",),
-    )
-    cover_scan_seconds: float = tune(
-        4.0,
-        "Seconds at the start of each recording that `record` scans for the magenta cover.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=30),
-    )
-    fallback_first_paint_seconds: float = tune(
-        1.1,
-        "Guessed first paint when `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=10),
-    )
-    cover_min_luma: float = tune(
-        70.0,
-        "A cover frame has an average luma above this.",
-        unit="luma",
-        bounds=Bounds(ge=40, le=120),
-        typed=A_LUMA,
+    chunk_frames_min: int = tune(
+        50,
+        "Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section "
+        "shorter than two chunks of this length is recorded whole by one recorder.",
+        unit="frames",
+        bounds=Bounds(ge=1, le=100_000),
+        scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
-    )
-    cover_max_luma: float = tune(
-        140.0,
-        "A cover frame has an average luma below this.",
-        unit="luma",
-        bounds=Bounds(ge=80, le=200),
-        typed=A_LUMA,
-        nature=Nature.APPARATUS,
-    )
-    cover_min_chroma: float = tune(
-        165.0,
-        "A cover frame has an average U and an average V above this.",
-        unit="chroma",
-        bounds=Bounds(ge=128, le=255),
-        typed=A_LUMA,
-        nature=Nature.APPARATUS,
-    )
-    painted_peak_min_luma: float = tune(
-        60.0,
-        "A painted frame has a brightest luma above this.",
-        unit="luma",
-        bounds=Bounds(ge=1, le=200),
-        typed=A_LUMA,
-    )
-    painted_mean_max_luma: float = tune(
-        120.0,
-        "A painted frame has an average luma below this, so a white flash does not count as the picture.",
-        unit="luma",
-        bounds=Bounds(ge=20, le=240),
-        typed=A_LUMA,
-    )
-    truncated_slack_seconds: float = tune(
-        0.5,
-        "Allowed shortfall of a recording against its requested length.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=5),
-        decides=(Code.RECORD_TRUNCATED,),
-    )
-    frame_gap_max_ms: int = tune(
-        150,
-        "Longest gap between two presented frames after the start of the section clock. A longer gap makes "
-        "`record` try again.",
-        unit="milliseconds",
-        bounds=Bounds(ge=REPORT_FRAME_GAP_MS, le=2000),
-        requires="record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS",
-        decides=(Code.RECORD_STALLED,),
         hazard=(
-            "The runtime reports a gap no finer than its own reporting floor, so a limit under that floor "
-            "makes every section stall and every retry spend the recording again."
+            "Every chunk loads the page again, so chunks much shorter than a page load spend the machine on "
+            "loading rather than on frames."
         ),
-        see_also=("REPORT_FRAME_GAP_MS", "record.retries"),
+        see_also=("record.chunk_startup_seconds", "record.step_seconds"),
+    )
+    chunk_startup_seconds: float = tune(
+        0.2,
+        "How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and "
+        "stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps "
+        "* recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its "
+        "last recording took.",
+        unit="seconds",
+        bounds=Bounds(gt=0, le=60),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A start-up stated far too low splits short sections into chunks that each spend more loading the page "
+        "than recording it.",
+        see_also=("record.step_seconds", "record.chunk_frames_min"),
+    )
+    step_seconds: float = tune(
+        0.014,
+        "How long one recorder takes to step its page once on this machine, the capture of the frame it lands "
+        "on included, which `record` weighs against `chunk_startup_seconds` when it splits a section.",
+        unit="seconds",
+        bounds=Bounds(gt=0, le=10),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        see_also=("record.chunk_startup_seconds", "record.chunk_frames_min"),
+    )
+    page_deadline_seconds: float = tune(
+        15.0,
+        "Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming "
+        "where it was stuck: a load, a step, a capture, a still or a report. `record` names the section and the "
+        "frame, and `check`, `storyboard`, `cue` and `assemble` hold the pages they open to it too. It is many "
+        "times the longest a step measures, so only a page that stopped answering reaches it, such as one that "
+        "spins its main thread or waits on a font or an image that never arrives.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=600),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A deadline set near the time a frame takes stops healthy recordings on a busy machine.",
+        see_also=("record.deadline_slowdown",),
+    )
+    deadline_slowdown: float = tune(
+        30.0,
+        "How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may "
+        "run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times "
+        "chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks "
+        "take spread over the recorders, plus its longest chunk, so a page that answers every call and never "
+        "gets on still ends with a TOOL error.",
+        bounds=Bounds(ge=1, le=10_000),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "A value near one stops a recording that a loaded machine is merely slow to make, because the two "
+            "calibrations are this machine's speed when it is idle."
+        ),
+        see_also=("record.page_deadline_seconds", "record.step_seconds", "record.chunk_startup_seconds"),
+    )
+    renderer_retries: int = tune(
+        1,
+        "How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or "
+        "its page was closed under it. A frame is a function of its index, so a chunk recorded again is the "
+        "same frames.",
+        bounds=Bounds(ge=0, le=5),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+    )
+    encode_threads: int = tune(
+        0,
+        "Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders "
+        "at once, at least one each. Every piece of a run is encoded with the same number, and the frames are "
+        "the same whatever it is.",
+        bounds=Bounds(ge=0, le=64),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of "
+            "megabytes and buys no speed, because the encode is never what a recording waits on."
+        ),
+        see_also=("record.concurrency",),
+    )
+    skip_still: bool = tune(
+        True,
+        "Write a frame again rather than capture it when the page reports that nothing it draws changed "
+        "since the frame before, which is most frames of a narrated slide, and write every frame before the "
+        "next change the page reports without stepping the page to each. The frames are the same either "
+        "way, so it changes how long `record` takes and nothing it writes.",
+        nature=Nature.APPARATUS,
     )
 
 
@@ -562,12 +658,42 @@ class VerifyConfig:
         "How far the measured onset may sit from the cue time, early or late.",
         unit="milliseconds",
         bounds=Bounds(ge=20, le=400),
-        decides=(Code.CUE_OFF,),
+        decides=(Code.CUE_OFF, Code.MOTION_OFF, Code.MOTION_NO_EDGE),
         hazard=(
             "A viewer sees a reveal land late at about a fifth of a second, so above roughly 200 "
             "milliseconds the limit passes films whose pictures visibly miss their words."
         ),
         see_also=("verify.av_offset_max_ms", "verify.reference_lead_seconds"),
+    )
+    motion_floor_percent: float = tune(
+        0.5,
+        "How much of a moving element's own area must change from one frame to the next for verify to "
+        "read it as moving, which is where a motion's departure and arrival are found.",
+        unit="percent",
+        bounds=Bounds(ge=0.05, le=20),
+        typed=A_PERCENT,
+        decides=(Code.MOTION_OFF, Code.MOTION_NO_EDGE),
+        hazard=(
+            "Above a few percent the slow last frames of a firm arrival read as still, so its arrival is "
+            "measured early and a motion that landed on its word fails."
+        ),
+        evidence=(
+            "Calibration: on the motion prototype a firm arrival measured on its cue frame at half a percent "
+            "at both the full and the quarter size."
+        ),
+    )
+    motion_mask_max_percent: float = tune(
+        40.0,
+        "The most of the frame verify may mask out of a cue's measurement before it says it measured less "
+        "of the picture than usual.",
+        unit="percent",
+        bounds=Bounds(ge=5, le=90),
+        typed=A_PERCENT,
+        decides=(Code.MOTION_MASK_LARGE,),
+        hazard=(
+            "Near the top of the range a cue is judged on a sliver of the frame, so a reveal under a large "
+            "declared motion passes on very little evidence."
+        ),
     )
     av_offset_max_ms: float = tune(
         120.0,
@@ -589,7 +715,6 @@ class VerifyConfig:
         bounds=Bounds(ge=1, le=200),
         typed=A_LUMA,
         decides=(Code.RECORD_BLACK,),
-        see_also=("record.painted_peak_min_luma",),
     )
     cut_window_seconds: float = tune(
         0.15,
@@ -618,15 +743,16 @@ class VerifyConfig:
 
 @dataclass(frozen=True)
 class VoiceConfig:
-    """These keys are the three every voice has: which provider reads the script, in which voice and at what pace.
+    """These keys are the three every voice has: which provider reads its turns, in which voice and at what pace.
 
-    Everything a provider is particular about, its own fields, its model and its rate, is in that
-    provider's own table, so changing `provider` never sends one vendor's fields or model to another.
+    Each voice is one `[voices.NAME]` table. Everything a provider is particular about, its own fields,
+    its model and its rate, is in that provider's own table, and a voice may state any of that table's
+    chosen keys for itself alone, so changing `provider` never sends one vendor's fields or model to another.
     """
 
     provider: str = tune(
         "elevenlabs",
-        "The speech provider that reads the script, which is a name the machine's own map answers. An "
+        "The speech provider that reads this voice's turns, which is a name the machine's own map answers. An "
         "unregistered name loads, and fails only when a run asks it for a take, which a run that does not "
         "spend never does. DeckTalk ships `elevenlabs`, the "
         "cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose "
@@ -634,9 +760,9 @@ class VoiceConfig:
     )
     id: str = tune(
         "",
-        "The voice that reads the script, as the provider names it. It is a published name rather than a "
+        "The voice that reads this voice's turns, as the provider names it. It is a published name rather than a "
         "credential, so it is committed with the project, and it is one of the inputs every take is named by. "
-        "`DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.",
+        "`DECKTALK_VOICES_<NAME>_ID` overrides it for anyone who keeps it out of the file.",
         bounds=Bounds(pattern=VOICE_ID),
         hazard=(
             "The id is placed in the path of every speech request, so a value that could hold a slash, a dot "
@@ -740,7 +866,7 @@ class ElevenLabsConfig:
 
     model: str = tune(
         "eleven_multilingual_v2",
-        "The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`.",
+        "The ElevenLabs model every ElevenLabs voice reads with, unless its own `[voices.NAME]` table names another.",
     )
     stability: float = tune(
         0.55,
@@ -761,7 +887,7 @@ class ElevenLabsConfig:
     )
     speaker_boost: bool = tune(
         True,
-        "Whether ElevenLabs applies its own speaker boost to the take.",
+        "Whether ElevenLabs applies the boost it calls use_speaker_boost to the take.",
     )
     dollars_per_1000_characters: float = tune(
         0.0,
@@ -794,22 +920,38 @@ class ElevenLabsConfig:
 
 @dataclass(frozen=True)
 class DtspConfig:
-    """These keys are the `dtsp` provider's own: where its local server listens and the model it reads with.
+    """These keys are the `dtsp` provider's own: where its local server listens, the model it reads with, and
+    how long the server has to say which aligner it serves.
 
     `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is
-    not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.
+    not part of this repository and is not yet public. The same server times the words of a take whose
+    voice sent none. It needs no key, bills nothing, and `base_url` is the machine's to set.
     """
 
     base_url: str = tune(
-        "http://127.0.0.1:8765",
-        "Base URL of the local speech server, which the script is sent to.",
+        "http://127.0.0.1:9361",
+        "Base URL of decktalk-voice, the local server that reads the script for `dtsp` and times the words of a "
+        "take that came without them. Port 9361 is assigned to nothing at IANA and listed in no /etc/services, so "
+        "no other service is expected to answer there.",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         hazard=BASE_URL_HAZARD,
     )
+    handshake_seconds: int = tune(
+        5,
+        "Seconds the local server has to say which aligner it serves, asked at most once per run and only when a "
+        "take has no aligned words kept. It is short because a server that is up answers at once, so a port held "
+        "by a process that never answers costs this wait and not `[narration] timeout_seconds`.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=60),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        see_also=("dtsp.base_url", "narration.timeout_seconds"),
+    )
     model: str = tune(
         "kokoro-82m",
-        "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",
+        "The model the local server reads every `dtsp` voice with, as the server names it, unless the voice's own "
+        "`[voices.NAME]` table names another.",
     )
 
 
@@ -969,6 +1111,19 @@ class OutputConfig:
     """These keys switch the files a build writes beside the final mp4."""
 
     timestamped_copy: bool = tune(False, "Write a second copy of the final mp4 named with the date and time.")
+    caption_voices: bool = tune(
+        False,
+        "Name the voice of every caption in a section spoken in more than one voice: a WebVTT voice span such as "
+        "`<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the "
+        "captions carry the words alone, and the transcript names the voices of a dialogue either way.",
+    )
+    captioned: bool = tune(
+        False,
+        "Also write `<name>-captioned.mp4`, the film with its captions drawn into the picture, for a place that "
+        "cannot load a caption file. The page draws each caption in its own fonts and styles, and places it by the "
+        "voice that says it without naming the voice. The film, its caption files and its transcript are the same "
+        "either way.",
+    )
 
 
 @dataclass(frozen=True)
@@ -1030,6 +1185,17 @@ class ToolsConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
     )
+    fix_timeout_seconds: float = tune(
+        1800.0,
+        "Longest one DeckTalk command a fix runs, such as the fetch of a browser and an encoder, may run before it "
+        "is stopped.",
+        unit="seconds",
+        bounds=Bounds(ge=60, le=7200),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A fix that fetches a browser and an encoder downloads a few hundred megabytes, so under a minute a "
+        "slow link stops it part way every time.",
+    )
     cache_dir: str = tune(
         "",
         "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. "
@@ -1043,6 +1209,37 @@ class ToolsConfig:
 
 
 @dataclass(frozen=True)
+class Voice:
+    """One voice of the project resolved: its name, its own keys, and its provider's table with its own values over it.
+
+    A voice of a provider DeckTalk ships reads every key of that provider's table it does not state
+    itself, and `table` already holds its own values in their place, so a reader asks the table and
+    never merges anything. A provider a host registered owns no table, so its voice has its own three
+    keys alone.
+    """
+
+    name: str
+    own: VoiceConfig
+    table: ProviderTable | None
+    """Its provider's table with this voice's own values over it, or None for a provider a host registered."""
+    stated: tuple[str, ...] = ()
+    """The keys of its provider's table this voice states itself, in name order, which explain renders as its own
+    rows."""
+
+    def value(self, key: str) -> object:
+        """The value this voice reads for one key: its own key, or its provider's table's key with its own over it."""
+        if key in OWN_KEYS:
+            return getattr(self.own, key)
+        if self.table is None or key not in {f.name for f in fields(self.table)}:
+            raise KeyError(f"{VOICES_TABLE}.{self.name}.{key}")
+        return getattr(self.table, key)
+
+
+OWN_KEYS = tuple(f.name for f in fields(VoiceConfig))
+"""The keys every voice has of its own, whatever its provider, in the order the family publishes them."""
+
+
+@dataclass(frozen=True)
 class Settings:
     """Every setting with its default, in the order the reference and the schema publish them."""
 
@@ -1051,7 +1248,12 @@ class Settings:
     record: RecordConfig = field(default_factory=RecordConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     verify: VerifyConfig = field(default_factory=VerifyConfig)
-    voice: VoiceConfig = field(default_factory=VoiceConfig)
+    voices: Mapping[str, Voice] = field(default_factory=dict, metadata={FAMILY: VOICES_TABLE})
+    """Every voice the project declares, the default first, which the loader resolves and nothing reads before it.
+
+    It is a plain mapping rather than a read-only view so the tree stays a tree of plain values, which a
+    digest over the whole settings reads field by field. The tree is frozen and no reader writes it.
+    """
     mix: MixConfig = field(default_factory=MixConfig)
     motion: MotionConfig = field(default_factory=MotionConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
@@ -1062,11 +1264,90 @@ class Settings:
     tools: ToolsConfig = field(default_factory=ToolsConfig)
 
 
-KEYS: tuple[Key, ...] = registry(Settings)
-"""Every settings key in declaration order, which is the one list every surface renders."""
+def provider_tables() -> dict[str, type[ElevenLabsConfig | DtspConfig]]:
+    """Every table a shipped speech provider owns, by its name, read off the fields of `Settings`."""
+    hints = get_type_hints(Settings)
+    return {table: hints[table] for table in PROVIDER_TABLES}
+
+
+def voice_keys() -> tuple[Key, ...]:
+    """The family's template keys: a voice's own three, then each chosen project key a provider table declares.
+
+    A provider table's key that is project-scoped and chosen describes how its voices sound, so any
+    voice may state it for itself. The rate is stated rather than chosen and the base URL is the
+    machine's, so neither is a key a voice holds. A key two tables declare, such as `model`, is one
+    template, which a test holds to one type and one range.
+    """
+    prefix = f"{VOICES_TABLE}.{MEMBER}"
+    own = [replace(key, id=f"{prefix}.{key.name}") for key in registry(VoiceConfig)]
+    inherited: dict[str, list[Key]] = {}
+    for table, cls in provider_tables().items():
+        for key in registry(cls, prefix=(table,)):
+            if key.scope is Scope.PROJECT and key.source is Source.CHOSEN:
+                inherited.setdefault(key.name, []).append(key)
+    for name, keys in inherited.items():
+        tables = " or ".join(key.table for key in keys)
+        first = keys[0]
+        own.append(
+            Key(
+                id=f"{prefix}.{name}",
+                description=f"This voice's own {name}, over [{tables}] {name}, which every voice of that provider "
+                "reads unless it sets its own.",
+                default=None,
+                annotation=first.annotation,
+                bounds=first.bounds,
+                unit=first.unit,
+                hazard=first.hazard,
+                see_also=tuple(key.id for key in keys),
+            )
+        )
+    return tuple(own)
+
+
+STATIC_KEYS: tuple[Key, ...] = registry(Settings)
+"""Every key of a fixed table, in declaration order, which is every key but the voices' family."""
+
+TEMPLATES: tuple[Key, ...] = voice_keys()
+"""The voices' family, one template per key any voice may hold, each id spelled with `MEMBER` for the name."""
+
+KEYS: tuple[Key, ...] = STATIC_KEYS + TEMPLATES
+"""Every settings key in declaration order, the family's templates last, which is the one list every surface renders."""
 
 BY_ID: dict[str, Key] = {key.id: key for key in KEYS}
-"""Every key by the dotted name a diagnostic prints, `config set` takes and `--set` spells."""
+"""Every key by the dotted name a diagnostic prints, `config set` takes and `--set` spells, a template by its own."""
+
+
+def family(key: Key) -> bool:
+    """Whether a key belongs to the voices' family, as a template or as one voice's member."""
+    return key.table.split(".")[0] == VOICES_TABLE
+
+
+def key_of(dotted: str) -> Key | None:
+    """The key a dotted name spells: a fixed key, a template, one voice's member key, or None for none of these.
+
+    A member key is its template with the voice's name in the id, so it carries the template's whole
+    record and its own variable, such as `DECKTALK_VOICES_GUEST_ID` for `voices.guest.id`.
+    """
+    known = BY_ID.get(dotted)
+    if known is not None:
+        return known
+    table, _, rest = dotted.partition(".")
+    name, _, key = rest.partition(".")
+    if table != VOICES_TABLE or not re.fullmatch(VOICE_NAME, name):
+        return None
+    template = BY_ID.get(f"{VOICES_TABLE}.{MEMBER}.{key}")
+    return None if template is None else replace(template, id=dotted)
+
+
+def member_keys(voice: Voice) -> tuple[Key, ...]:
+    """Every key one voice holds, in the family's order: its own three, then each key of its provider's table."""
+    held = set(OWN_KEYS) | ({f.name for f in fields(voice.table)} if voice.table is not None else set())
+    return tuple(
+        replace(template, id=f"{VOICES_TABLE}.{voice.name}.{template.name}")
+        for template in TEMPLATES
+        if template.name in held
+    )
+
 
 SHARED_TABLES = frozenset(("mix", "score", "score.ambience", "score.effects", "score.music"))
 """The tables that hold settings beside project content, so the settings loader warns for neither.
@@ -1103,8 +1384,8 @@ def not_a_key(key: str) -> InputError:
 
 
 def key_named(key: str) -> Key:
-    """The settings key called `key`, or the one refusal every reader of a key's name gives."""
-    known = BY_ID.get(key)
+    """The settings key called `key`, a voice's key included, or the one refusal every reader of a key's name gives."""
+    known = key_of(key)
     if known is None:
         raise not_a_key(key)
     return known
@@ -1146,6 +1427,11 @@ class Loaded:
     settings: Settings
     layers: Layers
 
+    @property
+    def keys(self) -> tuple[Key, ...]:
+        """Every key these settings hold: the fixed keys, then every key of every voice, the default voice first."""
+        return STATIC_KEYS + tuple(key for voice in self.settings.voices.values() for key in member_keys(voice))
+
 
 __all__ = [
     "AmbienceConfig",
@@ -1167,5 +1453,6 @@ __all__ = [
     "ToolsConfig",
     "VerifyConfig",
     "VideoConfig",
+    "Voice",
     "VoiceConfig",
 ]

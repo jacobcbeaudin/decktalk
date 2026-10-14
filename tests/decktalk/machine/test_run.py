@@ -16,11 +16,12 @@ from decktalk.findings import (
     Severity,
     Threshold,
 )
-from decktalk.machine.run import Run
+from decktalk.machine.run import Run, hold_whole
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import BillingBasis, Layer, StatusResult
-from decktalk.stages.cost import total
+from decktalk.results import BillingBasis, Cost, Layer, StatusResult
+from decktalk.stages.cost import Buy, cost_of, total
 from support.costs import a_cost
+from support.projects import load_project
 from support.runs import a_machine
 
 # ---- the run ------------------------------------------------------------------------------
@@ -186,7 +187,9 @@ def test_a_result_carries_the_run_the_judgements_and_the_files(tmp_path: Path) -
     with here._run(root=tmp_path) as run:
         run.wrote(tmp_path / "build" / "final" / "a.mp4")
         run.wrote(tmp_path / "build" / "final" / "a.mp4")
-        result = run.result(StatusResult, name="t", script=Path("script.md"), cues_file=Path("cues.json"), sections=())
+        result = run.result(
+            StatusResult, name="t", script=Path("script.md"), cues_file=Path("cues.json"), sections=(), voices=()
+        )
     assert result.run == run.id
     assert result.ok
 
@@ -198,9 +201,9 @@ def test_an_error_is_what_makes_a_result_not_ok(tmp_path: Path) -> None:
     assert error.severity is Severity.ERROR and warning.severity is Severity.WARNING
     with here._run() as run:
         run.found(warning)
-        assert run.result(StatusResult, name="t", script=Path("s"), cues_file=Path("c"), sections=()).ok
+        assert run.result(StatusResult, name="t", script=Path("s"), cues_file=Path("c"), sections=(), voices=()).ok
         run.found(error)
-        assert not run.result(StatusResult, name="t", script=Path("s"), cues_file=Path("c"), sections=()).ok
+        assert not run.result(StatusResult, name="t", script=Path("s"), cues_file=Path("c"), sections=(), voices=()).ok
 
 
 ERROR = Finding(code=Code.CUE_UNRESOLVED, message="x", location=Location(where="cues.json"))
@@ -231,6 +234,7 @@ def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_its_run_carri
         script=Path("s"),
         cues_file=Path("c"),
         sections=(),
+        voices=(),
     )
     assert result.ok is passes
     assert threshold.fails(found) is not passes
@@ -252,7 +256,7 @@ def test_nothing_is_bought_unless_the_run_may_spend(tmp_path: Path) -> None:
 def test_a_free_voice_is_never_asked_for_approval_even_by_a_run_that_may_not_spend(
     tmp_path: Path, max_cost: float | None
 ) -> None:
-    """Spend gates money, so a voice that declares it bills nothing passes the gate whatever the run may spend."""
+    """Spend gates money, so a provider that declares it bills nothing passes the gate whatever the run may spend."""
     here = a_machine(tmp_path)
     free = a_cost(0.0, 0.0, billing=BillingBasis.FREE)
     assert free.free
@@ -274,17 +278,19 @@ def test_a_cap_lets_a_free_voice_through_with_no_rate_stated(tmp_path: Path) -> 
         assert run.approve(free) == free
 
 
-def test_a_cap_is_refused_for_a_voice_that_declares_no_bill_with_what_to_declare(tmp_path: Path) -> None:
+def test_a_cap_is_refused_for_a_provider_that_declares_no_bill_with_what_to_declare(tmp_path: Path) -> None:
+    """The refusal names the speech provider, which bills, and never the voice, which is its speaker."""
     here = a_machine(tmp_path)
     undeclared = a_cost(0.0, 0.0, billing=BillingBasis.UNDECLARED, layer=Layer.DEFAULT)
     with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(undeclared)
-    assert "declares no bill" in str(refused.value)
+    assert "the speech provider declares no bill" in str(refused.value)
+    assert "the voice" not in str(refused.value)
     assert "per character, per second or free" in (refused.value.hint or "")
 
 
 def test_a_cap_over_an_undeclared_sound_beside_a_paid_voice_names_the_scores_provider(tmp_path: Path) -> None:
-    """The refusal names the stage whose provider declares no bill, never the voice that declares one."""
+    """The refusal names the stage whose provider declares no bill, never the speech provider that declares one."""
     here = a_machine(tmp_path)
     undeclared = a_cost(0.0, 0.0, billing=BillingBasis.UNDECLARED, stage=Stage.SCORE)
     whole = total([a_cost(0.12, 0.12), undeclared])
@@ -378,3 +384,72 @@ def test_every_priced_request_reaches_the_stream_before_it_is_judged(tmp_path: P
     with here.events.subscribe(seen.append), here._run(spend=True) as run:
         run.approve(a_cost(0.42, 0.42))
     assert [line.event for line in seen if line.event == "cost.priced"] == ["cost.priced"]
+
+
+# ---- a paid take beside a free one --------------------------------------------------------------
+
+MIXED = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+
+[voices.narrator]
+id = "n"
+
+[voices.guest]
+provider = "dtsp"
+id = "af_heart"
+
+[elevenlabs]
+dollars_per_1000_characters = 0.3
+"""
+"""A paid narrator at a stated rate beside a free guest."""
+
+
+def mixed(tmp_path: Path, *, paid_first: bool = True, toml: str = MIXED) -> Cost:
+    """What a run buying one paid take and one free take costs, its buys in either order."""
+    inputs = load_project(tmp_path / "project", toml, environ={})
+    paid = Buy(characters=400, seconds=1.0, sections=(1,), voice=inputs.voices["narrator"])
+    free = Buy(characters=4000, seconds=10.0, sections=(1,), voice=inputs.voices["guest"])
+    return cost_of(inputs, [paid, free] if paid_first else [free, paid])
+
+
+@pytest.mark.parametrize("paid_first", [True, False], ids=["paid-first", "free-first"])
+def test_a_paid_take_never_passes_a_run_that_may_not_spend_whichever_order_the_bills_come_in(
+    tmp_path: Path, paid_first: bool
+) -> None:
+    here = a_machine(tmp_path)
+    with here._run(spend=False) as run, pytest.raises(ApprovalRequired):
+        run.approve(mixed(tmp_path, paid_first=paid_first))
+
+
+def test_the_cap_holds_a_paid_take_beside_a_free_one(tmp_path: Path) -> None:
+    cost = mixed(tmp_path)
+    assert cost.ceiling_dollars == 0.12
+    with pytest.raises(ApprovalRequired, match="ceiling --max-cost set"):
+        hold_whole(cost, 0.01)
+    here = a_machine(tmp_path)
+    with here._run(spend=True, max_cost=0.01) as run, pytest.raises(ApprovalRequired):
+        run.approve(cost)
+
+
+def test_a_free_rows_unstated_rate_never_refuses_the_cap(tmp_path: Path) -> None:
+    """The free row's rate sits at its default because it has none, and only a buying row's rate guards a cap."""
+    cost = mixed(tmp_path)
+    hold_whole(cost, 1.0)
+    here = a_machine(tmp_path)
+    with here._run(spend=True, max_cost=1.0) as run:
+        assert run.approve(cost) == cost
+
+
+def test_a_host_voice_that_buys_nothing_never_refuses_the_cap(tmp_path: Path) -> None:
+    toml = MIXED.replace('provider = "dtsp"\nid = "af_heart"', 'provider = "house"')
+    inputs = load_project(tmp_path / "project", toml, environ={})
+    cost = cost_of(inputs, [Buy(characters=400, seconds=1.0, sections=(1,), voice=inputs.voices["narrator"])])
+    hold_whole(cost, 1.0)
+    with a_machine(tmp_path)._run(spend=True, max_cost=1.0) as run:
+        assert run.approve(cost) == cost

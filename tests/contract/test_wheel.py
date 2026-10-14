@@ -38,8 +38,13 @@ STRAY_SUFFIXES = (".pyc", ".pyo", ".orig", ".rej", ".swp", ".bak", ".tmp", ".log
 SHIPPED_SUFFIXES = {".py", ".typed", ".js", ".css", ".woff2", ".html", ".json", ".md", ".toml", ".txt", ".webp"}
 """Every kind of file the package ships. A new kind is a deliberate change to this set."""
 
-SHIPPED_BARE_NAMES = {"LICENSE", "gitignore", "env.example"}
-"""The three files that ship without a suffix, each of which a project copies under another name."""
+SHIPPED_BARE_NAMES = {"LICENSE", "gitignore", "env.example", "draw_bars"}
+"""The four files that ship without a suffix.
+
+Three are copied into a project under another name. The fourth is the motion example's renderer,
+the program its `render_command` runs by name, which has no suffix so that no rule for the
+library's own modules reaches a project's script.
+"""
 
 KATEX_FONT_FILES = 20
 """How many font files the pinned KaTeX release carries, which a partial copy would not."""
@@ -61,12 +66,16 @@ DIST = REPO / "dist"
 
 @pytest.fixture(scope="module")
 def entries() -> list[str]:
-    """The file entries of the wheel `uv build` wrote for this version, directories left out."""
-    config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    version = config["project"]["version"]
-    wheels = sorted(DIST.glob(f"decktalk-{version}-*.whl"))
-    assert wheels, f"dist/ holds no wheel of decktalk {version}: run `uv build` first, as the wheel row does"
-    with zipfile.ZipFile(wheels[-1]) as wheel:
+    """The file entries of the one wheel `uv build` left in `dist/`, directories left out.
+
+    The wheel is found the way `scripts/check_wheel.py` finds it, as the one `decktalk-*.whl` there,
+    and never by the version text: a candidate is `0.6.0-rc1` in `pyproject.toml` and `0.6.0rc1` in
+    the wheel's name, and which version the wheel carries is check_wheel's `--tag` question.
+    """
+    wheels = sorted(DIST.glob("decktalk-*.whl"))
+    assert wheels, "dist/ holds no wheel of decktalk: run `uv build` first, as the wheel row does"
+    assert len(wheels) == 1, f"dist/ holds more than one wheel, so it is unclear which would ship: {wheels}"
+    with zipfile.ZipFile(wheels[0]) as wheel:
         return [name for name in wheel.namelist() if not name.endswith("/")]
 
 

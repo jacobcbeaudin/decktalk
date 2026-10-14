@@ -31,7 +31,10 @@ __all__ = [
     "Attr",
     "AttrSpec",
     "BACK_OPACITY",
-    "CAPTURE_FPS",
+    "CANVAS_HEIGHT",
+    "CANVAS_HEIGHT_PROPERTY",
+    "CANVAS_WIDTH",
+    "CANVAS_WIDTH_PROPERTY",
     "COUNTS",
     "CUE_MARK",
     "DONE_ATTR",
@@ -45,22 +48,29 @@ __all__ = [
     "LIST_SEPARATOR",
     "MEASURABLE_SPAN_SECONDS",
     "MOMENTS",
+    "MOTION_EASES",
     "MOTION_SCALE_PROPERTY",
     "ONSET_FIRST_FRAME_PERCENT",
     "PAIR_MARK",
     "PAIR_SEPARATOR",
     "PLAYABLE_SPAN_SECONDS",
+    "PREVIEW_CANVAS",
     "PREVIEW_CUE_TIMES",
     "Q",
     "QUERY",
     "REPORT",
     "Range",
     "SECOND_DIGITS",
+    "SHAPES",
+    "SHAPE_ATTR",
     "SLIDE_ENTRANCES",
+    "SLOWEST_FPS",
+    "SPRING_SETTLE_RADIANS",
     "Subject",
     "T0_SIGNAL",
     "TIME_MARK",
     "WORD_STYLES",
+    "layout",
     "measurable",
     "stagger_span",
 ]
@@ -68,11 +78,11 @@ __all__ = [
 SECOND_DIGITS = 3
 """Truth: a second is written to the millisecond, which is finer than any frame a recording holds."""
 
-CAPTURE_FPS = 25
-"""The rate the recorder captures at, which is the rate Chromium paints a deck at."""
+SLOWEST_FPS = 25
+"""The slowest rate a film is recorded at, whose frame is the step every page range is written in."""
 
 FRAME_STEP_MS = 40
-"""One captured frame in milliseconds, which is the finest interval any page range may name."""
+"""One frame at the slowest rate in milliseconds, which is the finest interval any page range may name."""
 
 MEASURABLE_SPAN_SECONDS = 0.5
 """The longest motion a cue may still be playing, which is the unmeasurable threshold, the
@@ -107,7 +117,7 @@ LIST_SEPARATOR = ","
 """What separates two entries of that query."""
 
 T0_SIGNAL = "signal"
-"""What `t0` says when the recorder starts the page clock on its own signal rather than at a second."""
+"""What `t0` says when the recorder steps the page clock rather than the page starting it at a second."""
 
 DONE_ATTR = "data-done"
 """The attribute the runtime sets on the body once the page has drawn everything its URL asked for."""
@@ -120,6 +130,42 @@ PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json"
 
 MOTION_SCALE_PROPERTY = "--dt-motion-scale"
 """The custom property on the root element that carries `motion.scale` into a page."""
+
+CANVAS_WIDTH = 1920
+"""Truth: the width of the canvas a wide project lays its page out on, which is a full HD frame."""
+
+CANVAS_HEIGHT = 1080
+"""Truth: the height of that canvas, which is the short side of every canvas, so a page written for
+one size of a shape lays out the same at every size of it."""
+
+CANVAS_WIDTH_PROPERTY = "--dt-width"
+"""The custom property on the root element that carries the canvas's width into a page."""
+
+CANVAS_HEIGHT_PROPERTY = "--dt-height"
+"""The custom property on the root element that carries the canvas's height into a page."""
+
+SHAPE_ATTR = "data-dt-shape"
+"""The attribute the runtime sets on the root element to the canvas's shape, which a stylesheet
+selects on."""
+
+SHAPES = ("wide", "square", "vertical")
+"""The three shapes a canvas has: wider than tall, as tall as wide, and taller than wide."""
+
+PREVIEW_CANVAS = "/__decktalk/canvas.json"
+"""The path a previewed page asks its origin for, which answers with the canvas the project lays
+its page out on."""
+
+MOTION_EASES = {
+    "firm": {"curve": [0.25, 0.8, 0.5, 0.95], "arrival": "edge"},
+    "glide": {"curve": [0, 0, 1, 1], "arrival": "edge"},
+    "settle": {"curve": [0.16, 1, 0.3, 1], "arrival": "rest"},
+    "spring": {"curve": None, "arrival": "rest"},
+}
+"""How a declared motion moves between its cues, as its Bezier control points, and whether its
+arrival is an edge verify can find or a rest it cannot."""
+
+SPRING_SETTLE_RADIANS = 9.23
+"""Truth: how far a spring runs over its motion, which leaves it within a thousandth of rest."""
 
 
 class Subject(Enum):
@@ -134,9 +180,11 @@ class Subject(Enum):
 class Kind(Enum):
     """What kind of value an attribute takes, which is what a reader parses it as."""
 
+    CUE = "cue"
     DESCRIPTION = "description"
     FLAG = "flag"
     ID = "id"
+    KEYFRAMES = "keyframes"
     MOMENT = "moment"
     NAMES = "names"
     PAIRS = "pairs"
@@ -177,6 +225,12 @@ class Attr(Enum):
     OUT_STYLE = "data-out-style"
     SWAPS = "data-swaps"
     DESCRIBE_OUT = "data-describe-out"
+    MOTION = "data-motion"
+    MOTION_FROM = "data-motion-from"
+    MOTION_TO = "data-motion-to"
+    MOTION_EASE = "data-motion-ease"
+    LOOP = "data-loop"
+    LOOP_SECONDS = "data-loop-seconds"
     SCENE = "data-scene"
     NAME = "data-name"
     SLIDE = "data-slide"
@@ -192,6 +246,8 @@ class Q(Enum):
     FREEZE = "freeze"
     CUES = "cues"
     WORDS = "words"
+    TURNS = "turns"
+    CAPTION = "caption"
     T0 = "t0"
     SPEED = "speed"
     HUD = "hud"
@@ -587,6 +643,101 @@ ATTRS: dict[Attr, AttrSpec] = {
         affects=(Affects.TRANSCRIPT,),
         summary="Overrides the departure sentence when leaving means something of its own.",
     ),
+    Attr.MOTION: AttrSpec(
+        name=Attr.MOTION,
+        on=(Subject.ELEMENT,),
+        kind=Kind.KEYFRAMES,
+        values=(),
+        default=None,
+        range=None,
+        code=Code.PAGE_MOTION_UNDECLARED,
+        span=0,
+        affects=(
+            Affects.MOTION,
+            Affects.CATALOG,
+        ),
+        summary=(
+            "The element moves through these @keyframes from one cue to another, masked from every reveal check "
+            "and landing on its cues."
+        ),
+    ),
+    Attr.MOTION_FROM: AttrSpec(
+        name=Attr.MOTION_FROM,
+        on=(Subject.ELEMENT,),
+        kind=Kind.CUE,
+        values=(),
+        default=None,
+        range=None,
+        code=Code.PAGE_MOTION_CUE_UNKNOWN,
+        span=0,
+        affects=(
+            Affects.CUE_ORDER,
+            Affects.MOTION,
+            Affects.CATALOG,
+        ),
+        summary="The motion departs at this cue.",
+    ),
+    Attr.MOTION_TO: AttrSpec(
+        name=Attr.MOTION_TO,
+        on=(Subject.ELEMENT,),
+        kind=Kind.CUE,
+        values=(),
+        default=None,
+        range=None,
+        code=Code.PAGE_MOTION_CUE_UNKNOWN,
+        span=0,
+        affects=(
+            Affects.CUE_ORDER,
+            Affects.MOTION,
+            Affects.CATALOG,
+        ),
+        summary="The motion arrives at this cue, so its length is the two cues' seconds apart.",
+    ),
+    Attr.MOTION_EASE: AttrSpec(
+        name=Attr.MOTION_EASE,
+        on=(Subject.ELEMENT,),
+        kind=Kind.WORD,
+        values=("firm", "glide", "settle", "spring"),
+        default="firm",
+        range=None,
+        code=Code.PAGE_BAD_VALUE,
+        span=0,
+        affects=(
+            Affects.MOTION,
+            Affects.STYLE,
+        ),
+        summary="How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify.",
+    ),
+    Attr.LOOP: AttrSpec(
+        name=Attr.LOOP,
+        on=(Subject.ELEMENT,),
+        kind=Kind.KEYFRAMES,
+        values=(),
+        default=None,
+        range=None,
+        code=Code.PAGE_MOTION_UNDECLARED,
+        span=0,
+        affects=(
+            Affects.MOTION,
+            Affects.CATALOG,
+        ),
+        summary=(
+            "The element turns through these @keyframes for as long as its slide is on screen, masked and never "
+            "a landing."
+        ),
+    ),
+    Attr.LOOP_SECONDS: AttrSpec(
+        name=Attr.LOOP_SECONDS,
+        on=(Subject.ELEMENT,),
+        kind=Kind.SECONDS,
+        values=(),
+        default="1",
+        range=Range(min=0.2, max=60, step=0.04, unit="seconds"),
+        code=Code.PAGE_BAD_VALUE,
+        span=0,
+        affects=(Affects.MOTION,),
+        summary="How long one turn of the loop takes.",
+    ),
     Attr.SCENE: AttrSpec(
         name=Attr.SCENE,
         on=(Subject.SCENE,),
@@ -685,9 +836,11 @@ QUERY = {
     Q.FREEZE: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
     Q.CUES: "The cue times to fire at, as id@seconds pairs separated by a comma.",
     Q.WORDS: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
-    Q.T0: (
-        "The second on the section clock the page starts at, or the word signal when the recorder starts the clock."
+    Q.TURNS: "Each turn of the section as voice@seconds pairs in turn order, the second each turn begins.",
+    Q.CAPTION: (
+        "Set to 1, draws the caption band alone over a clear frame, one caption at a time, for the captioned copy."
     ),
+    Q.T0: ("The second on the section clock the page starts at, or the word signal when the recorder steps the clock."),
     Q.SPEED: "Multiply the preview clock, so a long section is reviewed quickly.",
     Q.HUD: "Draw the on-page clock and cue list, which is for an author and never for a recording.",
     Q.AFTER: "Freeze after this cue, so the cues up to and including it fire and later ones stay hidden.",
@@ -697,15 +850,14 @@ QUERY = {
 
 REPORT = {
     "version": "The runtime version the page carries.",
-    "mode": "Which of index, preview, record and freeze the page is in.",
+    "mode": "Which of index, preview, record, freeze and caption the page is in.",
     "scene": "The scene the page is playing, or null on the index page.",
     "slide": "The slide on screen, or null when none is mounted.",
     "warnings": "Every distinct warning the page reported, as code, message, slide, cue and attr.",
     "catalog": "One entry per scene, with its slides, its cues and the measured box of every element.",
-    "cues": "When each cue was due, when it ran, and when the frames around it began.",
+    "cues": "When each cue was due, when it ran, and the second of the frame that showed it.",
     "words": "Each synced line, when its cue ran, when the voice reaches it and when its first word showed.",
-    "frameGaps": "Every gap between two animation frames longer than the recorder can absorb.",
-    "longFrames": "Every animation frame that took longer than a captured frame, with when it was presented.",
+    "motions": "Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on.",
 }
 """Every field the probe's one report call answers with, and what a reader does with it."""
 
@@ -730,3 +882,13 @@ def stagger_span(step: float, children: int, entrance: float) -> float:
 def measurable(span: float) -> bool:
     """Whether a declared span is short enough for the cue it belongs to still to be measurable."""
     return span < MEASURABLE_SPAN_SECONDS
+
+
+def layout(width: int, height: int) -> tuple[int, int]:
+    """The canvas a frame `width` by `height` lays its page out on: the frame's shape, its short side `CANVAS_HEIGHT`.
+
+    A frame of a shape at any resolution is one layout drawn larger or smaller, so a page is written
+    once for its shape. A side is rounded to the CSS pixel, which the fit absorbs.
+    """
+    scale = CANVAS_HEIGHT / min(width, height)
+    return round(width * scale), round(height * scale)

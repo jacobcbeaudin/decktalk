@@ -27,11 +27,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import generated
+from decktalk.inputs.document import content_keys
 from decktalk.results import Scope
-from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, Settings
+from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, VOICE_NAME, VOICES_TABLE, Settings, VoiceConfig
 from decktalk.settings.layers import json_value
 from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import Key
@@ -60,6 +61,12 @@ MACHINE_DESCRIPTION = (
 TYPES = {bool: "boolean", int: "integer", float: "number", str: "string"}
 """The JSON Schema type for each scalar a key can be declared as."""
 
+FAMILY_SENTENCE = (
+    "Every voice of the project, one table per voice, each named by the name a voice direction in the script "
+    "calls it by. The table `[narration] voice` names is the default voice."
+)
+"""The sentence of the voices' family, whose tables the author names, so no dataclass declares the family's table."""
+
 DOCUMENT_SENTENCES = {
     "project": "The film itself: its name, its deck and the files it is built from.",
     "section": "One section of the script, in the order the film plays them.",
@@ -72,12 +79,17 @@ def type_of(key: Key) -> dict[str, Any]:
     """One key's JSON Schema type, an array being described by the type of what it holds."""
     if key.annotation in TYPES:
         return {"type": TYPES[key.annotation]}
-    return {"type": "array", "items": {"type": "number"}}
+    (item, *_rest) = get_args(key.annotation)
+    return {"type": "array", "items": {"type": TYPES[item]}}
 
 
 def property_of(key: Key) -> dict[str, Any]:
-    """One key as the schema publishes it, which is its type, its safe range and its whole record."""
-    out: dict[str, Any] = {"description": key.description, **type_of(key), "default": json_value(key.default)}
+    """One key as the schema publishes it, which is its type, its safe range and its whole record.
+
+    A voice's key that inherits its provider's value has no default of its own, so it publishes none.
+    """
+    own = {} if key.default is None else {"default": json_value(key.default)}
+    out: dict[str, Any] = {"description": key.description, **type_of(key), **own}
     if key.bounds is not None:
         bounds = key.bounds.json_schema()
         if out["type"] == "array":
@@ -106,18 +118,68 @@ def property_of(key: Key) -> dict[str, Any]:
     return out
 
 
+def content_property(key: Key) -> dict[str, Any]:
+    """One number of the project's own content, which publishes its type, default, range and hazard.
+
+    No layer above the project file sets it, so it carries no scope and no variable, and `x-kind`
+    says so to a reader that walks the settings by `x-scope`.
+    """
+    (kind,) = [arg for arg in get_args(key.annotation) or (key.annotation,) if arg is not type(None)]
+    own = {} if key.default is None else {"default": json_value(key.default)}
+    out: dict[str, Any] = {"description": key.description, "type": TYPES[kind], **own, "x-kind": "content"}
+    if key.bounds is not None:
+        out |= key.bounds.json_schema()
+    out["x-range"] = key.range
+    if key.unit is not None:
+        out["x-unit"] = key.unit
+    if key.hazard is not None:
+        out["x-hazard"] = key.hazard
+    if key.see_also:
+        out["x-see-also"] = list(key.see_also)
+    return out
+
+
+def content_of(table: str) -> dict[str, Any]:
+    """The content numbers of one table, and of each array of tables inside it, as schema properties."""
+    keys = content_keys()
+    properties: dict[str, Any] = {key.name: content_property(key) for key in keys if key.table == table}
+    for inner in dict.fromkeys(key.table for key in keys if key.table.startswith(f"{table}.")):
+        items = {"type": "object", "properties": content_of(inner), "additionalProperties": True}
+        properties[inner.rsplit(".", 1)[-1]] = {"type": "array", "items": items}
+    return properties
+
+
 def table_of(name: str, keys: list[Key]) -> dict[str, Any]:
     """One tuning table as the schema publishes it, closed unless the document owns keys in it too."""
     properties: dict[str, Any] = {key.name: property_of(key) for key in keys if key.table == name}
     for inner in sorted({key.table for key in keys if key.table.startswith(f"{name}.")}):
         properties[inner.rsplit(".", 1)[-1]] = table_of(inner, [key for key in keys if key.table == inner])
     shared = name in SHARED_TABLES
+    if shared:
+        properties |= content_of(name)
     return {
         "type": "object",
         "description": sentence_of(name),
         "x-kind": "mixed" if shared else "tuning",
         "properties": properties,
         "additionalProperties": shared,
+    }
+
+
+def family_of(keys: list[Key]) -> dict[str, Any]:
+    """The voices' family: any table whose name is a voice name, each holding the keys every voice may state."""
+    return {
+        "type": "object",
+        "description": FAMILY_SENTENCE,
+        "x-kind": "family",
+        "propertyNames": {"pattern": VOICE_NAME},
+        "additionalProperties": {
+            "type": "object",
+            "description": " ".join((VoiceConfig.__doc__ or "").split()),
+            "x-kind": "tuning",
+            "properties": {key.name: property_of(key) for key in keys},
+            "additionalProperties": False,
+        },
     }
 
 
@@ -133,14 +195,15 @@ def sentence_of(name: str) -> str:
 def document_table(name: str) -> dict[str, Any]:
     """One table that is project content, declared so the top level can be closed without owning its keys.
 
-    The document parser owns what is inside, so the schema names the table and leaves it open. The
-    closure that matters is at the top level, where an editor bound to the schema flags an unknown
-    table that the loader would refuse.
+    The document parser owns what is inside, so the schema names the table and leaves it open, with
+    the range of every number it holds. The closure that matters is at the top level, where an editor
+    bound to the schema flags an unknown table that the loader would refuse.
     """
     body: dict[str, Any] = {
         "type": "object",
         "description": DOCUMENT_SENTENCES[name],
         "x-kind": "document",
+        **({"properties": held} if (held := content_of(name)) else {}),
         "additionalProperties": True,
     }
     if name != "section":
@@ -173,7 +236,9 @@ def document(*, machine: bool) -> dict[str, Any]:
     keys = [key for key in KEYS if not machine or key.scope is Scope.MACHINE]
     properties: dict[str, Any] = {}
     for table in dict.fromkeys(key.table.split(".")[0] for key in keys):
-        properties[table] = table_of(table, [key for key in keys if key.table.split(".")[0] == table])
+        held = [key for key in keys if key.table.split(".")[0] == table]
+        properties[table] = family_of(held) if table == VOICES_TABLE else table_of(table, held)
+
     if not machine:
         for table in DOCUMENT_TABLES:
             properties[table] = document_table(table)

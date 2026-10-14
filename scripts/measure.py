@@ -43,6 +43,7 @@ from typing import Any
 
 import check
 import check_coverage
+from decktalk.inputs.workspace import Workspace
 from decktalk.results import TakeOutcome
 from decktalk.stages.verify.plan import HALF_FRAME
 
@@ -70,6 +71,9 @@ FPS_KEY = "video.fps"
 
 PROJECT = "starter"
 """What `decktalk init --no-input` writes, which is the project the quickstart builds."""
+
+SPACE = Workspace(root=Path(), build=Path("build"), name=PROJECT, takes=Path("takes"), score_dir=Path("score"))
+"""The starter's build directory as the engine names its files, so a recording is counted where `record` writes one."""
 
 EDIT_SECTION = 3
 """The section whose sentence the one-section build changes, which is the starter's last."""
@@ -136,7 +140,7 @@ def coverage_totals(report: dict[str, Any]) -> dict[str, Any]:
 
 def recorded_sections(build: dict[str, Any]) -> int:
     """How many sections a build recorded, which is how many recordings it wrote rather than kept."""
-    return sum(1 for path in build["written"] if path.startswith("build/recordings/") and path.endswith(".webm"))
+    return sum(1 for path in map(Path, build["written"]) if SPACE.recording(path.stem) == path)
 
 
 def edited(script: str) -> str:
@@ -213,6 +217,11 @@ def decktalk(*args: str, cwd: Path) -> tuple[dict[str, Any], float]:
     return answer, seconds
 
 
+def setting_value(answer: dict[str, Any]) -> float:
+    """The number in force that one `config get --json` answer names, read from its `setting`."""
+    return float(answer["setting"]["value"])
+
+
 def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], tuple[float, int], dict[str, Any]]:
     """Build one fresh starter three ways and verify its first film.
 
@@ -225,8 +234,8 @@ def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], tu
     cold, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[0], "seconds": seconds, "recorded": recorded_sections(cold)})
     verified, _ = decktalk("verify", cwd=project)
-    limit = decktalk("config", "get", LIMIT_KEY, cwd=project)[0]["key"]["value"]
-    fps = decktalk("config", "get", FPS_KEY, cwd=project)[0]["key"]["value"]
+    limit = setting_value(decktalk("config", "get", LIMIT_KEY, cwd=project)[0])
+    fps = int(setting_value(decktalk("config", "get", FPS_KEY, cwd=project)[0]))
     again, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[1], "seconds": seconds, "recorded": recorded_sections(again)})
     script = project / "script.md"
@@ -267,9 +276,9 @@ def main() -> int:
     args = parser.parse_args()
     command = SCRIPT if args.repeats == REPEATS else f"{SCRIPT} --repeats {args.repeats}"
 
-    # Coverage runs first, so no suite shares the machine with a build being timed.
-    covered = coverage()
     # Other work on the machine slows a recording and moves its landing, so the load is published beside them.
+    # The builds run first, so the load is the machine's own rather than the tail of the suites, and
+    # coverage runs after the last build, so no suite shares the machine with a build being timed.
     load = round(os.getloadavg()[0], LOAD_DECIMALS) if hasattr(os, "getloadavg") else None
     samples: list[list[dict[str, Any]]] = []
     verifies: list[dict[str, Any]] = []
@@ -289,6 +298,7 @@ def main() -> int:
         )
 
     limit_ms, fps = limits.pop()
+    covered = coverage()
     doctor, _ = decktalk("doctor", cwd=ROOT)
     run = {
         "what": "the starter `decktalk init` writes, built with placeholders",

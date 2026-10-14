@@ -253,7 +253,9 @@ def _http_error(url: str, exc: urllib.error.HTTPError, carried: Collection[str])
     with exc:  # The error holds the reply open, so it is closed once its body is read.
         body = exc.read().decode(errors="replace")
     detail = scrub(body, carried)[:BODY_CHARS]
-    return ProviderError(f"HTTP {exc.code} from {shown(url)}: {detail}", retryable=exc.code in RETRYABLE_STATUS)
+    return ProviderError(
+        f"HTTP {exc.code} from {shown(url)}: {detail}", retryable=exc.code in RETRYABLE_STATUS, status=exc.code
+    )
 
 
 def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str], *, free: bool) -> ProviderError:
@@ -305,11 +307,21 @@ def wait_before(attempt: int, asked: str | None) -> float:
     return min(wanted, LONGEST_WAIT_SECONDS)
 
 
-def _attempted(path: str, attempt: int, started: float, **measured: object) -> None:
-    """Record one attempt at a request: its path, what came back, and how long it took."""
+def longest_request_seconds(timeout: float, retries: int) -> float:
+    """The longest one request with its retries can run: every attempt out of time and every wait at its longest.
+
+    This is how long a run voicing a take can hold the take store's lock on it with a healthy
+    request, so it is how long another run waits for that lock before it is refused.
+    """
+    return timeout * (retries + 1) + retries * LONGEST_WAIT_SECONDS
+
+
+def _attempted(method: str, path: str, attempt: int, started: float, **measured: object) -> None:
+    """Record one attempt at a request: its method and path, what came back, and how long it took."""
     seconds = round(time.monotonic() - started, 3)
     log.debug(
-        "POST %s attempt %d took %.2f seconds.",
+        "%s %s attempt %d took %.2f seconds.",
+        method,
         path,
         attempt + 1,
         seconds,
@@ -317,20 +329,22 @@ def _attempted(path: str, attempt: int, started: float, **measured: object) -> N
     )
 
 
-def post[T](
+def send[T](
     url: str,
-    body: dict[str, Any],
+    body: dict[str, Any] | bytes | None,
     headers: dict[str, str],
     *,
-    secrets: Collection[Secret],
-    timeout: float,
-    retries: int,
     parse: Callable[[bytes], T],
+    timeout: float,
+    retries: int = 0,
+    secrets: Collection[Secret] = (),
     free: bool = False,
 ) -> T:
-    """One POST, with its reply read by `parse`, and any failure as a `PROVIDER` error that quotes no key.
+    """One request, with its reply read by `parse`, and any failure as a `PROVIDER` error that quotes no key.
 
-    `free` is true for a provider whose bill is free, whose failures never say the request was charged.
+    A `body` is a POST and None is a GET. A `body` that is already bytes, such as a multipart form, is
+    sent as it is under the type `headers` names, and any other body is sent as JSON. `free` is true for
+    a provider whose bill is free, whose failures never say the request was charged.
 
     `secrets` are every secret the URL, the body or the headers carry, which is what is scrubbed out
     of every message and what no redirect to another origin is handed, whatever header holds it.
@@ -340,28 +354,29 @@ def post[T](
     A reply that arrived may have been billed, so whatever `parse` refuses in it is raised at once and
     never asked for again.
     """
-    data = to_json(body)
+    method = "GET" if body is None else "POST"
+    data = None if body is None else body if isinstance(body, bytes) else to_json(body)
     path = urllib.parse.urlsplit(url).path
     carried = credentials(headers, secrets)
     attempt = 0
     while True:
-        req = Sending(url, credentials=carried, data=data, method="POST", headers=headers)
+        req = Sending(url, credentials=carried, data=data, method=method, headers=headers)
         started = time.monotonic()
         asked: str | None = None
         try:
             with urlopen(req, timeout=timeout) as resp:
                 status, reply = resp.status, resp.read()
         except urllib.error.HTTPError as exc:
-            _attempted(path, attempt, started, status=exc.code)
+            _attempted(method, path, attempt, started, status=exc.code)
             failure, asked, cause = _http_error(url, exc, carried), exc.headers.get("Retry-After"), exc
         except urllib.error.URLError as exc:
-            _attempted(path, attempt, started, reason=type(exc.reason).__name__)
+            _attempted(method, path, attempt, started, reason=type(exc.reason).__name__)
             failure, cause = _unreachable(url, exc, carried, free=free), exc
         except BROKEN_REPLIES as exc:
-            _attempted(path, attempt, started, reason=type(exc).__name__)
+            _attempted(method, path, attempt, started, reason=type(exc).__name__)
             failure, cause = _broken(url, exc, carried, free=free), exc
         else:
-            _attempted(path, attempt, started, status=status, bytes=len(reply))
+            _attempted(method, path, attempt, started, status=status, bytes=len(reply))
             return parse(reply)
         if not failure.retryable or attempt >= retries:
             raise failure from cause
@@ -386,30 +401,8 @@ def post[T](
         attempt += 1
 
 
-def post_bytes(
-    url: str,
-    body: dict[str, Any],
-    headers: dict[str, str],
-    *,
-    secrets: Collection[Secret],
-    timeout: float,
-    retries: int,
-) -> bytes:
-    """One POST whose reply is the bytes it carries, which is what the two sound calls make."""
-    return post(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=bytes)
-
-
-def post_json(
-    url: str,
-    body: dict[str, Any],
-    headers: dict[str, str],
-    *,
-    secrets: Collection[Secret],
-    timeout: float,
-    retries: int,
-    free: bool = False,
-) -> dict[str, Any]:
-    """One POST whose reply is a JSON object, which is every call a provider makes but the two sound ones."""
+def _json_object(url: str, *, free: bool) -> Callable[[bytes], dict[str, Any]]:
+    """How a reply that should be a JSON object is read, refusing anything else as a `PROVIDER` error."""
 
     def parse(reply: bytes) -> dict[str, Any]:
         try:
@@ -425,4 +418,30 @@ def post_json(
             raise ProviderError(f"{shown(url)} answered with a {type(answered).__name__} rather than an object.")
         return answered
 
-    return post(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=parse, free=free)
+    return parse
+
+
+def post_json(
+    url: str,
+    body: dict[str, Any] | bytes,
+    headers: dict[str, str],
+    *,
+    secrets: Collection[Secret],
+    timeout: float,
+    retries: int,
+    free: bool = False,
+) -> dict[str, Any]:
+    """One POST whose reply is a JSON object, which is every call a provider makes but the two sound ones."""
+    parse = _json_object(url, free=free)
+    return send(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=parse, free=free)
+
+
+def get_json(url: str, *, timeout: float) -> dict[str, Any]:
+    """One GET to a local server that carries no credential, whose reply is a JSON object, asked exactly once.
+
+    It is how a server is asked who it is. Its failures read as a request to a provider that bills
+    nothing reads, and none is asked again, because a server that does not answer at once is down for
+    the run that asked.
+    """
+    headers = {"Accept": "application/json"}
+    return send(url, None, headers, parse=_json_object(url, free=True), timeout=timeout, free=True)

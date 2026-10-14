@@ -1,0 +1,86 @@
+{
+  "words": [
+    {
+      "word": "Only",
+      "start": 0.0,
+      "end": 0.267
+    },
+    {
+      "word": "the",
+      "start": 0.325,
+      "end": 0.395
+    },
+    {
+      "word": "line",
+      "start": 0.464,
+      "end": 0.673
+    },
+    {
+      "word": "that",
+      "start": 0.697,
+      "end": 0.813
+    },
+    {
+      "word": "changed",
+      "start": 0.848,
+      "end": 1.173
+    },
+    {
+      "word": "gets",
+      "start": 1.207,
+      "end": 1.393
+    },
+    {
+      "word": "voiced",
+      "start": 1.451,
+      "end": 1.741
+    },
+    {
+      "word": "again",
+      "start": 1.788,
+      "end": 2.194
+    },
+    {
+      "word": "Everything",
+      "start": 2.798,
+      "end": 3.181
+    },
+    {
+      "word": "else",
+      "start": 3.239,
+      "end": 3.413
+    },
+    {
+      "word": "is",
+      "start": 3.448,
+      "end": 3.529
+    },
+    {
+      "word": "kept",
+      "start": 3.587,
+      "end": 3.785
+    },
+    {
+      "word": "as",
+      "start": 3.82,
+      "end": 3.901
+    },
+    {
+      "word": "it",
+      "start": 3.959,
+      "end": 4.017
+    },
+    {
+      "word": "was",
+      "start": 4.063,
+      "end": 4.969
+    }
+  ],
+  "audio": {
+    "bytes": 80710,
+    "blake3": "7afbc0de3a7059d9",
+    "suffix": ".mp3"
+  },
+  "timed": true,
+  "model_digest": null
+}

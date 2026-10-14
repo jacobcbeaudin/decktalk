@@ -16,7 +16,6 @@ from decktalk.inputs.cues import Spoken, load_cues, norm
 from decktalk.inputs.script import parse_script
 from decktalk.results import Word
 from decktalk.speech import PUNCT
-from decktalk.stages.narrate.takes import estimated_words
 
 
 def write_cues(root: Path, rows: list[dict[str, object]]) -> Path:
@@ -60,6 +59,23 @@ def test_an_occurrence_below_the_first_is_refused_where_it_is_written(tmp_path: 
     path = write_cues(tmp_path, [{"id": "1.1:open", "phrase": "the words", "occurrence": occurrence}])
     with pytest.raises(InputError, match=rf"'occurrence' is {occurrence}, and occurrences count from 1"):
         load_cues(path, tmp_path, {1})
+
+
+def test_a_top_level_key_the_reader_does_not_read_is_refused_by_name(tmp_path: Path) -> None:
+    """A section block pasted one brace too late lands beside `sections` and would be read by nothing,
+    so its cues would never fire and a fix would keep offering rows the reader cannot see."""
+    path = tmp_path / "cues.json"
+    path.write_text(
+        json.dumps({"sections": {"1": {"cues": []}}, "4": {"cues": [{"id": "4.1:a", "phrase": "hi"}]}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(InputError, match="cues.json has the key '4' outside 'sections'") as info:
+        load_cues(path, tmp_path, {1, 4})
+    assert info.value.hint is not None and "inside" in info.value.hint
+    # `_comment` is the one other key the file may hold, which every starter writes.
+    path.write_text(json.dumps({"_comment": ["notes"], "sections": {"1": {"cues": []}}}), encoding="utf-8")
+    (section,) = load_cues(path, tmp_path, {1})
+    assert section.cues == ()
 
 
 def test_a_row_with_no_id_is_still_refused(tmp_path: Path) -> None:
@@ -244,7 +260,7 @@ def test_a_hyphenated_word_counts_once_where_its_whole_and_its_parts_both_match(
 @pytest.mark.parametrize(("phrase", "index"), [("R & D", 1), ("state of the art", 6), ("tools / fast", 7)])
 def test_the_placeholder_words_of_a_run_without_voice_resolve_the_same_phrases(phrase: str, index: int) -> None:
     (section,) = parse_script(f"## 1. Open\n\n{SCRIPT}\n")
-    assert Spoken.of(estimated_words(section, 8.0)).find(phrase) == index
+    assert Spoken.of(section.estimated_words(8.0)).find(phrase) == index
 
 
 SYMBOL = st.sampled_from(["&", "/", "+", "-", "—", "..."])

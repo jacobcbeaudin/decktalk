@@ -1,11 +1,12 @@
 """A span of one built section, cut into its own file with its own sound and its own words.
 
-    decktalk clip 3 --start 4 --end 9 --out media/answer.mp4
+    decktalk clip --section 3 --start 4 --end 9 --out media/answer.mp4
 
-The picture is a run of whole frames of `build/sections/NN.mp4` and the sound is that section's take
-over the same span, so a clip is a piece of the film rather than a second render of it. The words
-file beside it lists every word wholly inside the span, in seconds after the clip starts, which is
-what a `[[section]]` playing this clip needs to caption it.
+The picture is a run of whole frames of `build/sections/NN.mp4` and the sound is the finished film's
+over the same span, so a clip is a piece of the film rather than a second render of it: it carries
+the narration, every turn of a dialogue, the effects and the score, as the film mixed them. The
+words file beside it lists every word wholly inside the span, in seconds after the clip starts,
+which is what a `[[section]]` playing this clip needs to caption it.
 
 The clock is the section's own: zero is where the section starts, and the silence a section's lead
 puts before its first word is part of the span like anything else. It is read through `words`, so
@@ -20,17 +21,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, ClipWords, Take
+from decktalk.artifacts import ClipWords, SpokenWord, words_beside
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, RecordedSection
 from decktalk.inputs.paths import at
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact
-from decktalk.results import ClipResult, SectionWords, Word
+from decktalk.results import ClipResult, SectionWords
 from decktalk.stages.words import row_of
 
 FRAME_SLACK = 0.5
@@ -49,13 +50,6 @@ WORD_SLACK_SECONDS = 0.001
 
 A span is rounded to whole frames and a word time is rounded to milliseconds, so a word that ends
 exactly where the span does can land a rounding step past it and would otherwise be dropped.
-"""
-
-LEAST_AUDIO_SECONDS = 0.001
-"""Truth: the shortest stretch of a take the trim may ask for, so a span wholly inside the lead still reads.
-
-A trim whose end is its start outputs no samples at all, and the filter chain that follows it then
-has nothing to pad, so the clip would carry no sound track rather than a silent one.
 """
 
 
@@ -79,15 +73,15 @@ def clip(
     """
     played = _page_section(inputs, section)
     video = _section_video(inputs, played)
-    take, source = _take_of(inputs, section)
+    sound = _sound_of(inputs, section)
     settings = inputs.settings.video
     fps = settings.fps
     span = _span(inputs, video, start=start, end=end, hold_seconds=hold_seconds, fps=fps)
     film = _out_path(inputs, out, video)
-    words_file = film.with_name(film.stem + WORDS_SUFFIX)
+    words_file = words_beside(film)
 
-    _render(inputs, video, source, film, span=span, lead=take.lead_seconds, gain_db=gain_db, fps=fps)
-    said = row_of(inputs, take)
+    _render(inputs, video, sound, film, span=span, gain_db=gain_db, fps=fps)
+    said = row_of(inputs, inputs.takes(required=True), section)
     inside, cut = _clip_words(said, span.first_seconds, span.last_seconds)
     for word in cut:
         run.note(
@@ -146,7 +140,7 @@ class _Span:
         return round((self.last - self.first + self.hold) / self.fps, SECOND_DIGITS)
 
 
-def _page_section(inputs: Inputs, number: int) -> PageSection:
+def _page_section(inputs: Inputs, number: int) -> RecordedSection:
     """The page section this clip is cut from, or a refusal naming what that section really is."""
     found = inputs.document.section(number)
     if found is None:
@@ -154,7 +148,7 @@ def _page_section(inputs: Inputs, number: int) -> PageSection:
             f"section {number} is not in {inputs.relative(inputs.root / 'decktalk.toml')}.",
             hint=f"The sections are {sorted(section.number for section in inputs.document.sections)}.",
         )
-    if not isinstance(found, PageSection):
+    if not isinstance(found, RecordedSection):
         raise InputError(
             f"section {number} plays a clip the project already has, so there is nothing to cut out of it.",
             hint="Cut a clip from a page section, which is one DeckTalk recorded.",
@@ -162,7 +156,7 @@ def _page_section(inputs: Inputs, number: int) -> PageSection:
     return found
 
 
-def _section_video(inputs: Inputs, section: PageSection) -> Path:
+def _section_video(inputs: Inputs, section: RecordedSection) -> Path:
     """The video of one section, or a refusal naming the command that makes it."""
     video = inputs.workspace.section_video(section.key)
     if not video.is_file():
@@ -174,24 +168,31 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
     return video
 
 
-def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
-    """One section's take and the file that holds it, or a refusal naming the command that makes it."""
-    takes = inputs.takes(required=True)
-    take = takes.of(number)
-    if take is None:
+@dataclass(frozen=True)
+class _Sound:
+    """Where a clip's sound is cut from: the finished film, and where the section starts in it."""
+
+    path: Path
+    at: float
+    """Where the section's clock starts in `path`, in seconds."""
+
+
+def _sound_of(inputs: Inputs, number: int) -> _Sound:
+    """The finished film at the section's own place, or a refusal naming the command that makes it.
+
+    The film's soundtrack is the one mix of everything the section plays, so a clip cut from it sounds
+    as the film does there, and nothing is mixed a second time.
+    """
+    film = inputs.workspace.film
+    placements = inputs.placements()
+    placed = None if placements is None else next((row for row in placements.sections if row.section == number), None)
+    if not film.is_file() or placed is None:
         raise NotBuiltError(
-            f"section {number} has no take in {inputs.relative(inputs.workspace.takes_path)}.",
-            hint=Artifact.TAKES.next_step,
-            location=at(inputs.workspace.takes_path, inputs.root, section=number),
+            f"section {number} has no place in a finished film at {inputs.relative(film)}.",
+            hint=Artifact.FINAL.next_step,
+            location=at(film, inputs.root, section=number),
         )
-    source = inputs.take_places.find(take.digest).audio
-    if not source.is_file():
-        raise NotBuiltError(
-            f"section {number} names the take {source.name}, which is not on disk.",
-            hint=Artifact.TAKES.next_step,
-            location=at(source, inputs.root, section=number),
-        )
-    return take, source
+    return _Sound(path=film, at=placed.start)
 
 
 def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds: float, fps: int) -> _Span:
@@ -235,25 +236,20 @@ def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
     return film
 
 
-def _render(
-    inputs: Inputs, video: Path, source: Path, film: Path, *, span: _Span, lead: float, gain_db: float, fps: int
-) -> None:
+def _render(inputs: Inputs, video: Path, sound: _Sound, film: Path, *, span: _Span, gain_db: float, fps: int) -> None:
     """Cut the picture and the sound of one span into one file, in a single pass.
 
     The picture passes through the frame rate filter before the hold, because ffmpeg clones only two
-    frames after a trim otherwise, and the sound is the take moved to where the span starts so that
-    a span opening inside the section's lead opens on the silence the film has there.
+    frames after a trim otherwise, and the sound is the film's from the section's place plus the span.
     """
     rate = inputs.settings.audio.sample_rate
-    head = max(0.0, lead - span.first_seconds)
-    begins = max(0.0, span.first_seconds - lead)
-    ends = max(begins + LEAST_AUDIO_SECONDS, span.last_seconds - lead)
+    begins = sound.at + span.first_seconds
+    ends = sound.at + span.last_seconds
     played = span.last_seconds - span.first_seconds
     fade_out_at = max(played - EDGE_FADE_SECONDS, 0.0)
     total = span.total_seconds
-    sound = (
-        f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
-        f"adelay=delays={round(head * rate)}S:all=1,volume={gain_db:g}dB,"
+    heard = (
+        f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,volume={gain_db:g}dB,"
         f"afade=t=in:d={EDGE_FADE_SECONDS},afade=t=out:st={fade_out_at:.6f}:d={EDGE_FADE_SECONDS},"
         f"apad=whole_dur={total:.6f},atrim=duration={total:.6f}[a]"
     )
@@ -263,24 +259,28 @@ def _render(
     )
     encoder = Encoder(inputs.settings.video, inputs.settings.audio)
     ffmpeg.run(
-        *ffmpeg.source(video), *ffmpeg.source(source),
-        "-filter_complex", f"{picture};{sound}",
+        *ffmpeg.source(video), *ffmpeg.source(sound.path),
+        "-filter_complex", f"{picture};{heard}",
         "-map", "[v]", "-map", "[a]", "-r", str(fps), *encoder.venc, *encoder.aenc,
         "-t", f"{total:.6f}", "-movflags", "+faststart", str(film),
     )  # fmt: skip
 
 
-def _clip_words(said: SectionWords, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
-    """(the words wholly inside the span, in seconds after it starts, the words the span cuts in two)."""
-    inside: list[Word] = []
+def _clip_words(said: SectionWords, first: float, last: float) -> tuple[tuple[SpokenWord, ...], tuple[str, ...]]:
+    """(the words wholly inside the span, from its start, with their voice and turn, the words it cuts in two)."""
+    speakers = [(turn.voice, turn.turn) for turn in said.turns for _ in range(turn.word_count)]
+    inside: list[SpokenWord] = []
     cut: list[str] = []
-    for word in said.words:
+    for index, word in enumerate(said.words):
+        voice, turn = speakers[index] if index < len(speakers) else (None, None)
         if word.start >= first - WORD_SLACK_SECONDS and word.end <= last + WORD_SLACK_SECONDS:
             inside.append(
-                Word(
+                SpokenWord(
                     word=word.word,
                     start=round(max(0.0, word.start - first), SECOND_DIGITS),
                     end=round(min(last, word.end) - first, SECOND_DIGITS),
+                    voice=voice,
+                    turn=turn,
                 )
             )
         elif word.start < last and word.end > first:

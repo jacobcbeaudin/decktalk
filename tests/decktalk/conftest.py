@@ -1,22 +1,23 @@
 """The fixtures that install the fakes in `support.fakes` at the seam a stage imports.
 
-Each fixture replaces one module attribute through `monkeypatch`, or, for a voice, registers the fake in
-the table the test's runs are opened with, so the real tool is back when the test ends, and hands back
-the fake so the test reads what the stage asked of it.
+Each fixture replaces one module attribute through `monkeypatch`, which for a voice is the shipped
+adapter's `for_context`, so the real tool is back when the test ends, and hands back the fake so the
+test reads what the stage asked of it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
 from decktalk.media import ffmpeg
-from decktalk.speech import SpeechFactory
+from decktalk.speech import Aligner, AlignerContext
 from decktalk.speech import http as speech_http
-from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice, refusing_voices
+from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice, StandIns, refusing_aligners, stand_in
 from support.service import Service
+from support.voice_server import VoiceServer
 
 
 @pytest.fixture
@@ -47,14 +48,21 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
 
 
 @pytest.fixture
-def voices() -> dict[str, SpeechFactory]:
-    """The voice table this test's runs answer with: each shipped voice refusing to be built till a fake replaces it."""
-    return refusing_voices()
+def voices(monkeypatch: pytest.MonkeyPatch) -> StandIns:
+    """The fakes this test's runs answer with: each shipped voice refusing to be built till a fake stands in for it."""
+    return stand_in(monkeypatch)
 
 
 @pytest.fixture
-def fake_voice(voices: dict[str, SpeechFactory]) -> FakeVoice:
-    """A fake registered under the shipped voice's name on the machine every run of this test is opened on."""
+def aligners() -> dict[str, Callable[[AlignerContext], Aligner]]:
+    """The aligner table this test's runs answer with: the shipped aligner refusing to be built till a fake
+    replaces it."""
+    return refusing_aligners()
+
+
+@pytest.fixture
+def fake_voice(voices: StandIns) -> FakeVoice:
+    """A fake standing in for the shipped voice on the machine every run of this test is opened on."""
     voice = FakeVoice()
     voices[FAKE_VOICE_NAME] = lambda _context: voice
     return voice
@@ -79,3 +87,9 @@ def service() -> Iterator[Service]:
         held.released.set()
         held.clear()
         held.stop()
+
+
+@pytest.fixture
+def voice_server(service: Service) -> VoiceServer:
+    """A fake decktalk-voice on the test's local service, answering from the pinned fixtures."""
+    return VoiceServer(service)

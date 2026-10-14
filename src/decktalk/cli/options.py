@@ -31,7 +31,7 @@ from decktalk.errors import InputError
 from decktalk.findings import DOCS as REFERENCE
 from decktalk.findings import Code, Severity
 from decktalk.pipeline import Stage
-from decktalk.project import section_numbers
+from decktalk.project import section_numbers, turn_numbers
 from decktalk.results import Result
 
 DOCS = f"{REFERENCE}/cli"
@@ -237,6 +237,24 @@ ReplaceVoiced = Annotated[
         help="Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend.",
     ),
 ]
+Turns = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--turn",
+        metavar="N.T",
+        rich_help_panel=Panel.REDOING.value,
+        help="Voice this turn again as a new take and nothing else, such as 4.2 for section 4's second turn. Repeats.",
+    ),
+]
+Takes = Annotated[
+    list[str] | None,
+    typer.Option(
+        "--take",
+        metavar="DIGEST",
+        rich_help_panel=Panel.REDOING.value,
+        help="Voice again the turn that plays this take, named by its digest or enough of its start. Repeats.",
+    ),
+]
 ReplaceScore = Annotated[
     bool,
     answering(
@@ -331,6 +349,16 @@ def sections_of(values: Sequence[str] | None) -> tuple[int, ...] | None:
         raise typer.BadParameter(str(refused), param_hint="--section") from refused
 
 
+def turns_of(values: Sequence[str] | None) -> tuple[tuple[int, int], ...]:
+    """Every turn a run of `--turn` values names, each as its section and its turn, in order and without repeats."""
+    if not values:
+        return ()
+    try:
+        return turn_numbers(",".join(values))
+    except InputError as refused:
+        raise typer.BadParameter(str(refused), param_hint="--turn") from refused
+
+
 def one_section(values: Sequence[str] | None) -> int:
     """The single section a command that cuts one piece out needs, refused when it is not one."""
     sections = sections_of(values)
@@ -375,6 +403,8 @@ __all__ = [
     "Sections",
     "Skip",
     "Spend",
+    "Takes",
+    "Turns",
     "Verbose",
     "When",
     "Yes",
@@ -383,4 +413,5 @@ __all__ = [
     "restated",
     "sections_of",
     "shared_for",
+    "turns_of",
 ]

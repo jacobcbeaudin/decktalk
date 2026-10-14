@@ -19,7 +19,7 @@ run's cancel token while the tool works and stops a call that outlives `[tools] 
 one stuck encode can hold a worker for no longer than the machine allows.
 
 `audio.py` and `frames.py` build on the calls here: `run`, `stderr`, `raw`, `stream`,
-`probe_duration`, `probe_rate` and `has_audio`.
+`probe_duration`, `probe_rate`, `probe_size` and `has_audio`.
 
 A file a project supplies is untrusted input. A clip or a sound the score bought is a container that can name
 other files and other hosts, as an HLS playlist or a concat list does, and ffmpeg follows those names
@@ -34,7 +34,7 @@ import shutil
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from fractions import Fraction
@@ -123,15 +123,14 @@ Sink = Callable[[bytes], None]
 """Where a call's stdout goes as it arrives, for a caller that reads a stream rather than one result."""
 
 
-def _spawn(cmd: list[str]) -> subprocess.Popen[bytes]:
-    """Start one tool with both outputs piped and no input, so it can neither wait on a terminal nor block on one.
+def _spawn(cmd: list[str], *, stdin: int = subprocess.DEVNULL) -> subprocess.Popen[bytes]:
+    """Start one tool with both outputs piped, so it can neither wait on a terminal nor block on one.
 
-    The tool is handed the scrubbed environment a browser is handed, never the process's own, so a
+    Its input is nothing unless the caller feeds it, which is the one call that pipes frames in. The
+    tool is handed the scrubbed environment a browser is handed, never the process's own, so a
     credential a host left in its environment does not reach a program that opens other people's files.
     """
-    return subprocess.Popen(
-        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment()
-    )
+    return subprocess.Popen(cmd, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=child_environment())
 
 
 class _Reader(threading.Thread):
@@ -393,6 +392,56 @@ def stream(*args: str, into: Sink) -> None:
     _checked([ffmpeg(), "-v", "error", *args], "ffmpeg", into=into)
 
 
+@contextmanager
+def fed(*args: str, what: str) -> Iterator[Sink]:
+    """ffmpeg run whose input is written by the caller, for an encode of frames made one at a time.
+
+    The block writes through the function it is given, and leaving the block closes the input and
+    waits for the tool. A tool that stops reading, exits non-zero or outlives `[tools] timeout_seconds`
+    after its input closed raises `ToolError` naming `what` with the tail of what it said, and a block
+    that raises kills the tool, so a half-written file is never taken for a finished one.
+    """
+    cmd = [ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", *args]
+    err: list[bytes] = []
+    started = time.monotonic()
+    with _spawn(cmd, stdin=subprocess.PIPE) as proc:
+        readers = (_Reader(proc.stdout, lambda _chunk: None), _Reader(proc.stderr, err.append))
+        for reader in readers:
+            reader.start()
+        into = proc.stdin
+        if into is None:  # pragma: no cover  (a piped input is always opened)
+            raise ToolError(f"{what} could not be given its input.")
+
+        def write(chunk: bytes) -> None:
+            try:
+                into.write(chunk)
+            except (BrokenPipeError, OSError, ValueError):
+                proc.wait()
+                for reader in readers:
+                    reader.join()
+                raise ToolError(f"{what} failed: {tail(b''.join(err))}") from None
+
+        try:
+            yield write
+            into.close()
+        except BaseException:
+            _stop(proc, readers)
+            try:
+                into.close()
+            except OSError:
+                # silent: the tool was killed, so what its input still held has nowhere to go.
+                pass
+            raise
+        bound = TOOLS.get()
+        _watch(proc, readers, cmd, what, bound.cancel if bound else None, bound_tools().timeout_seconds, None)
+        for reader in readers:
+            reader.join()
+    stderr = b"".join(err)
+    traced(log, what, cmd, code=proc.returncode, seconds=time.monotonic() - started, said=stderr)
+    if proc.returncode != 0:
+        raise ToolError(f"{what} failed: {tail(stderr)}")
+
+
 def concat_line(path: Path | str) -> str:
     """One line of an ffmpeg concat list, quoted so that any path a person can write survives it.
 
@@ -414,16 +463,21 @@ JOINED_FORMATS = ("concat", "mov")
 """The demuxers a join may open, which are the concat list itself and the mp4 every section video is written as."""
 
 
-def concat_source(listing: Path | str) -> list[str]:
-    """The arguments that open a concat list, allowing the file protocol and `JOINED_FORMATS` alone.
+LAYERED_FORMATS = ("concat", "png_pipe")
+"""The demuxers a list of stills may open, which are the concat list itself and the PNG every still is drawn as."""
+
+
+def concat_source(listing: Path | str, formats: Sequence[str] = JOINED_FORMATS) -> list[str]:
+    """The arguments that open a concat list, allowing the file protocol and `formats` alone.
 
     The concat demuxer copies both whitelists to every file the list names, so a cut that is really a
     playlist or a manifest is refused at the join rather than followed to the files it names. The
-    list is written with absolute paths, which is why it is read with `-safe 0`.
+    list is written with absolute paths, which is why it is read with `-safe 0`. A list of section
+    videos opens with `JOINED_FORMATS`, and a list of stills with `LAYERED_FORMATS`.
     """
     return [
         "-f", "concat", "-safe", "0",
-        "-protocol_whitelist", SOURCE_PROTOCOLS, "-format_whitelist", ",".join(JOINED_FORMATS),
+        "-protocol_whitelist", SOURCE_PROTOCOLS, "-format_whitelist", ",".join(formats),
         "-i", str(listing),
     ]  # fmt: skip
 
@@ -463,6 +517,20 @@ def probe_rate(path: Path | str) -> Fraction:
     if rate <= 0:
         raise ToolError(f"ffprobe could not read the frame rate of {Path(path).name}.", location=_at(path))
     return rate
+
+
+def probe_size(path: Path | str) -> tuple[int, int]:
+    """The width and height of the file's first video stream, in its own pixels."""
+    proc = _probe(path, "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0")
+    text = proc.stdout.decode(errors="replace").strip()
+    try:
+        width, height = (int(part) for part in text.split(",")[:2])
+    except ValueError:
+        # silent: a size that does not read is refused just below.
+        width = height = 0
+    if width <= 0 or height <= 0:
+        raise ToolError(f"ffprobe could not read the frame size of {Path(path).name}.", location=_at(path))
+    return width, height
 
 
 def has_audio(path: Path | str) -> bool:

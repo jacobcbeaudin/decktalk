@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,8 +20,9 @@ from decktalk.findings import (
     Location,
 )
 from decktalk.machine import Machine
-from decktalk.machine.fixes import FIX_TIMEOUT_SECONDS, apply_fix, fixes_of
+from decktalk.machine.fixes import apply_fix, fixes_of
 from decktalk.results import FixOutcome, Scope
+from decktalk.settings import ToolsConfig
 from decktalk.toolchain import command_line
 from support.links import link
 from support.logs import data_of
@@ -106,6 +108,9 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
 ) -> None:
     """`decktalk` on `PATH` may be another install, and an unbounded command holds `apply` for ever."""
     here = a_machine(tmp_path, ONLY_THIS="1")
+    here = replace(
+        here, toolchain=replace(here.toolchain, tools=replace(here.toolchain.tools, fix_timeout_seconds=90.0))
+    )
     asked: dict[str, object] = {}
 
     def record(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
@@ -115,7 +120,7 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
     monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", record)
     assert ran(here, INSTALL_FIX).applied
     assert asked["argv"] == [sys.executable, "-m", "decktalk", "install"]
-    assert asked["timeout"] == FIX_TIMEOUT_SECONDS
+    assert asked["timeout"] == 90.0, "the machine's own `tools.fix_timeout_seconds` bounds the command"
     assert asked["env"] == {
         "ONLY_THIS": "1",
         "DECKTALK_MACHINE_FILE": str(here.machine_file),
@@ -127,7 +132,7 @@ def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     def hang(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-        raise subprocess.TimeoutExpired(argv, FIX_TIMEOUT_SECONDS)
+        raise subprocess.TimeoutExpired(argv, ToolsConfig().fix_timeout_seconds)
 
     monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", hang)
     outcome = ran(a_machine(tmp_path), INSTALL_FIX)
@@ -137,7 +142,7 @@ def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
     assert data_of(said) == {
         "argv": command_line([sys.executable, "-m", *INSTALL]),
         "reason": "timeout",
-        "limit": FIX_TIMEOUT_SECONDS,
+        "limit": ToolsConfig().fix_timeout_seconds,
     }
 
 
@@ -269,7 +274,7 @@ def test_a_fix_that_breaks_the_project_file_and_sets_a_key_in_it_changes_nothing
     fix = edit_fix(
         Edit(file=Path("script.md"), line=1, old="one", new="changed"),
         Edit(file=Path("decktalk.toml"), line=1, old="[project]", new="[project"),
-        Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
+        Edit(file=Path("decktalk.toml"), key="video.crf", new="20"),
     )
     done, why = applied(a_machine(tmp_path), fix, tmp_path)
     assert not done and "not valid TOML" in why
@@ -281,12 +286,12 @@ def test_a_line_edit_and_a_key_edit_of_the_project_file_both_land_in_one_write(t
     (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
     fix = edit_fix(
         Edit(file=Path("decktalk.toml"), line=2, old='name = "t"', new='name = "renamed"'),
-        Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
+        Edit(file=Path("decktalk.toml"), key="video.crf", new="20"),
     )
     done, why = applied(a_machine(tmp_path), fix, tmp_path)
     assert done, why
     written = (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
-    assert 'name = "renamed"' in written and "width = 1280" in written
+    assert 'name = "renamed"' in written and "crf = 20" in written
 
 
 def test_a_file_the_system_refuses_to_replace_puts_back_every_file_already_replaced(
@@ -330,14 +335,14 @@ def test_a_settings_fix_never_writes_through_a_project_file_linked_out_of_the_pr
     outside = tmp_path / "victim.toml"
     outside.write_text('[project]\nname = "victim"\n', encoding="utf-8")
     link(root / "decktalk.toml", outside, hard=kind == "hard")
-    fix = a_key_fix("video.width", "1280")
+    fix = a_key_fix("video.crf", "20")
     with a_machine(tmp_path)._run() as run:
         outcome = apply_fix(run, Code.CUE_UNLISTED, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     assert outside.read_text(encoding="utf-8") == '[project]\nname = "victim"\n'
     if kind == "symbolic":
         assert not outcome.applied and "outside the project" in (outcome.why or "")
     else:
-        assert outcome.applied and "width = 1280" in (root / "decktalk.toml").read_text(encoding="utf-8")
+        assert outcome.applied and "crf = 20" in (root / "decktalk.toml").read_text(encoding="utf-8")
 
 
 def test_a_line_that_no_longer_reads_what_the_fix_expected_is_left_alone(tmp_path: Path) -> None:

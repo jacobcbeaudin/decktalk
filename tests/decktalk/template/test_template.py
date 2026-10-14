@@ -1,11 +1,11 @@
 """The projects and the skills packaged in the wheel, judged as the data they are.
 
 `tests/decktalk/test_template.py` holds what `decktalk.template` does. This file holds what it
-carries: the starter, the lesson example and the six skills, read from the package the way a reader
+carries: the starter, the three examples and the six skills, read from the package the way a reader
 of the wheel reads them.
 
-Two rules matter most. Every attribute the page contract publishes is written by one of the two
-example projects, which is the guard that no attribute ships untested, and the declared table
+Two rules matter most. Every attribute the page contract publishes is written by one of the four
+packaged projects, which is the guard that no attribute ships untested, and the declared table
 below says which example writes which row, so a row nothing exercises is named rather than
 discovered. And a skill names a command of the final vocabulary or it names none, because the CLI is
 the instruction set and a copy of it inside a skill is a copy that goes stale.
@@ -37,6 +37,8 @@ from decktalk.toolchain import assets
 
 STARTER = "starter"
 LESSON = "lesson"
+INTERVIEW = "interview"
+MOTION = "motion"
 
 
 def packaged(name: str) -> Path:
@@ -48,7 +50,7 @@ def packaged(name: str) -> Path:
     return assets.package_file(f"template/{found.path}")
 
 
-PROJECTS = {name: packaged(name) for name in (STARTER, LESSON)}
+PROJECTS = {name: packaged(name) for name in (STARTER, LESSON, INTERVIEW, MOTION)}
 SKILLS = assets.package_file("skills")
 
 
@@ -60,7 +62,7 @@ class Deck(HTMLParser):
 
     A static read is enough here because a packaged page is written entirely in markup, which is the
     shape the slide guide teaches. The one cue a handler serves is declared in `data-owns`, so it is
-    read from the markup like any other.
+    read from the markup like any other, and so are the two cues a motion departs and arrives on.
     """
 
     def __init__(self) -> None:
@@ -80,14 +82,19 @@ class Deck(HTMLParser):
             self.cues.setdefault(self._slide, [])
         if self._slide is None:
             return
-        for moment in MOMENTS:
-            if written.get(moment.value):
-                self._add(written[moment.value])
-        for pair in written.get(Attr.CLASS.value, "").split(PAIR_SEPARATOR):
-            if PAIR_MARK in pair:
-                self._add(pair.split(PAIR_MARK, 1)[0])
-        for local in written.get(Attr.OWNS.value, "").split():
+        for local in self._declared(written):
             self._add(local)
+
+    @staticmethod
+    def _declared(written: dict[str, str]) -> list[str]:
+        """Every cue name one element declares: its moments, its class pairs, what it owns and its motion's two cues."""
+        named = [written[moment.value] for moment in MOMENTS if written.get(moment.value)]
+        pairs = written.get(Attr.CLASS.value, "").split(PAIR_SEPARATOR)
+        named += [pair.split(PAIR_MARK, 1)[0] for pair in pairs if PAIR_MARK in pair]
+        named += written.get(Attr.OWNS.value, "").split()
+        # A motion departs and arrives on cues of its slide, so both join the slide's cue order.
+        named += [written[edge.value] for edge in (Attr.MOTION_FROM, Attr.MOTION_TO) if written.get(edge.value)]
+        return named
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "template":
@@ -142,11 +149,11 @@ PARSED = {name: read(name) for name in PROJECTS}
 # ---- the exercised attribute table ----------------------------------------------------------
 
 EXERCISED: dict[Attr, tuple[str, ...]] = {
-    Attr.IN: (STARTER, LESSON),
-    Attr.DESCRIBE: (STARTER, LESSON),
+    Attr.IN: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.DESCRIBE: (STARTER, LESSON, INTERVIEW, MOTION),
     Attr.TEX: (STARTER,),
     Attr.TEX_DISPLAY: (STARTER,),
-    Attr.IN_STYLE: (STARTER, LESSON),
+    Attr.IN_STYLE: (STARTER, LESSON, INTERVIEW),
     Attr.BACK: (STARTER,),
     Attr.FRONT: (STARTER,),
     Attr.OUT: (LESSON,),
@@ -160,12 +167,18 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
     Attr.OUT_STYLE: (LESSON,),
     Attr.SWAPS: (LESSON,),
     Attr.DESCRIBE_OUT: (LESSON,),
-    Attr.SCENE: (STARTER, LESSON),
-    Attr.NAME: (STARTER, LESSON),
-    Attr.SLIDE: (STARTER, LESSON),
-    Attr.PREVIEW_SECONDS: (STARTER, LESSON),
-    Attr.OWNS: (LESSON,),
+    Attr.SCENE: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.NAME: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.SLIDE: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.PREVIEW_SECONDS: (STARTER, LESSON, INTERVIEW, MOTION),
+    Attr.OWNS: (LESSON, MOTION),
     Attr.ENTER: (LESSON,),
+    Attr.MOTION: (MOTION,),
+    Attr.MOTION_FROM: (MOTION,),
+    Attr.MOTION_TO: (MOTION,),
+    Attr.MOTION_EASE: (MOTION,),
+    Attr.LOOP: (MOTION,),
+    Attr.LOOP_SECONDS: (MOTION,),
 }
 """Which packaged example writes which attribute, declared so a gap is named rather than found.
 
@@ -217,6 +230,8 @@ def test_the_page_and_the_cue_file_name_the_same_moments(project: Project) -> No
         for section in load_cues(
             project.root / project.document.cues, project.root, {s.number for s in project.document.sections}
         )
+        # A section a program draws declares its cues in the program, which no page parse can read.
+        if section.number in {one.number for one in project.document.page_sections}
         for cue in section.cues
     }
     assert listed == project.cue_ids, (
@@ -378,8 +393,11 @@ def test_the_agents_file_init_writes_points_at_the_help_rather_than_repeating_it
     assert len(text.split()) < 200, "AGENTS.md is a few lines, not a manual"
 
 
-def test_the_two_projects_are_the_only_ones_the_wheel_ships() -> None:
-    """A reserved example name has no directory, so nothing can be written from it by accident."""
-    shipped = {found.name for found in template.EXAMPLES if found.shipped}
-    assert shipped == {LESSON}
+def test_the_starter_and_the_shipped_examples_are_the_only_projects_the_wheel_ships() -> None:
+    """Every example name has its directory in the wheel, and no directory is left without a name."""
+    named = {found.name for found in template.EXAMPLES}
+    assert named == {STARTER, LESSON, INTERVIEW, MOTION}
+    assert all(assets.package_file(f"template/{found.path}").is_dir() for found in template.EXAMPLES)
+    examples = assets.package_file("template/examples")
+    assert {found.name for found in examples.iterdir() if found.is_dir()} == {LESSON, INTERVIEW, MOTION}
     assert json.loads((PROJECTS[STARTER] / "cues.json").read_text(encoding="utf-8"))["sections"]

@@ -9,10 +9,12 @@ read, the film is streamed through that one plan at each size a comparison needs
 comparison is then made in this process on the frames that were kept. Each section start reads its
 one frame on its own.
 
-`verify` measures four things. Every section must open on a real picture past its dip to black. The
+`verify` measures five things. Every section must open on a real picture past its dip to black. The
 narration must be quiet in the window before each cut, so no cut lands on a word. A section that
 declares itself seamless must open on the picture the section before it ended on. And every cue must
-change the picture, by enough to be seen, within the offset limit of the word it was promised to.
+change the picture, by enough to be seen, within the offset limit of the word it was promised to,
+with every declared motion around it masked out. And every declared motion must depart and arrive
+on its own lane within that same limit of its words.
 
 It repeats what each recording log already judged rather than measuring it again, so a page that
 threw or an equation that was never typeset is still a finding after the build that recorded it, and
@@ -24,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from decktalk.errors import NotBuiltError
+from decktalk.events import Level
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
@@ -31,7 +34,16 @@ from decktalk.media import ffmpeg, frames
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import VerifyResult
 from decktalk.stages import selects
-from decktalk.stages.verify.measure import cue_checks, film_starts, planned_cues, want_cues
+from decktalk.stages.verify.measure import (
+    cue_checks,
+    film_starts,
+    landing_checks,
+    planned_cues,
+    section_lanes,
+    unmeasured_render,
+    want_cues,
+    want_landings,
+)
 from decktalk.stages.verify.plan import default_checks, opted_out, thin_change
 from decktalk.stages.verify.seams import cut_checks, planned_seams, seam_checks, start_checks, want_seams
 
@@ -57,13 +69,19 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
         run.note("The film has no placements file, so verify read where each section starts from the section files.")
     wanted = selects(only)
     kept = {number: at for number, at in starts.items() if wanted(number)}
+    _require_recording_logs(inputs, kept)
     _repeat_recorded(inputs, run, wanted)
+    _unmeasured_renders(inputs, run, wanted)
+    # Each section's lanes are read once here, and every cue and landing of it reads these.
+    every = {number: section_lanes(inputs, number, starts[number]) for number in starts}
     _placed(inputs, run, wanted)
-    cues = planned_cues(inputs, run, starts, total, default_checks(inputs.cue_times(), list(kept)), opted_out(inputs))
+    checks = default_checks(inputs.cue_times(), list(kept))
+    cues = planned_cues(inputs, run, starts, total, checks, opted_out(inputs), every)
     seams = planned_seams(inputs, kept)
     wanted = frames.Wanted()
     want_cues(inputs, cues, wanted)
     want_seams(inputs, seams, wanted)
+    lanes = want_landings(inputs, {number: every[number] for number in kept}, wanted)
     decoded = frames.decode(film, wanted)
     return run.result(
         VerifyResult,
@@ -73,12 +91,41 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
         cuts=cut_checks(inputs, run, film, inputs.takes(), kept),
         seams=seam_checks(inputs, run, film, seams, decoded),
         cues=cue_checks(inputs, run, film, cues, decoded),
+        motions=landing_checks(inputs, run, film, lanes, decoded),
+    )
+
+
+def _require_recording_logs(inputs: Inputs, kept: dict[int, float]) -> None:
+    """Refuse a film whose recorded sections came without their recording logs.
+
+    A log holds what the recorder judged and the motion the page declared, so a verify without it
+    repeats no finding and measures no motion, which would read as a pass. A section the film filled
+    with black was never recorded and needs none.
+    """
+    placed = inputs.placements()
+    filled = {row.section for row in placed.sections if row.substitute is not None} if placed is not None else set()
+    missing = [
+        section
+        for section in inputs.document.recorded_sections
+        if section.number in kept
+        and section.number not in filled
+        and not inputs.workspace.recording_log(section.key).is_file()
+    ]
+    if not missing:
+        return
+    named = ", ".join(str(section.number) for section in missing)
+    logs = ", ".join(inputs.relative(inputs.workspace.recording_log(section.key)).as_posix() for section in missing)
+    raise NotBuiltError(
+        f"the film plays section {named} as recorded, and {logs} is not there, so verify would repeat none of "
+        "its recording's findings and measure none of its motion.",
+        hint=f"Keep {inputs.relative(inputs.workspace.recordings_dir).as_posix()}/ beside the film it was "
+        f"recorded for. {Artifact.RECORDINGS.next_step}",
     )
 
 
 def _repeat_recorded(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
     """Report again what every recording log judged, which this stage repeats and never re-measures."""
-    for section in inputs.document.page_sections:
+    for section in inputs.document.recorded_sections:
         if not wanted(section.number):
             continue
         log = inputs.recording_log(section.key)
@@ -86,6 +133,17 @@ def _repeat_recorded(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) ->
             continue
         for found in log.findings:
             run.found(found)
+
+
+def _unmeasured_renders(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
+    """Say, once a section, that a rendered picture with no landings leaves every cue of that section unmeasured."""
+    for section in inputs.document.sections:
+        if wanted(section.number) and unmeasured_render(inputs, section.number):
+            run.note(
+                f"Section {section.number} was drawn by its render_command, which wrote no landings, so verify "
+                "measured none of its cues. Have the command write {landings} to measure them.",
+                level=Level.WARNING,
+            )
 
 
 def _placed(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:

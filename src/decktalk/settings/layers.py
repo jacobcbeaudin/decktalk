@@ -14,6 +14,7 @@ import os
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -28,19 +29,27 @@ from decktalk.results import Layer, LayerValue, Scope
 from decktalk.settings import (
     BY_ID,
     DOCUMENT_TABLES,
-    KEYS,
     MACHINE_FILE,
     MACHINE_FILE_VARIABLE,
+    OWN_KEYS,
     PROJECT_FILE,
     SHARED_TABLES,
     STANDALONE_ENV,
+    STATIC_KEYS,
+    TEMPLATES,
+    VOICES_TABLE,
     Layers,
     Loaded,
     Settings,
+    Voice,
     key_named,
+    key_of,
+    member_keys,
+    provider_tables,
 )
 from decktalk.settings.numbers import NUMBERS_BY_ID
-from decktalk.tomlmap import ENV_PREFIX, variable
+from decktalk.settings.voices import VOICE_VARIABLE, resolve
+from decktalk.tomlmap import ENV_PREFIX, Key, variable
 from decktalk.tomlmap.read import from_mapping
 from decktalk.tomlmap.suggest import named_key, unknown_key_message, unknown_key_warnings
 
@@ -104,7 +113,7 @@ def refuse_off_scope(data: Mapping[str, Any], allowed: Scope, *, file: Path, tex
     launches as the browser, so a machine-scoped key in a project is refused rather than ignored.
     """
     for dotted, _value in _flatten(data):
-        key = BY_ID.get(dotted)
+        key = key_of(dotted)
         if key is None or key.scope is allowed:
             continue
         where = key.scope.value
@@ -131,7 +140,7 @@ def read_machine_toml(path: Path) -> dict[str, Any]:
     if not data:
         return {}
     text = path.read_text(encoding="utf-8")
-    tables = {key.table.split(".")[0] for key in KEYS}
+    tables = {key.table.split(".")[0] for key in STATIC_KEYS} | {VOICES_TABLE}
     unknown = sorted(set(data) - tables)
     if unknown:
         raise InputError(
@@ -149,18 +158,26 @@ def key_warnings(doc: Mapping[str, Any], where: str) -> list[str]:
     The near name is looked for in the same table first and then across every table, because a key
     is often written under a table it does not live in, and a key is read under its own name alone.
     A table that also holds project content, such as `[mix]`, is left alone, because the document
-    parser owns the rest of that table and warning here would call one of its keys unknown.
+    parser owns the rest of that table and warning here would call one of its keys unknown. A voice's
+    table knows its own three keys and every key of every provider table, because a key of a provider
+    table is either the voice's own value of it or a refusal the loader has already made.
     """
     out: list[str] = []
-    tables = {key.table for key in KEYS}
+    tables = {key.table for key in STATIC_KEYS}
     for table in sorted(tables - SHARED_TABLES):
         found = _table(doc, table)
         if found is None:
             continue
-        known = {key.name for key in KEYS if key.table == table} | {
+        known = {key.name for key in STATIC_KEYS if key.table == table} | {
             inner.removeprefix(f"{table}.").split(".")[0] for inner in tables if inner.startswith(f"{table}.")
         }
         out += unknown_key_warnings(found, known, f"{where}: [{table}]", at=table, anywhere=BY_ID)
+    voices = doc.get(VOICES_TABLE)
+    known = set(OWN_KEYS) | {f.name for cls in provider_tables().values() for f in fields(cls)}
+    for name, found in voices.items() if isinstance(voices, Mapping) else ():
+        if isinstance(found, Mapping):
+            at = f"{VOICES_TABLE}.{name}"
+            out += unknown_key_warnings(found, known, f"{where}: [{at}]", at=at, anywhere=BY_ID)
     return out
 
 
@@ -168,13 +185,21 @@ def env_warnings(environ: Mapping[str, str]) -> list[str]:
     """One warning per DECKTALK_ variable DeckTalk does not read, naming the closest one it does.
 
     A variable DeckTalk does not read has no effect, so the warning is what tells a reader that a
-    typed name never took hold.
+    typed name never took hold. A variable that sets a key of one voice is known whatever the voice's
+    name, because with no project open nobody knows which voices there are, and the project refuses
+    one for a voice it does not declare when it loads.
     """
-    known = {key.environment for key in KEYS} | STANDALONE_ENV
+    known = {key.environment for key in STATIC_KEYS} | STANDALONE_ENV
     return [
         _unknown_variable(name, known)
-        for name in sorted(n for n in environ if n.startswith(ENV_PREFIX) and n not in known)
+        for name in sorted(n for n in environ if n.startswith(ENV_PREFIX) and n not in known and not _voice_key(n))
     ]
+
+
+def _voice_key(name: str) -> bool:
+    """Whether a variable sets a key of one voice, such as `DECKTALK_VOICES_GUEST_ID`."""
+    found = VOICE_VARIABLE.match(name)
+    return found is not None and any(found[2].lower() == key.name for key in TEMPLATES)
 
 
 def _unknown_variable(name: str, known: set[str]) -> str:
@@ -184,8 +209,12 @@ def _unknown_variable(name: str, known: set[str]) -> str:
     names, by the rule the files' own warnings use, is offered by its variable. A name that opens
     with no table is offered the closest variable by spelling.
     """
+    voice = VOICE_VARIABLE.match(name)
+    if voice is not None:
+        spelled_keys = {variable(f"{VOICES_TABLE}.{voice[1].lower()}.{key.name}") for key in TEMPLATES}
+        return unknown_key_message(name, spelled_keys, "environment")
     spelled = name.removeprefix(ENV_PREFIX).lower()
-    tables = sorted({key.table for key in KEYS}, key=len, reverse=True)
+    tables = sorted({key.table for key in STATIC_KEYS}, key=len, reverse=True)
     table = next((t for t in tables if spelled.startswith(t.replace(".", "_") + "_")), None)
     if table is None:
         return unknown_key_message(name, known, "environment")
@@ -251,7 +280,7 @@ def route(overrides: tuple[str, ...]) -> dict[str, str]:
 
 def scoped(overrides: Mapping[str, str], scope: Scope) -> dict[str, str]:
     """The overrides that belong to one scope, which is how the machine and the project each take their own."""
-    return {key: value for key, value in overrides.items() if BY_ID[key].scope is scope}
+    return {key: value for key, value in overrides.items() if key_named(key).scope is scope}
 
 
 def named_file(path: Path, scope: Scope) -> Path:
@@ -284,6 +313,10 @@ def load(
     reader of the process and a host that built its machine by hand chose what it holds. The machine
     layer is the tables given, or the file at `machine_path`, or nothing when neither is named. A
     refusal of one value names the layer that wrote it: the file, the variable or the `--set`.
+
+    The voices are resolved once the tree is built, because each one is read over its provider's
+    table as every layer left it. A project is open when it has a root or states anything, and only
+    then is a variable for a voice the project does not declare refused.
     """
     env = dict(environ)
     from_machine = dict(machine) if machine is not None else (read_machine_toml(machine_path) if machine_path else {})
@@ -293,7 +326,7 @@ def load(
     refuse_off_scope(from_project, Scope.PROJECT, file=project_file, text=project_text)
     pairs = route(overrides)
     base = merge_tables(from_machine, from_project)
-    env_and_overrides = {**env, **{BY_ID[key].environment: value for key, value in pairs.items()}}
+    env_and_overrides = {**env, **{key_named(key).environment: value for key, value in pairs.items()}}
 
     def said(dotted: str, from_env: bool) -> str:
         if from_env:
@@ -303,6 +336,17 @@ def load(
         return named_file(machine_path, Scope.MACHINE).as_posix() if machine_path else "the machine's tables"
 
     settings = from_mapping(Settings, base=base, environ=env_and_overrides, said=said)
+    voices = resolve(
+        settings,
+        project=from_project,
+        environ=env,
+        overrides=pairs,
+        said=said,
+        opened=root is not None or bool(from_project),
+        file=project_file,
+        text=project_text,
+    )
+    settings = replace(settings, voices=voices)
     _require(settings)
     files = {
         Layer.MACHINE: machine_path,
@@ -325,11 +369,12 @@ def _layers(
     forgotten which file wrote each key, and the file is half of what makes the record useful.
     """
     texts = {layer: current_text(path) if path else "" for layer, path in files.items()}
-    rows: dict[str, tuple[LayerValue, ...]] = {}
-    for key in KEYS:
-        found = [LayerValue(layer=Layer.DEFAULT, value=json_value(key.default))]
+
+    def stating(dotted: str, default: object) -> list[LayerValue]:
+        """Every layer that states one dotted key, lowest first, from its default unless that is `ABSENT`."""
+        found = [] if default is ABSENT else [LayerValue(layer=Layer.DEFAULT, value=json_value(default))]
         for layer, doc in ((Layer.MACHINE, machine), (Layer.PROJECT, project)):
-            said = stated(doc, key.id)
+            said = stated(doc, dotted)
             if said is not ABSENT:
                 path = files.get(layer)
                 found.append(
@@ -337,18 +382,49 @@ def _layers(
                         layer=layer,
                         value=json_value(said),
                         file=path,
-                        line=locate(texts.get(layer, ""), key.id) if path else None,
+                        line=locate(texts.get(layer, ""), dotted) if path else None,
                     )
                 )
-        if key.environment in environ:
-            found.append(LayerValue(layer=Layer.ENVIRONMENT, value=environ[key.environment]))
-        if key.id in overrides:
-            found.append(LayerValue(layer=Layer.OVERRIDE, value=overrides[key.id]))
-        # The winning row carries the value the tree holds rather than the text a layer wrote, so a
-        # reader of the record and a reader of the settings never disagree about one number.
-        found[-1] = found[-1].model_copy(update={"value": json_value(value_of(settings, key.id))})
-        rows[key.id] = tuple(found)
+        if variable(dotted) in environ:
+            found.append(LayerValue(layer=Layer.ENVIRONMENT, value=environ[variable(dotted)]))
+        if dotted in overrides:
+            found.append(LayerValue(layer=Layer.OVERRIDE, value=overrides[dotted]))
+        return found
+
+    rows: dict[str, tuple[LayerValue, ...]] = {}
+    for key in STATIC_KEYS:
+        rows[key.id] = _winning(stating(key.id, key.default), settings, key.id)
+    for voice in settings.voices.values():
+        for key in member_keys(voice):
+            rows[key.id] = _winning(_voice_rows(voice, key, rows, stating), settings, key.id)
     return Layers(rows=rows)
+
+
+def _voice_rows(
+    voice: Voice,
+    key: Key,
+    rows: Mapping[str, tuple[LayerValue, ...]],
+    stating: Callable[[str, object], list[LayerValue]],
+) -> list[LayerValue]:
+    """One voice's rows for one key: its own key's layers, or its provider key's rows then the voice's own.
+
+    A key the voice inherits shows where the provider's value came from, each row naming the key it
+    was stated under, and then every layer that stated the voice's own value over it, which wins.
+    """
+    if key.name in OWN_KEYS:
+        return stating(key.id, key.default)
+    inherited = f"{voice.own.provider}.{key.name}"
+    return [row.model_copy(update={"key": inherited}) for row in rows[inherited]] + stating(key.id, ABSENT)
+
+
+def _winning(found: list[LayerValue], settings: Settings, dotted: str) -> tuple[LayerValue, ...]:
+    """The rows of one key, the last carrying the value the tree holds.
+
+    The winning row carries the value the tree holds rather than the text a layer wrote, so a reader
+    of the record and a reader of the settings never disagree about one number.
+    """
+    found[-1] = found[-1].model_copy(update={"value": json_value(value_of(settings, dotted))})
+    return tuple(found)
 
 
 ABSENT = object()
@@ -412,7 +488,11 @@ def machine_folder(loaded: Loaded, key: str, environ: Mapping[str, str]) -> Path
 
 
 def value_of(settings: Settings, dotted: str) -> object:
-    """The value one dotted key holds in a settings tree."""
+    """The value one dotted key holds in a settings tree, a voice's key read off that voice."""
+    table, _, rest = dotted.partition(".")
+    if table == VOICES_TABLE:
+        name, _, key = rest.partition(".")
+        return settings.voices[name].value(key)
     return operator.attrgetter(dotted)(settings)
 
 
@@ -427,7 +507,7 @@ def _require(settings: Settings) -> None:
     A relation is a comparison an editor cannot check, because one side of it lives in another
     table or is a published number rather than a key, so the loader is the only place it can hold.
     """
-    for key in KEYS:
+    for key in STATIC_KEYS:
         if key.requires is None:
             continue
         left, op, right = key.requires.split()

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
-from decktalk.artifacts import Placement, Placements, Words
-from decktalk.captions import CaptionCue
+from decktalk.artifacts import ClipWords, Placement, Placements, SpokenWord, Words
+from decktalk.captions import CAPTION_MAX_CHARS, CaptionCue, Said, srt_text, vtt_text
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
 from decktalk.media import browser, pages
@@ -18,29 +15,43 @@ from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.settings import BY_ID
-from decktalk.stages import storyboard
 from decktalk.stages.assemble.cut import placements_of
 from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
     build_captions,
     build_chapters,
-    caption_texts,
     clip_captions,
-    clip_speech,
+    clip_words,
     described_cues,
+    film_words,
+    inner_words,
+    narrated_turns,
     one_at_a_time,
     placement_note,
     poster_query,
     publish,
     render_poster,
     sound_captions,
+    spoken_cues,
     transcript_sections,
     uncaptioned_sounds,
     with_sound_captions,
 )
+from support.fakes import Browsed
 from support.pages import write_log
+from support.takes import a_take, narrated
 
-from .conftest import MID_CLIP_TOML, TITLED_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
+from .conftest import (
+    MID_CLIP_TOML,
+    PAGES_TOML,
+    TITLED_TOML,
+    cue_times,
+    open_run,
+    rendered,
+    spoken,
+    take_index,
+    write_project,
+)
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -80,7 +91,7 @@ def test_a_note_says_what_plays_where_nothing_was_said():
     clip = Placement(
         section=2, key="02", kind=SectionKind.CLIP, start=0.0, end=1.0, source=Path("media/b.mp4"), chapter="c"
     )
-    page = Placement(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.webm"), chapter="c")
+    page = Placement(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.mp4"), chapter="c")
     slated = clip.model_copy(update={"substitute": Substitute.SLATE})
     assert placement_note(clip) == "A clip plays here: media/b.mp4."
     assert placement_note(page) == ""
@@ -89,41 +100,156 @@ def test_a_note_says_what_plays_where_nothing_was_said():
 
 def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
+    takes = take_index(inputs, {1: ("Open", 2.0, 1.6, spoken("hello")), 3: ("The edit", 2.5, 2.0, spoken("again"))})
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
-    entries = transcript_sections(inputs, placements_of(inputs, rows), {1: "hello", 3: "again"})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), takes)
     assert [entry.chapter for entry in entries] == ["Open", "The edit", "Close"]
     # The clip and the page that share "The edit" are one heading with two paragraphs under it.
     assert len(entries[1].said) == 2
 
 
-def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path):
+TWO_VOICES = PAGES_TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n'
+"""The two-section project with a guest beside its narrator."""
+
+
+def test_each_turn_of_a_section_in_two_voices_is_a_paragraph_naming_its_voice(tmp_path):
+    """A reader who cannot hear the film learns who said each line, and a section of one voice is left as it was."""
+    inputs = write_project(tmp_path, TWO_VOICES)
+    first = a_take(1, seconds=1.0, spoken="Says who?", voice="guest", digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken="Nobody does.", digest="0000000000000002")
+    alone = a_take(2, seconds=1.0, spoken="One voice. Two turns.", digest="0000000000000003")
+    again = a_take(2, turn=2, seconds=1.0, spoken="Still one.", digest="0000000000000004")
+    narrated(inputs, first, second, alone, again)
+    takes = inputs.takes(required=True)
+    rows = rendered(inputs, {1: 2.0, 2: 2.0})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), takes)
+    said = [one for entry in entries for one in entry.said]
+    assert said == [
+        Said("Says who?", voice="guest"),
+        Said("Nobody does.", voice="narrator"),
+        Said("One voice. Two turns. Still one."),
+    ]
+
+
+@pytest.mark.parametrize("named", [False, True])
+def test_captions_name_the_voice_of_a_dialogue_only_when_the_project_asks(tmp_path, named):
+    """Words alone by default, and the voice of every turn of a two-voice section once `caption_voices` is on."""
+    asks = "\n[output]\ncaption_voices = true\n" if named else ""
+    inputs = write_project(tmp_path, TWO_VOICES + asks)
+    first = a_take(1, seconds=1.0, spoken="alpha beta", tail_seconds=0.3, voice="guest", digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken="gamma delta", digest="0000000000000002")
+    alone = a_take(2, seconds=1.0, spoken="epsilon", digest="0000000000000003")
+    words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
+    narrated(inputs, first, second, alone, words=words)
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}))
+    expected = [True, True, False] if named else [False, False, False]
+    assert [cue.named for cue in cues] == expected
+    assert ("guest: alpha beta" in srt_text(cues)) is named
+
+
+def test_every_spoken_caption_carries_its_voice_and_turn_whether_or_not_the_files_name_them(tmp_path):
+    """A page draws the captioned copy and places a caption by who says it, so the cue knows that without naming it."""
+    inputs = write_project(tmp_path, TWO_VOICES)
+    first = a_take(1, seconds=1.0, spoken="alpha beta", tail_seconds=0.3, voice="guest", digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken="gamma delta", digest="0000000000000002")
+    alone = a_take(2, seconds=1.0, spoken="epsilon", digest="0000000000000003")
+    words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
+    narrated(inputs, first, second, alone, words=words)
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}))
+    assert [(cue.voice, cue.turn, cue.named) for cue in cues] == [
+        ("guest", 1, False),
+        ("narrator", 2, False),
+        ("narrator", 1, False),
+    ]
+    assert "guest" not in srt_text(cues) and "<v " not in vtt_text(cues)
+
+
+def test_a_named_voice_leaves_room_on_the_line_for_its_name(tmp_path):
+    """The .srt writes the name before the line, so the line is wrapped short enough to carry it."""
+    inputs = write_project(tmp_path, TWO_VOICES + "\n[output]\ncaption_voices = true\n")
+    said = "one two three four five six seven eight nine"  # 44 characters: two lines either way
+    near = "one two three four five six seven eight"  # 39 characters: one line alone, two beside a name
+    first = a_take(1, seconds=1.0, spoken=said, tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken=near, voice="guest", digest="0000000000000002")
+    narrated(inputs, first, second, words={(1, 1): spoken(said), (1, 2): spoken(near)})
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}))
+    assert all(cue.named and len(f"{cue.voice}: {cue.lines[0]}") <= CAPTION_MAX_CHARS for cue in cues)
+    assert len(cues[-1].lines) == 2
+
+
+def test_a_sound_before_a_voiced_line_stays_outside_the_voice():
+    speech = CaptionCue(start=1.2, end=3.0, lines=("Says who?",), voice="guest", turn=1, named=True)
+    sound = CaptionCue(start=1.0, end=1.0 + SOUND_CAPTION_SECONDS, lines=("[door opens]",))
+    (joined,) = with_sound_captions([speech], [sound])
+    assert joined.lines == ("[door opens]", "Says who?") and joined.voice == "guest" and joined.spoken == (1, 2)
+
+
+def test_a_clip_s_speech_is_read_into_the_transcript_in_the_section_it_plays_in(tmp_path):
+    """The transcript reads the speech inside every clip the captions read, one paragraph naming nobody."""
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     Words(words=(Word(word="spoken", start=0.0, end=0.4),)).write(tmp_path / "media" / "before.words.json")
-    assert clip_speech(inputs, 2) == "spoken"
-    assert clip_speech(inputs, 1) == ""
+    rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}, audio={2: tmp_path / "media" / "before.mov"})
+    inside = clip_words(inputs, rows)
+    takes = take_index(inputs, {1: ("Open", 2.0, 1.6, spoken("hello")), 3: ("The edit", 2.5, 2.0, spoken("again"))})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), takes, inside=inside)
+    edited = entries[1]
+    assert edited.chapter == "The edit"
+    assert edited.said[0] == Said("spoken") and edited.said[1].note
 
 
-@pytest.mark.parametrize("reading", ["transcript", "captions"])
-def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path, reading):
-    """The author named the file in decktalk.toml, so DeckTalk cannot build it again and never says to delete it."""
+def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path):
+    """The author keeps the file beside the clip, so DeckTalk cannot build it again and never says to delete it."""
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     path = tmp_path / "media" / "before.words.json"
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(InputError) as refused:
-        if reading == "transcript":
-            clip_speech(inputs, 2)
-        else:
-            rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
-            clip_captions(inputs, open_run(tmp_path).run, rows)
+        rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
+        clip_captions(inputs, rows)
     said = f"{refused.value} {refused.value.hint}"
     assert refused.value.code is ErrorCode.INPUT
-    assert str(refused.value).startswith("decktalk.toml: [[section]] number=2 words names media/before.words.json")
+    assert str(refused.value).startswith("media/before.words.json, the words beside the clip of section 2,")
     assert "the words of one clip: it is not JSON" in str(refused.value)
     assert "elete" not in said
     assert refused.value.location is not None and refused.value.location.file == Path("media/before.words.json")
     assert path.read_text(encoding="utf-8") == "{not json"
+
+
+# ---- the speech inside a clip -----------------------------------------------------------------
+
+
+def said(word: str, start: float, voice: str | None = None, turn: int | None = None) -> SpokenWord:
+    return SpokenWord(word=word, start=start, end=round(start + 0.3, 3), voice=voice, turn=turn)
+
+
+def test_a_clip_s_words_move_to_its_cue_and_stop_where_it_stops_playing() -> None:
+    """A word that starts once the clip has stopped is not heard, and one running past its stop ends there."""
+    words = ClipWords(words=(said("One.", 0.2, "a", 1), said("Two.", 1.9, "a", 1), said("Three.", 2.5, "a", 1)))
+    moved = inner_words(words, 10.0, 2.0)
+    assert [(word.word, word.start, word.end, word.voice) for word in moved] == [
+        ("One.", 10.2, 10.5, "a"),
+        ("Two.", 11.9, 12.0, "a"),
+    ]
+
+
+def test_a_clip_s_captions_are_one_run_per_voice_and_turn_and_name_nobody() -> None:
+    words = (said("Hello.", 0.0, "a", 1), said("Hi.", 0.4, "b", 2), said("Bye.", 0.8, "b", 2))
+    cues = spoken_cues(words)
+    assert [(cue.lines, cue.voice, cue.turn, cue.named) for cue in cues] == [
+        (("Hello.",), "a", 1, False),
+        (("Hi. Bye.",), "b", 2, False),
+    ]
+    assert "<v " not in vtt_text(cues)
+
+
+def test_a_film_s_words_are_its_narration_s_and_every_clip_s_in_the_order_they_start() -> None:
+    narration = {1: []}
+    inside = [(said("later", 3.0),), (said("sooner", 1.0),)]
+    assert [word.word for word in film_words(narration, inside).words] == ["sooner", "later"]
 
 
 # ---- chapters ---------------------------------------------------------------------------------
@@ -143,7 +269,7 @@ def test_consecutive_sections_with_one_title_share_one_chapter_marker(tmp_path):
 def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta")), 2: ("B", 2.0, 1.6, spoken("gamma delta"))})
-    cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0, 2: 0.0}))
     assert cues
     assert cues[0].start == 0.0
     # The second section's take starts where the first one ends in the joined narration.
@@ -159,35 +285,17 @@ def test_a_clips_captions_count_from_its_own_start_and_stop_at_its_picture(tmp_p
             Word(word="past", start=9.0, end=9.4),
         )
     ).write(tmp_path / "media" / "before.words.json")
-    opened = open_run(tmp_path)
     rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
-    cues = clip_captions(inputs, opened.run, rows)
+    cues = clip_captions(inputs, rows)
     assert [line for cue in cues for line in cue.lines] == ["inside"]
     assert cues[0].start == 2.0
 
 
-def test_a_clip_whose_words_file_is_missing_is_said_and_plays_uncaptioned(tmp_path):
+def test_a_clip_with_no_words_file_beside_it_plays_uncaptioned(tmp_path):
+    """A clip whose speech nobody wrote down adds no caption."""
     inputs = write_project(tmp_path, TITLED_TOML)
-    opened = open_run(tmp_path)
     rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
-    assert clip_captions(inputs, opened.run, rows) == []
-    assert any("plays with no captions" in note for note in opened.notes())
-
-
-def test_the_take_index_lends_the_captions_the_scripts_own_spelling(tmp_path):
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
-    assert caption_texts(inputs, takes) == {1: "alpha beta"}
-
-
-def test_a_section_the_index_never_spoke_falls_back_to_the_script(tmp_path):
-    inputs = write_project(tmp_path)
-    (tmp_path / "script.md").write_text("## 1. One\n\nWritten words.\n\n## 2. Two\n\nMore.\n", encoding="utf-8")
-    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha"))})
-    texts = caption_texts(
-        inputs, takes.model_copy(update={"sections": (takes.sections[0].model_copy(update={"spoken": ""}),)})
-    )
-    assert texts[1] == "Written words."
+    assert clip_captions(inputs, rows) == []
 
 
 # ---- sound captions ----------------------------------------------------------------------------
@@ -271,44 +379,29 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatc
     """A build with nothing changed should not launch Chromium to draw the same picture again."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    launched: list[str] = []
-
-    class Page:
-        def goto(self, _url: str) -> None:
-            return None
-
-    @contextmanager
-    def chromium(_path: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
-        launched.append(policy)
-        yield object()
-
-    def screenshot(_page: object, _url: str, out: Path, **_kwargs: object) -> None:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"poster")
-
+    browsed = Browsed().install(monkeypatch)
     catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1"]}),)
-    monkeypatch.setattr(browser, "chromium", chromium)
+    browsed.reports["deck/index.html"] = PageReport(catalog=catalog)
+    browsed.assets.paths.append("deck/index.html")
     documents: list[object] = []
 
-    def open_page(*_a: object, **named: object) -> tuple[Page, SimpleNamespace]:
+    def open_page(*_a: object, **named: object) -> tuple[object, object]:
         documents.append(named.get("documents"))
-        return Page(), SimpleNamespace(paths=["deck/index.html"])
+        return browsed.page.page(), browsed.assets
 
-    monkeypatch.setattr(storyboard, "open_page", open_page)
-    monkeypatch.setattr(pages, "await_ready", lambda _page: None)
-    monkeypatch.setattr(pages, "read_report", lambda *_a: PageReport(catalog=catalog))
-    monkeypatch.setattr(pages, "screenshot", screenshot)
+    monkeypatch.setattr(pages, "open_page", open_page)
     out = inputs.workspace.deliverables()["poster"]
     assert render_poster(inputs, opened.run, out) == out
     out.unlink()
     assert render_poster(inputs, opened.run, out) == out
-    assert launched == ["trusted"]
-    assert out.read_bytes() == b"poster"
+    assert browsed.policies == ["trusted"]
+    assert out.read_bytes() == b"png"
+    assert browsed.stills == ["http://project.localhost/deck/index.html?freeze=1.1"]
     # The poster page answers the cue-times alias from memory, as every other frozen page does.
     assert documents == [inputs.documents()]
     (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
     render_poster(inputs, opened.run, out)
-    assert launched == ["trusted", "trusted"]
+    assert browsed.policies == ["trusted", "trusted"]
 
 
 def test_a_project_with_no_page_section_draws_no_poster(tmp_path):
@@ -371,3 +464,15 @@ def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):
     monkeypatch.setattr(browser, "chromium", refuse)
     render_poster(inputs, opened.run, tmp_path / "poster.png")
     assert launched == ["untrusted"]
+
+
+def test_a_caption_never_spans_two_turns(tmp_path):
+    """Two voices' sentences a short gap apart are two captions, the way two sections' are."""
+    inputs = write_project(tmp_path, PAGES_TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n')
+    first = a_take(1, seconds=1.0, spoken="alpha beta", tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, voice="guest", seconds=1.0, spoken="gamma delta", digest="0000000000000002")
+    narrated(inputs, first, second, words={(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta")})
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, narrated_turns(inputs, takes, {1: 0.0}))
+    assert [cue.lines for cue in cues] == [("alpha beta",), ("gamma delta",)]
+    assert cues[1].start >= 1.3

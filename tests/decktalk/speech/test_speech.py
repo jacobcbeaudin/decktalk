@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -20,17 +21,27 @@ import decktalk.speech
 from decktalk.artifacts.takes import TakeInputs
 from decktalk.inputs.script import parse_script
 from decktalk.results import BillingBasis
-from decktalk.settings import Settings
+from decktalk.settings import PROVIDER_TABLES, Settings
 from decktalk.settings.layers import load, value_of
 from decktalk.speech import (
+    ALIGNER,
+    ALIGNERS,
     DECLARED,
     HOST_OUTPUT,
     PROVIDERS,
+    AlignerContext,
     Output,
+    Speech,
+    SpeechProviders,
     VoiceInForce,
     canonical_text,
+    registered,
 )
+from decktalk.speech.dtsp import DtspAligner
+from decktalk.speech.sound import SOUNDS
+from support.fakes import FakeVoice
 from support.paths import DATA, REPO, SRC, TESTS
+from support.voice_server import VoiceServer
 
 SPEECH = Path(decktalk.speech.__file__).parent
 
@@ -69,11 +80,11 @@ ELEVENLABS_IDENTITY = {
 PROJECTS: dict[str, dict[str, Any]] = {
     "elevenlabs": {},
     "a-model-that-drops-a-pause": {
-        "voice": {"speed": 1.1},
+        "voices": {"narrator": {"speed": 1.1}},
         "elevenlabs": {"model": "eleven_v3", "stability": 0.4},
     },
-    "a-free-voice": {"voice": {"provider": "dtsp"}},
-    "a-host-voice": {"voice": {"provider": "house"}},
+    "a-free-voice": {"voices": {"narrator": {"provider": "dtsp"}}},
+    "a-host-voice": {"voices": {"narrator": {"provider": "house"}}},
 }
 """One project of each kind of voice: the cloud voice, a model of it that drops a pause, the free one, a host's."""
 
@@ -109,7 +120,7 @@ EXPECTED: dict[str, dict[str, Any]] = {
         "billing": BillingBasis.FREE,
         "price_key": None,
         "renders_pauses": True,
-        "base_url": "http://127.0.0.1:8765",
+        "base_url": "http://127.0.0.1:9361",
         "key_variable": None,
         "start_hint": "Start decktalk-voice at the address [dtsp] base_url names",
         "identity": {"speed": 1.0},
@@ -123,7 +134,7 @@ EXPECTED: dict[str, dict[str, Any]] = {
         "renders_pauses": True,
         "base_url": "",
         "key_variable": None,
-        "start_hint": "Start the voice [voice] provider = 'house' answers from",
+        "start_hint": "Start the voice [voices.narrator] provider = 'house' answers from",
         "identity": {"speed": 1.0},
     },
 }
@@ -137,12 +148,17 @@ def settings_of(project: dict[str, Any], **environ: str) -> Settings:
     return load(project=project, machine={}, environ=environ).settings
 
 
+def voice_of(project: dict[str, Any], name: str = "narrator", **environ: str) -> VoiceInForce:
+    """One voice of a project holding these tables, in force on a machine that sets nothing."""
+    return VoiceInForce.of(settings_of(project, **environ).voices[name])
+
+
 @pytest.mark.parametrize("kind", list(PROJECTS))
 def test_the_voice_in_force_answers_each_question_for_each_kind_of_voice(kind: str) -> None:
     """Every field is what the project's settings and the closed set say, with the id the environment names."""
-    voice = VoiceInForce.of(settings_of(PROJECTS[kind], DECKTALK_VOICE_ID="v"))
+    voice = voice_of(PROJECTS[kind], DECKTALK_VOICES_NARRATOR_ID="v")
     expected = EXPECTED[kind]
-    assert voice.id == "v"
+    assert (voice.name, voice.id) == ("narrator", "v")
     assert {name: getattr(voice, name) for name in expected if name != "identity"} == {
         name: value for name, value in expected.items() if name != "identity"
     }
@@ -152,7 +168,7 @@ def test_the_voice_in_force_answers_each_question_for_each_kind_of_voice(kind: s
 @pytest.mark.parametrize("take", GOLDEN["takes"], ids=[f"{t['film']}-{t['section']}" for t in GOLDEN["takes"]])
 def test_the_golden_takes_are_named_by_the_voice_in_force_at_the_defaults(take: dict[str, Any]) -> None:
     """A project at the defaults that names the golden voice names every paid take by the digest it was bought under."""
-    voice = VoiceInForce.of(settings_of({}, DECKTALK_VOICE_ID=GOLDEN["inputs"]["voice"]))
+    voice = voice_of({}, DECKTALK_VOICES_NARRATOR_ID=GOLDEN["inputs"]["voice"])
     (section,) = parse_script(take["markdown"])
     named = TakeInputs.of(
         provider=voice.provider,
@@ -167,7 +183,7 @@ def test_the_golden_takes_are_named_by_the_voice_in_force_at_the_defaults(take: 
 
 def test_a_provider_nobody_declared_gets_the_hosts_defaults_and_is_never_refused() -> None:
     """A name outside the closed set is a host's, so the value is built and only a build of it can refuse."""
-    voice = VoiceInForce.of(settings_of({"voice": {"provider": "nosuch", "speed": 0.9}}))
+    voice = voice_of({"voices": {"narrator": {"provider": "nosuch", "speed": 0.9}}})
     assert (voice.provider, voice.id, voice.model, voice.output) == ("nosuch", "", "", HOST_OUTPUT)
     assert (voice.billing, voice.price_key, voice.key_variable) == (BillingBasis.UNDECLARED, None, None)
     assert dict(voice.identity) == {"speed": 0.9}
@@ -177,8 +193,8 @@ def test_a_provider_nobody_declared_gets_the_hosts_defaults_and_is_never_refused
 
 def test_equal_settings_give_an_equal_voice_whose_identity_cannot_be_changed() -> None:
     """The value is a pure function of the settings, and what a take is named by cannot be edited after."""
-    voice = VoiceInForce.of(settings_of({}))
-    assert voice == VoiceInForce.of(settings_of({}))
+    voice = voice_of({})
+    assert voice == voice_of({})
     with pytest.raises(TypeError):
         voice.identity["speed"] = 2.0  # ty: ignore[invalid-assignment]
 
@@ -186,12 +202,14 @@ def test_equal_settings_give_an_equal_voice_whose_identity_cannot_be_changed() -
 def test_the_price_key_names_the_rate_the_bill_is_read_at() -> None:
     """The rate is the value at the key the voice names, so cost never learns a table or a rate key."""
     settings = settings_of({"elevenlabs": {"dollars_per_1000_characters": 0.42}})
-    voice = VoiceInForce.of(settings)
+    voice = VoiceInForce.of(settings.voices["narrator"])
     assert voice.price_key is not None
     assert value_of(settings, voice.price_key) == settings.elevenlabs.dollars_per_1000_characters == 0.42
 
 
-SHIPPED_TABLE_WRITE = re.compile(r"setitem\((PROVIDERS|DECLARED)\b|\b(PROVIDERS|DECLARED)\[[^\]]+\]\s*=")
+SHIPPED_TABLE_WRITE = re.compile(
+    r"setitem\((PROVIDERS|DECLARED|ALIGNERS)\b|\b(PROVIDERS|DECLARED|ALIGNERS)\[[^\]]+\]\s*="
+)
 """A test writing into a shipped voice table, by pytest's `setitem` or by assignment."""
 
 
@@ -201,6 +219,17 @@ def test_the_shipped_tables_cannot_be_changed_in_place() -> None:
         PROVIDERS["elevenlabs"] = PROVIDERS["dtsp"]  # ty: ignore[invalid-assignment]
     with pytest.raises(TypeError):
         DECLARED["dtsp"] = DECLARED["elevenlabs"]  # ty: ignore[invalid-assignment]
+    with pytest.raises(TypeError):
+        ALIGNERS["other"] = ALIGNERS[ALIGNER]  # ty: ignore[invalid-assignment]
+
+
+def test_the_one_aligner_shipped_is_the_local_server(voice_server: VoiceServer) -> None:
+    """The aligner is `[dtsp] base_url`'s server, never chosen by any voice's provider."""
+    assert list(ALIGNERS) == [ALIGNER] == ["dtsp"]
+    context = AlignerContext(base_url=voice_server.base_url, handshake_seconds=5, timeout_seconds=5)
+    built = ALIGNERS[ALIGNER](context)
+    assert isinstance(built, DtspAligner)
+    assert built.identity.id == voice_server.identity["id"]
 
 
 def test_no_test_patches_the_shipped_voice_tables() -> None:
@@ -216,12 +245,12 @@ def test_no_test_patches_the_shipped_voice_tables() -> None:
     assert writes == []
 
 
-VOICE_TABLE_READ = re.compile(r"settings\.voice\b")
-"""A read of the project's `[voice]` table, by any attribute or by binding the table itself."""
+VOICE_TABLE_READ = re.compile(r"settings\.voices\b")
+"""A read of the voices a project declares, by any key or by binding the mapping itself."""
 
 
 def voice_table_reads(src: Path) -> dict[str, list[int]]:
-    """Every module under `src` outside the settings package that reads `[voice]`, with the lines that do."""
+    """Every module under `src` outside the settings package that reads the voices, with the lines that do."""
     reads: dict[str, list[int]] = {}
     for path in sorted(src.rglob("*.py")):
         if path.relative_to(src).parts[0] == "settings":
@@ -236,14 +265,91 @@ def voice_table_reads(src: Path) -> dict[str, list[int]]:
     return reads
 
 
-def test_only_the_voice_in_force_reads_the_voice_table() -> None:
-    """Every reader asks the value a project resolved once, so no two readers can resolve `[voice]` apart."""
+def test_only_the_project_resolves_its_voices_into_the_voices_in_force() -> None:
+    """Every reader asks the voice a project resolved once, so no two readers can resolve a voice apart."""
     reads = voice_table_reads(SRC)
-    assert list(reads) == ["speech/__init__.py"]
-    (of,) = [
-        node
-        for node in ast.walk(ast.parse((SRC / "speech" / "__init__.py").read_text(encoding="utf-8")))
-        if isinstance(node, ast.FunctionDef) and node.name == "of"
-    ]
-    assert of.end_lineno is not None
-    assert [line for line in reads["speech/__init__.py"] if not of.lineno <= line <= of.end_lineno] == []
+    assert list(reads) == ["inputs/__init__.py"]
+
+
+def test_a_voice_in_force_is_read_from_its_own_table() -> None:
+    """A voice is resolved from its own table and its provider's, and its name never reaches what names a take."""
+    project = {
+        "voices": {"narrator": {"id": "n"}, "aside": {"id": "n", "stability": 0.3}},
+        "elevenlabs": {"stability": 0.6},
+    }
+    narrator, aside = voice_of(project), voice_of(project, "aside")
+    assert (narrator.name, aside.name) == ("narrator", "aside")
+    assert dict(narrator.identity)["stability"] == 0.6
+    assert dict(aside.identity)["stability"] == 0.3
+    assert "narrator" not in json.dumps(dict(narrator.identity))
+    same = {"voices": {"narrator": {"id": "n"}, "aside": {"id": "n"}}}
+    assert voice_of(same, "aside").identity == voice_of(same).identity
+    assert (voice_of(same, "aside").free, voice_of(same).named) == (False, True)
+    free = voice_of({"voices": {"narrator": {"provider": "dtsp"}}})
+    assert (free.free, free.named) == (True, False)
+
+
+def test_the_providers_with_a_table_are_the_ones_speech_declares() -> None:
+    """A voice may state a key of its provider's table, so the settings name the tables the closed set owns."""
+    assert {declared.table for declared in DECLARED.values()} == set(PROVIDER_TABLES)
+    assert all(DECLARED[name].table == name for name in PROVIDER_TABLES)
+
+
+def test_speech_with_no_words_says_none_and_never_an_empty_list() -> None:
+    """`None` is the one spelling of a voice that sent no word times, so no reader must tell it from `()`."""
+    assert Speech(b"take", None).words is None
+    assert Speech(b"take", None).model_digest is None
+    with pytest.raises(ValueError, match="None"):
+        Speech(b"take", ())
+
+
+def house(_context: object) -> FakeVoice:
+    """A voice a host wrote itself, which bills nobody DeckTalk knows of."""
+    return FakeVoice(name="house")
+
+
+def spellings(name: str) -> list[str]:
+    """Ways of writing a shipped name that a reader takes for the shipped voice itself."""
+    return [name.upper(), name.title(), f" {name}", f"{name}\n", "".join(chr(ord(c) + 0xFEE0) for c in name)]
+
+
+def test_a_spelling_of_a_shipped_name_in_a_project_is_billed_as_a_host_voice() -> None:
+    """A project names a provider by its exact key, so no other spelling is read as a shipped voice's bill."""
+    for name in DECLARED:
+        for spelled in spellings(name):
+            voice = voice_of({"voices": {"narrator": {"provider": spelled}}})
+            assert voice.billing is BillingBasis.UNDECLARED, spelled
+
+
+SHIPPED: dict[str, Mapping[str, Callable[[Any], object]]] = {"a voice": PROVIDERS, "a sound provider": SOUNDS}
+"""Every closed set a host registers beside, by the words a refusal names its kind in."""
+
+REFUSED = [
+    (what, name, spelled) for what, table in SHIPPED.items() for name in table for spelled in (name, *spellings(name))
+]
+
+
+@pytest.mark.parametrize(("what", "name", "spelled"), REFUSED)
+def test_a_host_factory_under_any_spelling_of_a_shipped_name_is_refused(what: str, name: str, spelled: str) -> None:
+    """The spend gate trusts the bill of the name, so only the shipped code may answer under a shipped name."""
+    another = "" if spelled == name else f", {name!r}, spelled another way"
+    said = f"{spelled!r} is the name of {what} DeckTalk ships{another}, and"
+    with pytest.raises(ValueError, match=re.escape(said)):
+        registered({spelled: house}, SHIPPED[what], what=what, key="k")
+
+
+@pytest.mark.parametrize("shipped", SHIPPED.values())
+def test_the_shipped_factories_register_beside_a_hosts_and_the_table_is_copied_as_it_passed(
+    shipped: Mapping[str, Callable[[Any], object]],
+) -> None:
+    """The check is made once, so the table it passed is the one the machine answers with."""
+    table = {**shipped, "house": house}
+    held = registered(table, shipped, what="a voice", key="k")
+    table[next(iter(shipped))] = house
+    assert dict(held) == {**shipped, "house": house}
+
+
+@pytest.mark.parametrize("name", sorted(DECLARED))
+def test_a_host_factory_under_a_shipped_name_is_refused_by_the_voices_a_machine_answers_with(name: str) -> None:
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a voice DeckTalk ships.*Register it under another"):
+        SpeechProviders(factories={**PROVIDERS, name: house})

@@ -45,7 +45,7 @@ from pydantic import JsonValue, TypeAdapter
 from decktalk.errors import HALTS, Cancelled, DeckTalkError, ErrorInfo, InputError, NotBuiltError, as_refusal
 from decktalk.events import Level, StageDone
 from decktalk.findings import Finding
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, programs
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.media import browser
@@ -53,6 +53,7 @@ from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import BuildResult, Cost, CostState, Result, StageRun, counted
 from decktalk.stages import narrate
 from decktalk.stages import score as score_stage
+from decktalk.stages.assemble.captioned import require_a_drawing_page
 from decktalk.stages.cost import cost_of, total
 from decktalk.stages.kept import (
     BUILT,
@@ -105,37 +106,49 @@ def build(
     stage out is a run that does not want its sound, and a second switch for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
-    plan = _plan(stages, skip)
-    score = Stage.SCORE not in skip
-    _require_what_the_plan_skips(inputs, plan, score=score)
-    options: dict[str, object] = {
-        "only": only,
-        "force": force,
-        "replace_voiced": replace_voiced,
-        "replace_score": replace_score,
-        "score": score,
-        "loudness": loudness,
-        "strict": strict,
-    }
-    _refuse_a_key_beside_a_page(inputs, run, plan)
-    _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
     going = _Going()
     try:
+        plan = _plan(stages, skip)
+        score = Stage.SCORE not in skip
+        _require_what_the_plan_skips(inputs, plan, score=score)
+        options: dict[str, object] = {
+            "only": only,
+            "force": force,
+            "replace_voiced": replace_voiced,
+            # A build voices what its sections need, so it never names a turn to voice again.
+            "turns": (),
+            "takes": (),
+            "replace_score": replace_score,
+            "score": score,
+            "loudness": loudness,
+            "strict": strict,
+        }
+        _refuse_a_key_beside_a_page(inputs, run, plan)
+        if Stage.RECORD in plan:
+            # A refused program is refused before narrate makes a take, as `record` refuses it before
+            # the first program starts.
+            programs.admitted(inputs.settings.record, inputs.programs(only))
+        if Stage.ASSEMBLE in plan:
+            require_a_drawing_page(inputs)
+        _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
         film, stopped_at = _stages(inputs, run, plan, options, going, force=force)
+        return run.result(
+            BuildResult,
+            stages=tuple(going.rows),
+            spend=run.spend,
+            cost=total(going.spends) if going.spends else cost_of(inputs),
+            film=film,
+            stopped_at=stopped_at,
+        )
     except HALTS as failure:
+        # One handler for the whole build, from its first check to its result, so a refusal or an
+        # interrupt in the pricing before the first stage, in a stage, between two or while the
+        # result is made carries what the run bought.
         refusal = as_refusal(failure)
         refusal.result = _bought_before(refusal, run, going)
         if refusal is failure:
             raise
         raise refusal from failure
-    return run.result(
-        BuildResult,
-        stages=tuple(going.rows),
-        spend=run.spend,
-        cost=total(going.spends) if going.spends else cost_of(inputs),
-        film=film,
-        stopped_at=stopped_at,
-    )
 
 
 @dataclass
@@ -158,8 +171,8 @@ def _stages(
     """Run, keep or skip every stage in pipeline order, recording each as it goes, and give back the film and the
     stage the run stopped at.
 
-    Everything the build does stage by stage happens here, so a refusal or an interrupt anywhere in it,
-    in a stage or between two, is met by the one handler in `build` with `going` as far as it got.
+    A refusal or an interrupt in a stage or between two reaches the one handler in `build` with
+    `going` as far as it got.
     """
     kept = read_kept(inputs)
     fresh: dict[Stage, KeptStage] = {}
@@ -186,7 +199,7 @@ def _stages(
 
 ACTS_ON: dict[Stage, Callable[[Inputs], Collection[int]]] = {
     Stage.NARRATE: lambda inputs: {section.number for section in inputs.spoken()},
-    Stage.RECORD: lambda inputs: {section.number for section in inputs.document.page_sections},
+    Stage.RECORD: lambda inputs: {section.number for section in inputs.document.recorded_sections},
 }
 """The stages that work on one kind of section only, with the section numbers of that kind: narrate speaks the
 spoken sections and record records the page sections. Every other stage acts on any section."""
@@ -463,18 +476,21 @@ def price(
     only: Sequence[int] | None = None,
     replace_voiced: bool = False,
     replace_score: bool = False,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
 ) -> Cost:
     """What a run of these stages that may spend would buy, or the price of nothing at the voice's rate when none
     of them buys.
 
     Each stage that buys is priced from its plan the way it prices itself, sending nothing, and the
     prices are added by `total`. So the price a caller asks about before a run, the ceiling the run
-    is held to and the cost its result reports are one sum of the same stages.
+    is held to and the cost its result reports are one sum of the same stages. `turns` and `takes`
+    are the turns a `narrate` run makes again, which only that stage reads.
     """
     spends: list[Cost] = []
     spoken = _share(inputs, Stage.NARRATE, only)
     if Stage.NARRATE in stages and (spoken is None or spoken):
-        spends.append(narrate.price(inputs, only=spoken, replace_voiced=replace_voiced))
+        spends.append(narrate.price(inputs, only=spoken, replace_voiced=replace_voiced, turns=turns, takes=takes))
     if Stage.SCORE in stages:
         spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
     return total(spends) if spends else cost_of(inputs)

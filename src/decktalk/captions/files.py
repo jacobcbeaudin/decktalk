@@ -1,10 +1,13 @@
 """The caption, chapter and transcript files `assemble` writes beside the final mp4.
 
-build/final/<name>.srt              the caption cues as SubRip
-build/final/<name>.vtt              the same cues as WebVTT
+build/final/<name>.srt              the caption cues as SubRip, each named voice before its line
+build/final/<name>.vtt              the same cues as WebVTT, each named voice in a <v> span and
+                                    every &, < and > in the text written as its escape
 build/final/<name>.chapters.txt     an ffmetadata file with one [CHAPTER] per section
 build/final/<name>-transcript.html  the whole film as a page: one heading per chapter, the spoken
-                                    text under it, and the description of each reveal
+                                    text under it, each turn named by its voice where a section
+                                    speaks in more than one, the speech inside every clip naming
+                                    nobody, and the description of each reveal
 
 The transcript is the media alternative a viewer who cannot see or cannot hear the film reads
 instead. Captions carry speech alone, so the transcript is the only place the picture is written
@@ -27,14 +30,57 @@ def _stamp(seconds: float, sep: str) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
 
+def voice_label(voice: str) -> str:
+    """What a SubRip caption writes before the first line a voice speaks, such as `narrator: `."""
+    return f"{voice}: "
+
+
+def _srt_lines(cue: CaptionCue) -> str:
+    """One cue's text as SubRip writes it, with the voice's name before the first line it speaks when it is named."""
+    if not cue.named or cue.voice is None:
+        return cue.text
+    first, _after = cue.speech
+    lines = list(cue.lines)
+    lines[first] = voice_label(cue.voice) + lines[first]
+    return "\n".join(lines)
+
+
+VTT_ESCAPES = (("&", "&amp;"), ("<", "&lt;"), (">", "&gt;"))
+"""The characters WebVTT cue text may not carry bare and the references it writes them as, `&` first."""
+
+
+def vtt_escape(text: str) -> str:
+    """Text as WebVTT cue text or a voice's annotation carries it, so a player reads no tag or escape into it.
+
+    `&` and `<` would open an escape and a tag, and `>` is escaped as well, which also keeps `-->`
+    out of a cue.
+    """
+    for bare, escaped in VTT_ESCAPES:
+        text = text.replace(bare, escaped)
+    return text
+
+
+def _vtt_lines(cue: CaptionCue) -> str:
+    """One cue's text as WebVTT writes it, with the lines a named voice speaks inside a `<v>` span that names it."""
+    lines = [vtt_escape(line) for line in cue.lines]
+    if not cue.named or cue.voice is None:
+        return "\n".join(lines)
+    first, after = cue.speech
+    lines[first] = f"<v {vtt_escape(cue.voice)}>" + lines[first]
+    lines[after - 1] += "</v>"
+    return "\n".join(lines)
+
+
 def srt_text(cues: list[CaptionCue]) -> str:
     """The cues as SubRip, numbered from one and stamped with a comma."""
-    return "\n".join(f"{i}\n{_stamp(c.start, ',')} --> {_stamp(c.end, ',')}\n{c.text}\n" for i, c in enumerate(cues, 1))
+    return "\n".join(
+        f"{i}\n{_stamp(c.start, ',')} --> {_stamp(c.end, ',')}\n{_srt_lines(c)}\n" for i, c in enumerate(cues, 1)
+    )
 
 
 def vtt_text(cues: list[CaptionCue]) -> str:
     """The cues as WebVTT, under its header and stamped with a full stop."""
-    return "WEBVTT\n\n" + "\n".join(f"{_stamp(c.start, '.')} --> {_stamp(c.end, '.')}\n{c.text}\n" for c in cues)
+    return "WEBVTT\n\n" + "\n".join(f"{_stamp(c.start, '.')} --> {_stamp(c.end, '.')}\n{_vtt_lines(c)}\n" for c in cues)
 
 
 @dataclass(frozen=True)
@@ -69,10 +115,11 @@ def chapters_text(chapters: list[Chapter]) -> str:
 
 @dataclass(frozen=True)
 class Said:
-    """One section's paragraph of the transcript: its speech, or a note about what plays instead."""
+    """One paragraph of the transcript: a section's speech, one turn of a dialogue, or a note about what plays."""
 
     text: str
     note: bool = False  # The text says what plays here rather than what was said, such as a clip.
+    voice: str | None = None  # The voice that says it, named only where a section is spoken in more than one.
 
 
 @dataclass(frozen=True)
@@ -97,7 +144,7 @@ TRANSCRIPT_CSS = (
     "h2{font-size:1.15rem;margin:2.25rem 0 .35rem}"
     ".at{color:#5b6573;font-variant-numeric:tabular-nums;font-size:.85rem}"
     "ul{margin:.6rem 0 0;padding-left:1.1rem;color:#333a45}"
-    "li{margin:.2rem 0}.note{color:#5b6573;font-style:italic}"
+    "li{margin:.2rem 0}.note{color:#5b6573;font-style:italic}.who{font-weight:600}"
     "@media(prefers-color-scheme:dark){body{background:#0e1116;color:#e8eaee}"
     "h2{color:#f4f6f8}ul{color:#c3c8d0}.at,.note{color:#9aa4b2}}"
 )
@@ -109,6 +156,17 @@ def clock(seconds: float) -> str:
     h, rem = divmod(whole, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def _paragraph(said: Said) -> str:
+    """One paragraph, with the voice that says it in an element of its own before the words when it is named.
+
+    The name and the words are two elements with a space between them, so a screen reader reads the
+    voice and then the line, and nothing reads them run together as one word.
+    """
+    style = ' class="note"' if said.note else ""
+    who = f'<span class="who">{html.escape(said.voice)}:</span> ' if said.voice else ""
+    return f"<p{style}>{who}{html.escape(said.text)}</p>"
 
 
 def transcript_html(title: str, sections: list[TranscriptSection], *, language: str = "en") -> str:
@@ -125,9 +183,7 @@ def transcript_html(title: str, sections: list[TranscriptSection], *, language: 
     for section in sections:
         body.append(f"<h2>{html.escape(section.chapter)}</h2>")
         body.append(f'<p class="at">{clock(section.start)} to {clock(section.end)}</p>')
-        for said in section.said:
-            style = ' class="note"' if said.note else ""
-            body.append(f"<p{style}>{html.escape(said.text)}</p>")
+        body += [_paragraph(said) for said in section.said]
         if section.describes:
             rows = "".join(
                 f'<li><span class="at">{clock(at)}</span> {html.escape(text)}</li>'

@@ -558,14 +558,14 @@ def test_the_settings_writer_reports_what_a_config_set_would_change(project: Pro
     capsys.readouterr()
     written = edit.write(
         project.root / "decktalk.toml",
-        "video.width",
-        "1280",
+        "video.crf",
+        "20",
         scope=Scope.PROJECT,
         environ=project.machine.environ,
         dry_run=True,
     )
     assert isinstance(written, ConfigSetResult)
-    assert written.key == "video.width"
+    assert written.key == "video.crf"
     assert written.dry_run is True
     assert written.written == ()
     printed = capsys.readouterr()
@@ -575,18 +575,18 @@ def test_the_settings_writer_reports_what_a_config_set_would_change(project: Pro
 def test_the_settings_remover_reports_what_a_config_unset_would_change(project: Project):
     """`config unset` takes the layer below back, and writing a validated file is library work."""
     removed = edit.unset(
-        project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ=project.machine.environ
+        project.root / "decktalk.toml", "video.crf", scope=Scope.PROJECT, environ=project.machine.environ
     )
     assert isinstance(removed, ConfigUnsetResult)
-    assert removed.keys == ("video.width",)
+    assert removed.keys == ("video.crf",)
 
 
 def test_the_explainer_reports_what_a_config_explain_would_render(project: Project, capsys):
     """`config explain` is the explainer's record rendered, so the explainer is what this row drives."""
     capsys.readouterr()
-    explanation = decktalk.explain("video.width", project=project.root)
+    explanation = decktalk.explain("video.crf", project=project.root)
     assert isinstance(explanation, ConfigExplainResult)
-    assert explanation.key == "video.width"
+    assert explanation.key == "video.crf"
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 
@@ -596,12 +596,12 @@ def test_applying_a_fix_reports_what_it_changed(project: Project, capsys: pytest
     capsys.readouterr()
     finding = Finding(
         code=SOME_CODE,
-        message="The frame is narrower than the deck draws.",
+        message="The encode is too lossy for the reveal to read.",
         location=Location(where="1.1:first"),
         fix=EditFix(
-            title="Widen the frame.",
+            title="Encode with less loss.",
             applicability=Applicability.SAFE,
-            edits=(Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),),
+            edits=(Edit(file=Path("decktalk.toml"), key="video.crf", new="20"),),
         ),
     )
     applied = project.apply(finding)

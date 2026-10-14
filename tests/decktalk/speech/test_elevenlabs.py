@@ -19,7 +19,8 @@ import pytest
 from decktalk.errors import InputError, ProviderError
 from decktalk.results import BillingBasis
 from decktalk.secret import Secret
-from decktalk.settings import ElevenLabsConfig, Settings, VoiceConfig
+from decktalk.settings import ElevenLabsConfig
+from decktalk.settings.layers import load
 from decktalk.speech import (
     BEAT,
     HOST_OUTPUT,
@@ -59,6 +60,11 @@ FORMAT = "mp3_44100_128"
 
 MODEL = "eleven_multilingual_v2"
 """A model that reads `<break>`, which is the one a request with a timed pause may name."""
+
+
+def in_force(project: dict[str, Any]) -> VoiceInForce:
+    """The default voice of a project holding these tables, in force on a machine that sets nothing."""
+    return VoiceInForce.of(load(project=project, environ={}).settings.voices["narrator"])
 
 
 REPLY = {"audio_base64": base64.b64encode(AUDIO).decode(), "alignment": alignment(SPOKEN)}
@@ -125,7 +131,9 @@ def test_the_base_url_the_machine_names_is_where_every_request_goes(monkeypatch)
 def test_one_section_read_aloud_comes_back_as_audio_and_a_time_for_every_word(monkeypatch):
     """The whole reason DeckTalk can cut on a word: the reply's character alignment becomes words."""
     asked = answers(monkeypatch, REPLY)
-    audio, words = provider().speak(request(previous_text="before" * 5, next_text="after" * 5))
+    speech = provider().speak(request(previous_text="before" * 5, next_text="after" * 5))
+    audio, words = speech.audio, speech.words
+    assert words is not None
     assert audio == AUDIO
     assert [w.word for w in words] == ["Hi", "there", "world"]
     assert words[0].start == 0.0 and words[0].end == 0.2
@@ -141,6 +149,26 @@ def test_one_section_read_aloud_comes_back_as_audio_and_a_time_for_every_word(mo
     assert sent["timeout"] == 180
 
 
+@pytest.mark.parametrize(
+    ("characters", "previous", "following"),
+    [
+        (0, None, None),
+        (4, "fore", "afte"),
+        (100, "before" * 5, "after" * 5),
+    ],
+)
+def test_the_neighbours_travel_trimmed_to_context_characters_and_not_at_all_at_zero(
+    monkeypatch, characters, previous, following
+):
+    """Zero keeps the neighbouring turns on the machine, and a positive value sends at most that many characters
+    from the end of the turn before and the start of the turn after."""
+    asked = answers(monkeypatch, REPLY)
+    provider(context_characters=characters).speak(request(previous_text="before" * 5, next_text="after" * 5))
+    body = asked[0]["body"]
+    assert body.get("previous_text") == previous
+    assert body.get("next_text") == following
+
+
 @pytest.mark.parametrize("model", ["eleven_v3", "eleven_v4", "eleven_v4_turbo", "a_model_nobody_checked"])
 def test_a_timed_pause_is_refused_on_a_model_that_reads_no_break_tag_before_anything_is_sent(monkeypatch, model):
     """v3 and v4 read no `<break>`, so the pause would be dropped after the take was bought."""
@@ -149,7 +177,7 @@ def test_a_timed_pause_is_refused_on_a_model_that_reads_no_break_tag_before_anyt
         provider().speak(request(model=model))
     assert asked == []
     assert model in str(caught.value) and "eleven_multilingual_v2" in (caught.value.hint or "")
-    assert not VoiceInForce.of(Settings(elevenlabs=ElevenLabsConfig(model=model))).renders_pauses
+    assert not in_force({"elevenlabs": {"model": model}}).renders_pauses
 
 
 def test_a_beat_and_plain_text_are_sent_to_any_model_as_the_canonical_text(monkeypatch):
@@ -161,14 +189,12 @@ def test_a_beat_and_plain_text_are_sent_to_any_model_as_the_canonical_text(monke
 
 @pytest.mark.parametrize("model", sorted(BREAK_MODELS))
 def test_every_model_that_reads_a_break_tag_is_declared_to_render_a_pause(model):
-    assert VoiceInForce.of(Settings(elevenlabs=ElevenLabsConfig(model=model))).renders_pauses
+    assert in_force({"elevenlabs": {"model": model}}).renders_pauses
 
 
 def test_a_provider_a_host_registered_renders_its_own_pauses():
     """DeckTalk cannot say a host's own provider drops a pause, because it is handed the pieces as data."""
-    voice = VoiceInForce.of(
-        Settings(voice=VoiceConfig(provider="a-host-voice"), elevenlabs=ElevenLabsConfig(model="eleven_v3"))
-    )
+    voice = in_force({"voices": {"narrator": {"provider": "a-host-voice"}}, "elevenlabs": {"model": "eleven_v3"}})
     assert voice.renders_pauses
 
 
@@ -195,23 +221,24 @@ def test_elevenlabs_declares_its_format_and_names_a_take_by_the_codec_in_it():
     """The format is the service's token, and its codec is the file's suffix, so an mp3 take is `.mp3`."""
     assert output(ElevenLabsConfig()) == Output(format=FORMAT, suffix=".mp3")
     assert output(ElevenLabsConfig(output_format="mp3_22050_32")).suffix == ".mp3"
-    assert VoiceInForce.of(Settings()).output == Output(format=FORMAT, suffix=".mp3")
-    host = VoiceInForce.of(Settings(voice=VoiceConfig(provider="a-host-voice")))
+    assert in_force({}).output == Output(format=FORMAT, suffix=".mp3")
+    host = in_force({"voices": {"narrator": {"provider": "a-host-voice"}}})
     assert host.output == HOST_OUTPUT == Output(format=FORMAT, suffix=".mp3")
 
 
 def test_elevenlabs_declares_it_bills_per_character_at_the_rate_its_own_table_states():
-    voice = VoiceInForce.of(Settings())
+    voice = in_force({})
     assert voice.billing is BillingBasis.PER_CHARACTER
     assert voice.price_key == "elevenlabs.dollars_per_1000_characters"
     assert hasattr(ElevenLabsConfig(), "dollars_per_1000_characters")
-    assert VoiceInForce.of(Settings(voice=VoiceConfig(provider="a-host-voice"))).billing is BillingBasis.UNDECLARED
+    assert in_force({"voices": {"narrator": {"provider": "a-host-voice"}}}).billing is BillingBasis.UNDECLARED
 
 
 def test_the_normalised_alignment_is_read_when_the_written_one_is_absent(monkeypatch):
     """A service that could not align the text as written still aligned what it spoke."""
     answers(monkeypatch, {"audio_base64": base64.b64encode(AUDIO).decode(), "normalized_alignment": alignment("Hi")})
-    _audio, words = provider().speak(request())
+    words = provider().speak(request()).words
+    assert words is not None
     assert [w.word for w in words] == ["Hi"]
 
 
@@ -283,7 +310,7 @@ def test_the_registry_builds_the_cloud_voice():
             return [Secret(SENTINEL, name) for name in names]
 
     context = SpeechContext(secrets=Env(), base_url=BASE, context_characters=1500, speech_timeout_seconds=90)
-    speech = SpeechProviders(factories=PROVIDERS).provider("elevenlabs", context)
+    speech = SpeechProviders(factories=PROVIDERS).provider("elevenlabs", context, voice="narrator")
     assert speech.name == "elevenlabs" and isinstance(speech, ElevenLabs)
     assert speech.context.speech_timeout_seconds == 90
 
@@ -296,12 +323,13 @@ def test_a_provider_name_decktalk_does_not_know_is_refused_with_the_ones_it_does
         speech_timeout_seconds=1,
     )
     with pytest.raises(InputError) as caught:
-        SpeechProviders(factories=PROVIDERS).provider("a-local-voice", context)
+        SpeechProviders(factories=PROVIDERS).provider("a-local-voice", context, voice="guest")
     assert "dtsp, elevenlabs" in f"{caught.value} {caught.value.hint}"
+    assert str(caught.value) == "[voices.guest] provider = 'a-local-voice' is not a voice this machine answers for."
 
 
 def test_the_settings_its_table_renders_at_its_defaults_are_the_ones_every_paid_take_was_bought_under():
-    """`[elevenlabs]` and `[voice] speed` under the service's names are what the golden digests were taken over."""
+    """`[elevenlabs]` and a voice's `speed` under the service's names are what the golden digests were taken over."""
     golden = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))["inputs"]
     assert voice_settings(ElevenLabsConfig(), 1.0) == golden["settings"]
 
@@ -310,3 +338,15 @@ def test_the_speaker_boost_key_is_the_one_the_service_reads():
     rendered = voice_settings(ElevenLabsConfig(speaker_boost=False), 1.0)
     assert rendered["use_speaker_boost"] is False
     assert "speaker_boost" not in rendered
+
+
+@pytest.mark.parametrize("alignment_field", [None, {"characters": [], "character_start_times_seconds": []}])
+def test_a_reply_with_no_alignment_is_a_take_with_no_word_times(monkeypatch, alignment_field):
+    """A take with no word times is timed by the aligner, never kept as a take that says nothing."""
+    reply: dict[str, Any] = {"audio_base64": base64.b64encode(AUDIO).decode()}
+    if alignment_field is not None:
+        reply["alignment"] = alignment_field
+    answers(monkeypatch, reply)
+    speech = provider().speak(request())
+    assert speech.audio == AUDIO
+    assert speech.words is None

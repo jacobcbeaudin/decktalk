@@ -42,15 +42,6 @@ settings.load_profile("decktalk")
 set_hypothesis_home_dir(HERE / "out" / "hypothesis")
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--timing",
-        choices=("gate", "report"),
-        default="gate",
-        help="whether a late reveal fails the run or is only reported, default gate",
-    )
-
-
 def selected_suites(markexpr: str) -> frozenset[str]:
     """The suite markers a `-m` expression names, whether it asks for them or refuses them."""
     return frozenset(name for name in SUITE_MARKERS if name in markexpr)

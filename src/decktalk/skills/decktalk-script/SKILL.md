@@ -44,12 +44,23 @@ so section 3 plays scene 3 and its cues are `3.1:open` and `3.2:result`.
 8. **Show the spoken forms.** End with a two-column table of each spoken phrase and the number,
    symbol or formula it stands for, and every placeholder still open, and ask for confirmation.
 
+## Dialogue
+
+- A line holding only `[voice NAME]` hands the turns after it to the `[voices.NAME]` table of
+  `decktalk.toml`, until the next such line or the next section. Every section starts again with the
+  default voice, which `[narration] voice` names.
+- In a section that names a voice, open every turn with its direction, the first included, or
+  `check` reports `SCRIPT_VOICE_UNMARKED`.
+- Write `[voice guest]`, never `[guest]` alone, which plays as a beat and earns `SCRIPT_VOICE_BARE`.
+- A voice's name never costs anything: renaming a voice, with every line that names it, voices
+  nothing. Its id, model and settings are what a take is named by.
+
 ## What an edit costs
 
-- A change to a section's spoken text re-voices that section, and nothing else.
+- A change to a section's spoken text re-voices the turns whose text changed, and nothing else.
 - A change to a heading's title does not, as long as the section number stays.
-- A change to the voice, the model, `[voice] speed` or a voice field of the provider's own table,
-  such as `[elevenlabs] stability`, re-voices everything. Never make one without an answer from the
+- A change to a voice, its model, `[voices.NAME] speed` or a voice field of the provider's own table,
+  such as `[elevenlabs] stability`, re-voices every turn that voice reads. Never make one without an answer from the
   author.
 - A take is named by its own text, so renumbering a section keeps its take. Adding a first section
   pays for that section alone.

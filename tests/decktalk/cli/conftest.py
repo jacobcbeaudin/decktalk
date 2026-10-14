@@ -30,12 +30,14 @@ from decktalk.results import (
     DoctorResult,
     InitResult,
     InstallResult,
+    ProviderKey,
     Result,
     ServeResult,
     StatusResult,
     StoryboardResult,
     WordsResult,
 )
+from decktalk.settings import Settings
 from support.costs import a_cost
 
 TTY = "TTY_COMPATIBLE"
@@ -84,6 +86,8 @@ class Fake:
         self.events = Events()
         self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
         self.root = Path.cwd()
+        # The settings a command reads before it calls the project, which are the defaults a fresh machine has.
+        self.settings = Settings()
 
     def project(self) -> Project:
         """This fake as the project it stands in for, for a test that hands it to a function directly."""
@@ -108,7 +112,7 @@ class Fake:
             if line is not None:
                 self.events.emit("r", line[0], **line[1])
             answer = self.answers.get(name)
-            if isinstance(answer, Exception):
+            if isinstance(answer, BaseException):
                 raise answer
             if isinstance(answer, Result) and answer.error is None:
                 threshold = cast("Threshold", keywords.get("threshold", self.threshold))
@@ -170,7 +174,16 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
 
 
 ANSWERS: dict[str, Result] = {
-    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills_written=True),
+    "init": InitResult(
+        ok=True,
+        run="r",
+        root=Path("demo"),
+        name="demo",
+        example="starter",
+        skills_written=True,
+        voices=("narrator",),
+        programs=(),
+    ),
     "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
     "doctor": DoctorResult(
         ok=True,
@@ -179,10 +192,10 @@ ANSWERS: dict[str, Result] = {
         cache=Path("cache"),
         python="3.12",
         platform="test",
-        api_key_state=ApiKeyState.MISSING,
+        api_keys=(ProviderKey(provider="elevenlabs", variable="ELEVENLABS_API_KEY", state=ApiKeyState.MISSING),),
     ),
     "status": StatusResult(
-        ok=True, run="r", name="demo", script=Path("script.md"), cues_file=Path("cues.json"), sections=()
+        ok=True, run="r", name="demo", script=Path("script.md"), cues_file=Path("cues.json"), sections=(), voices=()
     ),
     "check": CheckResult(
         ok=True, run="r", judged=(Path("script.md"),), pages_opened=True, frames_compared=True, cost=a_cost()

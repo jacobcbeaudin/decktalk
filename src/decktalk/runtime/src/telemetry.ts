@@ -13,7 +13,8 @@
  * knowing whether anyone is listening.
  */
 
-import type { Code, PageWarning, ReportField } from "./contract.ts";
+import type { Caption } from "./canvas.ts";
+import type { Code, Ease, PageWarning, ReportField } from "./contract.ts";
 
 /** One cue, as the runtime alone can describe it, in seconds on the section clock. */
 export type CueEvent = {
@@ -23,9 +24,9 @@ export type CueEvent = {
   readonly due: number;
   /** The second the cue actually ran. */
   readonly ran: number;
-  /** The second the animation frame that ran it began, or null before the clock has started. */
+  /** The second the frame that ran it showed, or null before the clock has started. */
   readonly frame: number | null;
-  /** What this cue's reveals describe themselves as, joined into one sentence, or null. */
+  /** What this cue's reveals describe themselves as that the slide has not already said, as one sentence, or null. */
   readonly describe: string | null;
 };
 
@@ -55,12 +56,9 @@ export type Recorder = {
 };
 
 /**
- * The four report fields a recorder fills, named by the contract so the two cannot drift apart.
- *
- * `cues` and `words` are the rows this seam carries, and `frameGaps` and `longFrames` are what the
- * probe observes for itself, because neither needs the DOM or anything the runtime knows.
+ * The two report fields a recorder fills, named by the contract so the two cannot drift apart.
  */
-export type Telemetry = Record<Extract<ReportField, "cues" | "words" | "frameGaps" | "longFrames">, readonly unknown[]>;
+export type Telemetry = Record<Extract<ReportField, "cues" | "words">, readonly unknown[]>;
 
 /** The recorder a page has when nobody is recording it, which allocates nothing and keeps nothing. */
 const NOBODY: Recorder = {
@@ -83,7 +81,7 @@ export function setRecorder(next: Recorder | null | undefined): void {
 // ---- what crosses the seam on window ------------------------------------------------------------
 
 /** What the page is doing, which the probe reports and a person reads in the heads-up display. */
-export type Mode = "index" | "preview" | "record" | "freeze";
+export type Mode = "index" | "preview" | "record" | "freeze" | "caption";
 
 /** A box in canvas pixels, which is the coordinate system every static check reasons in. */
 export type Box = { x: number; y: number; w: number; h: number };
@@ -98,6 +96,16 @@ export type ElementRow = {
   children: number;
 };
 
+/** One motion or loop a slide declares, with the cue ids it departs and arrives on. */
+export type MotionRow = {
+  kind: "motion" | "loop";
+  name: string;
+  from: string | null;
+  to: string | null;
+  ease: Ease | null;
+  seconds: number | null;
+};
+
 /** One scene as the catalog publishes it, which is what every static check reads the deck from. */
 export type CatalogEntry = {
   scene: string;
@@ -105,15 +113,17 @@ export type CatalogEntry = {
   slides: string[];
   cues: Record<string, string[]>;
   spans: Record<string, number>;
+  /** Every motion and loop each slide declares in its markup, keyed by the slide id. */
+  motions: Record<string, MotionRow[]>;
   /** The measured rows of each slide, which the probe adds on the index page and nothing else writes. */
   elements?: Record<string, ElementRow[]>;
 };
 
 /** A slide as the probe sees it while it measures, which is its id and nothing the probe could change. */
-export type LoanedSlide = { readonly id: string };
+type LoanedSlide = { readonly id: string };
 
 /** A scene as the probe sees it while it measures, which is its slides in order. */
-export type LoanedScene = { readonly slides: readonly LoanedSlide[] };
+type LoanedScene = { readonly slides: readonly LoanedSlide[] };
 
 /**
  * What the runtime lends the probe to measure in, which is the layer to build into and the frame to measure against.
@@ -132,12 +142,53 @@ export type CanvasLoan = {
 /** How the probe reports a freeze stop it could not find, which is the runtime's own warn in its positional shape. */
 export type WarnAt = (code: Code, slide: string, cue: string) => void;
 
+/**
+ * What one step of the section clock answers, which is everything the recorder learns from a frame.
+ *
+ * `due` is the second the next task is due, or null when nothing is owed, which the recorder steps to
+ * first. `changed` is whether anything the page draws may have moved since the step before. The
+ * recorder writes the frame before again rather than capture a frame that answered false, so a step
+ * answers true whenever it cannot vouch that the picture stood still. `stillUntil` is the earliest
+ * second anything the page draws can next change: the step's own second while anything moves, or
+ * null when nothing owed or moving ever will. The recorder writes every frame before that second
+ * again without stepping the page to it, so a step answers its own second whenever it cannot vouch
+ * for the seconds after it.
+ */
+export type Step = {
+  readonly due: number | null;
+  readonly changed: boolean;
+  readonly stillUntil: number | null;
+};
+
+/**
+ * Some change the page made that nothing declared as moving: the first element it changed, named, and
+ * where every element it changed is laid out now.
+ *
+ * `box` is in viewport pixels, which are the pixels a captured frame holds, and is null when nothing
+ * changed is laid out, so the whole frame stands in for it.
+ */
+export type Undeclared = {
+  readonly what: string;
+  readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null;
+};
+
+/**
+ * What the probe answers for one step, which is the runtime's step and what only the browser saw.
+ *
+ * `undeclared` is what the page changed between the step before and this one, outside every cue,
+ * frame hook and animation the runtime ran and inside nothing the page declared as moving, or is
+ * null when there is none. `selfDrawn` names the first element the page shows that draws on its own,
+ * a canvas, a video or a framed document, which keeps every frame captured, or is null when it shows none.
+ */
+export type Stepped = Step & { readonly undeclared: Undeclared | null; readonly selfDrawn: string | null };
+
 /** Everything the recorder injects as `window.__decktalkProbe`, which the recorder and the runtime both call. */
 export type Probe = {
-  cover(): void;
-  lift(): Promise<number>;
+  step(seconds: number, waitSeconds: number): Promise<Stepped>;
+  started(waitSeconds: number): Promise<boolean>;
   ready(): Promise<boolean>;
   report(): Record<ReportField, unknown>;
+  within<T>(answer: Promise<T>, seconds: number): Promise<T>;
   readonly recorder: Recorder;
   freezeCues(order: readonly string[], slide: string, warn: WarnAt): readonly string[];
   measure(catalog: CatalogEntry[], canvas: CanvasLoan): CatalogEntry[];
@@ -159,16 +210,22 @@ export type RuntimeView = {
   readonly fired: readonly string[];
   readonly warnings: readonly PageWarning[];
   readonly catalog: readonly CatalogEntry[];
+  /** Every declared motion, loop and region, with the box it swept and the cues it lands on. */
+  readonly motions: readonly unknown[];
   readonly frozen: boolean;
   readonly signalled: boolean;
   now(): number;
   started(): boolean;
+  /** Draw one caption in the band of a page opened with `?caption=1`, or none, and answer once it has painted. */
+  caption(caption: Caption | null): Promise<boolean>;
+  /** Those of some nodes the page changed that nothing declared as moving, named and placed, or null when none. */
+  undeclared(nodes: readonly Node[]): Undeclared | null;
 };
 
 declare global {
   interface Window {
-    /** The author-facing runtime, of which the probe calls one method. */
-    DeckTalk?: { startClock?(): void };
+    /** The author-facing runtime, of which the probe calls the one method that moves the clock. */
+    DeckTalk?: { stepTo?(seconds: number): Step };
     __decktalk?: RuntimeView;
     __decktalkProbe?: Probe;
   }

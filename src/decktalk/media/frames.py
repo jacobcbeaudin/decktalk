@@ -1,4 +1,4 @@
-"""Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
+"""Frames on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
 
 Every comparison reads the luma plane only. An RGB image would carry the decoder's chroma
 upsampling and clipping, and comparing it with a frame that never left YUV reports changed pixels
@@ -21,61 +21,22 @@ from pathlib import Path
 
 from . import ffmpeg
 
+COARSE_SEEK_SECONDS = 3.0
+"""Truth: far enough back that a decoder passes a keyframe before `t`, and near enough to stay quick."""
 
-@dataclass(frozen=True)
-class FrameStats:
-    pts: float
-    yavg: float
-    ymax: float
-    uavg: float
-    vavg: float
+SCALER = "area"
+"""Truth: ffmpeg's area scaler makes each small pixel the mean of the film pixels under it and of no others.
 
-
-STATS_WIDTH = 480
-"""Calibration: the width a frame's statistics are read at, a quarter of 1080p's, as `STATS_HEIGHT` says why."""
-
-STATS_HEIGHT = 270
-"""Calibration: the height a frame's statistics are read at, a quarter of 1080p's.
-
-Averages barely move under the scale, and on the starter's recordings every frame read as a cover or
-as painted exactly as it did at full size, while the scan took a third of the time. The brightest
-pixel falls by a few levels, far inside the thresholds it is compared against.
+That is what a mask and the block-averaged copy are drawn for: a box masked out to every small pixel it
+touches then hides every pixel the box changed. A bicubic kernel reads film pixels past a box, so a
+moving edge that stops on its lane's edge would show in the small pixels beside the mask, and verify
+would read that as a reveal on the frame before its own.
 """
 
 
-def frame_stats(path: Path, seconds: float) -> list[FrameStats]:
-    """Per-frame signalstats for the first `seconds` of the file, read on a scaled copy of each frame."""
-    vf = f"scale={STATS_WIDTH}:{STATS_HEIGHT},signalstats,metadata=print"
-    out = ffmpeg.stderr("-t", str(seconds), *ffmpeg.source(path), "-vf", vf, "-f", "null", "-")
-    frames: list[FrameStats] = []
-    cur: dict[str, float] = {}
-    for line in out.splitlines():
-        m = re.search(r"pts_time:([0-9.]+)", line)
-        if m:
-            if "YAVG" in cur:
-                frames.append(_stats(cur))
-            cur = {"pts": float(m.group(1))}
-            continue
-        mm = re.search(r"lavfi\.signalstats\.(YAVG|UAVG|VAVG|YMAX)=([0-9.]+)", line)
-        if mm and cur:
-            cur[mm.group(1)] = float(mm.group(2))
-    if "YAVG" in cur:
-        frames.append(_stats(cur))
-    return frames
-
-
-def _stats(d: dict[str, float]) -> FrameStats:
-    return FrameStats(
-        pts=d["pts"],
-        yavg=d.get("YAVG", 0.0),
-        ymax=d.get("YMAX", 0.0),
-        uavg=d.get("UAVG", 128.0),
-        vavg=d.get("VAVG", 128.0),
-    )
-
-
-COARSE_SEEK_SECONDS = 3.0
-"""Truth: far enough back that a decoder passes a keyframe before `t`, and near enough to stay quick."""
+def scaled(width: int, height: int) -> str:
+    """The filters that bring a frame to `width` x `height` luma, which every comparison here reads it through."""
+    return f"scale={width}:{height}:flags={SCALER},format=gray"
 
 
 @dataclass(frozen=True)
@@ -100,7 +61,7 @@ def frame_seek(t: float) -> Seek:
     """The one way this module reaches the frame at `t`, which every reader of a frame goes through.
 
     Seeking before the input is fast but it lands on the frame the container's own timing says is
-    there, and a recording whose frames were stamped by a busy compositor moves that by a frame.
+    there, which a rounded timestamp can move by a frame.
     Jumping to a little before `t` on the input and then dropping the remainder in the graph is both
     quick and exact. Every measurement here compares two frames, so a reader that took the coarse
     jump alone would compare one frame against another frame's neighbour.
@@ -127,11 +88,11 @@ def _changed_mask(level: int) -> str:
 def changed_images_percent(a: Path, b: Path, *, level: int, width: int, height: int) -> float:
     """Share (0-100) of pixels whose luma differs by more than `level` between two still images.
 
-    Both images are scaled to width x height and read as luma, as the frames of changed_pixels_percent are.
+    Both images are scaled to width x height and read as luma, as the frames `decode` keeps are.
     """
     err = ffmpeg.stderr(
         *ffmpeg.source(a), *ffmpeg.source(b), "-filter_complex",
-        f"[0:v]scale={width}:{height},format=gray[a];[1:v]scale={width}:{height},format=gray[b];"
+        f"[0:v]{scaled(width, height)}[a];[1:v]{scaled(width, height)}[b];"
         f"[a][b]blend=all_mode=difference,{_changed_mask(level)}",
         "-frames:v", "1", "-f", "null", "-",
     )  # fmt: skip
@@ -143,6 +104,9 @@ def changed_images_percent(a: Path, b: Path, *, level: int, width: int, height: 
 
 GRID_SLACK = 1e-6
 """Truth: far under one frame, so a time that sits on a frame's own stamp names that frame and not the next."""
+
+BYTE_BITS = 8
+"""Truth: the bits one luma byte holds, which a mask over a whole frame is shifted by."""
 
 LANE_BITS = 16
 """Truth: each pixel is compared in a sixteen bit lane of one integer, which holds a difference and its sign."""
@@ -235,6 +199,78 @@ def changed_count(a: bytes, b: bytes, level: int) -> int:
 
 
 @dataclass(frozen=True)
+class Rect:
+    """A box in the pixels of the size a comparison is made at."""
+
+    x: int
+    y: int
+    w: int
+    h: int
+
+    def clipped(self, size: Size) -> Rect:
+        """This box cut to the frame, so a lane that swept past an edge masks only what the frame holds."""
+        left, top = max(0, self.x), max(0, self.y)
+        right, bottom = min(size.width, self.x + self.w), min(size.height, self.y + self.h)
+        return Rect(left, top, max(0, right - left), max(0, bottom - top))
+
+    def rows(self, frame: bytes, size: Size) -> bytes:
+        """The pixels of this box in one frame, row after row."""
+        box = self.clipped(size)
+        return b"".join(
+            frame[row * size.width + box.x : row * size.width + box.x + box.w] for row in range(box.y, box.y + box.h)
+        )
+
+
+@dataclass(frozen=True)
+class Mask:
+    """The boxes a comparison leaves out, which are where the page said something was moving.
+
+    The boxes are in the pixels of `at`, and a comparison at another size reads them scaled out to
+    every pixel they touch, so a mask never lets an edge of what moved back into a share.
+    """
+
+    rects: tuple[Rect, ...]
+    at: Size
+
+    def covered(self, size: Size) -> bytes:
+        """One byte per pixel at `size`, 255 where a box covers it and 0 where none does."""
+        return _covered(self, size)
+
+    def share(self, size: Size) -> float:
+        """The share (0-100) of the frame at `size` the boxes cover between them."""
+        covered = self.covered(size)
+        return (len(covered) - covered.count(0)) / len(covered) * 100
+
+
+@cache
+def _covered(mask: Mask, size: Size) -> bytes:
+    """The covered pixels of one mask at one size, worked out once, because every comparison of a cue reuses them."""
+    pixels = bytearray(size.width * size.height)
+    sx, sy = size.width / mask.at.width, size.height / mask.at.height
+    for rect in mask.rects:
+        left, top = math.floor(rect.x * sx), math.floor(rect.y * sy)
+        right, bottom = math.ceil((rect.x + rect.w) * sx), math.ceil((rect.y + rect.h) * sy)
+        box = Rect(left, top, right - left, bottom - top).clipped(size)
+        for row in range(box.y, box.y + box.h):
+            pixels[row * size.width + box.x : row * size.width + box.x + box.w] = b"\xff" * box.w
+    return bytes(pixels)
+
+
+def _masked(frame: bytes, mask: Mask | None, size: Size) -> bytes:
+    """A frame with every covered pixel set to black, so two masked frames never differ there."""
+    if mask is None:
+        return frame
+    covered = int.from_bytes(mask.covered(size), "big")
+    kept = (1 << (BYTE_BITS * len(frame))) - 1 ^ covered
+    return (int.from_bytes(frame, "big") & kept).to_bytes(len(frame), "big")
+
+
+def _open(frame: bytes, mask: Mask | None, size: Size) -> int:
+    """How many pixels of a frame a comparison reads, which is the whole frame less what the mask covers."""
+    return len(frame) if mask is None else mask.covered(size).count(0)
+
+
+@dataclass(frozen=True)
 class Decoded:
     """The frames of one film a plan asked for, at each size, and every comparison over them.
 
@@ -250,23 +286,48 @@ class Decoded:
         """The luma of the first frame at or after `t`, at one size, which the plan must have named."""
         return self.frames[size][frame_index(t, self.rate, self.ends[size])]
 
-    def changed(self, t1: float, t2: float, *, level: int, size: Size) -> float:
-        """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2."""
-        a, b = self.at(t1, size), self.at(t2, size)
-        return changed_count(a, b, level) / len(a) * 100
+    def changed(self, t1: float, t2: float, *, level: int, size: Size, mask: Mask | None = None) -> float:
+        """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2.
 
-    def series(self, ref_t: float, start: float, end: float, *, level: int, size: Size) -> list[tuple[float, float]]:
+        A `mask` leaves the pixels it covers out of both the count and the share, so motion the page
+        declared is never read as part of a change.
+        """
+        a, b = (_masked(self.at(t, size), mask, size) for t in (t1, t2))
+        return changed_count(a, b, level) / max(1, _open(a, mask, size)) * 100
+
+    def series(
+        self, ref_t: float, start: float, end: float, *, level: int, size: Size, mask: Mask | None = None
+    ) -> list[tuple[float, float]]:
         """Changed share against the frame at ref_t for every frame from start up to end, as (time, percent) pairs.
 
         Times are the frames' own positions on the film's grid, so when start is ref_t the first pair
-        is the reference against itself, and its share is zero.
+        is the reference against itself, and its share is zero. A `mask` is left out as `changed` leaves it.
         """
-        reference = self.at(ref_t, size)
+        reference = _masked(self.at(ref_t, size), mask, size)
+        kept = self.frames[size]
+        reads = _open(reference, mask, size)
+        rows: list[tuple[float, float]] = []
+        for index in span_indices(start, end, self.rate, self.ends[size]):
+            share = changed_count(reference, _masked(kept[index], mask, size), level) / max(1, reads) * 100
+            rows.append((round(float(index / self.rate), 3), round(share, 4)))
+        return rows
+
+    def energy(
+        self, start: float, end: float, box: Rect, *, area: int, level: int, size: Size
+    ) -> list[tuple[float, float]]:
+        """How much moved inside one box from each frame to the next, from start up to end, as (time, percent) pairs.
+
+        Each share is of `area` pixels, which is the size of the thing that moves rather than of the
+        lane it sweeps, so a small element crossing a long lane reads as moving on every frame it moves.
+        The time is the later frame's, so a motion that stops is last seen moving on the frame it stops on.
+        """
         kept = self.frames[size]
         rows: list[tuple[float, float]] = []
         for index in span_indices(start, end, self.rate, self.ends[size]):
-            share = changed_count(reference, kept[index], level) / len(reference) * 100
-            rows.append((round(float(index / self.rate), 3), round(share, 4)))
+            if index == 0 or index - 1 not in kept:
+                continue
+            moved = changed_count(box.rows(kept[index - 1], size), box.rows(kept[index], size), level)
+            rows.append((round(float(index / self.rate), 3), round(moved / max(1, area) * 100, 4)))
         return rows
 
 
@@ -313,7 +374,7 @@ def _kept(path: Path, size: Size, wanted: set[int], last: int) -> tuple[dict[int
         ffmpeg.stream(
             *ffmpeg.source(path),
             "-frames:v", str(last + 1),
-            "-vf", f"scale={size.width}:{size.height},format=gray",
+            "-vf", scaled(size.width, size.height),
             "-f", "rawvideo", "-",
             into=take,
         )  # fmt: skip

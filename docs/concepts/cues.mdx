@@ -54,7 +54,7 @@ Then every picture waits for its own word.
 
 ```html deck/index.html
 <template data-slide="1.2" data-preview-seconds="12" data-describe="the two files you write, and the promise">
-  <div class="card" style="left: 120px; top: 300px" data-in="script"
+  <div class="card first" data-in="script"
        data-describe="a card for script.md, the file that holds what you say">
     <div class="k">script.md</div>
     <div class="v">what you will say</div>
@@ -76,7 +76,7 @@ raises begins with `CUE`.
 
 ```console
 decktalk cue                 # resolve every section
-decktalk cue --section 2,4   # resolve these sections and leave the rest of the file alone
+decktalk cue --section 2,3   # resolve these sections and leave the rest of the file alone
 decktalk cue --json          # the result as one flat object, carrying run, sections and file
 ```
 
@@ -127,7 +127,7 @@ phrase that spans one still matches. [script.md](/reference/script-md) has the r
 ## Which sections have cues
 
 Every section key in `cues.json` must name a `[[section]]` in `decktalk.toml`, and a key that names
-no section fails the load with the file and the line. A section may have no cues at all. A clip
+no section fails the load with an error naming the section. A section may have no cues at all. A clip
 section is never read by the voice, so its rows resolve to nothing and the stage passes over them
 rather than judging them.
 
@@ -175,7 +175,7 @@ What each one means for the film, and what clears it:
 - **`CUE_NO_ONSET`** is a cue whose second is 0, which is where the section starts rather than where
   a word does, or a cue in the finished film that changed the picture with no frame rising by
   `verify.onset_rise_points`. Nothing measures its landing against a word, so the offset check cannot
-  run for it.
+  run for it. What a cue at 0 reveals arrives as a cut on the section's first frame.
 - **`CUE_OVERLAP`** is two cues closer together than the first one's own motion lasts. The second
   moment starts while the first is still playing, so a viewer cannot tell them apart and neither can
   the measurement.
@@ -208,10 +208,12 @@ applies nothing.
 
 Both comparisons read the moments off the catalog the page itself published rather than off a scan of
 its markup, because `data-spotlight`, `data-class` and `data-owns` all declare moments no text scan can
-see. `check` reads a catalog live, `cue` reads the one the last recording kept, and the two reach the
-same judgements. A section whose page has never been opened is left unjudged rather than guessed at,
-so `check --no-pages` reaches neither `CUE_UNLISTED` nor `CUE_UNKNOWN` and names both as judgements it
-could not make.
+see. `check` reads a catalog live. `cue` reads the one the last recording kept while that recording
+still stands, and opens the page and reads it as it is now once anything the recording was made from
+has changed, so a cue renamed in the page and in `cues.json` together is judged by its new name before
+`record` has run. The two reach the same judgements. A section whose page has never been opened is
+left unjudged rather than guessed at, so `check --no-pages` reaches neither `CUE_UNLISTED` nor
+`CUE_UNKNOWN` and names both as judgements it could not make.
 
 The fix writes `{"id": "<cue id>", "phrase": ""}` and leaves `phrase` empty, because the phrase is your
 line and not DeckTalk's. A project with no `cues.json` at all gets one whole file with a row for

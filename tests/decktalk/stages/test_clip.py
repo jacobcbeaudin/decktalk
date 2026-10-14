@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import Words
+from decktalk.artifacts import ClipWords, Placement, Placements
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
-from decktalk.results import ClipResult, Word
+from decktalk.results import ClipResult, SectionKind, Word
 from decktalk.stages.clip import clip
 from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
@@ -44,20 +44,35 @@ WORDS = (
 FPS = 25
 """The rate `[video] fps` is left at, which is what turns a second into whole frames here."""
 
+PLACED_AT = 2.0
+"""Where section one starts in the finished film, which a slate or a clip before it would put past zero."""
+
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 """Every case here drives a stage that reaches for ffmpeg, so the encoder is faked at its own seam."""
 
 
-def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_disk: bool = True) -> Inputs:
-    """A project whose section one is narrated and cut, which is what a clip is taken out of."""
+def finished(inputs: Inputs) -> None:
+    """A finished film whose placements put section one at `PLACED_AT`, which is where a clip's sound is cut."""
+    film = inputs.workspace.film
+    film.parent.mkdir(parents=True, exist_ok=True)
+    film.write_bytes(b"")
+    placed = Placement(
+        section=1, key="01", kind=SectionKind.PAGE, start=PLACED_AT, end=PLACED_AT + 2.5,
+        source=Path("build/recordings/01.mp4"), chapter="One",
+    )  # fmt: skip
+    Placements(fps=FPS, sections=(placed,)).write(inputs.workspace.placements_path)
+
+
+def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, film: bool = True) -> Inputs:
+    """A project whose section one is narrated, cut and in a finished film, which is what a clip is taken out of."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, media=("media/b-roll.mp4",))
-    (take,) = narrated(inputs, a_take(1, seconds=2.0, voiced=voiced, lead_seconds=0.5), words={1: WORDS}).sections
-    if not take_on_disk:
-        inputs.take_places.find(take.digest).audio.unlink()
+    narrated(inputs, a_take(1, seconds=2.0, voiced=voiced, lead_seconds=0.5), words={1: WORDS})
     if cut:
         inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
         inputs.workspace.section_video("01").write_bytes(b"")
+    if film:
+        finished(inputs)
     return inputs
 
 
@@ -93,7 +108,7 @@ def test_the_words_file_holds_every_word_wholly_inside_the_span(tmp_path: Path) 
     """The clip's own clock starts at its first frame, so its words are moved back to it."""
     inputs = a_project(tmp_path)
     cut_a_clip(inputs, a_run(tmp_path), start=0.4, end=1.0)
-    written = Words.read(tmp_path / "media" / "answer.words.json")
+    written = ClipWords.read(tmp_path / "media" / "answer.words.json")
     assert written is not None
     assert [word.word for word in written.words] == ["Hello"]
     assert written.words[0].start == 0.1
@@ -110,7 +125,7 @@ def test_a_word_the_span_cuts_in_two_is_said_rather_than_written(tmp_path: Path,
     run = a_run(tmp_path)
     said = notes(run)
     result = cut_a_clip(inputs, run, start=0.4, end=1.2)
-    written = Words.read(tmp_path / "media" / "answer.words.json")
+    written = ClipWords.read(tmp_path / "media" / "answer.words.json")
     assert written is not None
     assert [word.word for word in written.words] == ["Hello"]
     assert any("cuts the word 'there' in two" in line for line in said)
@@ -146,8 +161,12 @@ def graph_of(fake_ffmpeg: FakeFfmpeg) -> str:
             (f"trim=start_frame=0:end_frame={round(0.8 * FPS)}", f"tpad=stop_mode=clone:stop={round(0.2 * FPS)}"),
             id="the picture is the span's frames and the hold clones the last",
         ),
-        # A span that opens inside the section's lead opens on the silence the film has there.
-        pytest.param({}, ("adelay=delays=", "atrim=start=0.000000"), id="the sound is the take moved to the span"),
+        # The film's sound at the section's own place, lead and all, is the clip's sound.
+        pytest.param(
+            {"start": 0.4},
+            (f"atrim=start={PLACED_AT + 0.4:.6f}:end={PLACED_AT + 0.8:.6f}",),
+            id="the sound is the film's at the section's place",
+        ),
         pytest.param({"gain_db": -3.0}, ("volume=-3dB",), id="the gain reaches the graph"),
     ],
 )
@@ -199,6 +218,39 @@ def test_a_project_with_no_take_index_names_the_command_that_writes_one(tmp_path
         cut_a_clip(inputs, a_run(tmp_path))
 
 
-def test_a_take_the_index_names_and_the_project_has_not_got_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(NotBuiltError, match="which is not on disk"):
-        cut_a_clip(a_project(tmp_path, take_on_disk=False), a_run(tmp_path))
+def test_a_section_with_no_finished_film_names_the_command_that_makes_one(tmp_path: Path) -> None:
+    """The sound is cut from the film, so a project whose film is not finished has none to cut."""
+    with pytest.raises(NotBuiltError, match="has no place in a finished film") as refused:
+        cut_a_clip(a_project(tmp_path, film=False), a_run(tmp_path))
+    assert refused.value.hint == "Run `decktalk assemble` first."
+
+
+def test_the_sound_is_cut_from_the_finished_film(tmp_path: Path, fake_ffmpeg: FakeFfmpeg) -> None:
+    """The film's mix holds the voice, the effects and the score, so the clip's sound is the film's."""
+    inputs = a_project(tmp_path)
+    cut_a_clip(inputs, a_run(tmp_path))
+    (call,) = [call for call in fake_ffmpeg.calls if "-filter_complex" in call]
+    assert str(inputs.workspace.film) in call
+
+
+# ---- a dialogue ----------------------------------------------------------------------------------
+
+
+def test_a_clip_of_a_dialogue_section_carries_every_turn(tmp_path: Path) -> None:
+    """A dialogue section's words are its turns joined with their gaps, each with its voice and its turn."""
+    toml = TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n'
+    inputs = load_project(tmp_path, toml, page=SCENE_ONE, media=("media/b-roll.mp4",))
+    first = a_take(1, seconds=0.3, lead_seconds=0.2, tail_seconds=0.1, digest="0000000000000001", spoken="Hello.")
+    second = a_take(1, turn=2, voice="guest", seconds=0.3, tail_seconds=0.7, digest="0000000000000002", spoken="there.")
+    words = {(1, 1): (Word(word="Hello", start=0.0, end=0.2),), (1, 2): (Word(word="there", start=0.0, end=0.2),)}
+    narrated(inputs, first, second, words=words)
+    inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.section_video("01").write_bytes(b"")
+    finished(inputs)
+    cut_a_clip(inputs, a_run(tmp_path), end=1.0)
+    said = ClipWords.read(tmp_path / "media" / "answer.words.json")
+    assert said is not None
+    assert [(word.word, word.voice, word.turn) for word in said.words] == [
+        ("Hello.", "narrator", 1),
+        ("there.", "guest", 2),
+    ]

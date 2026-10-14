@@ -10,42 +10,25 @@
       "description": "These keys set the frame size and the encoding of every recording and of the final mp4.",
       "x-kind": "tuning",
       "properties": {
-        "width": {
-          "description": "Frame width in pixels, for every recording and the final mp4.",
-          "type": "integer",
-          "default": 1920,
-          "minimum": 320,
-          "maximum": 7680,
-          "x-range": "must be between 320 and 7680",
+        "size": {
+          "description": "The frame of every recording and of the final mp4: wide (1920 by 1080), square (1080 by 1080), vertical (1080 by 1920), or WIDTHxHEIGHT in pixels. A page is laid out on a canvas of the frame's shape whose short side is 1080 CSS pixels, which it reads as --dt-width and --dt-height, so a square copy of a project is the project copied with this one key changed.",
+          "type": "string",
+          "default": "wide",
+          "pattern": "^(?:wide|square|vertical|(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680)x(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680))$",
+          "x-range": "must match the pattern ^(?:wide|square|vertical|(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680)x(?:(?:2[4-9]|[3-9][0-9]|[1-6][0-9]{2}|7[0-5][0-9]|76[0-7])[02468]|7680))$",
           "x-unit": "pixels",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
+          "x-hazard": "An odd side cannot be encoded, because the film's colour is stored at half the frame's width and height, and a side past the range is a frame Chromium and x264 are not held to drawing.",
           "x-see-also": [
             "verify.probe_width",
             "verify.block_width"
           ],
-          "x-environment": "DECKTALK_VIDEO_WIDTH"
-        },
-        "height": {
-          "description": "Frame height in pixels, for every recording and the final mp4.",
-          "type": "integer",
-          "default": 1080,
-          "minimum": 240,
-          "maximum": 4320,
-          "x-range": "must be between 240 and 4320",
-          "x-unit": "pixels",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-see-also": [
-            "verify.probe_height",
-            "verify.block_height"
-          ],
-          "x-environment": "DECKTALK_VIDEO_HEIGHT"
+          "x-environment": "DECKTALK_VIDEO_SIZE"
         },
         "fps": {
-          "description": "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
+          "description": "Frame rate of every recording and of the final mp4. The recorder steps the section clock one frame of this rate at a time, so every frame of a film is the page at its own second.",
           "type": "integer",
           "default": 25,
           "enum": [
@@ -59,10 +42,9 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-hazard": "Encoding below the rate the recorder captured at drops presented frames, which both loses motion a viewer saw and corrupts the frames verify measures its own verdicts from.",
-          "x-requires": "video.fps >= CAPTURE_FPS",
+          "x-requires": "video.fps >= SLOWEST_FPS",
           "x-see-also": [
-            "CAPTURE_FPS"
+            "SLOWEST_FPS"
           ],
           "x-environment": "DECKTALK_VIDEO_FPS"
         },
@@ -126,8 +108,22 @@
       "description": "These keys govern how the script is turned into audio.",
       "x-kind": "tuning",
       "properties": {
+        "voice": {
+          "description": "The default voice: the voice that reads every section no voice direction in the script names, and every turn of a section that names none. It names a [voices.NAME] table, and with no such table written it is a voice at every default.",
+          "type": "string",
+          "default": "narrator",
+          "pattern": "^[a-z][a-z0-9]*$",
+          "x-range": "must match the pattern ^[a-z][a-z0-9]*$",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-see-also": [
+            "narration.turn_gap_seconds"
+          ],
+          "x-environment": "DECKTALK_NARRATION_VOICE"
+        },
         "concurrency": {
-          "description": "How many sections `narrate` voices at once.",
+          "description": "How many turns `narrate` voices at once.",
           "type": "integer",
           "default": 2,
           "minimum": 1,
@@ -140,7 +136,7 @@
           "x-environment": "DECKTALK_NARRATION_CONCURRENCY"
         },
         "retries": {
-          "description": "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+          "description": "How many more times `narrate` asks again when the voice provider or the aligner answers that it is busy or failed.",
           "type": "integer",
           "default": 3,
           "minimum": 0,
@@ -208,6 +204,23 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_LEAD_SECONDS"
         },
+        "turn_gap_seconds": {
+          "description": "Silence between two turns of a section when no timed pause is written where the voice changes. A [pause N] written there replaces it, and neither is part of either turn's take.",
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 5,
+          "x-range": "must be between 0 and 5",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-see-also": [
+            "narration.lead_seconds",
+            "narration.tail_seconds"
+          ],
+          "x-environment": "DECKTALK_NARRATION_TURN_GAP_SECONDS"
+        },
         "placeholder_beat_seconds": {
           "description": "Seconds each beat adds to the length of a placeholder take.",
           "type": "number",
@@ -270,7 +283,7 @@
           "x-environment": "DECKTALK_NARRATION_STORE_DIR"
         },
         "context_characters": {
-          "description": "Characters of each neighbour section sent with a request, for continuous prosody.",
+          "description": "Characters of the neighbouring turns sent with a request, for continuous prosody: the end of the turn before and the start of the turn after that the same voice reads among the turns the run selects. 0 sends no neighbouring text, so each turn is sent on its own.",
           "type": "integer",
           "default": 1500,
           "minimum": 0,
@@ -283,7 +296,7 @@
           "x-environment": "DECKTALK_NARRATION_CONTEXT_CHARACTERS"
         },
         "timeout_seconds": {
-          "description": "Seconds before a speech request times out.",
+          "description": "Seconds before a speech or alignment request times out. With `retries` it also sets how long a run waits while another run on this machine voices the same take into the take store: one whole take request, every attempt this long with the waits between them, before it is refused as locked.",
           "type": "integer",
           "default": 180,
           "minimum": 10,
@@ -294,25 +307,6 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_TIMEOUT_SECONDS"
-        },
-        "store_wait_seconds": {
-          "description": "Seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus one, with the waits between them. The default covers that at the default `timeout_seconds` and `retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
-          "type": "integer",
-          "default": 900,
-          "minimum": 1,
-          "maximum": 36000,
-          "x-range": "must be between 1 and 36000",
-          "x-unit": "seconds",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-hazard": "Below the length of one take request, a run is refused while another run's healthy request is still being answered.",
-          "x-see-also": [
-            "narration.store_dir",
-            "narration.timeout_seconds",
-            "narration.retries"
-          ],
-          "x-environment": "DECKTALK_NARRATION_STORE_WAIT_SECONDS"
         },
         "sound_end_noise_dbfs": {
           "description": "Level under which the tail of a take counts as silence, which is where the take's sound ends.",
@@ -331,7 +325,9 @@
             "verify.cut_max_dbfs"
           ],
           "x-decides": [
-            "CUT_SPEECH"
+            "CUT_SPEECH",
+            "TAKE_WORD_CUT",
+            "TAKE_SILENT"
           ],
           "x-environment": "DECKTALK_NARRATION_SOUND_END_NOISE_DBFS"
         },
@@ -350,7 +346,9 @@
             "narration.sound_end_noise_dbfs"
           ],
           "x-decides": [
-            "CUT_SPEECH"
+            "CUT_SPEECH",
+            "TAKE_WORD_CUT",
+            "TAKE_SILENT"
           ],
           "x-environment": "DECKTALK_NARRATION_SOUND_END_MIN_RUN_SECONDS"
         }
@@ -359,35 +357,9 @@
     },
     "record": {
       "type": "object",
-      "description": "These keys tune the headless Chromium recording and how the start of the section clock is found in it.",
+      "description": "These keys tune how `record` opens each page section in headless Chromium and steps it frame by frame.",
       "x-kind": "tuning",
       "properties": {
-        "settle_seconds": {
-          "description": "Shortest wait after the page is ready and before the start of the section clock.",
-          "type": "number",
-          "default": 0.5,
-          "minimum": 0,
-          "maximum": 30,
-          "x-range": "must be between 0 and 30",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_SETTLE_SECONDS"
-        },
-        "cover_min_seconds": {
-          "description": "Shortest time from the start of the recorder to the start of the section clock.",
-          "type": "number",
-          "default": 1.5,
-          "minimum": 0,
-          "maximum": 30,
-          "x-range": "must be between 0 and 30",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_MIN_SECONDS"
-        },
         "color_scheme": {
           "description": "Color scheme that Chromium reports to the page.",
           "type": "string",
@@ -418,8 +390,27 @@
           "x-hazard": "A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.",
           "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
         },
+        "programs": {
+          "description": "Whether `record` runs the programs a project names, which are its render sections' `render_command`. A program runs with your user's rights and can read every file you can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run would start and runs them only when a person at a terminal answers yes, and refuses without a terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the `untrusted` page policy no program runs whatever this says. It is the machine's to set, so a project cannot allow its own programs.",
+          "type": "string",
+          "default": "refuse",
+          "enum": [
+            "refuse",
+            "ask",
+            "run"
+          ],
+          "x-range": "must be one of refuse, ask, run",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "`run` executes whatever a project's decktalk.toml names as soon as `record` or `build` reaches it, so set it only on a machine that builds projects whose programs you have read.",
+          "x-see-also": [
+            "record.page_policy"
+          ],
+          "x-environment": "DECKTALK_RECORD_PROGRAMS"
+        },
         "concurrency": {
-          "description": "How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
+          "description": "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a section after another. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
           "type": "integer",
           "default": 0,
           "minimum": 0,
@@ -428,157 +419,137 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.",
+          "x-hazard": "Each recorder steps its own Chromium and its own encode, so a number above the machine's share makes every chunk wait on the others and the run slower rather than faster.",
+          "x-see-also": [
+            "record.chunk_frames_min"
+          ],
           "x-environment": "DECKTALK_RECORD_CONCURRENCY"
         },
-        "retries": {
-          "description": "How many more times `record` records a section whose frames stalled.",
+        "chunk_frames_min": {
+          "description": "Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section shorter than two chunks of this length is recorded whole by one recorder.",
           "type": "integer",
-          "default": 2,
-          "minimum": 0,
+          "default": 50,
+          "minimum": 1,
+          "maximum": 100000,
+          "x-range": "must be between 1 and 100000",
+          "x-unit": "frames",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Every chunk loads the page again, so chunks much shorter than a page load spend the machine on loading rather than on frames.",
+          "x-see-also": [
+            "record.chunk_startup_seconds",
+            "record.step_seconds"
+          ],
+          "x-environment": "DECKTALK_RECORD_CHUNK_FRAMES_MIN"
+        },
+        "chunk_startup_seconds": {
+          "description": "How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps * recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its last recording took.",
+          "type": "number",
+          "default": 0.2,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "x-range": "must be above 0 and must be at most 60",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A start-up stated far too low splits short sections into chunks that each spend more loading the page than recording it.",
+          "x-see-also": [
+            "record.step_seconds",
+            "record.chunk_frames_min"
+          ],
+          "x-environment": "DECKTALK_RECORD_CHUNK_STARTUP_SECONDS"
+        },
+        "step_seconds": {
+          "description": "How long one recorder takes to step its page once on this machine, the capture of the frame it lands on included, which `record` weighs against `chunk_startup_seconds` when it splits a section.",
+          "type": "number",
+          "default": 0.014,
+          "exclusiveMinimum": 0,
           "maximum": 10,
-          "x-range": "must be between 0 and 10",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "x-range": "must be above 0 and must be at most 10",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
           "x-see-also": [
-            "record.frame_gap_max_ms"
+            "record.chunk_startup_seconds",
+            "record.chunk_frames_min"
           ],
-          "x-environment": "DECKTALK_RECORD_RETRIES"
+          "x-environment": "DECKTALK_RECORD_STEP_SECONDS"
         },
-        "cover_scan_seconds": {
-          "description": "Seconds at the start of each recording that `record` scans for the magenta cover.",
+        "page_deadline_seconds": {
+          "description": "Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming where it was stuck: a load, a step, a capture, a still or a report. `record` names the section and the frame, and `check`, `storyboard`, `cue` and `assemble` hold the pages they open to it too. It is many times the longest a step measures, so only a page that stopped answering reaches it, such as one that spins its main thread or waits on a font or an image that never arrives.",
           "type": "number",
-          "default": 4.0,
-          "minimum": 0,
-          "maximum": 30,
-          "x-range": "must be between 0 and 30",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_SCAN_SECONDS"
-        },
-        "fallback_first_paint_seconds": {
-          "description": "Guessed first paint when `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it.",
-          "type": "number",
-          "default": 1.1,
-          "minimum": 0,
-          "maximum": 10,
-          "x-range": "must be between 0 and 10",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_FALLBACK_FIRST_PAINT_SECONDS"
-        },
-        "cover_min_luma": {
-          "description": "A cover frame has an average luma above this.",
-          "type": "number",
-          "default": 70.0,
-          "minimum": 40,
-          "maximum": 120,
-          "x-range": "must be between 40 and 120",
-          "x-typed-range": "must be between 0 and 255",
-          "x-unit": "luma",
-          "x-scope": "project",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_MIN_LUMA"
-        },
-        "cover_max_luma": {
-          "description": "A cover frame has an average luma below this.",
-          "type": "number",
-          "default": 140.0,
-          "minimum": 80,
-          "maximum": 200,
-          "x-range": "must be between 80 and 200",
-          "x-typed-range": "must be between 0 and 255",
-          "x-unit": "luma",
-          "x-scope": "project",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_MAX_LUMA"
-        },
-        "cover_min_chroma": {
-          "description": "A cover frame has an average U and an average V above this.",
-          "type": "number",
-          "default": 165.0,
-          "minimum": 128,
-          "maximum": 255,
-          "x-range": "must be between 128 and 255",
-          "x-typed-range": "must be between 0 and 255",
-          "x-unit": "chroma",
-          "x-scope": "project",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_MIN_CHROMA"
-        },
-        "painted_peak_min_luma": {
-          "description": "A painted frame has a brightest luma above this.",
-          "type": "number",
-          "default": 60.0,
+          "default": 15.0,
           "minimum": 1,
-          "maximum": 200,
-          "x-range": "must be between 1 and 200",
-          "x-typed-range": "must be between 0 and 255",
-          "x-unit": "luma",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "maximum": 600,
+          "x-range": "must be between 1 and 600",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_PAINTED_PEAK_MIN_LUMA"
+          "x-hazard": "A deadline set near the time a frame takes stops healthy recordings on a busy machine.",
+          "x-see-also": [
+            "record.deadline_slowdown"
+          ],
+          "x-environment": "DECKTALK_RECORD_PAGE_DEADLINE_SECONDS"
         },
-        "painted_mean_max_luma": {
-          "description": "A painted frame has an average luma below this, so a white flash does not count as the picture.",
+        "deadline_slowdown": {
+          "description": "How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks take spread over the recorders, plus its longest chunk, so a page that answers every call and never gets on still ends with a TOOL error.",
           "type": "number",
-          "default": 120.0,
-          "minimum": 20,
-          "maximum": 240,
-          "x-range": "must be between 20 and 240",
-          "x-typed-range": "must be between 0 and 255",
-          "x-unit": "luma",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "default": 30.0,
+          "minimum": 1,
+          "maximum": 10000,
+          "x-range": "must be between 1 and 10000",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_PAINTED_MEAN_MAX_LUMA"
+          "x-hazard": "A value near one stops a recording that a loaded machine is merely slow to make, because the two calibrations are this machine's speed when it is idle.",
+          "x-see-also": [
+            "record.page_deadline_seconds",
+            "record.step_seconds",
+            "record.chunk_startup_seconds"
+          ],
+          "x-environment": "DECKTALK_RECORD_DEADLINE_SLOWDOWN"
         },
-        "truncated_slack_seconds": {
-          "description": "Allowed shortfall of a recording against its requested length.",
-          "type": "number",
-          "default": 0.5,
+        "renderer_retries": {
+          "description": "How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or its page was closed under it. A frame is a function of its index, so a chunk recorded again is the same frames.",
+          "type": "integer",
+          "default": 1,
           "minimum": 0,
           "maximum": 5,
           "x-range": "must be between 0 and 5",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-decides": [
-            "RECORD_TRUNCATED"
-          ],
-          "x-environment": "DECKTALK_RECORD_TRUNCATED_SLACK_SECONDS"
+          "x-environment": "DECKTALK_RECORD_RENDERER_RETRIES"
         },
-        "frame_gap_max_ms": {
-          "description": "Longest gap between two presented frames after the start of the section clock. A longer gap makes `record` try again.",
+        "encode_threads": {
+          "description": "Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. Every piece of a run is encoded with the same number, and the frames are the same whatever it is.",
           "type": "integer",
-          "default": 150,
-          "minimum": 100,
-          "maximum": 2000,
-          "x-range": "must be between 100 and 2000",
-          "x-unit": "milliseconds",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 64,
+          "x-range": "must be between 0 and 64",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "The runtime reports a gap no finer than its own reporting floor, so a limit under that floor makes every section stall and every retry spend the recording again.",
-          "x-requires": "record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS",
+          "x-hazard": "x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of megabytes and buys no speed, because the encode is never what a recording waits on.",
           "x-see-also": [
-            "REPORT_FRAME_GAP_MS",
-            "record.retries"
+            "record.concurrency"
           ],
-          "x-decides": [
-            "RECORD_STALLED"
-          ],
-          "x-environment": "DECKTALK_RECORD_FRAME_GAP_MAX_MS"
+          "x-environment": "DECKTALK_RECORD_ENCODE_THREADS"
+        },
+        "skip_still": {
+          "description": "Write a frame again rather than capture it when the page reports that nothing it draws changed since the frame before, which is most frames of a narrated slide, and write every frame before the next change the page reports without stepping the page to each. The frames are the same either way, so it changes how long `record` takes and nothing it writes.",
+          "type": "boolean",
+          "default": true,
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_RECORD_SKIP_STILL"
         }
       },
       "additionalProperties": false
@@ -928,9 +899,49 @@
             "verify.reference_lead_seconds"
           ],
           "x-decides": [
-            "CUE_OFF"
+            "CUE_OFF",
+            "MOTION_OFF",
+            "MOTION_NO_EDGE"
           ],
           "x-environment": "DECKTALK_VERIFY_CUE_OFFSET_MAX_MS"
+        },
+        "motion_floor_percent": {
+          "description": "How much of a moving element's own area must change from one frame to the next for verify to read it as moving, which is where a motion's departure and arrival are found.",
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0.05,
+          "maximum": 20,
+          "x-range": "must be between 0.05 and 20",
+          "x-typed-range": "must be between 0 and 100",
+          "x-unit": "percent",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-evidence": "Calibration: on the motion prototype a firm arrival measured on its cue frame at half a percent at both the full and the quarter size.",
+          "x-hazard": "Above a few percent the slow last frames of a firm arrival read as still, so its arrival is measured early and a motion that landed on its word fails.",
+          "x-decides": [
+            "MOTION_OFF",
+            "MOTION_NO_EDGE"
+          ],
+          "x-environment": "DECKTALK_VERIFY_MOTION_FLOOR_PERCENT"
+        },
+        "motion_mask_max_percent": {
+          "description": "The most of the frame verify may mask out of a cue's measurement before it says it measured less of the picture than usual.",
+          "type": "number",
+          "default": 40.0,
+          "minimum": 5,
+          "maximum": 90,
+          "x-range": "must be between 5 and 90",
+          "x-typed-range": "must be between 0 and 100",
+          "x-unit": "percent",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-hazard": "Near the top of the range a cue is judged on a sliver of the frame, so a reveal under a large declared motion passes on very little evidence.",
+          "x-decides": [
+            "MOTION_MASK_LARGE"
+          ],
+          "x-environment": "DECKTALK_VERIFY_MOTION_MASK_MAX_PERCENT"
         },
         "av_offset_max_ms": {
           "description": "How far the click may sit from the word it marks, early or late. It is wider than the cue limit because the click carries the encoder's own jitter as well.",
@@ -964,9 +975,6 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-see-also": [
-            "record.painted_peak_min_luma"
-          ],
           "x-decides": [
             "RECORD_BLACK"
           ],
@@ -1023,49 +1031,6 @@
             "CUT_POP"
           ],
           "x-environment": "DECKTALK_VERIFY_CUT_CHANGE_MAX_PERCENT"
-        }
-      },
-      "additionalProperties": false
-    },
-    "voice": {
-      "type": "object",
-      "description": "These keys are the three every voice has: which provider reads the script, in which voice and at what pace. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields or model to another.",
-      "x-kind": "tuning",
-      "properties": {
-        "provider": {
-          "description": "The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`.",
-          "type": "string",
-          "default": "elevenlabs",
-          "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VOICE_PROVIDER"
-        },
-        "id": {
-          "description": "The voice that reads the script, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.",
-          "type": "string",
-          "default": "",
-          "pattern": "^[A-Za-z0-9_-]*$",
-          "x-range": "must match the pattern ^[A-Za-z0-9_-]*$",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-hazard": "The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.",
-          "x-environment": "DECKTALK_VOICE_ID"
-        },
-        "speed": {
-          "description": "How fast the voice speaks, as a multiple of its natural pace.",
-          "type": "number",
-          "default": 1.0,
-          "minimum": 0.7,
-          "maximum": 1.2,
-          "x-range": "must be between 0.7 and 1.2",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-hazard": "The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.",
-          "x-environment": "DECKTALK_VOICE_SPEED"
         }
       },
       "additionalProperties": false
@@ -1139,6 +1104,92 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_MIX_MARKER_BOOST_RAMP_SECONDS"
+        },
+        "music_db": {
+          "description": "The music level.",
+          "type": "number",
+          "default": -24.0,
+          "x-kind": "content",
+          "minimum": -60,
+          "maximum": 0,
+          "x-range": "must be between -60 and 0",
+          "x-unit": "dB",
+          "x-hazard": "The narration plays at its own level, so a level above 0 dB plays this layer louder than the voice, and below -60 dB the loudness pass leaves nothing audible. Leave the file out for none."
+        },
+        "music_duck_db": {
+          "description": "The extra level change under each spoken span and each clip.",
+          "type": "number",
+          "default": -6.0,
+          "x-kind": "content",
+          "minimum": -40,
+          "maximum": 0,
+          "x-range": "must be between -40 and 0",
+          "x-unit": "dB",
+          "x-hazard": "A duck lowers the music under speech, so a value above zero would raise it there instead."
+        },
+        "music_fade_in_seconds": {
+          "description": "The fade in.",
+          "type": "number",
+          "default": 2.0,
+          "x-kind": "content",
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "x-range": "must be above 0 and must be at most 30",
+          "x-unit": "seconds",
+          "x-hazard": "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one above zero."
+        },
+        "music_fade_out_seconds": {
+          "description": "The fade out.",
+          "type": "number",
+          "default": 3.0,
+          "x-kind": "content",
+          "exclusiveMinimum": 0,
+          "maximum": 30,
+          "x-range": "must be above 0 and must be at most 30",
+          "x-unit": "seconds",
+          "x-hazard": "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one above zero."
+        },
+        "ambience_db": {
+          "description": "The ambience level.",
+          "type": "number",
+          "default": -20.0,
+          "x-kind": "content",
+          "minimum": -60,
+          "maximum": 0,
+          "x-range": "must be between -60 and 0",
+          "x-unit": "dB",
+          "x-hazard": "The narration plays at its own level, so a level above 0 dB plays this layer louder than the voice, and below -60 dB the loudness pass leaves nothing audible. Leave the file out for none."
+        },
+        "effect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "db": {
+                "description": "The level.",
+                "type": "number",
+                "default": -16.0,
+                "x-kind": "content",
+                "minimum": -60,
+                "maximum": 0,
+                "x-range": "must be between -60 and 0",
+                "x-unit": "dB",
+                "x-hazard": "The narration plays at its own level, so a level above 0 dB plays this layer louder than the voice, and below -60 dB the loudness pass leaves nothing audible. Leave the file out for none."
+              },
+              "offset_seconds": {
+                "description": "Seconds added to the cue time. This offset belongs to the sound and not to the cue.",
+                "type": "number",
+                "default": 0.0,
+                "x-kind": "content",
+                "minimum": -10,
+                "maximum": 10,
+                "x-range": "must be between -10 and 10",
+                "x-unit": "seconds",
+                "x-hazard": "An effect answers its cue, so a nudge past ten seconds plays it at a moment the cue does not name."
+              }
+            },
+            "additionalProperties": true
+          }
         }
       },
       "additionalProperties": true
@@ -1194,7 +1245,7 @@
       "x-kind": "tuning",
       "properties": {
         "model": {
-          "description": "The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`.",
+          "description": "The ElevenLabs model every ElevenLabs voice reads with, unless its own `[voices.NAME]` table names another.",
           "type": "string",
           "default": "eleven_multilingual_v2",
           "x-range": "takes any value of its type",
@@ -1241,7 +1292,7 @@
           "x-environment": "DECKTALK_ELEVENLABS_STYLE"
         },
         "speaker_boost": {
-          "description": "Whether ElevenLabs applies its own speaker boost to the take.",
+          "description": "Whether ElevenLabs applies the boost it calls use_speaker_boost to the take.",
           "type": "boolean",
           "default": true,
           "x-range": "takes any value of its type",
@@ -1300,13 +1351,13 @@
     },
     "dtsp": {
       "type": "object",
-      "description": "These keys are the `dtsp` provider's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
+      "description": "These keys are the `dtsp` provider's own: where its local server listens, the model it reads with, and how long the server has to say which aligner it serves. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository and is not yet public. The same server times the words of a take whose voice sent none. It needs no key, bills nothing, and `base_url` is the machine's to set.",
       "x-kind": "tuning",
       "properties": {
         "base_url": {
-          "description": "Base URL of the local speech server, which the script is sent to.",
+          "description": "Base URL of decktalk-voice, the local server that reads the script for `dtsp` and times the words of a take that came without them. Port 9361 is assigned to nothing at IANA and listed in no /etc/services, so no other service is expected to answer there.",
           "type": "string",
-          "default": "http://127.0.0.1:8765",
+          "default": "http://127.0.0.1:9361",
           "x-range": "takes any value of its type",
           "x-scope": "machine",
           "x-nature": "apparatus",
@@ -1314,8 +1365,25 @@
           "x-hazard": "The script, and for a provider that bills the API key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
           "x-environment": "DECKTALK_DTSP_BASE_URL"
         },
+        "handshake_seconds": {
+          "description": "Seconds the local server has to say which aligner it serves, asked at most once per run and only when a take has no aligned words kept. It is short because a server that is up answers at once, so a port held by a process that never answers costs this wait and not `[narration] timeout_seconds`.",
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "x-range": "must be between 1 and 60",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "dtsp.base_url",
+            "narration.timeout_seconds"
+          ],
+          "x-environment": "DECKTALK_DTSP_HANDSHAKE_SECONDS"
+        },
         "model": {
-          "description": "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",
+          "description": "The model the local server reads every `dtsp` voice with, as the server names it, unless the voice's own `[voices.NAME]` table names another.",
           "type": "string",
           "default": "kokoro-82m",
           "x-range": "takes any value of its type",
@@ -1619,6 +1687,26 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_OUTPUT_TIMESTAMPED_COPY"
+        },
+        "caption_voices": {
+          "description": "Name the voice of every caption in a section spoken in more than one voice: a WebVTT voice span such as `<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the captions carry the words alone, and the transcript names the voices of a dialogue either way.",
+          "type": "boolean",
+          "default": false,
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_OUTPUT_CAPTION_VOICES"
+        },
+        "captioned": {
+          "description": "Also write `<name>-captioned.mp4`, the film with its captions drawn into the picture, for a place that cannot load a caption file. The page draws each caption in its own fonts and styles, and places it by the voice that says it without naming the voice. The film, its caption files and its transcript are the same either way.",
+          "type": "boolean",
+          "default": false,
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_OUTPUT_CAPTIONED"
         }
       },
       "additionalProperties": false
@@ -1712,6 +1800,20 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
         },
+        "fix_timeout_seconds": {
+          "description": "Longest one DeckTalk command a fix runs, such as the fetch of a browser and an encoder, may run before it is stopped.",
+          "type": "number",
+          "default": 1800.0,
+          "minimum": 60,
+          "maximum": 7200,
+          "x-range": "must be between 60 and 7200",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A fix that fetches a browser and an encoder downloads a few hundred megabytes, so under a minute a slow link stops it part way every time.",
+          "x-environment": "DECKTALK_TOOLS_FIX_TIMEOUT_SECONDS"
+        },
         "cache_dir": {
           "description": "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache.",
           "type": "string",
@@ -1730,6 +1832,146 @@
       },
       "additionalProperties": false
     },
+    "voices": {
+      "type": "object",
+      "description": "Every voice of the project, one table per voice, each named by the name a voice direction in the script calls it by. The table `[narration] voice` names is the default voice.",
+      "x-kind": "family",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "These keys are the three every voice has: which provider reads its turns, in which voice and at what pace. Each voice is one `[voices.NAME]` table. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, and a voice may state any of that table's chosen keys for itself alone, so changing `provider` never sends one vendor's fields or model to another.",
+        "x-kind": "tuning",
+        "properties": {
+          "provider": {
+            "description": "The speech provider that reads this voice's turns, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`.",
+            "type": "string",
+            "default": "elevenlabs",
+            "x-range": "takes any value of its type",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-environment": "DECKTALK_VOICES_<NAME>_PROVIDER"
+          },
+          "id": {
+            "description": "The voice that reads this voice's turns, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICES_<NAME>_ID` overrides it for anyone who keeps it out of the file.",
+            "type": "string",
+            "default": "",
+            "pattern": "^[A-Za-z0-9_-]*$",
+            "x-range": "must match the pattern ^[A-Za-z0-9_-]*$",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.",
+            "x-environment": "DECKTALK_VOICES_<NAME>_ID"
+          },
+          "speed": {
+            "description": "How fast the voice speaks, as a multiple of its natural pace.",
+            "type": "number",
+            "default": 1.0,
+            "minimum": 0.7,
+            "maximum": 1.2,
+            "x-range": "must be between 0.7 and 1.2",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.",
+            "x-environment": "DECKTALK_VOICES_<NAME>_SPEED"
+          },
+          "model": {
+            "description": "This voice's own model, over [elevenlabs or dtsp] model, which every voice of that provider reads unless it sets its own.",
+            "type": "string",
+            "x-range": "takes any value of its type",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.model",
+              "dtsp.model"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_MODEL"
+          },
+          "stability": {
+            "description": "This voice's own stability, over [elevenlabs] stability, which every voice of that provider reads unless it sets its own.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "x-range": "must be between 0 and 1",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.",
+            "x-see-also": [
+              "elevenlabs.stability"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_STABILITY"
+          },
+          "similarity_boost": {
+            "description": "This voice's own similarity_boost, over [elevenlabs] similarity_boost, which every voice of that provider reads unless it sets its own.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "x-range": "must be between 0 and 1",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.similarity_boost"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_SIMILARITY_BOOST"
+          },
+          "style": {
+            "description": "This voice's own style, over [elevenlabs] style, which every voice of that provider reads unless it sets its own.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "x-range": "must be between 0 and 1",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.style"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_STYLE"
+          },
+          "speaker_boost": {
+            "description": "This voice's own speaker_boost, over [elevenlabs] speaker_boost, which every voice of that provider reads unless it sets its own.",
+            "type": "boolean",
+            "x-range": "takes any value of its type",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.speaker_boost"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_SPEAKER_BOOST"
+          },
+          "output_format": {
+            "description": "This voice's own output_format, over [elevenlabs] output_format, which every voice of that provider reads unless it sets its own.",
+            "type": "string",
+            "enum": [
+              "mp3_22050_32",
+              "mp3_44100_32",
+              "mp3_44100_64",
+              "mp3_44100_96",
+              "mp3_44100_128",
+              "mp3_44100_192"
+            ],
+            "x-range": "must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "Every take already bought was bought in the format named here, so another one buys every take again.",
+            "x-see-also": [
+              "elevenlabs.output_format"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_OUTPUT_FORMAT"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "project": {
       "type": "object",
       "description": "The film itself: its name, its deck and the files it is built from.",
@@ -1744,6 +1986,54 @@
         "type": "object",
         "description": "One section of the script, in the order the film plays them.",
         "x-kind": "document",
+        "properties": {
+          "slate_seconds": {
+            "description": "How long the titled slate plays when the clip's file is not there.",
+            "type": "number",
+            "default": 5.0,
+            "x-kind": "content",
+            "exclusiveMinimum": 0,
+            "maximum": 60,
+            "x-range": "must be above 0 and must be at most 60",
+            "x-unit": "seconds",
+            "x-hazard": "A slate has to last a frame to be in the film at all, and one past a minute is a hole in the film rather than a placeholder."
+          },
+          "hold_seconds": {
+            "description": "Seconds the page keeps playing after its narration, while the narration pauses for it.",
+            "type": "number",
+            "default": 0.0,
+            "x-kind": "content",
+            "minimum": 0,
+            "maximum": 60,
+            "x-range": "must be between 0 and 60",
+            "x-unit": "seconds",
+            "x-hazard": "The narration pauses for the hold, so a hold past a minute is a minute of film with nothing said."
+          },
+          "lead_seconds": {
+            "description": "The silence before this section's first word, in place of `[narration] lead_seconds`.",
+            "type": "number",
+            "x-kind": "content",
+            "minimum": 0,
+            "maximum": 5,
+            "x-range": "must be between 0 and 5",
+            "x-unit": "seconds",
+            "x-see-also": [
+              "narration.lead_seconds"
+            ]
+          },
+          "tail_seconds": {
+            "description": "The silence after this section's last word, in place of `[narration] tail_seconds`.",
+            "type": "number",
+            "x-kind": "content",
+            "minimum": 0,
+            "maximum": 10,
+            "x-range": "must be between 0 and 10",
+            "x-unit": "seconds",
+            "x-see-also": [
+              "narration.tail_seconds"
+            ]
+          }
+        },
         "additionalProperties": true
       }
     },
@@ -1751,6 +2041,22 @@
       "type": "object",
       "description": "How one section is joined to the next.",
       "x-kind": "document",
+      "properties": {
+        "dip_seconds": {
+          "description": "How long a dip to black lasts, rounded to whole frames so a fade never ends part way through one.",
+          "type": "number",
+          "default": 0.15,
+          "x-kind": "content",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "x-range": "must be above 0 and must be at most 1",
+          "x-unit": "seconds",
+          "x-hazard": "ffmpeg reads a fade of no length as its own default, which is about a second, so the shortest fade is one above zero. Write `dips = []` for straight cuts. A dip longer than `verify.after_dip_seconds` is still dark on the frame the start check reads.",
+          "x-see-also": [
+            "verify.after_dip_seconds"
+          ]
+        }
+      },
       "additionalProperties": true
     }
   },
@@ -1759,9 +2065,9 @@
     {
       "id": "verify.probe_width",
       "kind": "derived",
-      "formula": "video.width // PROBE_SCALE",
+      "formula": "the frame width video.size names // PROBE_SCALE",
       "reads": [
-        "video.width",
+        "video.size",
         "PROBE_SCALE"
       ],
       "value": 480,
@@ -1773,9 +2079,9 @@
     {
       "id": "verify.probe_height",
       "kind": "derived",
-      "formula": "video.height // PROBE_SCALE",
+      "formula": "the frame height video.size names // PROBE_SCALE",
       "reads": [
-        "video.height",
+        "video.size",
         "PROBE_SCALE"
       ],
       "value": 270,
@@ -1787,9 +2093,9 @@
     {
       "id": "verify.block_width",
       "kind": "derived",
-      "formula": "video.width // BLOCK_PX",
+      "formula": "the frame width video.size names // BLOCK_PX",
       "reads": [
-        "video.width",
+        "video.size",
         "BLOCK_PX"
       ],
       "value": 240,
@@ -1801,9 +2107,9 @@
     {
       "id": "verify.block_height",
       "kind": "derived",
-      "formula": "video.height // BLOCK_PX",
+      "formula": "the frame height video.size names // BLOCK_PX",
       "reads": [
-        "video.height",
+        "video.size",
         "BLOCK_PX"
       ],
       "value": 135,
@@ -1815,11 +2121,11 @@
     {
       "id": "verify.reference_lead_seconds",
       "kind": "derived",
-      "formula": "verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / CAPTURE_FPS + verify.reference_lead_extra_ms / 1000",
+      "formula": "verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / video.fps + verify.reference_lead_extra_ms / 1000",
       "reads": [
         "verify.cue_offset_max_ms",
         "GUARD_FRAMES",
-        "CAPTURE_FPS",
+        "video.fps",
         "verify.reference_lead_extra_ms"
       ],
       "value": 0.14,
@@ -1832,7 +2138,22 @@
       "description": "Derived: the reference frame has to sit outside the window the offset limit allows, or the check compares a cue against a frame the same cue had already changed."
     },
     {
-      "id": "CAPTURE_FPS",
+      "id": "record.truncated_slack_seconds",
+      "kind": "derived",
+      "formula": "1 / video.fps",
+      "reads": [
+        "video.fps"
+      ],
+      "value": 0.04,
+      "unit": "seconds",
+      "nature": "derived",
+      "decides": [
+        "RECORD_TRUNCATED"
+      ],
+      "description": "Derived: the recorder writes a section's span rounded to the nearest whole frame, so a whole recording runs at most half a frame under it, and one more than a frame under it stopped early."
+    },
+    {
+      "id": "SLOWEST_FPS",
       "kind": "constant",
       "formula": "25",
       "reads": [],
@@ -1840,7 +2161,7 @@
       "unit": "frames per second",
       "nature": "truth",
       "decides": [],
-      "description": "Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for."
+      "description": "Truth: the slowest rate a film is recorded at, whose frame is the step every page range is written in."
     },
     {
       "id": "PROBE_SCALE",
@@ -1874,17 +2195,6 @@
       "nature": "truth",
       "decides": [],
       "description": "Truth: half a frame of rounding guard on each side of the window the offset limit allows."
-    },
-    {
-      "id": "REPORT_FRAME_GAP_MS",
-      "kind": "constant",
-      "formula": "100",
-      "reads": [],
-      "value": 100,
-      "unit": "milliseconds",
-      "nature": "calibration",
-      "decides": [],
-      "description": "Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen."
     },
     {
       "id": "CLICK_LEVEL_DBFS",

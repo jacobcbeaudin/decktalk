@@ -12,6 +12,18 @@
       "title": "Applicability",
       "type": "string"
     },
+    "BillingBasis": {
+      "description": "How a provider bills what it makes, which its adapter declares and every price is worked out by.\n\nA provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is\nnothing anybody stated, and `--max-cost` refuses to guard it. A build's total that adds a bill per\ncharacter to a bill per second is `mixed`, and carries the rate of each.",
+      "enum": [
+        "per_character",
+        "per_second",
+        "free",
+        "undeclared",
+        "mixed"
+      ],
+      "title": "BillingBasis",
+      "type": "string"
+    },
     "Code": {
       "description": "Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, so the relation is written once.",
       "enum": [
@@ -34,6 +46,10 @@
         "PAGE_ENTER_THREW",
         "PAGE_SLIDE_HANDLER_THREW",
         "PAGE_HANDLER_THREW",
+        "PAGE_MOTION_UNDECLARED",
+        "PAGE_MOTION_CUE_UNKNOWN",
+        "PAGE_REALTIME_MEDIA",
+        "PAGE_FRAME_THREW",
         "PAGE_WAIT_REJECTED",
         "PAGE_WAIT_UNSETTLED",
         "PAGE_CLASS_UNDESCRIBED",
@@ -43,15 +59,20 @@
         "PAGE_APPEAR_TOO_LONG",
         "PAGE_STAGGER_EMPTY",
         "PAGE_SPOTLIGHT_EMPTY",
+        "PAGE_MOTION_UNFINISHED",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
         "PAGE_CDN_ASSET",
-        "RECORD_STALLED",
+        "PAGE_CHANGE_UNDECLARED",
         "RECORD_BLACK",
         "RECORD_TRUNCATED",
+        "MOTION_EASE_UNMEASURABLE",
+        "MOTION_OFF",
+        "MOTION_NO_EDGE",
+        "MOTION_MASK_LARGE",
         "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
@@ -64,12 +85,20 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
+        "TAKE_UNALIGNED",
+        "TAKE_WORD_CUT",
+        "TAKE_SILENT",
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
         "SOUND_MISSING",
-        "FILE_MISSING"
+        "FILE_MISSING",
+        "PROGRAM_NAMED"
       ],
       "title": "Code",
       "type": "string"
@@ -536,8 +565,24 @@
               "type": "null"
             }
           ],
-          "description": "The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state.",
+          "description": "The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state. A section of several turns names the turn its worst state is in and the voice that reads it.",
           "title": "Take Reason"
+        },
+        "turns": {
+          "description": "Every turn of this spoken section in order, or none for a clip or when the take states could not be read.",
+          "items": {
+            "$ref": "#/$defs/TurnStatus"
+          },
+          "title": "Turns",
+          "type": "array"
+        },
+        "voices": {
+          "description": "The voices that read this section, in the order its turns name them, each once.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Voices",
+          "type": "array"
         },
         "recorded": {
           "description": "True when a recording of this section is on disk.",
@@ -562,6 +607,8 @@
         "source",
         "take_state",
         "take_reason",
+        "turns",
+        "voices",
         "recorded",
         "assembled",
         "recording_stale"
@@ -602,6 +649,40 @@
       ],
       "title": "TakeState",
       "type": "string"
+    },
+    "TurnStatus": {
+      "additionalProperties": false,
+      "description": "One turn of a spoken section: the voice that reads it and what the disk holds for it.",
+      "properties": {
+        "turn": {
+          "description": "The turn of its section, counted from one.",
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "voice": {
+          "description": "The voice that reads this turn, by its name in decktalk.toml.",
+          "title": "Voice",
+          "type": "string"
+        },
+        "take_state": {
+          "$ref": "#/$defs/TakeState",
+          "description": "What the disk holds for this turn."
+        },
+        "take_reason": {
+          "description": "The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state.",
+          "title": "Take Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "turn",
+        "voice",
+        "take_state",
+        "take_reason"
+      ],
+      "title": "TurnStatus",
+      "type": "object"
     },
     "UnplayedTakes": {
       "additionalProperties": false,
@@ -649,6 +730,45 @@
         "bytes"
       ],
       "title": "UnplayedTakes",
+      "type": "object"
+    },
+    "VoiceStatus": {
+      "additionalProperties": false,
+      "description": "One voice the project declares: its provider, whether it is the default, whether it is named, and its bill.",
+      "properties": {
+        "name": {
+          "description": "The voice's name in decktalk.toml, which a voice direction spells.",
+          "title": "Name",
+          "type": "string"
+        },
+        "provider": {
+          "description": "The speech provider that reads it.",
+          "title": "Provider",
+          "type": "string"
+        },
+        "default": {
+          "type": "boolean",
+          "description": "True for the voice [narration] voice names, which reads every unmarked turn.",
+          "title": "Default"
+        },
+        "named": {
+          "description": "True when a voice id names it, without which no take can be matched to it.",
+          "title": "Named",
+          "type": "boolean"
+        },
+        "billing": {
+          "$ref": "#/$defs/BillingBasis",
+          "description": "How its provider bills its takes."
+        }
+      },
+      "required": [
+        "name",
+        "provider",
+        "default",
+        "named",
+        "billing"
+      ],
+      "title": "VoiceStatus",
       "type": "object"
     }
   },
@@ -717,6 +837,14 @@
         "$ref": "#/$defs/SectionStatus"
       },
       "title": "Sections",
+      "type": "array"
+    },
+    "voices": {
+      "description": "Every voice the project declares, the default first, which reads no key.",
+      "items": {
+        "$ref": "#/$defs/VoiceStatus"
+      },
+      "title": "Voices",
       "type": "array"
     },
     "film": {
@@ -788,7 +916,8 @@
     "name",
     "script",
     "cues_file",
-    "sections"
+    "sections",
+    "voices"
   ],
   "title": "StatusResult",
   "type": "object"

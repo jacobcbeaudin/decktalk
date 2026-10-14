@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import statistics
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -50,9 +51,17 @@ def seconds(value: float) -> str:
     return f"{value:.2f} s" if value < FINE_BELOW_SECONDS else f"{value:.1f} s"
 
 
+def whole(value: float) -> int:
+    """A measured value to the nearest whole number, a half going away from zero as a reader rounds it.
+
+    Python's `round` takes a half to the even neighbour, so a median of 24.5 would print as 24.
+    """
+    return int(Decimal(str(value)).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
 def ms(value: float) -> str:
     """A landing distance as the page prints it, in whole milliseconds."""
-    return f"{round(value)} ms"
+    return f"{whole(value)} ms"
 
 
 def recorded(counts: list[int], sections: int) -> str:
@@ -87,7 +96,7 @@ def view(data: dict[str, Any]) -> dict[str, Any]:
             "median": ms(row["median_ms"]),
             "limit": ms(row["limit_ms"]),
             "per_cue": [
-                {"cue": cue["cue"], "offsets": ", ".join(str(round(value)) for value in cue["offsets_ms"])}
+                {"cue": cue["cue"], "offsets": ", ".join(str(whole(value)) for value in cue["offsets_ms"])}
                 for cue in row["cues"]
             ],
         }

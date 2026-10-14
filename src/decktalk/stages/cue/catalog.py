@@ -17,6 +17,7 @@ left on disk and `check` calls it with the catalogs it read live, and both reach
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -126,8 +127,8 @@ def _missing_finding(
     )
     return judge(
         Code.CUE_UNLISTED,
-        f"section {number} declares {len(missing)} moment(s) that {where.as_posix()} does not list, which is "
-        f"{named}, so nothing gives them a second.{also}",
+        f"section {number} declares {counted(len(missing), 'moment')} that {where.as_posix()} does not list, which is "
+        f"{named}, so nothing gives {'it' if len(missing) == 1 else 'them'} a second.{also}",
         Location(where=where.as_posix(), file=where, section=number),
         stage=stage,
         fix=fix,
@@ -206,7 +207,7 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
     }
     fix = EditFix(
         title=(
-            f"Write {where.as_posix()} with a row for each of the {len(moments)} moment(s) the deck declares, "
+            f"Write {where.as_posix()} with one row per moment the deck declares, {len(moments)} in all, "
             "each waiting for the words you write in its `phrase`."
         ),
         applicability=Applicability.SAFE,
@@ -215,7 +216,7 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
     return [
         judge(
             Code.CUE_UNLISTED,
-            f"the deck declares {len(moments)} moment(s) and there is no {where.as_posix()}, so nothing gives "
+            f"the deck declares {counted(len(moments), 'moment')} and there is no {where.as_posix()}, so nothing gives "
             "any of them a second.",
             Location(where=where.as_posix(), file=where),
             stage=stage,
@@ -318,9 +319,34 @@ def _row(cue_id: str) -> str:
 
 
 def _section_line(lines: Sequence[str], number: int) -> int | None:
-    """The line one section's block opens on, or None when the file holds no block for it."""
+    """The line one section's block opens on inside `sections`, or None when `sections` holds no block for it.
+
+    Only the lines of the `sections` object are searched, because that is the only place the reader
+    looks: a row written into a block of the same number anywhere else would be read by nothing.
+    """
     key = SECTION_KEY.format(number=number)
-    return next((index for index, line in enumerate(lines) if line.lstrip().startswith(f"{key}:")), None)
+    span = _sections_span(lines)
+    if span is None:
+        return None
+    opened, closed = span
+    inside = range(opened + 1, closed + 1)
+    return next((index for index in inside if lines[index].lstrip().startswith(f"{key}:")), None)
+
+
+def _sections_span(lines: Sequence[str]) -> tuple[int, int] | None:
+    """(the line `sections` opens on, the line it closes on), or None when the file has no such object to read."""
+    found = ((index, SECTIONS_KEY.match(line)) for index, line in enumerate(lines))
+    opened = next((index for index, one in found if one is not None), None)
+    if opened is None:
+        return None
+    text = "\n".join(lines)
+    start = sum(len(line) + 1 for line in lines[:opened]) + lines[opened].index("{")
+    try:
+        _, end = json.JSONDecoder().raw_decode(text, start)
+    except json.JSONDecodeError:
+        # silent: an object that does not parse has no block a fix could find, so the fix is by hand.
+        return None
+    return opened, text.count("\n", 0, end)
 
 
 def _closes_next(lines: Sequence[str], opened: int) -> bool:

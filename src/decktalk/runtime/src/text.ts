@@ -7,20 +7,68 @@
  */
 
 import { CLASS, motionScale, styleClass } from "./canvas.ts";
-import { now, round } from "./clock.ts";
-import { APPEAR_WORDS_MAX, BACK_OPACITY, MILLISECONDS, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
+import { every, now, round, schedule } from "./clock.ts";
+import {
+  APPEAR_WORDS_MAX,
+  BACK_OPACITY,
+  LIST_SEPARATOR,
+  scaled,
+  TIME_MARK,
+  WORD_STYLES,
+  type WordStyle,
+} from "./contract.ts";
 import { recorder } from "./telemetry.ts";
 import { warn } from "./warn.ts";
 
-/** One word of the section's narration, reduced to what a match compares and the second it is said. */
-export type Spoken = { readonly key: string; readonly at: number };
+/**
+ * One word of the section's narration, reduced to what a match compares, the second it is said, and who says it.
+ *
+ * `voice` is the voice that says the word and `turn` the turn of the section it is said in, counted
+ * from one, so a page can place a word by its voice without ever showing a name. Both are null on
+ * a page that was handed no turns.
+ */
+export type Spoken = {
+  readonly key: string;
+  readonly at: number;
+  readonly voice: string | null;
+  readonly turn: number | null;
+};
 
 /** The characters a match ignores, because punctuation and case are the script's and not the voice's. */
 export function key(word: string): string {
   return word.toLowerCase().replace(/[^a-z\d]/g, "");
 }
 
-/** The opening of a line, which is enough to find it again in the script without carrying the whole of it. */
+/** One `?words=` or `?turns=` list as its name@seconds entries, each split at its last time mark. */
+function entries(raw: string): { name: string; at: number }[] {
+  return raw
+    .split(LIST_SEPARATOR)
+    .map((item) => {
+      const mark = item.lastIndexOf(TIME_MARK);
+      return { name: item.slice(0, mark), at: Number.parseFloat(item.slice(mark + 1)) };
+    })
+    .filter((entry) => entry.name && !Number.isNaN(entry.at));
+}
+
+/**
+ * `?words=` and `?turns=` as the recorder writes them: every spoken word, the second the voice reaches it, and who says it.
+ *
+ * The turns are numbered by their place in their list, and a word belongs to the last turn that
+ * began at or before its own second, so a turn that says no word still keeps the numbers after it.
+ */
+export function parseWords(raw: string, turnsRaw: string | null): Spoken[] {
+  const turns = turnsRaw ? entries(turnsRaw) : [];
+  return entries(raw)
+    .map((entry) => {
+      let turn = 0;
+      while (turn < turns.length && (turns[turn] as { at: number }).at <= entry.at) turn += 1;
+      const voice = turn ? (turns[turn - 1] as { name: string }).name : null;
+      return { key: key(entry.name), at: entry.at, voice, turn: turn || null };
+    })
+    .filter((word) => word.key);
+}
+
+/** Calibration: the opening of a line, which is enough to find it again in the script without carrying the whole of it. */
 const TEXT_MAX = 24;
 
 /**
@@ -29,6 +77,8 @@ const TEXT_MAX = 24;
  * A line whose words the narration says more than once matches every run of them, and the run the
  * author meant is the one about to be spoken, so the search keeps going until it reaches one that
  * has not already gone by.
+ *
+ * Calibration: a second and a half is a few words of speech, which is as early as a line is ever cued.
  */
 const NEAR_THE_CUE_SECONDS = 1.5;
 
@@ -57,7 +107,7 @@ const FIRST_NUMBER = /(\d[\d,]*(?:\.\d+)?)/;
  */
 const EASE_POWER = 3;
 
-/** Every group of digits a thousands separator goes in front of, which is how the author wrote it. */
+/** Truth: every group of three digits a thousands separator goes in front of, which is how the author wrote it. */
 const THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
 
 /** The share of the count already run after a given share of its length, which is a cubic ease out. */
@@ -87,19 +137,19 @@ export function count(el: HTMLElement, text: string, first: boolean, seconds: nu
     if (grouped) body = body.replace(THOUSANDS, ",");
     el.textContent = text.slice(0, at) + body + text.slice(at + written.length);
   };
-  const started = performance.now();
-  const length = seconds * MILLISECONDS;
+  const started = now();
   let live = true;
   scene.onLeave(() => {
     live = false;
   });
-  const tick = (stamp: number) => {
-    if (!live) return;
-    const part = Math.min(1, (stamp - started) / length);
+  // The count is drawn from the section second and not the wall clock, so a recorder stepping the
+  // clock one frame at a time sees the number each frame's own second holds.
+  every((at) => {
+    if (!live) return false;
+    const part = Math.min(1, (at - started) / seconds);
     draw(target * eased(part));
-    if (part < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+    return part < 1;
+  });
 }
 
 // ---- the line on the voice -------------------------------------------------------------------------
@@ -149,30 +199,26 @@ export function line(el: HTMLElement, text: string, style: WordStyle, scene: Sce
   scene.onLeave(() => {
     live = false;
   });
-  const tick = () => {
+  // Each word is a task due at its own second, so the stepped clock steps to that second whichever
+  // seconds it showed before, and the word's fade is born there and not on the frame that drew it.
+  const show = (word: Element) => {
     if (!live) return;
-    const at = now();
-    let waiting = false;
-    const words = el.querySelectorAll(`.${CLASS.word}`);
-    words.forEach((word, index) => {
-      if (word.classList.contains(CLASS.shown)) return;
-      if (at >= (due[index] as number)) {
-        word.classList.add(CLASS.shown, styleClass("word", style));
-        if (!told) {
-          told = true;
-          recorder().words({
-            text: text.slice(0, TEXT_MAX),
-            cueAt: round(cueAt),
-            spokenAt: (spoken[start] as Spoken).at,
-            count: keys.length,
-            firstShown: round(at),
-          });
-        }
-      } else waiting = true;
+    word.classList.add(CLASS.shown, styleClass("word", style));
+    if (told) return;
+    told = true;
+    recorder().words({
+      text: text.slice(0, TEXT_MAX),
+      cueAt: round(cueAt),
+      spokenAt: (spoken[start] as Spoken).at,
+      count: keys.length,
+      firstShown: round(now()),
     });
-    if (waiting) requestAnimationFrame(tick);
   };
-  tick();
+  el.querySelectorAll(`.${CLASS.word}`).forEach((word, index) => {
+    const at = due[index] as number;
+    if (at <= cueAt) show(word);
+    else schedule(at, "reveal", scene.cue ?? text.slice(0, TEXT_MAX), () => show(word));
+  });
 }
 
 /** What a word looks like before it is said, which is dim for a highlight and absent for an appear. */

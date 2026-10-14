@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from decktalk.pipeline import Stage
 from decktalk.results import BillingBasis, Cost, CostState, Layer, StageCost
 
@@ -21,9 +23,10 @@ def a_cost(
     sections: tuple[int, ...] = (1,),
     billing: BillingBasis = BillingBasis.PER_CHARACTER,
     stage: Stage = Stage.NARRATE,
+    provider: str = "elevenlabs",
 ) -> Cost:
     """A price as a stage states one, for as many whole characters as `dollars` buys at `PRICE`, with its one row."""
-    fields = {
+    fields: dict[str, Any] = {
         "state": state,
         "sections": sections,
         "characters": int(dollars / PRICE * 1000),
@@ -37,4 +40,4 @@ def a_cost(
         "averaged": False,
         "price_layer": layer,
     }
-    return Cost(**fields, stages=(StageCost(stage=stage, **fields),))
+    return Cost(**fields, stages=(StageCost(stage=stage, provider=provider, **fields),))

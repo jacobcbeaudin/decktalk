@@ -29,6 +29,18 @@ def test_the_page_policies_this_module_accepts_are_the_ones_the_setting_publishe
 INSTALLED = Path(__file__)
 """A file that is on disk, which is all a fake launch asks of the executable it would run."""
 
+CAPTURE = ["--disable-frame-rate-limit", "--disable-gpu-vsync"]
+"""The two switches every Chromium is launched with, which stop it holding its frames to a display refresh."""
+
+
+@pytest.mark.parametrize("policy", [browser.TRUSTED, browser.UNTRUSTED])
+def test_every_launch_carries_the_capture_switches_after_every_other_switch(policy):
+    """A switch that changes no pixel is no choice, so every browser DeckTalk opens takes it."""
+    chromium = FakeChromium(INSTALLED)
+    browser.launch(chromium.driver(), policy=policy, spend=False)
+    sealing = list(browser.UNTRUSTED_ARGS) if policy == browser.UNTRUSTED else []
+    assert chromium.asked[0]["args"] == [*browser.RASTER_ARGS, *sealing, *CAPTURE]
+
 
 def test_an_untrusted_page_gets_the_sandbox_a_proxy_that_answers_nothing_and_no_webrtc_udp():
     chromium = FakeChromium(INSTALLED)
@@ -46,6 +58,15 @@ def test_a_trusted_page_keeps_the_machines_own_network_and_still_gets_a_scrubbed
     asked = chromium.asked[0]
     assert "proxy" not in asked and "chromium_sandbox" not in asked
     assert asked["env"] == child_environment()
+
+
+@pytest.mark.parametrize("policy", [browser.TRUSTED, browser.UNTRUSTED])
+def test_every_chromium_draws_a_changed_tile_whole(policy):
+    """A frame is a function of its own second only when no tile keeps pixels a partial redraw left in it."""
+    chromium = FakeChromium(INSTALLED)
+    browser.launch(chromium.driver(), policy=policy, spend=False)
+    args = chromium.asked[0]["args"]
+    assert isinstance(args, list) and "--disable-partial-raster" in args
 
 
 def test_a_machine_that_cannot_run_the_sandbox_is_refused_and_never_falls_back(monkeypatch):
@@ -85,7 +106,7 @@ def test_a_run_that_may_not_spend_opens_an_untrusted_page():
 def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_under(monkeypatch, tmp_path):
     seen: list[bool] = []
     monkeypatch.setattr(pages, "route_pages", lambda *_a, trusted, **_k: seen.append(trusted))
-    monkeypatch.setattr(pages, "instrument", lambda page: page)
+    monkeypatch.setattr(pages, "instrument", lambda page, *_scripts: page)
     monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(INSTALLED).started())
     allowed = Allowed.of(tmp_path, ["deck"])
     for policy in (browser.TRUSTED, browser.UNTRUSTED):

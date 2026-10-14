@@ -33,15 +33,16 @@ craft of a build is knowing which half you are in.
 5. **Show the storyboard.** It is the frames of every slide at every cue, and it is the human
    checkpoint before anything is bought. Look at it yourself, and put its path in front of the author.
 6. **Put the price in front of the author and wait.** Name every section that would be voiced and
-   why, the total, and the price the estimate is based on. **Then wait for an answer. Run nothing
+   why, the total, and the price the estimate is based on. A film read by voices on several providers
+   is priced per provider, one row each, so name each row. **Then wait for an answer. Run nothing
    that spends until the author has given one.** When nobody can answer, run only what spends
    nothing and report what you would have asked.
 7. **Record what changed, and name every section it touches.** A recording is kept only while the
    section's own scene, the rest of its page and the files the page loads are unchanged. So a page
    edit outside any scene stales every section of that page, and a section that reads the previous
    section's words goes stale with it.
-8. **Follow a long run rather than restarting it.** Recording happens in real time, so a long film
-   takes longer than one command usually may. Watch the run's own events.
+8. **Follow a long run rather than restarting it.** Recording steps every frame of every section, so a
+   long film takes longer than one command usually may. Watch the run's own events.
 9. **Verify, and show the evidence.** A build that exits zero has not proved the cues land. Verify
    measures the finished film against what the project said it would be. Show the author the frames
    and the verify summary before calling the work done.

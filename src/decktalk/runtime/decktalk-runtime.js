@@ -25,7 +25,9 @@
    */
   var MILLISECONDS = 1e3;
   var SECOND_DIGITS = 3;
+  var DUE_SLACK_SECONDS = 1e-6;
   var FRAME_STEP_MS = 40;
+  var MEASURABLE_SPAN_SECONDS = 0.5;
   var PLAYABLE_SPAN_SECONDS = 0.46;
   var APPEAR_WORDS_MAX = 8;
   var BACK_OPACITY = 0.45;
@@ -57,6 +59,13 @@
     back: { seconds: 0.28 },
     front: { seconds: 0.2 },
   };
+  var MOTION_EASES = {
+    firm: { curve: [0.25, 0.8, 0.5, 0.95], arrival: "edge" },
+    glide: { curve: [0, 0, 1, 1], arrival: "edge" },
+    settle: { curve: [0.16, 1, 0.3, 1], arrival: "rest" },
+    spring: { curve: null, arrival: "rest" },
+  };
+  var SPRING_SETTLE_RADIANS = 9.23;
   var CODES = {
     PAGE_ATTR_UNKNOWN:
       "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
@@ -82,6 +91,13 @@
     PAGE_SLIDE_HANDLER_THREW:
       "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
     PAGE_HANDLER_THREW: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
+    PAGE_MOTION_UNDECLARED:
+      "{value} keeps moving past the half second a cue may still move and declares no motion, loop or region, so verify cannot mask it.",
+    PAGE_MOTION_CUE_UNKNOWN:
+      "The motion names the cue {cue}, which no slide declares, so it never starts or never lands.",
+    PAGE_REALTIME_MEDIA:
+      "Slide {slide} holds a {value} element, which plays at its own rate and not on the stepped clock, so use a clip section.",
+    PAGE_FRAME_THREW: "A frame hook the deck registered threw {value}, so it stopped drawing from that frame on.",
     PAGE_WAIT_REJECTED: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
     PAGE_WAIT_UNSETTLED: "A promise the page waited for never settled, so the page was drawn without it.",
     PAGE_CLASS_UNDESCRIBED:
@@ -96,6 +112,8 @@
     PAGE_STAGGER_EMPTY: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
     PAGE_SPOTLIGHT_EMPTY:
       "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+    PAGE_MOTION_UNFINISHED:
+      "The script motion on {value} from {from} still changes after it arrives at {cue}, so move its arrival later or end the change by it.",
     PAGE_MOTION_OVERRUN:
       "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
     PAGE_STAGGER_OVERRUN:
@@ -106,8 +124,8 @@
     PAGE_SWAP_APART:
       "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
     PAGE_CDN_ASSET: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-    RECORD_STALLED:
-      "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
+    PAGE_CHANGE_UNDECLARED:
+      "{value} changed the picture with no cue, motion, loop or frame hook to explain it, so declare it or draw it from a cue.",
     RECORD_BLACK:
       "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
     RECORD_TRUNCATED: "The recording ends {value} s before the narration does, so the last cues are not in it.",
@@ -115,6 +133,7 @@
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
+  var LOOP_SECONDS_RANGE = { min: 0.2, max: 60, step: 0.04, unit: "seconds" };
   var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
@@ -334,6 +353,80 @@
       affects: ["transcript"],
       summary: "Overrides the departure sentence when leaving means something of its own.",
     },
+    "data-motion": {
+      name: "data-motion",
+      on: ["element"],
+      kind: "keyframes",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_UNDECLARED",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element moves through these @keyframes from one cue to another, masked from every reveal check and landing on its cues.",
+    },
+    "data-motion-from": {
+      name: "data-motion-from",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The motion departs at this cue.",
+    },
+    "data-motion-to": {
+      name: "data-motion-to",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The motion arrives at this cue, so its length is the two cues' seconds apart.",
+    },
+    "data-motion-ease": {
+      name: "data-motion-ease",
+      on: ["element"],
+      kind: "word",
+      values: ["firm", "glide", "settle", "spring"],
+      default: "firm",
+      range: null,
+      code: "PAGE_BAD_VALUE",
+      span: 0,
+      affects: ["motion", "style"],
+      summary: "How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify.",
+    },
+    "data-loop": {
+      name: "data-loop",
+      on: ["element"],
+      kind: "keyframes",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_UNDECLARED",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element turns through these @keyframes for as long as its slide is on screen, masked and never a landing.",
+    },
+    "data-loop-seconds": {
+      name: "data-loop-seconds",
+      on: ["element"],
+      kind: "seconds",
+      values: [],
+      default: "1",
+      range: LOOP_SECONDS_RANGE,
+      code: "PAGE_BAD_VALUE",
+      span: 0,
+      affects: ["motion"],
+      summary: "How long one turn of the loop takes.",
+    },
     "data-scene": {
       name: "data-scene",
       on: ["scene"],
@@ -419,6 +512,15 @@
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
+  var CANVAS_WIDTH = 1920;
+  var CANVAS_HEIGHT = 1080;
+  var CANVAS_WIDTH_PROPERTY = "--dt-width";
+  var CANVAS_HEIGHT_PROPERTY = "--dt-height";
+  var SHAPE_ATTR = "data-dt-shape";
+  function shapeOf(width, height) {
+    return width > height ? "wide" : width === height ? "square" : "vertical";
+  }
+  var PREVIEW_CANVAS = `${ENGINE_PATH}canvas.json`;
   function cueId(slide, local) {
     return `${slide}${CUE_MARK}${local}`;
   }
@@ -464,17 +566,19 @@
   // src/decktalk/runtime/src/canvas.ts
   /*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
    *
-   * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
-   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
-   * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
+   * A DeckTalk page draws onto one canvas, the project's frame laid out at a short side of
+   * `CANVAS_HEIGHT` CSS pixels and scaled to whatever window it is opened in, so an element measured
+   * on a laptop is at the pixel a recording will put it at. The canvas's size reaches the page as two custom properties on
+   * the root, which the recorder writes before any script of the page runs and a preview asks its
+   * origin for, and the runtime writes them back with the canvas's shape, so a page's stylesheet lays
+   * itself out for its own frame. This module owns that canvas, the fit, the heads-up display, and the
+   * stylesheet.
    *
    * Every rule below is generated from the registry, so a style word's length lives once. Each
    * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
    * to the head, so a page rule of equal weight wins on document order. An author's stylesheet is
    * therefore always able to override the runtime without reaching for `!important`.
    */
-  var CANVAS_WIDTH = 1920;
-  var CANVAS_HEIGHT = 1080;
   var EASE = "cubic-bezier(.2,.7,.2,1)";
   var POP_ENTRY_SCALE = 0.7;
   var POP_OVERSHOOT_AT = 60;
@@ -492,7 +596,18 @@
     frozen: "dt-frozen",
     /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
     reduced: "dt-reduced",
+    /** The class a page drawing the caption band alone puts on the root, which clears everything else. */
+    captioning: "dt-captioning",
+    /** One caption in the band, which carries `data-voice` and `data-turn` for a page to place it by. */
+    caption: "dt-caption",
+    /** One line of a caption, which carries `data-sound` when it says what is heard rather than said. */
+    captionLine: "dt-caption-line",
   };
+  var CAPTIONS_ID = "dt-captions";
+  var CAPTION_LINE_EMS = 24;
+  var CAPTION_SIDE_SHARE = 12;
+  var CAPTION_SIDE = `calc(var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
+  var CAPTION_LINE = `(var(${CANVAS_WIDTH_PROPERTY}) - 2 * var(${CANVAS_WIDTH_PROPERTY}) / ${CAPTION_SIDE_SHARE})`;
   function frames(family, word2) {
     return `dt-${family}-${word2}`;
   }
@@ -533,15 +648,29 @@
     ":where(#dt-index code){color:inherit;opacity:.7}\n",
     ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
   ];
+  var CAPTION_CSS = [
+    `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 ${CAPTION_SIDE} 72px;pointer-events:none}
+`,
+    `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;font-size:min(46px,calc(${CAPTION_LINE} / ${CAPTION_LINE_EMS}));color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}
+`,
+    `:where(.${CLASS.captionLine}){display:block}
+`,
+    `:where(.${CLASS.captioning}),:where(.${CLASS.captioning}) body{background:transparent!important}
+`,
+    `:where(.${CLASS.captioning}) body{visibility:hidden!important}
+`,
+    `:where(.${CLASS.captioning} #${CAPTIONS_ID}){visibility:visible!important}
+`,
+  ];
   function sheet() {
-    const declared2 = Object.values(ATTRS)
+    const declared3 = Object.values(ATTRS)
       .filter((row) => row.kind === "id")
       .map((row) => `[${row.name}]`)
       .join(",");
     const parts = [
-      `:where(${declared2}){display:none}
+      `:where(${declared3}){display:none}
 `,
-      `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;overflow:hidden;transform-origin:0 0}
+      `:where(#dt-canvas){position:absolute;left:0;top:0;width:var(${CANVAS_WIDTH_PROPERTY});height:var(${CANVAS_HEIGHT_PROPERTY});overflow:hidden;transform-origin:0 0}
 `,
       ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
       `:where(.${CLASS.slide}){position:absolute;inset:0}
@@ -586,7 +715,7 @@
       `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
 `,
     );
-    parts.push(...CHROME_CSS);
+    parts.push(...CHROME_CSS, ...CAPTION_CSS);
     return parts.join("");
   }
   var canvasEl = null;
@@ -594,6 +723,8 @@
   var panEl = null;
   var hudEl = null;
   var fitScale = 1;
+  var canvasWidth = CANVAS_WIDTH;
+  var canvasHeight = CANVAS_HEIGHT;
   function style() {
     if (document.getElementById("dt-style")) return;
     const el = document.createElement("style");
@@ -613,6 +744,30 @@
   function span(el, seconds2) {
     el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale())}s`);
   }
+  function declared(property) {
+    const length = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(property));
+    return Number.isFinite(length) && length > 0 ? length : null;
+  }
+  function resize(width, height) {
+    canvasWidth = width;
+    canvasHeight = height;
+    const root = document.documentElement;
+    root.style.setProperty(CANVAS_WIDTH_PROPERTY, `${width}px`);
+    root.style.setProperty(CANVAS_HEIGHT_PROPERTY, `${height}px`);
+    root.setAttribute(SHAPE_ATTR, shapeOf(width, height));
+    fit();
+  }
+  async function previewed() {
+    try {
+      const answer = await fetch(PREVIEW_CANVAS);
+      if (!answer.ok) return;
+      const told = await answer.json();
+      const { width, height } = told;
+      if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) resize(width, height);
+    } catch {
+      return;
+    }
+  }
   function build(hud) {
     if (canvasEl) return;
     canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
@@ -630,14 +785,17 @@
       document.body.appendChild(hudEl);
     }
     if (reduced()) document.documentElement.classList.add(CLASS.reduced);
-    fit();
+    const width = declared(CANVAS_WIDTH_PROPERTY);
+    const height = declared(CANVAS_HEIGHT_PROPERTY);
+    resize(width ?? CANVAS_WIDTH, height ?? CANVAS_HEIGHT);
+    if (width === null || height === null) void previewed();
     window.addEventListener("resize", fit);
   }
   function fit() {
     if (!canvasEl) return;
-    fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
-    const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
-    const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+    fitScale = Math.min(window.innerWidth / canvasWidth, window.innerHeight / canvasHeight);
+    const x = (window.innerWidth - canvasWidth * fitScale) / 2;
+    const y = (window.innerHeight - canvasHeight * fitScale) / 2;
     canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
   }
   function pan() {
@@ -665,36 +823,89 @@
   function countSeconds(word2) {
     return scaled(COUNTS[word2].seconds, motionScale());
   }
+  var bandEl = null;
+  function captioning() {
+    document.documentElement.classList.add(CLASS.captioning);
+    if (bandEl || !canvasEl) return;
+    bandEl = document.createElement("div");
+    bandEl.id = CAPTIONS_ID;
+    canvasEl.appendChild(bandEl);
+  }
+  function showCaption(caption) {
+    captioning();
+    const band = bandEl;
+    band.replaceChildren();
+    if (caption) {
+      const p = document.createElement("p");
+      p.className = CLASS.caption;
+      if (caption.voice !== null) p.dataset.voice = caption.voice;
+      if (caption.turn !== null) p.dataset.turn = String(caption.turn);
+      const [first, after] = caption.spoken;
+      caption.lines.forEach((text, index2) => {
+        const line2 = document.createElement("span");
+        line2.className = CLASS.captionLine;
+        line2.textContent = text;
+        if (index2 < first || index2 >= after) line2.dataset.sound = "";
+        p.appendChild(line2);
+      });
+      band.appendChild(p);
+    }
+    const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
+    return fonts.then(
+      () => new Promise((done2) => requestAnimationFrame(() => requestAnimationFrame(() => done2(true)))),
+    );
+  }
 
   // src/decktalk/runtime/src/clock.ts
   /*! The section clock and the queue of everything the page has still to do.
    *
-   * Every second a DeckTalk page reasons in is a second on the section clock, whose start is the frame the
-   * recorder's cover came off or the moment a preview started. This module owns that origin, the
-   * queue of work sorted by the second it is due, and the one animation frame loop that drains it.
+   * Every second a DeckTalk page reasons in is a second on the section clock. This module owns that
+   * clock, the queue of work sorted by the second it is due, and the frame hooks that redraw something
+   * every frame, and it moves all three through one of two drivers.
    *
-   * It holds no DOM and reads no markup, so a test can drive a whole recording's worth of cues
-   * through it without a browser. The queue is drained inside an animation frame on purpose: a cue
-   * that fires between two frames is a cue whose reveal is painted at the same time as one that fired
-   * inside the frame, and the recorder cannot tell the two apart afterwards.
+   * The realtime driver is a person's browser: the clock reads `performance.now()` from the moment the
+   * page started, and one animation frame loop drains the queue and calls the hooks. The stepped driver
+   * is the recorder's: nothing moves until the recorder calls `stepTo(t)`, which puts the clock at that
+   * second, runs what is due in the order it was due, each at its own second, calls every hook with that
+   * second and then tells the timeline to show it. A recording is therefore a list of exact states rather than a race against
+   * a compositor, and two recordings of the same page are the same frames. The step also answers whether
+   * anything it knows of moved: a task ran, a hook drew, or what hears the clock says what it holds moved.
+   * The recorder writes the frame before again for a step where nothing did and the page agrees. The
+   * step also answers the earliest second anything can next change, which is the next task's second,
+   * when no hook draws, unless what hears the clock moves sooner, so the recorder can carry the frame
+   * across every second before it without a step.
+   *
+   * It holds no DOM and reads no markup, so a test can drive a whole recording's worth of cues through
+   * it without a browser. The timeline that seeks the page's animations listens through `observe`, so
+   * this module never touches an animation itself.
    */
   var MOUNT_FIRST = 0;
   var AFTER_THE_MOUNT = 1;
+  var driver = "realtime";
   var origin = null;
+  var current = 0;
   var frame2 = 0;
   var queue = [];
+  var hooks = [];
+  var observer = null;
   var looping = false;
+  var waiting = null;
   function start() {
     if (origin === null) origin = performance.now();
   }
   function started() {
     return origin !== null;
   }
+  function driven() {
+    return driver;
+  }
   function now() {
-    return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / MILLISECONDS;
+    if (origin === null) return Number.NEGATIVE_INFINITY;
+    return driver === "stepped" ? current : (performance.now() - origin) / MILLISECONDS;
   }
   function frameAt() {
-    return origin === null ? null : round((frame2 - origin) / MILLISECONDS);
+    if (origin === null) return null;
+    return driver === "stepped" ? round(current) : round((frame2 - origin) / MILLISECONDS);
   }
   function round(seconds2) {
     return Number(seconds2.toFixed(SECOND_DIGITS));
@@ -706,17 +917,66 @@
   function rank(kind) {
     return kind === "mount" ? MOUNT_FIRST : AFTER_THE_MOUNT;
   }
+  function every(hook) {
+    hooks.push(hook);
+  }
+  function observe(next) {
+    observer = next;
+  }
+  function drain(seconds2) {
+    let ran = false;
+    while (queue.length && queue[0].at <= seconds2 + DUE_SLACK_SECONDS) {
+      const task = queue.shift();
+      observer?.running(task.at);
+      task.run();
+      observer?.ran(task.at);
+      ran = true;
+    }
+    return ran;
+  }
+  function draw(seconds2) {
+    const drew = hooks.length > 0;
+    hooks = hooks.filter((hook) => hook(seconds2) !== false);
+    return drew;
+  }
+  function earliest(...seconds2) {
+    let first = null;
+    for (const one of seconds2) if (one !== null && (first === null || one < first)) first = one;
+    return first;
+  }
+  function stepTo(seconds2) {
+    const first = origin === null;
+    if (first) {
+      driver = "stepped";
+      origin = 0;
+      if (waiting !== null) cancelAnimationFrame(waiting);
+      waiting = null;
+    }
+    if (driver !== "stepped") return { due: null, changed: true, stillUntil: seconds2 };
+    current = seconds2;
+    const ran = drain(seconds2);
+    const drew = draw(seconds2);
+    const moved = observer?.stepped(seconds2) ?? false;
+    const stillUntil2 = hooks.length > 0 ? seconds2 : earliest(due(), observer?.still(seconds2) ?? null);
+    return { due: due(), changed: first || ran || drew || moved, stillUntil: stillUntil2 };
+  }
+  function due() {
+    return queue.length ? queue[0].at : null;
+  }
   function run(onFrame) {
     if (looping) return;
     looping = true;
     const tick = (at) => {
+      waiting = null;
+      if (driver === "stepped") return;
       frame2 = at;
       const seconds2 = now();
-      while (queue.length && queue[0].at <= seconds2) queue.shift().run();
+      drain(seconds2);
+      if (origin !== null) draw(seconds2);
       onFrame?.(seconds2);
-      requestAnimationFrame(tick);
+      waiting = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    waiting = requestAnimationFrame(tick);
   }
 
   // src/decktalk/runtime/src/warn.ts
@@ -796,7 +1056,15 @@
     describeOut: named("describe-out"),
     tex: named("tex"),
     texDisplay: named("tex-display"),
+    motion: named("motion"),
+    motionFrom: named("motion-from"),
+    motionTo: named("motion-to"),
+    motionEase: named("motion-ease"),
+    loop: named("loop"),
+    loopSeconds: named("loop-seconds"),
   };
+  var MOVING_SELECTOR = `[${ATTR.motion}],[${ATTR.loop}]`;
+  var REALTIME_MEDIA = ["video", "audio"];
   var SCENE_WORD = "Scene";
   var scenes = /* @__PURE__ */ new Map();
   var handlers = /* @__PURE__ */ new Map();
@@ -879,6 +1147,36 @@
     const found = pairs(value).find((pair) => pair.cue === local);
     return found ? found.value : null;
   }
+  function motionOf(el, slideId) {
+    const name = written(el, ATTR.motion);
+    if (name) {
+      const from = written(el, ATTR.motionFrom);
+      const to = written(el, ATTR.motionTo);
+      return {
+        kind: "motion",
+        name,
+        from: from ? cueId(slideId, from) : null,
+        to: to ? cueId(slideId, to) : null,
+        ease: easeOf(el),
+        seconds: null,
+      };
+    }
+    const loop = written(el, ATTR.loop);
+    if (!loop) return null;
+    return { kind: "loop", name: loop, from: null, to: null, ease: null, seconds: loopSeconds(el) };
+  }
+  function motionsOf(slide) {
+    if (!slide.markup) return [];
+    return [...slide.markup.content.querySelectorAll(MOVING_SELECTOR)]
+      .map((el) => motionOf(el, slide.id))
+      .filter((row) => row !== null);
+  }
+  function easeOf(el) {
+    return word(el, ATTR.motionEase, MOTION_EASES);
+  }
+  function loopSeconds(el) {
+    return seconds(el, ATTR.loopSeconds) ?? Number(ATTRS[ATTR.loopSeconds].default);
+  }
   function momentElements(root) {
     return [...root.querySelectorAll(MOMENT_SELECTOR), ...root.querySelectorAll(`[${ATTR.class}]`)].filter(
       (el, at, list) => list.indexOf(el) === at,
@@ -893,6 +1191,10 @@
       for (const el of momentElements(slide.markup.content)) {
         for (const moment of momentsOf(el, slide.id)) add(moment.cue);
         for (const change of classChangesOf(el, slide.id)) add(change.cue);
+      }
+      for (const row of motionsOf(slide)) {
+        if (row.from) add(row.from);
+        if (row.to) add(row.to);
       }
     }
     for (const local of Object.keys(slide.on)) add(cueId(slide.id, local));
@@ -917,7 +1219,7 @@
   function spansOf(slide) {
     const spans = {};
     const widen = (cue, span2) => {
-      spans[cue] = Math.max(spans[cue] ?? 0, declared(span2));
+      spans[cue] = Math.max(spans[cue] ?? 0, declared2(span2));
     };
     if (!slide.markup) return spans;
     for (const el of momentElements(slide.markup.content)) {
@@ -926,7 +1228,7 @@
     }
     return spans;
   }
-  function declared(span2) {
+  function declared2(span2) {
     return Number((span2 * motionScale2).toFixed(SECOND_DIGITS));
   }
   function spanOf(el, attr) {
@@ -949,7 +1251,7 @@
         el.classList.add(change.name);
         const span2 = longestMotion(el);
         el.classList.remove(change.name);
-        into[change.cue] = Math.max(into[change.cue] ?? 0, declared(span2));
+        into[change.cue] = Math.max(into[change.cue] ?? 0, declared2(span2));
         if (reduced2 && span2 > 0) {
           warn("PAGE_CLASS_NOT_REDUCED", slide.id, change.cue, { value: change.name, attr: ATTR.class });
         }
@@ -973,6 +1275,7 @@
       slides: scene.slides.map((slide) => slide.id),
       cues: Object.fromEntries(scene.slides.map((slide) => [slide.id, cueOrder(slide)])),
       spans: Object.assign({}, ...scene.slides.map(spansOf)),
+      motions: Object.fromEntries(scene.slides.map((slide) => [slide.id, motionsOf(slide)])),
     }));
   }
   function slideFrom(sceneId, input, at) {
@@ -1059,6 +1362,7 @@
           warn("PAGE_BAD_VALUE", place, null, { attr: attribute.name, value: attribute.value, allowed: why });
         }
       }
+      if (REALTIME_MEDIA.includes(el.localName)) warn("PAGE_REALTIME_MEDIA", place, null, { value: el.localName });
       if (!inSlide) {
         for (const attr of MOMENTS) {
           const local = written(el, attr);
@@ -1099,13 +1403,13 @@
   }
   function order(slide) {
     if (!slide.markup) return;
-    const declared2 = cueOrder(slide);
+    const declared3 = cueOrder(slide);
     for (const el of momentElements(slide.markup.content)) {
       const moments = momentsOf(el, slide.id);
       const arrival2 = moments.find((one) => one.attr === ATTR.in);
       const departure = moments.find((one) => one.attr === ATTR.out);
       if (!arrival2 || !departure) continue;
-      if (declared2.indexOf(departure.cue) <= declared2.indexOf(arrival2.cue)) {
+      if (declared3.indexOf(departure.cue) <= declared3.indexOf(arrival2.cue)) {
         warn("PAGE_MOMENT_ORDER", slide.id, departure.cue, { attr: ATTR.out, value: departure.local });
       }
     }
@@ -1124,7 +1428,7 @@
   var LOOK_EVERY_MS = 100;
   var ERROR_CLASS = "katex-error";
   var readable = /* @__PURE__ */ new WeakMap();
-  var waiting = false;
+  var waiting2 = false;
   function fallback(el) {
     return (readable.get(el) ?? el.textContent ?? "").trim().replace(/\s+/g, " ");
   }
@@ -1154,31 +1458,309 @@
     }
   }
   function watch(slideId) {
-    if (waiting) return;
-    waiting = true;
+    if (waiting2) return;
+    waiting2 = true;
     setTimeout(() => {
       if (!window.katex) warn("PAGE_KATEX_MISSING", slideId, null, { attr: ATTR.tex });
     }, KATEX_SECONDS * MILLISECONDS);
   }
   function ready(root) {
     if (!wants() || window.katex) return Promise.resolve();
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const started2 = performance.now();
       const look = () => {
         if (window.katex) {
           if (root) typeset(root);
-          resolve();
+          resolve2();
           return;
         }
         if (performance.now() - started2 > KATEX_SECONDS * MILLISECONDS) {
           warn("PAGE_KATEX_MISSING", null, null, { attr: ATTR.tex });
-          resolve();
+          resolve2();
           return;
         }
         setTimeout(look, LOOK_EVERY_MS);
       };
       look();
     });
+  }
+
+  // src/decktalk/runtime/src/motion.ts
+  /*! Declared motion: a thing that moves from one cue to another, a loop, and a region a frame hook draws in.
+   *
+   * A moment is a reveal of half a second or less, measured as a step in the picture. A motion is the
+   * other noun: it can run for any length, its length is the seconds between two cues and never a
+   * number in markup, and it is declared on the element it moves, so verify can mask it from every
+   * reveal and measure its own departure and arrival instead. A loop turns for as long as its slide is
+   * on screen and is masked and never a landing. A frame hook draws inside a region it names.
+   *
+   * Anything that keeps moving past the half second a cue may still move and declares none of these is
+   * undeclared motion, which is exactly what makes verify's control dishonest, so the page reports it.
+   */
+  var SPRING_POINTS = 32;
+  var SPRING_DIGITS = 4;
+  var BERNSTEIN = 3;
+  var HALVINGS = 50;
+  function bezier(x1, y1, x2, y2) {
+    const at = (a, b, s) => BERNSTEIN * (1 - s) ** 2 * s * a + BERNSTEIN * (1 - s) * s * s * b + s ** BERNSTEIN;
+    return (u) => {
+      if (u <= 0) return 0;
+      if (u >= 1) return 1;
+      let lo = 0;
+      let hi = 1;
+      let s = u;
+      for (let step = 0; step < HALVINGS; step += 1) {
+        s = (lo + hi) / 2;
+        if (at(x1, x2, s) < u) lo = s;
+        else hi = s;
+      }
+      return at(y1, y2, s);
+    };
+  }
+  function spring(u) {
+    const reach = (x) => 1 - (1 + x) * Math.exp(-x);
+    return u <= 0 ? 0 : u >= 1 ? 1 : reach(SPRING_SETTLE_RADIANS * u) / reach(SPRING_SETTLE_RADIANS);
+  }
+  function eased(ease, u) {
+    const curve = MOTION_EASES[ease].curve;
+    return curve ? bezier(...curve)(u) : spring(u);
+  }
+  function cssTiming(ease) {
+    const curve = MOTION_EASES[ease].curve;
+    if (curve) return `cubic-bezier(${curve.join(", ")})`;
+    const points = Array.from({ length: SPRING_POINTS + 1 }, (_, k) =>
+      spring(k / SPRING_POINTS).toFixed(SPRING_DIGITS),
+    );
+    return `linear(${points.join(", ")})`;
+  }
+  var lanes = [];
+  var swept = /* @__PURE__ */ new Map();
+  function resolve(region2) {
+    const found = typeof region2 === "string" ? document.querySelector(region2) : region2;
+    return found?.isConnected ? found : null;
+  }
+  function regionOf(one) {
+    return resolve(one.region);
+  }
+  function alive(one, seconds2) {
+    if (one.from !== null && one.to !== null)
+      return seconds2 >= one.from - DUE_SLACK_SECONDS && seconds2 <= one.to + DUE_SLACK_SECONDS;
+    return true;
+  }
+  function sample(seconds2) {
+    for (const one of lanes) {
+      if (!alive(one, seconds2)) continue;
+      const el = regionOf(one);
+      if (el) note(one.id, el, seconds2);
+    }
+  }
+  function note(id, el, seconds2) {
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const seen = swept.get(id);
+    if (!seen) {
+      swept.set(id, {
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+        first: seconds2,
+        last: seconds2,
+      });
+      return;
+    }
+    seen.left = Math.min(seen.left, box.left);
+    seen.top = Math.min(seen.top, box.top);
+    seen.right = Math.max(seen.right, box.right);
+    seen.bottom = Math.max(seen.bottom, box.bottom);
+    seen.last = seconds2;
+  }
+  function moving(seconds2) {
+    return lanes.some((one) => one.kind !== "region" && alive(one, seconds2) && regionOf(one) !== null);
+  }
+  function stillUntil(seconds2) {
+    let next = null;
+    for (const one of lanes) {
+      if (one.kind === "region") continue;
+      if (alive(one, seconds2) && regionOf(one) !== null) return seconds2;
+      if (one.from !== null && one.from - DUE_SLACK_SECONDS > seconds2)
+        next = earliest(next, one.from - DUE_SLACK_SECONDS);
+    }
+    return next;
+  }
+  function report() {
+    return lanes.map((one) => {
+      const seen = swept.get(one.id);
+      const landings = [];
+      if (one.cues.from && one.from !== null)
+        landings.push({ cue: one.cues.from, kind: "depart", at: round(one.from) });
+      if (one.cues.to && one.to !== null) landings.push({ cue: one.cues.to, kind: "arrive", at: round(one.to) });
+      const box = seen
+        ? {
+            x: Math.round(seen.left),
+            y: Math.round(seen.top),
+            w: Math.round(seen.right) - Math.round(seen.left),
+            h: Math.round(seen.bottom) - Math.round(seen.top),
+          }
+        : null;
+      return {
+        id: one.id,
+        kind: one.kind,
+        box,
+        size: seen ? { w: Math.round(seen.width), h: Math.round(seen.height) } : null,
+        departs: seen ? round(seen.first) : null,
+        arrives: seen ? round(seen.last) : null,
+        landings,
+      };
+    });
+  }
+  function lane(next) {
+    lanes.push({ ...next, id: `${next.kind}-${lanes.length + 1}` });
+  }
+  function covered(target) {
+    if (!target) return false;
+    if (target.closest(MOVING_SELECTOR)) return true;
+    return lanes.some((one) => {
+      const region2 = typeof one.region === "string" ? document.querySelector(one.region) : one.region;
+      return region2?.contains(target) ?? false;
+    });
+  }
+  function describe(el) {
+    if (!el) return "An animation";
+    const id = el.id ? `#${el.id}` : "";
+    const classes = [...el.classList].map((name) => `.${name}`).join("");
+    return `<${el.localName}${id}${classes}>`;
+  }
+  function laidOut(el) {
+    return [el, ...el.querySelectorAll("*")]
+      .flatMap((one) => [...one.getClientRects()])
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+  function enclosing(rects) {
+    const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)));
+    const top = Math.max(0, Math.min(...rects.map((rect) => rect.top)));
+    const right = Math.min(window.innerWidth, Math.max(...rects.map((rect) => rect.right)));
+    const bottom = Math.min(window.innerHeight, Math.max(...rects.map((rect) => rect.bottom)));
+    if (!rects.length || right <= left || bottom <= top) return null;
+    return { x: left, y: top, w: right - left, h: bottom - top };
+  }
+  function undeclaredChange(nodes) {
+    const changed = [
+      ...new Set(
+        nodes
+          .map((node) => (node instanceof Element ? node : node.parentElement))
+          .filter((el) => !!el?.isConnected && !covered(el)),
+      ),
+    ];
+    if (!changed.length) return null;
+    const rects = changed.map(laidOut);
+    return {
+      what: describe(changed[0] ?? null),
+      box: rects.some((one) => !one.length) ? null : enclosing(rects.flat()),
+    };
+  }
+  function born(animation, slideId) {
+    if (animation.endSeconds <= PLAYABLE_SPAN_SECONDS || covered(animation.target)) return;
+    warn("PAGE_MOTION_UNDECLARED", slideId, null, { value: describe(animation.target) });
+  }
+  function undeclaredIn(slideEl, slideId) {
+    for (const el of slideEl.querySelectorAll("*")) {
+      if (el.closest(MOVING_SELECTOR)) continue;
+      const style2 = getComputedStyle(el);
+      const turns = style2.animationIterationCount.split(",").map((part) => part.trim());
+      const lengths = style2.animationDuration.split(",").map((part) => Number.parseFloat(part) || 0);
+      const longest = Math.max(
+        ...lengths.map((length, at) => (turns[at % turns.length] === "infinite" && length > 0 ? Infinity : length)),
+      );
+      if (longest > PLAYABLE_SPAN_SECONDS) born({ target: el, endSeconds: longest }, slideId);
+    }
+  }
+  function wire(el, slide, timing, on2) {
+    for (const target of el.querySelectorAll(MOVING_SELECTOR)) {
+      const moving2 = target;
+      const loop = written(moving2, ATTR.loop);
+      if (timing.frozen) {
+        if (loop) continue;
+        const departs = written(moving2, ATTR.motionFrom);
+        const name2 = written(moving2, ATTR.motion);
+        if (departs)
+          on2(`${slide.id}:${departs}`, () => (moving2.style.animation = `${name2} 1s linear 0s 1 normal both`));
+        continue;
+      }
+      if (loop) {
+        moving2.style.animation = `${loop} ${loopSeconds(moving2)}s linear 0s infinite`;
+        lane({ kind: "loop", region: moving2, from: null, to: null, cues: { from: null, to: null } });
+        continue;
+      }
+      const name = written(moving2, ATTR.motion);
+      const fromLocal = written(moving2, ATTR.motionFrom);
+      const toLocal = written(moving2, ATTR.motionTo);
+      const from = fromLocal ? `${slide.id}:${fromLocal}` : null;
+      const to = toLocal ? `${slide.id}:${toLocal}` : null;
+      const start2 = from === null ? null : timing.at(from);
+      const end = to === null ? null : timing.at(to);
+      if (from === null || to === null || start2 === null || end === null || end <= start2) {
+        warn("PAGE_MOTION_CUE_UNKNOWN", slide.id, to ?? from, { attr: ATTR.motion, value: name });
+        continue;
+      }
+      lane({ kind: "motion", region: moving2, from: start2, to: end, cues: { from, to } });
+      const ease = easeOf(moving2);
+      on2(from, () => {
+        moving2.style.animation = `${name} ${end - start2}s ${cssTiming(ease)} 0s 1 normal both`;
+      });
+    }
+  }
+  function picture(el) {
+    const canvases = el instanceof HTMLCanvasElement ? [el] : [...el.querySelectorAll("canvas")];
+    const drawn = canvases.map((canvas) => {
+      try {
+        return canvas.toDataURL();
+      } catch {
+        return "";
+      }
+    });
+    return [el.outerHTML, ...drawn].join("\n");
+  }
+  function arrive(region2, motion, seconds2) {
+    const el = resolve(region2);
+    const later = el ? (motion.draw(1, seconds2 + MEASURABLE_SPAN_SECONDS), picture(el)) : null;
+    motion.draw(1, seconds2);
+    if (el && later !== null && later !== picture(el)) {
+      warn("PAGE_MOTION_UNFINISHED", null, motion.to, { value: describe(el), from: motion.from });
+    }
+  }
+  function scripted(region2, motion, at) {
+    const start2 = at(motion.from);
+    const end = at(motion.to);
+    if (start2 === null || end === null || end <= start2) {
+      warn("PAGE_MOTION_CUE_UNKNOWN", null, start2 === null ? motion.from : motion.to);
+      return;
+    }
+    const ease = motion.ease ?? ATTRS[ATTR.motionEase].default;
+    lane({ kind: "motion", region: region2, from: start2, to: end, cues: { from: motion.from, to: motion.to } });
+    every((seconds2) => {
+      if (seconds2 < start2) return true;
+      const u = Math.min(1, (seconds2 - start2) / (end - start2));
+      if (u < 1) {
+        motion.draw(eased(ease, u), seconds2);
+        return true;
+      }
+      arrive(region2, motion, seconds2);
+      return false;
+    });
+  }
+  function region(where) {
+    if (where === void 0) {
+      warn("PAGE_MOTION_UNDECLARED", null, null, { value: "A frame hook" });
+      return;
+    }
+    lane({ kind: "region", region: where, from: null, to: null, cues: { from: null, to: null } });
+  }
+  function ending(animation) {
+    const end = animation.effect?.getComputedTiming().endTime;
+    return typeof end === "number" ? end / MILLISECONDS : Number.POSITIVE_INFINITY;
   }
 
   // src/decktalk/runtime/src/telemetry.ts
@@ -1200,12 +1782,12 @@
     cue() {},
     words() {},
   };
-  var current = NOBODY;
+  var current2 = NOBODY;
   function recorder() {
-    return current;
+    return current2;
   }
   function setRecorder(next) {
-    current = next ?? NOBODY;
+    current2 = next ?? NOBODY;
   }
 
   // src/decktalk/runtime/src/text.ts
@@ -1219,13 +1801,33 @@
   function key(word2) {
     return word2.toLowerCase().replace(/[^a-z\d]/g, "");
   }
+  function entries(raw) {
+    return raw
+      .split(LIST_SEPARATOR)
+      .map((item) => {
+        const mark = item.lastIndexOf(TIME_MARK);
+        return { name: item.slice(0, mark), at: Number.parseFloat(item.slice(mark + 1)) };
+      })
+      .filter((entry) => entry.name && !Number.isNaN(entry.at));
+  }
+  function parseWords(raw, turnsRaw) {
+    const turns = turnsRaw ? entries(turnsRaw) : [];
+    return entries(raw)
+      .map((entry) => {
+        let turn = 0;
+        while (turn < turns.length && turns[turn].at <= entry.at) turn += 1;
+        const voice = turn ? turns[turn - 1].name : null;
+        return { key: key(entry.name), at: entry.at, voice, turn: turn || null };
+      })
+      .filter((word2) => word2.key);
+  }
   var TEXT_MAX = 24;
   var NEAR_THE_CUE_SECONDS = 1.5;
   var LAST_NUMBER = /(\d[\d,]*(?:\.\d+)?)(?!.*\d)/;
   var FIRST_NUMBER = /(\d[\d,]*(?:\.\d+)?)/;
   var EASE_POWER = 3;
   var THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
-  function eased(part) {
+  function eased2(part) {
     return 1 - (1 - part) ** EASE_POWER;
   }
   function count(el, text, first, seconds2, scene) {
@@ -1239,24 +1841,22 @@
     const decimals = (written2.split(".")[1] ?? "").length;
     const grouped = written2.includes(",");
     const at = found.index;
-    const draw = (value) => {
+    const draw2 = (value) => {
       let body = value.toFixed(decimals);
       if (grouped) body = body.replace(THOUSANDS, ",");
       el.textContent = text.slice(0, at) + body + text.slice(at + written2.length);
     };
-    const started2 = performance.now();
-    const length = seconds2 * MILLISECONDS;
+    const started2 = now();
     let live = true;
     scene.onLeave(() => {
       live = false;
     });
-    const tick = (stamp) => {
-      if (!live) return;
-      const part = Math.min(1, (stamp - started2) / length);
-      draw(target * eased(part));
-      if (part < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    every((at2) => {
+      if (!live) return false;
+      const part = Math.min(1, (at2 - started2) / seconds2);
+      draw2(target * eased2(part));
+      return part < 1;
+    });
   }
   function line(el, text, style2, scene) {
     const spoken = scene.words;
@@ -1267,14 +1867,14 @@
     if (style2 === "appear" && keys.length > APPEAR_WORDS_MAX) {
       warn("PAGE_APPEAR_TOO_LONG", scene.slide, scene.cue, { value: keys.length });
     }
-    const cueAt = now();
-    const start2 = firstRun(keys, spoken, cueAt);
+    const cueAt2 = now();
+    const start2 = firstRun(keys, spoken, cueAt2);
     if (start2 < 0) {
       warn("PAGE_WORDS_NOT_FOUND", scene.slide, scene.cue, { value: text.slice(0, TEXT_MAX) });
       return;
     }
     const lead = scaled(WORD_STYLES[style2].seconds, motionScale());
-    const due = [];
+    const due2 = [];
     el.textContent = "";
     let taken = 0;
     for (const part of parts) {
@@ -1287,7 +1887,7 @@
       word2.textContent = part;
       word2.style.opacity = String(resting(style2));
       el.appendChild(word2);
-      due.push(spoken[start2 + taken].at - lead);
+      due2.push(spoken[start2 + taken].at - lead);
       taken += 1;
     }
     let live = true;
@@ -1295,40 +1895,34 @@
     scene.onLeave(() => {
       live = false;
     });
-    const tick = () => {
+    const show2 = (word2) => {
       if (!live) return;
-      const at = now();
-      let waiting2 = false;
-      const words = el.querySelectorAll(`.${CLASS.word}`);
-      words.forEach((word2, index2) => {
-        if (word2.classList.contains(CLASS.shown)) return;
-        if (at >= due[index2]) {
-          word2.classList.add(CLASS.shown, styleClass("word", style2));
-          if (!told) {
-            told = true;
-            recorder().words({
-              text: text.slice(0, TEXT_MAX),
-              cueAt: round(cueAt),
-              spokenAt: spoken[start2].at,
-              count: keys.length,
-              firstShown: round(at),
-            });
-          }
-        } else waiting2 = true;
+      word2.classList.add(CLASS.shown, styleClass("word", style2));
+      if (told) return;
+      told = true;
+      recorder().words({
+        text: text.slice(0, TEXT_MAX),
+        cueAt: round(cueAt2),
+        spokenAt: spoken[start2].at,
+        count: keys.length,
+        firstShown: round(now()),
       });
-      if (waiting2) requestAnimationFrame(tick);
     };
-    tick();
+    el.querySelectorAll(`.${CLASS.word}`).forEach((word2, index2) => {
+      const at = due2[index2];
+      if (at <= cueAt2) show2(word2);
+      else schedule(at, "reveal", scene.cue ?? text.slice(0, TEXT_MAX), () => show2(word2));
+    });
   }
   function resting(style2) {
     return style2 === "highlight" ? BACK_OPACITY : 0;
   }
-  function firstRun(keys, spoken, cueAt) {
+  function firstRun(keys, spoken, cueAt2) {
     let found = -1;
     for (let at = 0; at + keys.length <= spoken.length; at += 1) {
       if (keys.some((one, offset) => spoken[at + offset].key !== one)) continue;
       found = at;
-      if (spoken[at].at >= cueAt - NEAR_THE_CUE_SECONDS) break;
+      if (spoken[at].at >= cueAt2 - NEAR_THE_CUE_SECONDS) break;
     }
     return found;
   }
@@ -1363,6 +1957,7 @@
         for (const one of stops) one();
         stops.length = 0;
       },
+      said: /* @__PURE__ */ new Set(),
     };
     const onLeave = (fn) => stops.push(fn);
     for (const target of momentElements(el)) {
@@ -1382,6 +1977,9 @@
       }
     }
     for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`)) spotlight(container, slide, actions);
+    wire(el, slide, { frozen: playing.frozen, at: playing.at }, (cue, run2) =>
+      push(actions, cue, { attr: ATTR.motion, run: run2, line: null }),
+    );
     if (playing.frozen) {
       for (const [cue, list] of actions) {
         if (playing.held?.has(cue)) continue;
@@ -1455,20 +2053,22 @@
     }
     return arrival(el, cue, slide, playing, onLeave);
   }
+  var OPENING_ENTRANCE = "cut";
   function arrival(el, cue, slide, playing, onLeave) {
-    const style2 = entranceOf(el);
-    const seconds2 = entranceSeconds(el);
+    const opens = playing.opens.has(cue) && !playing.frozen;
+    const style2 = opens ? OPENING_ENTRANCE : entranceOf(el);
+    const seconds2 = opens ? 0 : entranceSeconds(el);
     const step = staggerSeconds(el);
     const text = fallback(el);
     return {
       attr: ATTR.in,
       run: () => {
-        if (step === null) show(el, style2, seconds2);
+        if (step === null) show(el, style2, seconds2, cue, playing.frozen);
         else {
           [...el.children].forEach((child, at) => {
             const one = child;
-            one.style.animationDelay = `${step * at}s`;
-            show(one, style2, seconds2);
+            one.style.animationDelay = `${opens ? 0 : step * at}s`;
+            show(one, style2, seconds2, cue, playing.frozen);
           });
         }
         const counted = countOf(el);
@@ -1479,14 +2079,17 @@
       line: arrivalLine(el, text),
     };
   }
-  function show(el, style2, seconds2) {
+  function show(el, style2, seconds2, cue, frozen2) {
     const entrance = styleClass("in", style2);
     el.classList.remove(CLASS.hidden);
     span(el, seconds2);
-    el.classList.add(CLASS.shown, entrance);
-    el.addEventListener("animationend", (event) => {
-      if (event.target === el) el.classList.remove(entrance);
-    });
+    el.classList.add(CLASS.shown);
+    if (frozen2) return;
+    el.classList.add(entrance);
+    const played = el.getAnimations().find((one) => one instanceof CSSAnimation && one.animationName === entrance);
+    const ends = played?.effect?.getComputedTiming().endTime;
+    if (typeof ends !== "number") return;
+    schedule(now() + ends / MILLISECONDS, "reveal", cue, () => el.classList.remove(entrance));
   }
   function spotlight(container, slide, actions) {
     const cued = [...container.children].filter((child) => written(child, ATTR.in));
@@ -1507,26 +2110,28 @@
     });
   }
   function arrivalLine(el, text) {
-    const describe = written(el, ATTR.describe);
-    if (describe === "") return null;
-    const parts = [describe === null ? null : SENTENCE[ATTR.in]?.(describe), text || null].filter(Boolean);
+    const describe2 = written(el, ATTR.describe);
+    if (describe2 === "") return null;
+    const parts = [describe2 === null ? null : SENTENCE[ATTR.in]?.(describe2), text || null].filter(Boolean);
     return parts.length ? parts.join(" ") : null;
   }
   function subject(el, attr) {
-    const describe = written(el, ATTR.describe);
-    if (!describe) return null;
-    return SENTENCE[attr]?.(describe) ?? null;
+    const describe2 = written(el, ATTR.describe);
+    if (!describe2) return null;
+    return SENTENCE[attr]?.(describe2) ?? null;
   }
   function fire(mounted, cue) {
     const list = mounted?.actions.get(cue);
-    if (!list?.length) return null;
+    if (!mounted || !list?.length) return void 0;
     for (const action of list) action.run();
     const arrived = list.some((action) => action.attr === ATTR.in && action.line !== null);
     const lines = [];
     for (const action of list) {
       if (action.line === null) continue;
       if (arrived && action.attr === ATTR.back) continue;
-      if (!lines.includes(action.line)) lines.push(action.line);
+      if (mounted.said.has(action.line)) continue;
+      mounted.said.add(action.line);
+      lines.push(action.line);
     }
     return lines.length ? lines.join(" ") : null;
   }
@@ -1547,9 +2152,11 @@
   var FREEZE = "freeze";
   var CUES = "cues";
   var WORDS = "words";
+  var TURNS = "turns";
   var T0 = "t0";
   var SPEED = "speed";
   var HUD = "hud";
+  var CAPTION = "caption";
   var ON = "1";
   var SLOWEST = 0.05;
   var PREVIEW_STEP_SECONDS = 1;
@@ -1580,6 +2187,10 @@
   function done() {
     document.body.toggleAttribute(DONE_ATTR, true);
   }
+  function cueAt(cue) {
+    const found = state.cues.find((one) => one.id === cue);
+    return found ? origin2 + found.at : null;
+  }
   function buildSlide(scene, slide) {
     const el = document.createElement("div");
     el.className = CLASS.slide;
@@ -1596,7 +2207,8 @@
   function mount(scene, slide, held, at) {
     const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
     const el = buildSlide(scene, slide);
-    const mounted = prepare(el, slide, { frozen, held, words: state.words });
+    const opens = at === null ? NOTHING : opening();
+    const mounted = prepare(el, slide, { frozen, held, opens, words: state.words, at: cueAt });
     typeset(el, slide.id);
     state.slide = slide;
     state.mounted = mounted;
@@ -1617,23 +2229,23 @@
     }
     return el;
   }
+  var NOTHING = /* @__PURE__ */ new Set();
+  function opening() {
+    return new Set(state.cues.filter((cue) => cue.at <= DUE_SLACK_SECONDS).map((cue) => cue.id));
+  }
   function retire(incoming, outgoing, entrance) {
     const leaving = state.mounted;
     outgoing.classList.add(CLASS.leaving);
-    let gone = false;
     const go = () => {
-      if (gone) return;
-      gone = true;
       if (leaving && leaving.el === outgoing) leaving.stop();
       outgoing.remove();
     };
-    incoming.addEventListener("animationend", go, { once: true });
-    setTimeout(go, (slideSeconds(entrance) + FRAME_STEP_MS / MILLISECONDS) * MILLISECONDS);
+    schedule(now() + slideSeconds(entrance) + FRAME_STEP_MS / MILLISECONDS, "retire", incoming.className, go);
   }
   function context(cue, slideId, at) {
     return { id: cue, at: round(at), frozen, slideId };
   }
-  function fireCue(cue, due) {
+  function fireCue(cue, due2) {
     state.fired.push(cue);
     const sentence = fire(state.mounted, cue);
     const slide = state.slide;
@@ -1655,10 +2267,10 @@
         warn("PAGE_HANDLER_THREW", slide?.id ?? null, cue, { value: String(err) });
       }
     }
-    if (sentence === null && !own && !handled(cue) && !findSlide(cue)) {
+    if (sentence === void 0 && !own && !handled(cue) && !findSlide(cue) && !ownerOf(cue)) {
       warn("PAGE_CUE_UNKNOWN", slide?.id ?? null, cue);
     }
-    recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence });
+    recorder().cue({ id: cue, due: round(due2), ran: round(now()), frame: frameAt(), describe: sentence ?? null });
   }
   function parseCues(raw) {
     return raw
@@ -1671,15 +2283,6 @@
       })
       .filter((cue) => cue.id && !Number.isNaN(cue.at))
       .sort((a, b) => a.at - b.at);
-  }
-  function parseWords(raw) {
-    return raw
-      .split(LIST_SEPARATOR)
-      .map((item) => {
-        const mark = item.lastIndexOf(TIME_MARK);
-        return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
-      })
-      .filter((word2) => word2.key && !Number.isNaN(word2.at));
   }
   function play(scene, cues, mode) {
     state.mode = mode;
@@ -1704,13 +2307,13 @@
         if (!mountAt.has(slide)) warn("PAGE_SLIDE_UNUSED", slide.id);
       }
     }
-    const last = ordered[ordered.length - 1][0];
+    const last2 = ordered[ordered.length - 1][0];
     mount(scene, ordered[0][0], null, origin2);
-    if (ordered[0][0] === last) done();
+    if (ordered[0][0] === last2) done();
     for (const [slide] of ordered.slice(1)) {
       schedule(origin2 + mountAt.get(slide), "mount", slide.id, () => {
         mount(scene, slide, null, null);
-        if (slide === last) done();
+        if (slide === last2) done();
       });
     }
     for (const cue of cues) {
@@ -1721,10 +2324,13 @@
     state.mode = "preview";
     state.scene = scene;
     let at = origin2;
-    const last = scene.slides[scene.slides.length - 1];
+    const last2 = scene.slides[scene.slides.length - 1];
     scene.slides.forEach((slide, index2) => {
       const mountAt = at;
       const cues = cueOrder(slide);
+      cues.forEach((cue, order2) => {
+        state.cues.push({ id: cue, at: mountAt - origin2 + ((order2 + 1) * PREVIEW_STEP_SECONDS) / speed });
+      });
       const start2 = () => {
         mount(scene, slide, null, index2 === 0 ? origin2 : null);
         cues.forEach((cue, order2) => {
@@ -1732,7 +2338,7 @@
             fireCue(cue, mountAt + ((order2 + 1) * PREVIEW_STEP_SECONDS) / speed),
           );
         });
-        if (slide === last) done();
+        if (slide === last2) done();
       };
       if (index2 === 0) start2();
       else schedule(mountAt, "mount", slide.id, start2);
@@ -1774,13 +2380,13 @@
     state.fired = [...firing];
     done();
   }
-  function index(note) {
+  function index(note2) {
     state.mode = "index";
     hide();
     const div = document.createElement("div");
     div.id = "dt-index";
     const title = document.title || "decktalk scenes";
-    div.appendChild(heading(title, note));
+    div.appendChild(heading(title, note2));
     for (const scene of all().values()) {
       const head = document.createElement("h2");
       head.textContent = `Scene ${scene.id}: ${scene.name} `;
@@ -1800,15 +2406,15 @@
     }
     document.body.appendChild(div);
   }
-  function heading(title, note) {
+  function heading(title, note2) {
     const out = document.createDocumentFragment();
     const h1 = document.createElement("h1");
     h1.textContent = title;
     out.appendChild(h1);
-    if (note) {
+    if (note2) {
       const p = document.createElement("p");
       const bold = document.createElement("b");
-      bold.textContent = note;
+      bold.textContent = note2;
       p.appendChild(bold);
       out.appendChild(p);
     }
@@ -1827,35 +2433,38 @@
     if (!signalled) start();
     build(params.get(HUD) === ON);
     const wordsRaw = params.get(WORDS);
-    state.words = wordsRaw ? parseWords(wordsRaw) : null;
+    state.words = wordsRaw ? parseWords(wordsRaw, params.get(TURNS)) : null;
     const cuesRaw = params.get(CUES);
     const cues = cuesRaw ? parseCues(cuesRaw) : [];
     const chosen = params.get(SCENE);
     let listing = false;
-    let waiting2 = Promise.resolve();
-    if (frozen) {
+    let waiting3 = Promise.resolve();
+    if (params.get(CAPTION) === ON) {
+      state.mode = "caption";
+      captioning();
+    } else if (frozen) {
       stop(params.get(FREEZE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
     } else if (chosen !== null || cues.length) {
       const scene = chosen !== null ? (all().get(chosen) ?? null) : (ownerOf(cues[0].id)?.scene ?? null);
       if (!scene) index(`unknown scene ${chosen ?? ""}`);
       else if (cues.length) play(scene, cues, "record");
       else
-        waiting2 = resolvedCues(scene.id).then((resolved) =>
+        waiting3 = resolvedCues(scene.id).then((resolved) =>
           resolved ? play(scene, resolved, "preview") : preview(scene),
         );
     } else {
       listing = true;
     }
-    run(params.get(HUD) === ON ? report : void 0);
-    if (!listing) return waiting2.then(() => ready(pan()));
-    return waiting2
+    run(params.get(HUD) === ON ? report2 : void 0);
+    if (!listing) return waiting3.then(() => ready(pan()));
+    return waiting3
       .then(() => ready(pan()))
       .then(() => {
         measure(probe);
         index();
       });
   }
-  function report(seconds2) {
+  function report2(seconds2) {
     const where = `scene ${state.scene?.id ?? "-"} · slide ${state.slide?.id ?? "-"}`;
     say(`${state.mode} · ${where} · t ${Math.max(0, seconds2).toFixed(2)}s`);
   }
@@ -1872,6 +2481,7 @@
         const el = buildSlide(scene, slide);
         layer.appendChild(el);
         measureClassSpans(el, slide, entry.spans, dim);
+        undeclaredIn(el, slide.id);
         layer.removeChild(el);
       }
     }
@@ -1884,6 +2494,106 @@
       build: buildSlide,
     });
   }
+
+  // src/decktalk/runtime/src/timeline.ts
+  /*! The timeline: every animation on the page, held at the second the stepped clock shows.
+   *
+   * Playwright's clock moves timers and animation frames, and it does not move the document timeline,
+   * so a CSS transition, a CSS animation or a Web Animation keeps playing at the compositor's own pace
+   * unless something holds it. Under the stepped driver this module is that something. It hears the
+   * clock run each task and end each step, gives every animation a birth second the first time it sees
+   * it, and on every step pauses each one at the second since its birth.
+   *
+   * The birth is the second the task that started it was due, never the frame that ran it, so a
+   * transition a cue starts between two frames is already as far along as the cue's own second says on
+   * the first frame that shows it. Every animation is also sought to a task's second just before the
+   * task runs, so a transition the task interrupts turns from its value at that second, which is the
+   * same whether the recorder stepped every frame before it or only the seconds work was due. Under the
+   * realtime driver this module does nothing, and the browser plays every animation as it always has.
+   *
+   * Each step it also tells the clock whether any animation now draws differently from the step
+   * before. It keeps a signature of every live animation's progress, so an animation that has come to
+   * rest at its end, or waits out its delay, is no change, and one that started, moved or left is. And
+   * it tells the clock the earliest second any animation can next draw differently: the step's own
+   * second while one plays, the end of its delay while one waits, and never once every one has ended.
+   */
+  var source = () => document.getAnimations();
+  var born2 = /* @__PURE__ */ new WeakMap();
+  var meet = null;
+  var numbered = /* @__PURE__ */ new WeakMap();
+  var met = 0;
+  var last = "";
+  function adopt(at) {
+    for (const animation of source()) {
+      if (born2.has(animation)) continue;
+      born2.set(animation, at);
+      numbered.set(animation, met);
+      met += 1;
+      meet?.(animation);
+    }
+  }
+  function signature() {
+    return source()
+      .map((animation) => {
+        const standing = animation.effect?.getComputedTiming();
+        const where = standing ? `${standing.progress}/${standing.currentIteration}` : `${animation.currentTime}`;
+        return `${numbered.get(animation)}:${where}`;
+      })
+      .join(",");
+  }
+  function nextMove(animation, seconds2) {
+    const rate = animation.playbackRate;
+    if (rate === 0) return null;
+    const standing = animation.effect?.getComputedTiming();
+    const local = animation.currentTime;
+    if (rate < 0 || typeof local !== "number" || !standing) return seconds2;
+    const { delay, activeDuration } = standing;
+    if (typeof delay !== "number" || typeof activeDuration !== "number") return seconds2;
+    if (local >= delay + activeDuration) return null;
+    if (local < delay) return seconds2 + (delay - local) / (rate * MILLISECONDS);
+    return seconds2;
+  }
+  function whenMet(next) {
+    meet = next;
+  }
+  function seek(seconds2) {
+    for (const animation of source()) {
+      const birth = born2.get(animation) ?? seconds2;
+      animation.pause();
+      animation.currentTime = Math.max(0, (seconds2 - birth) * MILLISECONDS * animation.playbackRate);
+    }
+  }
+  var begun = false;
+  function begin2() {
+    if (begun) return;
+    begun = true;
+    adopt(0);
+  }
+  var timeline = {
+    running(at) {
+      if (driven() !== "stepped") return;
+      begin2();
+      adopt(at);
+      seek(at);
+    },
+    ran(at) {
+      if (driven() !== "stepped") return;
+      begin2();
+      adopt(at);
+    },
+    stepped(seconds2) {
+      begin2();
+      adopt(seconds2);
+      seek(seconds2);
+      const now2 = signature();
+      const moved = now2 !== last;
+      last = now2;
+      return moved;
+    },
+    still(seconds2) {
+      return earliest(...source().map((animation) => nextMove(animation, seconds2)));
+    },
+  };
 
   // src/decktalk/runtime/src/index.ts
   /*! decktalk-runtime.js: the page contract, as one script a deck includes and nothing else.
@@ -1924,10 +2634,10 @@
     ).then(() => {
       done2 = true;
     });
-    const limit = new Promise((resolve) => {
+    const limit = new Promise((resolve2) => {
       setTimeout(() => {
         if (!done2) warn("PAGE_WAIT_UNSETTLED");
-        resolve();
+        resolve2();
       }, GATE_SECONDS * MILLISECONDS);
     });
     return Promise.race([all_, limit]);
@@ -1937,6 +2647,21 @@
     if (running) return;
     running = true;
     setRecorder(injected()?.recorder);
+    observe({
+      running: (at) => timeline.running(at),
+      ran: (at) => timeline.ran(at),
+      stepped: (seconds2) => {
+        const moved = timeline.stepped(seconds2);
+        sample(seconds2);
+        return moved || moving(seconds2);
+      },
+      still: (seconds2) => earliest(timeline.still(seconds2), stillUntil(seconds2)),
+    });
+    whenMet((animation) => {
+      const seen = animation;
+      const target = seen.effect instanceof KeyframeEffect ? seen.effect.target : null;
+      born({ target, endSeconds: ending(seen) }, state.slide?.id ?? null);
+    });
     setMotionScale(motionScale());
     const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
     const ready2 = fonts
@@ -1959,12 +2684,78 @@
     },
     /** Read the page and start it, which a page that loads the runtime late may need to call itself. */
     start: boot,
-    /** Start the section clock, which is what the recorder sends once its cover has come off. */
-    startClock: start,
+    /**
+     * Move the section clock to one second and show that second, which is how the recorder draws a frame.
+     *
+     * The first call puts the page on the stepped clock for good: every task due by then runs, every
+     * frame hook draws, and every animation is held at that second. It answers the second the next task
+     * is due and whether anything the runtime knows of changed the picture since the step before.
+     */
+    stepTo,
+    /**
+     * Draw something every frame from the section second, such as a canvas, a typed line or a scene.
+     *
+     * The hook is handed the second the frame shows, so a recorded frame and a preview frame draw the
+     * same picture for the same second. `region` is the element or selector it draws inside, which
+     * verify masks, and a hook that names none is undeclared motion. A hook that throws is reported
+     * once and stops drawing.
+     *
+     * Off the stepped clock the hook draws once as it is handed over, at the second the page shows, which
+     * is zero before the clock starts. A page draws its first animation frame whenever the browser gets
+     * to it, so a hook that waited for one would be reported before `ready` on one machine and after it
+     * on another, and `check` would see a throw only by luck. The recorder's page waits for its first
+     * step, so there the hook draws first at the second that step names, as every later frame does.
+     */
+    frame(fn, options = {}) {
+      region(options.region);
+      const hook = (seconds2) => {
+        try {
+          fn(seconds2);
+          return true;
+        } catch (err) {
+          warn("PAGE_FRAME_THREW", null, null, { value: String(err) });
+          return false;
+        }
+      };
+      if (waitsForSignal() || hook(started() ? now() : 0)) every(hook);
+      return DeckTalk;
+    },
+    /**
+     * Move one element from one cue to another in script, drawing `draw(progress, seconds)` every frame between them.
+     *
+     * The cues are cue ids, the length is their seconds apart, and progress is eased by one of the
+     * contract's eases, so a script motion lands on its cue exactly as a declared one does.
+     */
+    motion(el, motion) {
+      scripted(el, motion, cueAt);
+      return DeckTalk;
+    },
     /** Hold readiness until a promise of the page's own has settled. */
     waitFor(promise) {
       gates.push(Promise.resolve(promise));
       return DeckTalk;
+    },
+    /**
+     * Every cue this page plays and the second on the section clock it is due, keyed by cue id.
+     *
+     * A composition page keys its own drawing on these, so a re-voiced line re-times it as it does a cue.
+     */
+    get cues() {
+      return Object.fromEntries(state.cues.map((cue) => [cue.id, cueAt(cue.id) ?? cue.at]));
+    },
+    /**
+     * Every word the section speaks, as the runtime matches it, the second the voice reaches it, and who says it.
+     *
+     * `voice` names the voice and `turn` counts the section's turns from one, so a page can place what
+     * it draws by its voice without showing the name.
+     */
+    get words() {
+      return (state.words ?? []).map((spoken) => ({
+        word: spoken.key,
+        at: spoken.at,
+        voice: spoken.voice,
+        turn: spoken.turn,
+      }));
     },
     /** Every scene the page declared, which a deck reads to walk its own slides. */
     get scenes() {
@@ -2001,6 +2792,9 @@
     get catalog() {
       return state.catalog;
     },
+    get motions() {
+      return report();
+    },
     get frozen() {
       return isFrozen();
     },
@@ -2009,6 +2803,8 @@
     },
     now,
     started,
+    caption: (caption) => showCaption(caption),
+    undeclared: undeclaredChange,
   };
   window.DeckTalk = DeckTalk;
   window.__decktalk = view;

@@ -20,7 +20,7 @@ Every stage that opens a catalog reads it here, so no two of them can disagree a
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set
 from itertools import pairwise
 from pathlib import Path
 
@@ -37,6 +37,9 @@ Derived: it is the measurable ceiling itself, because a change still playing whe
 due is the same failure whether the page calls it a swap or calls it a motion.
 """
 
+REST = "rest"
+"""Truth: the arrival an ease to rest has, which `page.MOTION_EASES` publishes beside every ease."""
+
 Slides = dict[str, tuple[str, ...]]
 """Each slide of one scene, in page order, with the cue ids of the cues it declares in cue order."""
 
@@ -49,6 +52,21 @@ def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> Measured
 def measured_rows(entry: MeasuredScene) -> list[ElementRow]:
     """Every element the probe measured on one scene, every slide's rows in page order."""
     return [row for slide in entry.elements.values() for row in slide]
+
+
+def revealing_cues(entry: MeasuredScene) -> set[str]:
+    """Every cue of one scene the page reveals something at, which is a moment or a class change.
+
+    The catalog's spans name exactly those cues, because every moment and every class change declares
+    the length it plays, and a still runs both up to the cue it is frozen at. A cue that only a motion
+    or a handler serves reveals nothing a frame difference can read.
+    """
+    return set(entry.spans) | {cue for row in measured_rows(entry) for cue in row.moments.values() if cue}
+
+
+def motion_cues(entry: MeasuredScene) -> set[str]:
+    """Every cue a motion of one scene departs or arrives on."""
+    return {cue for rows in entry.motions.values() for row in rows for cue in (row.departs, row.arrives) if cue}
 
 
 def slide_cues(entry: MeasuredScene | None) -> Slides | None:
@@ -119,6 +137,30 @@ def motion_findings(rows: Iterable[ElementRow], *, where: str, section: int | No
                 location=Location(where=where, section=section, cue=row.cue),
             )
         )
+    return found
+
+
+def ease_findings(entry: MeasuredScene, *, opted: Set[str], where: str, section: int | None) -> list[Finding]:
+    """One judgement per motion that eases to rest on an arrival verify would measure.
+
+    An ease to rest has no last moving frame a frame difference can find, so its arrival moves with
+    the threshold and a viewer sees it stop before its word. The arrival is allowed only on a cue
+    `cues.json` marks `"verify": false`, and `opted` is every such cue id of the section.
+    """
+    found: list[Finding] = []
+    for rows in entry.motions.values():
+        for row in rows:
+            ease = row.ease or ""
+            if row.arrives is None or row.arrives in opted or page.MOTION_EASES.get(ease, {}).get("arrival") != REST:
+                continue
+            found.append(
+                judge(
+                    Code.MOTION_EASE_UNMEASURABLE,
+                    f"the motion through {row.name} arrives at {row.arrives} with the {ease} ease, which eases to "
+                    f"rest and leaves no edge to measure, so make it firm or mark {row.arrives} verify false.",
+                    Location(where=where, section=section, cue=row.arrives),
+                )
+            )
     return found
 
 
@@ -229,10 +271,13 @@ __all__ = [
     "Slides",
     "asset_findings",
     "description_findings",
+    "ease_findings",
     "measured_rows",
+    "motion_cues",
     "motion_findings",
     "overlap_findings",
     "page_findings",
+    "revealing_cues",
     "scene_cues",
     "scene_entry",
     "slide_cues",

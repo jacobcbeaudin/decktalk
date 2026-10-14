@@ -63,16 +63,16 @@ group's log opens with its name and the one local command that reproduces it.
 | `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
 | `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
 | `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
-| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report`, and 1 more | chromium, ffmpeg | Linux | pr, main |
-| `browser-platforms` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml --timing=report` | chromium | macOS, Windows | main |
-| `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml --timing=report` | ffmpeg | macOS, Windows | main |
-| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report`, and 1 more | chromium, ffmpeg | macOS, Windows | main |
+| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml`, and 1 more | chromium, ffmpeg | Linux | pr, main |
+| `browser-platforms` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | macOS, Windows | main |
+| `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | macOS, Windows | main |
+| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml`, and 1 more | chromium, ffmpeg | macOS, Windows | main |
 | `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
 | `generated` | `uv run python scripts/build_runtime.py --check`, and 14 more | npm | Linux | pr, main |
 | `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, history | Linux | pr, main |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
 | `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
-| `scaffold` | `uv run pytest -q -rs -m scaffold --timing=report` | chromium, ffmpeg | Linux | schedule |
+| `scaffold` | `uv run pytest -q -rs -n auto -m scaffold` | chromium, ffmpeg | Linux | schedule |
 | `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | nothing beyond uv | Linux | main, schedule |
 <!-- checks:end -->
 
@@ -121,6 +121,7 @@ src/decktalk/
       edit.py            One key written into, or removed from, a settings file, judged whole before the file is replaced.
       layers.py          The five layers that set a key, read and merged into one settings tree with the record of who set each.
       numbers.py         Every number that is deliberately not a setting, published with its formula and its reason.
+      voices.py          Each voice a project declares, resolved over its provider's table, with the refusals that keep a voice whole.
   leaves                 one job each, and no knowledge of a project
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
@@ -139,16 +140,15 @@ src/decktalk/
         elevenlabs.py    ElevenLabs sound effects and music, which is the one sound provider DeckTalk ships.
     media/               Everything DeckTalk drives to make a picture and a sound: ffmpeg, ffprobe and headless Chromium.
       audio.py           Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
-      bias.py            How late this machine presents a frame its browser has already drawn, which `decktalk doctor --measure` reports.
       browser.py         Headless Chromium through Playwright: launching it under the page policy a project sets.
       encode.py          The settings and the tags every output shares, so each file DeckTalk writes is made the same way.
       environment.py     The environment a browser or an encoder DeckTalk starts is given, which is never the one the process holds.
       ffmpeg.py          Finding ffmpeg and ffprobe for this machine, running them, and probing what they read.
-      frames.py          Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
+      frames.py          Frames on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
       origin.py          The local origin every page is opened at, its request routing, and the server `decktalk serve` runs.
       pagereport.py      The one reader of what a page hands back, so nothing above this module trusts a page's own words.
       pages.py           Driving one page in a launched Chromium: the probe, the deadline on every call, and its report.
-      recording.py       Recording one page section in a launched Chromium, from the first paint to the end of its span.
+      stepping.py        Recording one page section by stepping its clock, one output frame at a time.
     pagescan.py          The static scan: what a slide's measured catalog says, before anybody looks at a picture.
     template.py          The projects and the skills packaged in the wheel, and writing one of them into a directory.
     artifacts/           The typed build artifacts and the files they are written to.
@@ -166,6 +166,7 @@ src/decktalk/
       env.py             The project's secrets: `.env` read once, from a path the caller names, and never printed.
       markers.py         `media/markers.json` parsed into typed `Marker` rows, which shape the music under the video.
       paths.py           Where a file is, said the one way every result and every finding says it.
+      programs.py        The programs a project names, and the machine's word on whether `record` starts them.
       script.py          `script.md` parsed into the sections the voice reads.
       take_places.py     Every place a voiced take is kept, and every rule about its copies there.
       timeline.py        Where the narration plays in the final film: the joined narration track placed on the film's clock.
@@ -173,6 +174,10 @@ src/decktalk/
     machine/             This computer and this process, as one value, and the run every call opens on it.
       fixes.py           The fix applier: every fix a finding offers, carried out or refused in one sentence.
       run.py             One call in progress, and the threshold its caller judges what it found by.
+    pictures/            Every picture a run makes of a project: a section's video, a frozen state, a caption, a poster and a slate.
+      address.py         Where a page section is opened: the address the recorder plays, the address of each frozen state of it.
+      command.py         The command renderer: a section whose picture a program draws, handed its motion document.
+      sheet.py           Frozen states drawn under one directory, the frames the project keeps, and the contact sheet that lays them out.
     explain.py           One setting explained: what set it, what it feeds, and what a candidate value would do to this project.
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
@@ -185,6 +190,7 @@ src/decktalk/
       table.py           The six stages against the functions that run them, which `build` and the facade both call through.
       words.py           Every spoken word with its span, which is how a cue phrase is written.
       assemble/          Stage 5: the recordings, the narration, the clips and the score become one film.
+        captioned.py     The captioned copy: the film with its captions drawn into the picture by the project's own page.
         cut.py           Every section becomes one silent mp4, and the placements record where each one plays.
         loudness.py      EBU R128 loudness: measure, apply one gain, limit the true peaks, and measure again.
         mix.py           The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
@@ -197,20 +203,21 @@ src/decktalk/
       cue/               Stage 2: every cue phrase becomes a second on its own section's clock.
         catalog.py       `cues.json` read against the catalog the page itself published, and the fixes that reconcile them.
         resolve.py       The arithmetic that turns one cue phrase into one second on its section's own clock.
-      narrate/           Stage one: `script.md` becomes one take per section, indexed by input digest.
+      narrate/           Stage one: `script.md` becomes one take per turn, indexed by input digest.
+        align.py         Timing the words of a take whose voice sent none, through the aligner, after every take is made.
         plan.py          What a take is named by, and the refusals a run meets before it voices one.
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
-        state.py         The take state: what the disk holds for each spoken section, and what one narrate run does about it.
+        state.py         The take state: what the disk holds for each turn of each spoken section, and what one narrate run does about it.
         takes.py         Writing a placeholder take, charging a voiced one, placing each, and joining every take into one narration track.
-      record/            Stage 3: record each page section in a headless browser, find where the section clock starts, and judge the result.
-        capture.py       The URL a page section is opened at, and what its recording is keyed on.
+      record/            Stage 3: make each recorded section's picture, a page's one frame at a time, and judge the result.
+        capture.py       What a section's recording is made from, part by part, and the job of recording it.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
-        pool.py          How many page sections record at once, which is the size of the pool `record` hands them to.
-        start.py         Where the section clock starts in a recording.
+        pool.py          How many recorders work at once, which is the size of the pool `record` hands chunks to, and the chunks.
       score/             Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.
       verify/            Stage six: the one read-only stage, over the finished film and the logs that made it.
         measure.py       The measurements behind the cue plan: the probes, the onset scan and the click search.
+        motion.py        Verify on a moving picture: the masks over what the page said moved, and the landings of every motion.
         plan.py          The arithmetic behind a cue check, with no ffmpeg, no file and no project.
         seams.py         The three checks that read the shape of the film rather than one cue: starts, cuts and seams.
     project.py           A project is a directory, one object opens it, and every call on it opens a run.
@@ -233,14 +240,14 @@ src/decktalk/
     katex/               The pinned KaTeX release the pages typeset with, which the origin serves beside the runtime
     runtime/             decktalk-runtime.js, the page contract every deck loads, decktalk-probe.js and contract.json
     skills/              The six packaged skills a project keeps in .agents/skills/
-    template/            The starter, the lesson example and the AGENTS.md that `decktalk init` writes
+    template/            The starter, the three examples and the AGENTS.md that `decktalk init` writes
 ```
 <!-- layout:end -->
 
 The test for `src/decktalk/stages/verify/plan.py` is `tests/decktalk/stages/verify/test_plan.py`,
 and `tests/contract/test_layout.py` fails on a module that has no mirrored file. A test that belongs
 to no module goes in `tests/contract/`, which is a closed list. `tests/platform/` holds what exists
-only because there are three platforms, `tests/e2e/` the three suites that build a whole project, and
+only because there are three platforms, `tests/e2e/` the suites that build a whole project, and
 `tests/support/` what several tests share. [ARCHITECTURE.md](ARCHITECTURE.md) says why the package
 has this shape, and [RELEASING.md](RELEASING.md) says how CI judges a change and how a release ships.
 

@@ -1,24 +1,15 @@
-"""When a late frame is a failure and when it is only news, and how long a slow runner may take.
+"""Which frame a reveal shows on, which is its own on every runner, and how long a slow runner may take.
 
 A number typed into each test that needs it would be a magic number inside the suite that enforces
 the no-magic-numbers rule. So the numbers live here, each derived from the project's own settings or
 written once with the sentence that says why.
 
-**The timing default gates everywhere.** `sys.platform` is the wrong predicate: the property is that
-this runner's compositor is not trustworthy, not that this is macOS, and a platform check would hold
-a Mac to a weaker standard than a Linux runner. `--timing=gate` is the default everywhere, and the
-legs that own a weak runner pass `--timing=report` themselves, so the weakening lives in the
-`GROUPS` table that owns them rather than in every test that measures a cue.
-
-**The policy is one seam rather than a habit.** A suite that drives a real build reads its errors
-through `held_to`, so a test written next year is on the policy by reading a run the way
-every other test reads one. A rule applied test by test lets a test whose subject is which sections
-get recorded again fail a whole merge on a reveal that this runner was told to report.
-
-**A report is printed rather than swallowed.** A leg that does not gate timing still measures it,
-so `note_late_reveals` writes what it tolerated into the run's own log. A test that reported
-nothing and a test that reported a reveal a frame late read the same otherwise, which is how a
-runner that quietly drifted would go unnoticed for a release.
+**A reveal is on its frame or the test fails.** The recorder steps the section clock one frame at a
+time and draws frame `k` as the page at second `k / fps`, so a cue shows on the first frame at or
+after its second whatever the machine was doing. `frames_late` says how far a measured reveal sits
+from that frame, and every suite that reads a landing asks for zero. There is no option that
+loosens it and no leg of `GROUPS` that is held to less, because a runner's speed moves how long a
+recording takes and never which frame a picture is on.
 
 **A budget is a ceiling and never a measurement.** A module timeout is a base budget times a factor
 for this platform, because a hundred and eighty seconds is generous on Linux and tight on a cold
@@ -28,26 +19,14 @@ what `tests/contract/test_layout.py` allows and what keeps that read out of ever
 
 from __future__ import annotations
 
+import math
 import sys
-from collections.abc import Iterable, Mapping
-from typing import Any
+from fractions import Fraction
+from pathlib import Path
 
-import pytest
-
-from decktalk.findings import Code, Severity
-from decktalk.page import FRAME_STEP_MS
-
-LATE_FRAME = (Code.CUE_OFF,)
-"""What a runner that presents frames late produces, and the only code an ungated platform tolerates."""
-
-UNGATED_EXTRA_FRAMES = 2
-"""How many extra frames of slack a runner whose compositor is not trustworthy is given.
-
-Two frames covers a reveal under a hundred milliseconds late, which is how late a weak compositor
-presents one, and the capture runs at twenty five frames a second. It is written once here and
-added to the project's own limit, so no literal inside the suite that enforces the rule restates
-the settings plus two.
-"""
+from decktalk.artifacts import CueTimes, Placements
+from decktalk.media.frames import frame_index
+from decktalk.pipeline import Artifact
 
 BASE_BUDGET_SECONDS = 180
 """How long a module that drives a real build may take on a warm Linux runner, as a ceiling."""
@@ -67,112 +46,47 @@ hung page fails as a timeout rather than as a six hour job.
 """
 
 
+ENTRANCE_READ_FRAMES = frozenset((0, 1))
+"""How many frames after its due one verify may read a reveal's onset on, which is that frame or the next.
+
+The reveal shows on its due frame on every runner. An entrance that eases in has moved for less than
+one frame by then, and on the frame where it has moved less than verify's onset rise the change is
+not yet an onset, so verify reads it one frame later. That is where the measurement reads a frame,
+not where the frame is, so an instant reveal is held to its due frame alone and a reveal two frames
+out is a failure everywhere.
+"""
+
+
 def budget(base: float = BASE_BUDGET_SECONDS) -> float:
     """How long a module may take on this platform, which is the base budget times this runner's factor."""
     return base * PLATFORM_FACTOR.get(sys.platform, max(PLATFORM_FACTOR.values()))
 
 
-def gates_timing(config: pytest.Config) -> bool:
-    """Whether a late reveal fails here, which is everywhere unless this run asked for a report.
+def frames_late(shown: float, section_start: float, cue_seconds: float, fps: int) -> int:
+    """How many frames after the one it was due on a reveal first showed, which is zero on every runner.
 
-    The option is read defensively because a run that does not register it is a run with the default
-    in force, and a missing option may never quietly turn the gate off.
+    `shown` is the film's second of the frame the reveal first changed, `section_start` the film's
+    second the section's clock starts at, and `cue_seconds` the cue's second on that clock. The
+    frame a cue is due on is the first one at or after its second, which is the same rule the
+    film's readers name a frame by. A negative answer is a reveal that showed before its frame.
     """
-    try:
-        return str(config.getoption("--timing", default="gate")) != "report"
-    except ValueError:
-        return True
+    due = frame_index(cue_seconds, Fraction(fps), math.inf)
+    return round((shown - section_start) * fps) - due
 
 
-def offset_limit_ms(stated_ms: float, gate: bool) -> float:
-    """The offset a cue may miss its word by here, which is the project's own limit plus the slack.
+def due_seconds(build: Path) -> dict[tuple[int, str], tuple[float, float]]:
+    """Each resolved cue's section start in the film and its second on the section clock, by section and cue id.
 
-    The slack is added rather than typed, so a project that widens its own limit widens this one too
-    and the two can never disagree about what late means.
+    These are the two seconds `frames_late` needs besides the reveal's own, read from what the build
+    wrote: the cue times the page was stepped against and the placements the film was cut from.
     """
-    if gate:
-        return stated_ms
-    return stated_ms + UNGATED_EXTRA_FRAMES * FRAME_STEP_MS
-
-
-def holds(code: Code, gate: bool) -> bool:
-    """Whether this runner still holds a deck to one reported code, which every reading asks first.
-
-    A late reveal is the one code a runner whose compositor is not trustworthy may report without
-    being held to it, because a frame presented late moves a measurement and nothing else. Every
-    other code is a property of the deck rather than of the machine: a cue that never changed the
-    picture, a phrase the page never found and a page that threw are faults on every runner.
-    """
-    return gate or code not in LATE_FRAME
-
-
-def judged(codes: Iterable[Code], gate: bool) -> list[Code]:
-    """Every reported code this runner still judges, which is all of them unless a late reveal is news."""
-    return [found for found in codes if holds(found, gate)]
-
-
-def faults(codes: Iterable[Code], gate: bool) -> list[Code]:
-    """Every reported code this runner fails on, which is the judged ones that are errors."""
-    return [found for found in judged(codes, gate) if found.severity is Severity.ERROR]
-
-
-def tolerated(code: int, codes: Iterable[Code], gate: bool) -> str | None:
-    """None when a build finished acceptably, else the one sentence saying why it did not.
-
-    A build exits 0 when it found no error. Where timing is not gated, a build that exited on
-    late reveals alone is acceptable too. Every other fault fails on every platform, and so does a
-    late reveal wherever timing is gated.
-    """
-    if code == 0:
-        return None
-    rows = list(codes)
-    if failing := faults(rows, gate):
-        return f"the build exited {code} on a fault this runner judges: {[found.name for found in failing]}"
-    if not any(found.severity is Severity.ERROR for found in rows):
-        return f"the build exited {code} with no finding row to explain it"
-    return None
-
-
-def note_late_reveals(config: pytest.Config, subject: str, news: Iterable[str]) -> None:
-    """Print what a runner that does not gate timing tolerated, because news nobody prints is lost.
-
-    The terminal reporter is written to rather than a warning raised, because the suite turns every
-    warning into an error and a report that fails the run is a gate under a second name. A leg that
-    has no reporter is a run under `-p no:terminal`, where there is no log to write the news into.
-    """
-    reporter = config.pluginmanager.get_plugin("terminalreporter")
-    if reporter is None:
-        return
-    reporter.write_line(f"\n{subject}: this runner reports cue timing rather than gating it, and it tolerated:")
-    for line in news:
-        reporter.write_line(f"  {line}")
-
-
-def held_to(config: pytest.Config, subject: str, findings: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """Every error this runner holds a deck to, with the ones it tolerated written to the log.
-
-    This is the one seam a suite reads a run's errors through, so a leg that reports cue
-    timing reports it in every test that leg runs rather than in the tests somebody remembered to
-    change. A row is a finding as `--json` publishes it, and the code it names is what decides
-    whether this runner judges the row or only prints it.
-    """
-    gate = gates_timing(config)
-    held: list[Mapping[str, Any]] = []
-    news: list[str] = []
-    for row in findings:
-        if row["severity"] != Severity.ERROR.value:
-            continue
-        if holds(Code(row["code"]), gate):
-            held.append(row)
-        else:
-            news.append(f"{row['code']}: {row['message']}")
-    if news:
-        note_late_reveals(config, subject, news)
-    return held
-
-
-def assert_build_finished(code: int, codes: Iterable[Code], detail: str, config: pytest.Config) -> None:
-    """Assert a build finished acceptably on this runner, and say what it tolerated when it did."""
-    rows = list(codes)
-    why = tolerated(code, rows, gates_timing(config))
-    assert why is None, f"{why}\n{detail}"
+    cue_times = CueTimes.read(build / Artifact.CUE_TIMES.value)
+    placements = Placements.read(build / Artifact.FINAL.value / "placements.json")
+    assert cue_times is not None and placements is not None, "a finished build writes its cue times and placements"
+    starts = {row.key: row.start for row in placements.sections}
+    return {
+        (row.section, cue.id): (starts[row.key], cue.seconds)
+        for row in cue_times.sections
+        for cue in row.cues
+        if cue.seconds is not None
+    }

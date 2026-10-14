@@ -25,10 +25,9 @@ from decktalk.stages.assemble.cut import (
     render_sections,
     rendered_starts,
     section_slate,
-    section_targets,
     vfades,
 )
-from support.fakes import FakeFfmpeg
+from support.fakes import Browsed, FakeFfmpeg
 from support.logs import decisions
 
 from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate, open_run, rendered, spoken, take_index, write_project
@@ -55,17 +54,6 @@ def test_a_path_with_an_apostrophe_in_it_survives_the_concat_list(tmp_path, monk
     assert "jacob'\\''s films" in written[0]
 
 
-def test_section_targets_are_frame_exact(tmp_path):
-    """A section is cut to a whole number of frames, so the film never drifts off the narration."""
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {1: ("a", 1.02, 1.0, spoken("one")), 2: ("b", 1.48, 1.4, spoken("two"))})
-    targets = section_targets(takes, 30)
-    assert abs(targets[1] - 1.0333) < 1e-3
-    assert abs(targets[2] - 1.4667) < 1e-3
-    # The boundaries are cumulative, so the two lengths add up to the whole of the narration.
-    assert abs(targets[1] + targets[2] - takes.total_seconds) < 1 / 30
-
-
 def test_a_page_section_with_no_recording_plays_black_and_is_an_error(tmp_path):
     """A film that quietly played black where a recording should be would publish a lie about itself."""
     inputs = write_project(tmp_path)
@@ -75,7 +63,7 @@ def test_a_page_section_with_no_recording_plays_black_and_is_an_error(tmp_path):
     assert [row.substitute for row in rows] == [Substitute.BLACK] * 3
     assert opened.codes() == ["FILE_MISSING"] * 3
     said = next(line.finding.message for line in opened.of(FindingRaised))
-    assert "build/recordings/01.webm" in said
+    assert "build/recordings/01.mp4" in said
     assert "a black frame plays" in said
 
 
@@ -167,12 +155,12 @@ def test_the_join_opens_every_cut_through_the_file_protocol_and_the_closed_demux
 
 
 def recorded(tmp_path: Path) -> tuple[Inputs, Takes]:
-    """Three narrated sections with a webm on disk for each, so every cut is encoded from a recording."""
+    """Three narrated sections with a recording on disk for each, so every cut is encoded from a recording."""
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
     inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
     for number in (1, 2, 3):
-        inputs.workspace.recording(f"{number:02d}").write_bytes(f"webm {number}".encode())
+        inputs.workspace.recording(f"{number:02d}").write_bytes(f"mp4 {number}".encode())
     return inputs, takes
 
 
@@ -311,16 +299,11 @@ def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, monkeypatch):
     toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\noptional = true\n"
     write_project(tmp_path, toml)
     inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
-    asked: list[object] = []
-
-    def draw(out: Path, **named: object) -> Path:
-        asked.append(named["policy"])
-        return draw_slate(out)
-
-    monkeypatch.setattr(slate, "render_slate", draw)
+    browsed = Browsed().install(monkeypatch)
     (slot,) = inputs.document.clip_sections
     section_slate(inputs, open_run(tmp_path).run, slot)
-    assert asked == ["untrusted"]
+    assert browsed.policies == ["untrusted"]
+    assert "Your clip goes here" in browsed.documents[0]
 
 
 def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch):
@@ -331,10 +314,10 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
     """
     drawn: list[str] = []
 
-    def draw(out: Path, **named: object) -> Path:
+    def draw(pictures: object, out: Path, **named: object) -> Path:
         picture = f"{named['title']}|{named['background']}"
         drawn.append(picture)
-        draw_slate(out).write_text(picture, encoding="utf-8")
+        draw_slate(pictures, out).write_text(picture, encoding="utf-8")
         return out
 
     monkeypatch.setattr(slate, "render_slate", draw)

@@ -14,18 +14,14 @@ from support.links import link
 from support.takes import TAKE_SUFFIX
 
 ROOT = Path("/p")
-SPACE = Workspace(
-    root=ROOT, build=ROOT / "build", name="demo", suffix=TAKE_SUFFIX, takes=ROOT / "takes", score_dir=ROOT / "score"
-)
+SPACE = Workspace(root=ROOT, build=ROOT / "build", name="demo", takes=ROOT / "takes", score_dir=ROOT / "score")
 
 
 @pytest.mark.parametrize("artifact", list(Artifact), ids=lambda artifact: artifact.name)
 def test_every_artifact_the_pipeline_declares_moves_with_the_build_directory(artifact: Artifact) -> None:
     """`Artifact` publishes the path under the build directory, and `[project] build` may move the directory."""
     assert SPACE.of(artifact) == ROOT / "build" / artifact.value
-    moved = Workspace(
-        root=ROOT, build=ROOT / "out", name="demo", suffix=TAKE_SUFFIX, takes=ROOT / "takes", score_dir=ROOT / "score"
-    )
+    moved = Workspace(root=ROOT, build=ROOT / "out", name="demo", takes=ROOT / "takes", score_dir=ROOT / "score")
     assert moved.of(artifact) == ROOT / "out" / artifact.value
 
 
@@ -36,9 +32,7 @@ def test_the_film_is_named_after_the_project() -> None:
 
 def test_every_work_file_moves_with_the_build_and_is_hidden_beside_the_film() -> None:
     """A work file a stage joins in `final/` follows `[project] build` and is never one a viewer opens."""
-    moved = Workspace(
-        root=ROOT, build=ROOT / "out", name="demo", suffix=TAKE_SUFFIX, takes=ROOT / "takes", score_dir=ROOT / "score"
-    )
+    moved = Workspace(root=ROOT, build=ROOT / "out", name="demo", takes=ROOT / "takes", score_dir=ROOT / "score")
     assert moved.work_file("picture.mp4") == ROOT / "out" / "final" / ".demo.picture.mp4"
     assert moved.joined_music == ROOT / "out" / "score" / "music.mp3"
     assert moved.stamped_film("2000-01-01") == ROOT / "out" / "final" / "demo-2000-01-01.mp4"
@@ -55,7 +49,6 @@ def test_a_bought_take_lives_in_the_takes_directory_and_never_in_the_machines_st
         root=ROOT,
         build=ROOT / "build",
         name="demo",
-        suffix=TAKE_SUFFIX,
         takes=ROOT / "takes",
         score_dir=ROOT / "score",
         store=Path("/shared"),
@@ -69,7 +62,6 @@ def test_a_projects_takes_dir_holds_its_takes_and_the_build_holds_its_index() ->
         root=ROOT,
         build=ROOT / "build",
         name="demo",
-        suffix=TAKE_SUFFIX,
         takes=ROOT / "voice",
         score_dir=ROOT / "score",
         store=Path("/shared"),
@@ -83,7 +75,7 @@ def test_one_run_writes_one_events_file() -> None:
 
 
 def test_a_section_names_its_recording_its_log_and_its_cut() -> None:
-    assert SPACE.recording("03").name == "03.webm"
+    assert SPACE.recording("03").name == "03.mp4"
     assert SPACE.recording_log("03").name == "03.json"
     assert SPACE.section_video("03").name == "03.mp4"
 
@@ -93,7 +85,6 @@ def test_a_cut_left_by_a_renumbering_is_found_and_the_ones_still_declared_are_no
         root=tmp_path,
         build=tmp_path / "build",
         name="demo",
-        suffix=TAKE_SUFFIX,
         takes=tmp_path / "takes",
         score_dir=tmp_path / "score",
     )
@@ -108,7 +99,6 @@ def test_a_project_that_has_never_been_built_has_no_stray_cut(tmp_path: Path) ->
         root=tmp_path,
         build=tmp_path / "build",
         name="demo",
-        suffix=TAKE_SUFFIX,
         takes=tmp_path / "takes",
         score_dir=tmp_path / "score",
     )
@@ -121,8 +111,29 @@ def test_a_committed_take_linked_out_of_the_project_is_refused_before_a_run(tmp_
     (root / "voice").mkdir(parents=True)
     (tmp_path / "secret").write_text("not a take", encoding="utf-8")
     link(root / "voice" / take_file("0123456789abcdef", TAKE_SUFFIX), tmp_path / "secret")
-    space = Workspace(
-        root=root, build=root / "build", name="demo", suffix=TAKE_SUFFIX, takes=root / "voice", score_dir=root / "score"
-    )
+    space = Workspace(root=root, build=root / "build", name="demo", takes=root / "voice", score_dir=root / "score")
     with pytest.raises(InputError, match="leads outside the takes directory"):
         space.confine()
+
+
+def test_aligned_words_are_kept_in_the_takes_directory_under_their_key() -> None:
+    workspace = Workspace(
+        root=Path("p"),
+        build=Path("p/build"),
+        name="demo",
+        takes=Path("p/takes"),
+        score_dir=Path("p/score"),
+    )
+    assert workspace.aligned_dir == Path("p/takes/aligned")
+    assert workspace.aligned_words("ab-cd") == Path("p/takes/aligned/ab-cd.words.json")
+
+
+def test_rejected_takes_are_kept_in_the_takes_directory() -> None:
+    workspace = Workspace(
+        root=Path("p"),
+        build=Path("p/build"),
+        name="demo",
+        takes=Path("p/takes"),
+        score_dir=Path("p/score"),
+    )
+    assert workspace.rejected_dir == Path("p/takes/rejected")

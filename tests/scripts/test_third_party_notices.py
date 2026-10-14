@@ -47,3 +47,29 @@ def test_no_other_face_is_said_to_be_in_the_graphics() -> None:
     for name, how in rows().items():
         if "assets/" in how:
             assert name in faces, f"the {name} row says the graphics embed it, and assets/fonts/LICENSE.txt does not"
+
+
+EMBEDS = re.compile(r"font/woff2|<path\b")
+"""What a graphic that carries a face holds: a base64 WOFF2 subset, or the letters traced into outline paths."""
+
+
+def test_every_graphic_the_licence_names_carries_a_face() -> None:
+    """A path the licence names is one whose graphics hold a subset, so the licence claims no file that has none."""
+    opening = GRAPHICS_LICENSE.read_text(encoding="utf-8").split(" carry subsets", 1)[0]
+    named = re.findall(r"(?:assets|docs)/[\w./-]*", opening)
+    assert named, "the licence names no graphics"
+    for place in named:
+        target = REPO / place
+        graphics = sorted(target.rglob("*.svg")) if target.is_dir() else [target]
+        assert any(EMBEDS.search(graphic.read_text(encoding="utf-8")) for graphic in graphics), (
+            f"assets/fonts/LICENSE.txt names {place}, which embeds no face"
+        )
+
+
+def test_no_asset_names_a_script_this_repository_does_not_hold() -> None:
+    """The asset builder lives with the site's sources, so a generated asset says so rather than name a gone script."""
+    for asset in sorted((REPO / "assets").rglob("*")):
+        if asset.suffix not in {".css", ".svg", ".txt"}:
+            continue
+        for script in re.findall(r"scripts/[\w/]+\.py", asset.read_text(encoding="utf-8")):
+            assert (REPO / script).is_file(), f"{asset.relative_to(REPO)} names {script}, which is not here"

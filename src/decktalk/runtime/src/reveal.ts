@@ -12,8 +12,9 @@
 
 import { CLASS, countSeconds, span, styleClass } from "./canvas.ts";
 import { now, schedule } from "./clock.ts";
-import { ATTENTION, type Attr, type Count, cueId, EXITS } from "./contract.ts";
+import { ATTENTION, type Attr, type Count, cueId, EXITS, MILLISECONDS } from "./contract.ts";
 import { fallback } from "./katex.ts";
+import { wire } from "./motion.ts";
 import {
   ATTR,
   classChangesOf,
@@ -53,10 +54,18 @@ type Action = {
 };
 
 /** What a mounted slide needs from the mode that mounted it, which is the state no element can read. */
-export type Playing = {
+type Playing = {
   readonly frozen: boolean;
   readonly held: ReadonlySet<string> | null;
+  /**
+   * The cues due at the section's start, whose arrivals the section opens on. There is no frame before
+   * the first, and an entrance born on a frame draws nothing on it, so each of these arrives as a cut,
+   * the way the first slide does, and the section's first frame shows it.
+   */
+  readonly opens: ReadonlySet<string>;
   readonly words: readonly Spoken[] | null;
+  /** The second a cue id is due, which is how a motion learns its own length, or null when unknown. */
+  readonly at: (cue: string) => number | null;
 };
 
 /** A slide on the canvas, with every cue of it wired and every stop it owes when it leaves. */
@@ -65,6 +74,8 @@ export type Mounted = {
   readonly slide: Slide;
   readonly actions: Map<string, Action[]>;
   readonly stop: () => void;
+  /** Every sentence a cue of this slide has written, so a later cue of it never writes one again. */
+  readonly said: Set<string>;
 };
 
 /**
@@ -90,6 +101,7 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
       for (const one of stops) one();
       stops.length = 0;
     },
+    said: new Set(),
   };
   const onLeave = (fn: () => void) => stops.push(fn);
   for (const target of momentElements(el)) {
@@ -110,6 +122,9 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
   }
   for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`))
     spotlight(container as HTMLElement, slide, actions);
+  wire(el, slide, { frozen: playing.frozen, at: playing.at }, (cue, run) =>
+    push(actions, cue, { attr: ATTR.motion, run, line: null }),
+  );
   if (playing.frozen) {
     for (const [cue, list] of actions) {
       if (playing.held?.has(cue)) continue;
@@ -208,6 +223,9 @@ function actionFor(
   return arrival(el, cue, slide, playing, onLeave);
 }
 
+/** The entrance an arrival due at the section's start plays, which is none, as the first slide's is. */
+const OPENING_ENTRANCE = "cut";
+
 /** What an arrival does, which is the entrance, the stagger it may spread, and the text effects. */
 function arrival(
   el: HTMLElement,
@@ -216,19 +234,20 @@ function arrival(
   playing: Playing,
   onLeave: (stop: () => void) => void,
 ): Action {
-  const style = entranceOf(el);
-  const seconds = entranceSeconds(el);
+  const opens = playing.opens.has(cue) && !playing.frozen;
+  const style = opens ? OPENING_ENTRANCE : entranceOf(el);
+  const seconds = opens ? 0 : entranceSeconds(el);
   const step = staggerSeconds(el);
   const text = fallback(el);
   return {
     attr: ATTR.in,
     run: () => {
-      if (step === null) show(el, style, seconds);
+      if (step === null) show(el, style, seconds, cue, playing.frozen);
       else {
         [...el.children].forEach((child, at) => {
           const one = child as HTMLElement;
-          one.style.animationDelay = `${step * at}s`;
-          show(one, style, seconds);
+          one.style.animationDelay = `${opens ? 0 : step * at}s`;
+          show(one, style, seconds, cue, playing.frozen);
         });
       }
       const counted = countOf(el);
@@ -244,16 +263,27 @@ function arrival(
  * Draw one element with its entrance, which is the one place a style word becomes a class.
  *
  * The entrance class is taken off once it has played, so the element rests in the plain shown state
- * and a later step back is a change of class rather than an argument with a finished animation.
+ * and a later step back is a change of class rather than an argument with a finished animation. The
+ * taking off is owed to the section clock at the second the entrance ends, its delay included, and
+ * never left to the animation's end event. The browser sends that event from a frame it draws on its
+ * own wall clock, so a recorder that reached a frame by its index and one that stepped every frame
+ * before it would find the class on or off by chance when a later cue steps the element back.
+ *
+ * A still is the page once every length has run out, which is past the second the clock takes the
+ * entrance off, so a still never puts it on. Left on, its finished animation would hold the element
+ * at full strength over a later step back, and a still would never show one.
  */
-function show(el: HTMLElement, style: string, seconds: number): void {
+function show(el: HTMLElement, style: string, seconds: number, cue: string, frozen: boolean): void {
   const entrance = styleClass("in", style);
   el.classList.remove(CLASS.hidden);
   span(el, seconds);
-  el.classList.add(CLASS.shown, entrance);
-  el.addEventListener("animationend", (event) => {
-    if (event.target === el) el.classList.remove(entrance);
-  });
+  el.classList.add(CLASS.shown);
+  if (frozen) return;
+  el.classList.add(entrance);
+  const played = el.getAnimations().find((one) => one instanceof CSSAnimation && one.animationName === entrance);
+  const ends = played?.effect?.getComputedTiming().endTime;
+  if (typeof ends !== "number") return;
+  schedule(now() + ends / MILLISECONDS, "reveal", cue, () => el.classList.remove(entrance));
 }
 
 /**
@@ -302,19 +332,27 @@ function subject(el: Element, attr: Attr): string | null {
  * Run every moment of one cue, in document order, and answer with the sentence they wrote together.
  *
  * A step back that shares its cue with an arrival writes nothing, because it is the shadow of that
- * arrival rather than an event of its own, and a return to the front always writes a line, because
- * it is an attention event that a viewer is meant to notice.
+ * arrival rather than an event of its own, and a return to the front writes a line, because it is
+ * an attention event that a viewer is meant to notice. A line the slide has already written, at
+ * this cue or an earlier one, is not written again: forty ticks that each say "its tick lights"
+ * tell a reader something the first time and nothing the other thirty-nine, so the transcript says
+ * it once, where it first applies. The next slide starts with nothing said.
+ *
+ * The answer is undefined when the slide declares nothing at this cue, and null when it declares
+ * moments that write nothing new, so a cue that ran its moments is never mistaken for a stray name.
  */
-export function fire(mounted: Mounted | null, cue: string): string | null {
+export function fire(mounted: Mounted | null, cue: string): string | null | undefined {
   const list = mounted?.actions.get(cue);
-  if (!list?.length) return null;
+  if (!mounted || !list?.length) return undefined;
   for (const action of list) action.run();
   const arrived = list.some((action) => action.attr === ATTR.in && action.line !== null);
   const lines: string[] = [];
   for (const action of list) {
     if (action.line === null) continue;
     if (arrived && action.attr === ATTR.back) continue;
-    if (!lines.includes(action.line)) lines.push(action.line);
+    if (mounted.said.has(action.line)) continue;
+    mounted.said.add(action.line);
+    lines.push(action.line);
   }
   return lines.length ? lines.join(" ") : null;
 }

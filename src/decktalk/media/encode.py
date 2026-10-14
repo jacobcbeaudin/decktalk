@@ -65,10 +65,11 @@ class Encoder:
 
     def __init__(self, video: VideoConfig, sound: AudioConfig) -> None:
         self.v = video
+        self.tag = "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
         self.fit = (
             f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
             f"pad={video.width}:{video.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps={video.fps},format=yuv420p,"
-            "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
+            f"{self.tag}"
         )
         gop = str(KEYFRAME_SECONDS * video.fps)
         self.venc = [

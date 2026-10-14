@@ -1,0 +1,195 @@
+[
+  {
+    "name": "models",
+    "schema": "ModelsReply",
+    "valid": true,
+    "body": {
+      "service": "decktalk-voice",
+      "contract": 1,
+      "aligner": {
+        "id": "fake-aligner",
+        "revision": "1",
+        "model_digest": "sha256:0f00"
+      }
+    }
+  },
+  {
+    "name": "models-extra-field",
+    "schema": "ModelsReply",
+    "valid": true,
+    "body": {
+      "service": "decktalk-voice",
+      "contract": 1,
+      "aligner": {
+        "id": "fake-aligner",
+        "revision": "1",
+        "model_digest": "sha256:0f00",
+        "licence": "MIT"
+      },
+      "uptime_seconds": 12
+    }
+  },
+  {
+    "name": "align-request",
+    "schema": "AlignRequest",
+    "valid": true,
+    "body": {
+      "words": [
+        "A",
+        "bowl",
+        "a",
+        "ball"
+      ]
+    }
+  },
+  {
+    "name": "align-reply",
+    "schema": "AlignReply",
+    "valid": true,
+    "body": {
+      "words": [
+        {
+          "word": "A",
+          "start": 0.0,
+          "end": 0.12
+        },
+        {
+          "word": "bowl",
+          "start": 0.12,
+          "end": 0.5
+        }
+      ],
+      "aligner": {
+        "id": "fake-aligner",
+        "revision": "1",
+        "model_digest": "sha256:0f00"
+      }
+    }
+  },
+  {
+    "name": "align-reply-extra-field",
+    "schema": "AlignReply",
+    "valid": true,
+    "body": {
+      "words": [
+        {
+          "word": "A",
+          "start": 0.0,
+          "end": 0.12,
+          "phones": [
+            "AH"
+          ]
+        }
+      ],
+      "elapsed_seconds": 0.2
+    }
+  },
+  {
+    "name": "align-reply-null-confidence",
+    "schema": "AlignReply",
+    "valid": true,
+    "body": {
+      "words": [
+        {
+          "word": "A",
+          "start": 0.0,
+          "end": 0.12,
+          "confidence": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "speech-reply",
+    "schema": "SpeechReply",
+    "valid": true,
+    "body": {
+      "audio_base64": "dGFrZQ==",
+      "format": "mp3",
+      "words": [
+        {
+          "word": "A",
+          "start": 0.0,
+          "end": 0.12
+        }
+      ]
+    }
+  },
+  {
+    "name": "speech-reply-no-words",
+    "schema": "SpeechReply",
+    "valid": true,
+    "body": {
+      "audio_base64": "dGFrZQ==",
+      "format": "mp3"
+    }
+  },
+  {
+    "name": "speech-reply-model-digest",
+    "schema": "SpeechReply",
+    "valid": true,
+    "body": {
+      "audio_base64": "dGFrZQ==",
+      "format": "mp3",
+      "words": [],
+      "model_digest": "sha256:5eed"
+    }
+  },
+  {
+    "name": "error-word-outside-vocabulary",
+    "schema": "ErrorReply",
+    "valid": true,
+    "body": {
+      "error": {
+        "code": "WORD_OUTSIDE_VOCABULARY",
+        "message": "the aligner has no entry for 'xyzzy'",
+        "word": "xyzzy"
+      }
+    }
+  },
+  {
+    "name": "models-no-aligner",
+    "schema": "ModelsReply",
+    "valid": false,
+    "body": {
+      "service": "decktalk-voice",
+      "contract": 1
+    }
+  },
+  {
+    "name": "align-request-no-words",
+    "schema": "AlignRequest",
+    "valid": false,
+    "body": {
+      "words": []
+    }
+  },
+  {
+    "name": "align-reply-negative-start",
+    "schema": "AlignReply",
+    "valid": false,
+    "body": {
+      "words": [
+        {
+          "word": "A",
+          "start": -0.1,
+          "end": 0.12
+        }
+      ]
+    }
+  },
+  {
+    "name": "align-reply-word-not-string",
+    "schema": "AlignReply",
+    "valid": false,
+    "body": {
+      "words": [
+        {
+          "word": 7,
+          "start": 0.0,
+          "end": 0.12
+        }
+      ]
+    }
+  }
+]

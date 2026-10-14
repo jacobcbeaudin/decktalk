@@ -33,8 +33,8 @@ a syllable, so it reads the level the cut lands on rather than the phrase around
 SEAM_SEARCH_FRAMES = 3
 """Calibration: how many frames past a seamless cut are searched for the picture the section before it ended on.
 
-A picture that arrives later than this is not drifting, it is a different picture, and the share the
-seam check measures says so on its own.
+The search only says how late a popping seam's picture arrived. A picture that arrives later than
+this is not late, it is a different picture, and the row says the search ran out.
 """
 
 TRAILING_FRAMES = 1.5
@@ -85,7 +85,7 @@ def cut_checks(
         if take is None or at is None:
             continue
         end = at.end
-        window = min(verify.cut_window_seconds, take.span_seconds)
+        window = min(verify.cut_window_seconds, takes.span_seconds(section.number))
         speech = audio.rms_db(narration, max(0.0, end - window), window)
         at = round(offsets[section.number] + end, 3)
         step = _step_dbfs(film, at)
@@ -152,10 +152,12 @@ def want_seams(inputs: Inputs, seams: list[Seam], wanted: Wanted) -> None:
 
 
 def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded: Decoded) -> tuple[SeamCheck, ...]:
-    """One row per seamless cut, and `CUT_POP` for each one whose picture visibly changes across it.
+    """One row per seamless cut, and `CUT_POP` for each one whose opening frame visibly changes across it.
 
-    The drift is the distance from the cut to the first frame of the incoming section that still
-    shows what the outgoing one ended on, which is how late a section that slipped arrived.
+    The recorder steps the section clock, so a seamless section opens on the very frame the one
+    before it ended on, and a picture that arrives even one frame later is a frame a viewer sees
+    jump. The drift is the distance from the cut to the first frame of the incoming section that
+    still shows what the outgoing one ended on, which tells the author how late that picture was.
     """
     verify = inputs.settings.verify
     fps = inputs.settings.video.fps
@@ -183,22 +185,20 @@ def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded
 def _drift(
     film: Decoded, last: float, opening: float, fps: int, size: Size, level: int, limit: float
 ) -> tuple[float, float]:
-    """(how far past the cut the outgoing picture is found, the smallest share measured), in seconds.
+    """(how far past the cut the outgoing picture is found, in seconds, and the share the opening frame changes).
 
-    The first frame of the incoming section is compared with the outgoing section's last frame. A
-    seam that matches straight away has drifted by nothing. When it does not match, the next few
-    frames are read too, because a picture that arrives a frame or two late is a section whose clock
-    has slipped rather than a section showing something else.
+    The first frame of the incoming section is compared with the outgoing section's last frame, and
+    that share alone is what a viewer sees at the cut. A seam that matches straight away has drifted
+    by nothing. When it does not match, the next few frames are read too, so the row can say how
+    many frames late the outgoing picture arrived.
     """
-    best = film.changed(last, opening, level=level, size=size)
-    if best <= limit:
-        return 0.0, round(best, 2)
+    opened = film.changed(last, opening, level=level, size=size)
+    if opened <= limit:
+        return 0.0, round(opened, 2)
     for step in range(1, SEAM_SEARCH_FRAMES + 1):
-        share = film.changed(last, opening + step / fps, level=level, size=size)
-        best = min(best, share)
-        if share <= limit + EPSILON:
-            return round(step / fps, 3), round(share, 2)
-    return round(SEAM_SEARCH_FRAMES / fps, 3), round(best, 2)
+        if film.changed(last, opening + step / fps, level=level, size=size) <= limit + EPSILON:
+            return round(step / fps, 3), round(opened, 2)
+    return round(SEAM_SEARCH_FRAMES / fps, 3), round(opened, 2)
 
 
 __all__ = [

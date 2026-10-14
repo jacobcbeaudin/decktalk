@@ -46,9 +46,17 @@ has to be argued for in review. Raising this number is the edit a reviewer refus
 
 ALLOW = {
     "contract/test_api.py": "`decktalk.__all__`, which is the whole supported Python API.",
+    "contract/test_aligner_spec.py": (
+        "`tests/data/aligner/`, the pinned spec of decktalk-voice's /v1/models, /v1/align and /v1/speech/timed, "
+        "and its fixtures."
+    ),
+    "contract/test_config_take_digests.py": (
+        "`tests/data/config_take_digests.json`, the take digests a one-voice project's config resolves to."
+    ),
     "contract/test_discoverable.py": ("Every command, key, code and attribute, reachable from --help and the schemas."),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
+    "contract/test_frame_size.py": "`[video] size`, read by every picture a run makes and by the starter's page.",
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
@@ -60,6 +68,7 @@ ALLOW = {
     "contract/test_retired_words.py": (
         "The **Not** column of `docs/reference/glossary.mdx`, held against the help, the docs and the skills."
     ),
+    "contract/test_reporters.py": "The commands each runtime code names, held to a page opened as each opens it.",
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": (

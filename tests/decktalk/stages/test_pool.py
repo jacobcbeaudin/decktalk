@@ -59,7 +59,7 @@ class Counted:
         return job
 
 
-def released_once_halted(pool: Pool[None, int], counted: Counted) -> threading.Thread:
+def released_once_halted(pool: Pool[int, None, int], counted: Counted) -> threading.Thread:
     """A thread that releases the jobs in flight only once the pool has halted, so none can take another."""
 
     def release() -> None:
@@ -179,6 +179,9 @@ def test_a_second_section_that_failed_on_its_own_is_recorded_and_a_halted_one_is
     assert [data_of(record)["section"] for record in later] == [2]
     assert later[0].exc_info is not None
     assert "section 2 would not load" in str(later[0].exc_info[1])
+    # The line says the section failed beside the first one, with its own reason, not that it failed while
+    # something was being raised.
+    assert later[0].getMessage() == "Section 2 failed too, for a reason of its own: section 2 would not load."
 
 
 def test_a_tool_that_will_not_open_fails_the_pool_with_its_own_reason():
@@ -292,7 +295,7 @@ def test_a_second_ctrl_c_anywhere_after_the_first_leaves_at_once(where: str, mon
     thread has reached.
     """
     counted = Counted(hold=1)
-    pool: Pool[None, int] = Pool(range(1, 4), 1, nothing_to_open, counted, Cancel())
+    pool: Pool[int, None, int] = Pool(range(1, 4), 1, nothing_to_open, counted, Cancel())
     said = Said(press_ctrl_c if where == "while the pool says it is stopping" else lambda: None)
     if where == "while the halt settles the queued sections":
         settle = pool.rows[3].set_exception
@@ -350,7 +353,7 @@ def test_a_section_that_failed_while_an_interrupt_was_waiting_on_it_is_recorded(
 
 def test_a_halt_cut_short_by_an_interrupt_is_finished_by_the_next_one(monkeypatch):
     """A row the first halt never settled would hold the wait open forever."""
-    pool: Pool[None, int] = Pool([1, 2, 3], 1, nothing_to_open, lambda _n, job, _h: job, Cancel())
+    pool: Pool[int, None, int] = Pool([1, 2, 3], 1, nothing_to_open, lambda _n, job, _h: job, Cancel())
 
     def interrupted(_failure: BaseException | None) -> NoReturn:
         raise KeyboardInterrupt

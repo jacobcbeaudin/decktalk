@@ -39,8 +39,9 @@ something reports is marked charged.
 
 `only` names section numbers, because that is what every other stage takes, and the score's own
 items are named rather than numbered. An effect is wanted when a `[[mix.effect]]` row cues it in a
-selected section, the ambience bed is wanted when a selected page section asks for one, and the
-music is wanted whenever any section is selected, because one piece of music plays under the whole film.
+selected section or the run names no section, the ambience bed is wanted only when a selected recorded
+section asks for one, and the music is wanted whenever any section is selected, because one piece of
+music plays under the whole film.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ from decktalk.media import audio, ffmpeg
 from decktalk.pipeline import Stage
 from decktalk.results import Cost, CostState, ScoreResult, SoundItem, SoundKind, SoundOutcome
 from decktalk.settings import AmbienceConfig, EffectConfig, MusicConfig
-from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
+from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, SoundRequest, endpoint, request_body
 from decktalk.stages import selects
 from decktalk.stages.cost import Buy, charge_of, cost_of
 from decktalk.stages.score.ledger import (
@@ -79,19 +80,13 @@ MUSIC_NAME = "music"
 """What the music is called, which the `[score]` table does not name either."""
 
 
-def requested_seconds(kind: SoundKind, body: Mapping[str, Any]) -> float:
-    """How many seconds of audio one request asks for, which is what it is priced by."""
-    if kind is SoundKind.MUSIC:
-        return float(body["music_length_ms"]) / 1000
-    return float(body["duration_seconds"])
-
-
 @dataclass(frozen=True)
 class Planned:
     """One item this run would generate, worked out before anything is bought.
 
-    A sound carries one body and music carries one per chunk, so the same row describes both and the
-    ledger is keyed on the whole of it rather than on whichever half a reader looked at.
+    A sound carries one request and music carries one per chunk, so the same row describes both and
+    the ledger is keyed on the whole of it rather than on whichever half a reader looked at. Each
+    request's body is the one its provider renders it as, which is what a digest is taken over.
     """
 
     name: str
@@ -99,7 +94,8 @@ class Planned:
     prompt: str
     out: Path
     endpoint: str
-    bodies: tuple[dict[str, Any], ...]
+    requests: tuple[SoundRequest, ...]
+    bodies: tuple[Mapping[str, Any], ...]
     digest: str
     parts: tuple[Path, ...] = ()
     """Where each bought part of the music is kept, in the order they are joined into `out`."""
@@ -112,7 +108,7 @@ class Planned:
     @property
     def seconds(self) -> float:
         """How many seconds of audio this item asks for, which is what its price is worked out on."""
-        return sum(requested_seconds(self.kind, body) for body in self.bodies)
+        return sum(request.seconds for request in self.requests)
 
     @property
     def request(self) -> str:
@@ -120,21 +116,22 @@ class Planned:
         return json.dumps(self.bodies[0] if len(self.bodies) == 1 else list(self.bodies), sort_keys=True)
 
 
-def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectConfig, *, loop: bool) -> dict[str, Any]:
-    """The request one ambience bed or one effect sends, with its table's settings filling what the item left out."""
-    body: dict[str, Any] = {
-        "text": spec.prompt,
-        "duration_seconds": spec.duration_seconds if spec.duration_seconds is not None else cfg.duration_seconds,
-        "prompt_influence": spec.prompt_influence if spec.prompt_influence is not None else cfg.prompt_influence,
-        "model_id": spec.model or cfg.model,
-    }
-    if loop:
-        # An ambience bed plays under whole sections, so the service is asked for audio that meets its own end.
-        body["loop"] = True
-    return body
+def sound_request(spec: SoundSpec, cfg: AmbienceConfig | EffectConfig, kind: SoundKind) -> SoundRequest:
+    """What one ambience bed or one effect asks for, with its table's settings filling what the item left out.
+
+    An ambience bed plays under whole sections, so it is asked for as audio that meets its own end.
+    """
+    return SoundRequest(
+        kind=kind,
+        prompt=spec.prompt,
+        seconds=spec.duration_seconds if spec.duration_seconds is not None else cfg.duration_seconds,
+        model=spec.model or cfg.model,
+        loop=kind is SoundKind.AMBIENCE,
+        influence=spec.prompt_influence if spec.prompt_influence is not None else cfg.prompt_influence,
+    )
 
 
-def music_bodies(spec: MusicSpec, cfg: MusicConfig) -> list[dict[str, Any]]:
+def music_requests(spec: MusicSpec, cfg: MusicConfig) -> tuple[SoundRequest, ...]:
     """One request per chunk of the music, each carrying the same prompt and its place in the piece.
 
     The service writes at most `chunk_max_seconds` in one answer, so longer music is asked for in
@@ -142,20 +139,18 @@ def music_bodies(spec: MusicSpec, cfg: MusicConfig) -> list[dict[str, Any]]:
     """
     parts = max(1, math.ceil(cfg.duration_seconds / cfg.chunk_max_seconds))
     each = cfg.duration_seconds / parts
-    bodies: list[dict[str, Any]] = []
-    for index in range(parts):
-        prompt = spec.prompt
-        if parts > 1:
-            prompt += f" (part {index + 1} of {parts}, same key and tempo, seamless mood)"
-        bodies.append(
-            {
-                "prompt": prompt,
-                "force_instrumental": spec.force_instrumental,
-                "model_id": cfg.model,
-                "music_length_ms": int(each * 1000),
-            }
+    return tuple(
+        SoundRequest(
+            kind=SoundKind.MUSIC,
+            prompt=spec.prompt,
+            seconds=each,
+            model=cfg.model,
+            instrumental=spec.force_instrumental,
+            part=index + 1,
+            parts=parts,
         )
-    return bodies
+        for index in range(parts)
+    )
 
 
 def _out(inputs: Inputs, named: str | None, default: Path) -> Path:
@@ -177,8 +172,13 @@ def plan_items(inputs: Inputs) -> list[Planned]:
     sound, music = endpoint(cfg.provider, SoundKind.EFFECT), endpoint(cfg.provider, SoundKind.MUSIC)
     kept = inputs.workspace.score_dir
     items: list[Planned] = []
+
+    def rendered(*requests: SoundRequest) -> tuple[Mapping[str, Any], ...]:
+        return tuple(request_body(cfg.provider, request) for request in requests)
+
     if spec.ambience is not None:
-        body = sound_body(spec.ambience, cfg.ambience, loop=True)
+        bed = sound_request(spec.ambience, cfg.ambience, SoundKind.AMBIENCE)
+        (body,) = rendered(bed)
         items.append(
             Planned(
                 name=AMBIENCE_NAME,
@@ -186,12 +186,14 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 prompt=spec.ambience.prompt,
                 out=_out(inputs, spec.ambience.out or mix.ambience, kept / f"{AMBIENCE_NAME}.mp3"),
                 endpoint=sound,
+                requests=(bed,),
                 bodies=(body,),
                 digest=request_digest(sound, body),
             )
         )
     for name, effect in spec.effects.items():
-        body = sound_body(effect, cfg.effects, loop=False)
+        asked = sound_request(effect, cfg.effects, SoundKind.EFFECT)
+        (body,) = rendered(asked)
         items.append(
             Planned(
                 name=name,
@@ -199,13 +201,15 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 prompt=effect.prompt,
                 out=_out(inputs, effect.out, kept / f"{name}.mp3"),
                 endpoint=sound,
+                requests=(asked,),
                 bodies=(body,),
                 digest=request_digest(sound, body),
             )
         )
     if spec.music is not None:
-        bodies = music_bodies(spec.music, cfg.music)
-        whole = {"chunks": bodies, "crossfade_seconds": cfg.music.crossfade_seconds}
+        chunks = music_requests(spec.music, cfg.music)
+        bodies = rendered(*chunks)
+        whole = {"chunks": list(bodies), "crossfade_seconds": cfg.music.crossfade_seconds}
         items.append(
             Planned(
                 name=MUSIC_NAME,
@@ -213,26 +217,27 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 prompt=spec.music.prompt,
                 out=_out(inputs, spec.music.out or mix.music, inputs.workspace.joined_music),
                 endpoint=music,
-                bodies=tuple(bodies),
+                requests=chunks,
+                bodies=bodies,
                 digest=request_digest(music, whole),
-                parts=tuple(kept / f"{MUSIC_NAME}-part{index + 1}.mp3" for index in range(len(bodies))),
+                parts=tuple(kept / f"{MUSIC_NAME}-part{index + 1}.mp3" for index in range(len(chunks))),
             )
         )
     return items
 
 
 def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bool]:
-    """Whether one item belongs to this run, which a run that names no section answers yes to.
+    """Whether one item belongs to this run, which is whether a section it selects plays it.
 
     A section is what every other stage selects on, so this is where the film's own sections are
-    read back into the names the score table uses.
+    read back into the names the score table uses. The ambience bed plays only under a recorded
+    section that asks for it, so a bed no selected section asks for is never bought, whether the run
+    names its sections or not. A run that names no section keeps every effect the table declares.
     """
     chosen = selects(only)
     document = inputs.document
-    if only is None:
-        return lambda _item: True
     played = any(chosen(section.number) for section in document.sections)
-    bedded = any(chosen(section.number) for section in document.page_sections if section.with_ambience)
+    bedded = any(chosen(section.number) for section in document.recorded_sections if section.with_ambience)
     cued = {inputs.path(row.file) for row in document.mix.effects if chosen(row.section)}
 
     def keeps(item: Planned) -> bool:
@@ -240,7 +245,7 @@ def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bo
             return played
         if item.kind is SoundKind.AMBIENCE:
             return bedded
-        return item.out in cued
+        return only is None or item.out in cued
 
     return keeps
 
@@ -283,9 +288,9 @@ def _buys(items: Sequence[Planned], held: Mapping[str, frozenset[int]], *, cover
     covers the sections the run selects, because the score plays under all of them.
     """
     return [
-        Buy(seconds=requested_seconds(item.kind, body), sections=covered, kind=item.kind)
+        Buy(seconds=request.seconds, sections=covered, kind=item.kind)
         for item in items
-        for index, body in enumerate(item.bodies)
+        for index, request in enumerate(item.requests)
         if index not in held.get(item.name, frozenset())
     ]
 
@@ -398,10 +403,10 @@ def _buy_sound(
     paid: list[Buy],
 ) -> Ledger:
     """Buy one ambience bed or one effect, write it, and record what it was bought with and what it cost."""
-    body = item.bodies[0]
+    request = item.requests[0]
     output_format = inputs.settings.score.output_format
     audio_bytes = _ask(
-        run, inputs, item, item.digest, buy, paid, lambda: client.effect(body, output_format=output_format)
+        run, inputs, item, item.digest, buy, paid, lambda: client.effect(request, output_format=output_format)
     )
     item.out.parent.mkdir(parents=True, exist_ok=True)
     item.out.write_bytes(audio_bytes)
@@ -456,7 +461,7 @@ def _buy_music(
     digests: list[str] = []
     gone: list[Path] = []
     priced = iter(buys)
-    for index, (body, part) in enumerate(zip(item.bodies, item.parts, strict=True)):
+    for index, (request, body, part) in enumerate(zip(item.requests, item.bodies, item.parts, strict=True)):
         run.check()
         part.parent.mkdir(parents=True, exist_ok=True)
         digest = request_digest(item.endpoint, body)
@@ -465,7 +470,7 @@ def _buy_music(
         elif index in held:
             gone.append(part)
         else:
-            asked = partial(client.music, body, output_format=inputs.settings.score.output_format)
+            asked = partial(client.music, request, output_format=inputs.settings.score.output_format)
             audio_bytes = _ask(run, inputs, item, digest, next(priced), paid, asked)
             part.write_bytes(audio_bytes)
             run.wrote(part)
@@ -604,12 +609,14 @@ def score(
     covered = _covered(inputs, only)
     estimate = cost_of(inputs, _buys([item for item in planned if item.name in fresh], held, covered=covered))
     buying = bool(fresh) and run.spend
-    if buying:
-        run.approve(estimate)
-    client = client_for(run, inputs) if buying else None
     rows: list[SoundItem] = []
     charged: list[Buy] = []
     try:
+        # One handler from the approval to the result, so an interrupt anywhere in the stage is
+        # `Cancelled` and carries every charge the run made.
+        if buying:
+            run.approve(estimate)
+        client = client_for(run, inputs) if buying else None
         for done, item in enumerate(planned):
             run.check()
             run.progress(Stage.SCORE, done=done, total=len(planned), unit=Unit.SCORE_ITEM, label=item.name)
@@ -623,29 +630,29 @@ def score(
                 run, inputs, client, item, ledger, path, held=held[item.name], covered=covered, paid=charged
             )
             rows.append(row)
+        run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.SCORE_ITEM, label="score")
+        if not planned:
+            run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
+        for item, row in zip(planned, rows, strict=True):
+            # A run that bought said why an item it could not finish is missing, so only an unbought item is said here.
+            if row.outcome is SoundOutcome.PLANNED and not item.out.is_file() and not buying:
+                run.found(
+                    judge(
+                        Code.SOUND_MISSING,
+                        f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
+                        f"with `decktalk score --spend` asks for {_to_buy(ledger, item, replace=replace):g} seconds of "
+                        "audio.",
+                        _missing(inputs, item),
+                        stage=Stage.SCORE,
+                    )
+                )
+        cost = cost_of(inputs, charged, state=CostState.CHARGED) if buying else estimate
+        return run.result(ScoreResult, spend=run.spend, items=tuple(rows), cost=cost)
     except HALTS as failure:
         refusal = _carrying(as_refusal(failure), run, inputs, rows, charged)
         if refusal is failure:
             raise
         raise refusal from failure
-    run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.SCORE_ITEM, label="score")
-    if not planned:
-        run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
-    for item, row in zip(planned, rows, strict=True):
-        # A run that bought said why an item it could not finish is missing, so only an unbought item is said here.
-        if row.outcome is SoundOutcome.PLANNED and not item.out.is_file() and not buying:
-            run.found(
-                judge(
-                    Code.SOUND_MISSING,
-                    f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
-                    f"with `decktalk score --spend` asks for {_to_buy(ledger, item, replace=replace):g} seconds of "
-                    "audio.",
-                    _missing(inputs, item),
-                    stage=Stage.SCORE,
-                )
-            )
-    cost = cost_of(inputs, charged, state=CostState.CHARGED) if buying else estimate
-    return run.result(ScoreResult, spend=run.spend, items=tuple(rows), cost=cost)
 
 
 __all__ = [
@@ -653,13 +660,12 @@ __all__ = [
     "MUSIC_NAME",
     "Planned",
     "client_for",
-    "music_bodies",
+    "music_requests",
     "plan_items",
     "price",
-    "requested_seconds",
     "score_files",
     "sound_context",
-    "sound_body",
+    "sound_request",
     "score",
     "ready",
     "stale",

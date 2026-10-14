@@ -44,7 +44,8 @@ and ffmpeg with ffprobe to cut, mix and encode them.
 The first command that opens a page fetches Chromium, and the first command that encodes fetches
 ffmpeg. Each download is announced before it starts and reports its bytes as they arrive, and under
 `--events` it is one `tool.fetch` line per step on stderr. `decktalk doctor` reports on both and fetches
-neither, and `decktalk doctor --fix` runs `decktalk install` to fetch what is absent.
+neither unless it is on a terminal, where it offers once to fetch what is absent, or `--fix` is passed, which
+runs `decktalk install` to fetch it under any flag.
 
 | Download | Where it comes from | How it is checked |
 |---|---|---|
@@ -57,11 +58,25 @@ nothing on PATH either.
 
 ### Roughly how large
 
-The browser is the large one. DeckTalk announces it as about 200 MB, which is what Playwright fetches
-for the browser and its headless shell together. On macOS on Apple silicon that unpacked to 554 MB in
-the cache. The pinned ffmpeg arrives as two archives of about 28 MB each on that platform
-and unpacks to 125 MB. Budget a gigabyte of cache for a machine that records, and a few minutes on a
-home connection for the first run.
+The browser is the large one. Playwright 1.63 fetches it in three parts, the browser, its headless
+shell and a small ffmpeg of its own, and its installer states each part's size on the first tenth it
+reports, which is the size DeckTalk's progress lines carry. On macOS on Apple silicon the parts are
+190.9, 98.9 and 1.0 MB, 291 MB in all.
+On Linux x86-64 and on Windows they come to about 318 and 327 MB, which are the sizes of the same
+three archives on Playwright's host rather than a measured install. The pinned ffmpeg arrives as two
+archives of 28.2 and 28.1 MB on macOS on Apple silicon, and as one archive of 125.8 MB on Linux x86-64
+and 168.3 MB on Windows, so a first run fetches about 347 MB on macOS on Apple silicon, about 445 MB on
+Linux x86-64 and about 495 MB on Windows. In a pipe each download prints a line as it starts, a line as
+it ends, and lines between as it arrives. For ffmpeg those come every ten seconds whatever the speed of
+the link, while bytes keep arriving. Chromium's come from Playwright's installer, which owns that
+download and reports each part at every tenth, so on a slow link they can be further apart. An ffmpeg
+archive's start line carries its size when the host states one. A part of Chromium starts by name
+alone, and its size arrives on its first progress line. An ffmpeg
+download that stops partway, because the link dropped or the host sent nothing for a minute, keeps
+what arrived beside the archive's name in the cache, and the next run asks the host for the rest,
+starting again only when the host cannot send part of a file. The pinned SHA-256 is checked on the
+whole archive either way. Budget a gigabyte of cache for a machine that records, and a few minutes on
+a home connection for the first run.
 
 ### Where they land
 
@@ -149,121 +164,38 @@ before you trust those limits on it.
 
 `decktalk doctor` prints the Chromium revision and the ffmpeg build a run would use, so a machine's
 owner can read what a recording will launch before it launches. [What leaves your
-machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts.
+machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts, and
+[Size the machine](/guides/ci-and-offline#size-the-machine) lists the machine keys that say how much
+work a machine takes on at once and how long it waits.
 
-### How hard a machine is driven
+## Pages and programs
 
-Five keys say how much work this machine takes on at once and how long it waits. They describe the
-machine rather than the film, so they are machine keys like the ones above.
-
-| Key | Default | What it decides |
-|---|---|---|
-| `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per two CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
-| `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
-| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
-| `narration.store_wait_seconds` | `900` | How many seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request. |
-| `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
-
-A recording needs its CPU on time, because a frame drawn late lands its reveal late. So
-`record.concurrency` set above this machine's share costs correctness rather than only speed: a
-starved recording stalls, or reports reveals that land after their words.
-
-```console
-decktalk config set record.concurrency 2 --scope machine
-```
-
-A `decktalk.toml` that sets any of the five is refused by name, because a project travels and a
-limit that suits one machine is wrong on the next:
-
-{/* sample: machine-key-in-project, decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
-```text
-error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
-  hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --scope machine`.
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
-```
-
-Each also has its environment variable, such as `DECKTALK_RECORD_CONCURRENCY`, which is how a job
-sets one for a container it does not keep.
-
-## A page someone else wrote
-
-A deck is a web page, and its script runs in the Chromium that records it. On your own machine that
-page is your own work, so by default it is trusted: it reaches the network the way it would in your
-browser, and a font or a library it loads from another origin is reported as
-[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) rather than stopped.
-
-A service that renders pages other people wrote cannot extend that trust, because a trusted page
-reaches anything the machine can reach, a cloud metadata endpoint included. `[record] page_policy`
-says how far a page is trusted. It is the machine's to set, so a project file that names it is
-refused and a project someone else wrote cannot trust its own page.
-
-| Value | What the page may do |
-|---|---|
-| `trusted` | The default. The page reaches the network as a browser would, through the machine's own proxy. |
-| `untrusted` | Chromium runs with its sandbox on, and every request that is not for the project's own origin is refused, through every channel a page can open. |
-
-```console
-decktalk config set record.page_policy untrusted --scope machine
-```
-
-Under `untrusted`, three things hold at once.
-
-- **The sandbox is on, or nothing runs.** A Chromium that cannot start its sandbox is refused with a
-  `TOOL` error. The run never falls back to a browser without one.
-- **No request leaves the origin.** The page is served at the project's own origin, and a request for
-  any other one is aborted before it reaches the network, whatever its scheme. The browser is also
-  pointed at a proxy that answers nothing, and WebRTC may not send UDP past it, which closes the
-  channels request routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. The recording
-  still names every host the page reached for, as `PAGE_CDN_ASSET`.
-- **The browser environment is scrubbed.** Chromium is handed only the variables that say where a
-  file, a display, a locale or a proxy is, so a key the host holds never reaches the process that runs
-  a page's script. ffmpeg and ffprobe are handed the same set. This holds under `trusted` too.
-
-The policy is read by every launch that opens a project's page, which is `record`, `check`,
-`storyboard` and the poster `assemble` draws.
-
-### The sandbox in a Linux container
-
-Chromium's sandbox needs user namespaces. In a Linux container that takes two things, and a container
-missing either one refuses an untrusted run.
-
-- **A user other than root.** Chromium refuses its sandbox to root, so run the render as an ordinary
-  user.
-- **A seccomp profile that allows user namespaces.** Docker's default profile blocks the calls the
-  sandbox makes. A render running as an ordinary user under the default profile is still refused, and
-  the same render under a profile that allows those calls launches.
-
-The refusal names both:
-
-```text
-error[TOOL]: could not launch Chromium with its sandbox on (...).
-  hint: An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than root and a seccomp profile that allows user namespaces.
-  docs: https://docs.decktalk.ai/reference/errors/TOOL
-```
-
-The engine's refusal is defence in depth. A service that renders strangers' pages still runs each
-render in a network namespace with no egress of its own, because the machine is where the boundary
-belongs.
+A deck is a web page and a render section is a program, and both run with your rights when you build.
+[Pages and programs you did not write](/reference/trust) says how far each is trusted, and how to
+build a project someone else wrote.
 
 ## What a voiced run needs
 
 A build that does not spend needs no account, no API key and no network once the tools are on the machine.
 A build voiced by ElevenLabs, the cloud voice, needs two values from ElevenLabs. The local voice,
-`dtsp`, needs only `[voice] id` and `decktalk-voice`, a separate speech server running on this
-machine, and no key. [The `[dtsp]` keys](/reference/configuration#dtsp) say where it listens.
+`dtsp`, needs only the voice's `[voices.NAME] id` and `decktalk-voice`, a separate speech server running on this
+machine, and no key. That server is in development and not yet public, so today every voiced build uses ElevenLabs. The same server times the words of a take whose voice sent none. [The `[dtsp]`
+keys](/reference/configuration#dtsp) say where it listens.
 
 | Value | What it is | Read by |
 |---|---|---|
 | `ELEVENLABS_API_KEY` | Your API key. This is the credential. | a voiced build, `decktalk narrate`, `decktalk score` |
-| `[voice] id` | The id of the voice to speak in. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
+| `[voices.NAME] id` | The id of each voice, such as `[voices.narrator] id`. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
 
 Put the key in `.env` beside `decktalk.toml`, or export it. A variable already in the environment
 wins over the file, and a value that still starts with `<`, such as `<your-elevenlabs-key>`, counts
 as unset, so `.env.example` as it ships approves nothing.
 
-The voice id is `[voice] id` in `decktalk.toml`, and `DECKTALK_VOICE_ID` in the environment overrides
-it for anyone who keeps it out of the file. It is committed with the project because it grants
-nothing: a voice cloned on an ElevenLabs account is usable only with that account's key.
+A voice's id is `[voices.NAME] id` in `decktalk.toml`, and `DECKTALK_VOICES_<NAME>_ID`, such as
+`DECKTALK_VOICES_NARRATOR_ID`, in the environment overrides it for anyone who keeps it out of the file.
+A voice's id is committed with the project because it grants nothing: a voice cloned on an ElevenLabs
+account is usable only with that account's key. A film may mix voices and providers, so
+`decktalk check` prices each provider's turns on a row of its own.
 
 DeckTalk never prints the key. No value read from `.env` or from the environment reaches a `--json`
 payload, a log line or an error message, and an error that quotes a reply from the service has every
@@ -272,34 +204,35 @@ key is set and never what it is.
 
 ## What spends and what does not
 
-Two things call ElevenLabs. The `narrate` stage sends each section's text and gets speech back, and
+Two things call ElevenLabs. The `narrate` stage sends each turn's text and gets speech back, and
 `decktalk score` generates the music, the ambience bed and the effects.
 
 | Command | When it spends |
 |---|---|
-| `decktalk build` | When the run is voiced. It voices each section whose text or voice settings changed, and every section when the cache is empty. |
-| `decktalk narrate` | The same sections as a build, for that stage alone. |
+| `decktalk build` | When the run is voiced. It voices each turn whose text or voice settings changed, and every turn when the cache is empty. |
+| `decktalk narrate` | The same turns as a build, for that stage alone. |
 | `decktalk score` | For each part whose request changed or whose file is missing. |
 
 No library or command call spends without approval. On the command line the flags are `--no-spend`, which plays every take on disk, writes
 placeholder narration where a take is missing and buys nothing, `--spend`, which approves the spend,
-and `--max-cost N`, which puts a ceiling on it. A free provider such as `dtsp` makes its takes under
+and `--max-cost N`, which puts a ceiling on a spend something else approved and approves nothing
+itself. A free provider such as `dtsp` makes its takes under
 either flag once a voice is named, because it costs nothing. With neither flag, a build with something to buy
 prices the run and asks on a terminal, once, about its takes and its sounds added together. Without a
 terminal it refuses and names the two flags that answer, so a script or a CI job cannot spend by
 accident. A build whose takes are all on disk buys nothing, so it asks nothing and reads no key, and
-a voice that declares itself free, such as `dtsp`, is never asked about, because it costs nothing.
+a provider that declares itself free, such as `dtsp`, is never asked about, because it costs nothing.
 
 Everything else spends nothing: `init`, `install`, `doctor`, `status`, `check`, `words`,
 `storyboard`, `serve`, `config`, `schema`, `cue`, `record`, `assemble`, `verify`, `clip`, and any
 `build` with `--no-spend`.
 
-A voiced section costs the characters of its whole text, so an edit costs every changed section in
-full rather than the changed sentence. The starter's three sections are 476 characters and make 50
-seconds of film, which is the order of magnitude to expect: a script is cheap and a long film is a
-few thousand characters. `decktalk check --json` gives the exact figure for your own script. A take
-is named by the digest of its text and its voice settings, so an unchanged section is read from the
-cache and a new voice id voices every section again.
+A voiced turn costs the characters of its whole text, so an edit costs every changed turn in full
+rather than the changed sentence. A section read by one voice is one turn. The starter's three
+sections are 476 characters and make 50 seconds of film, which is the order of magnitude to expect: a
+script is cheap and a long film is a few thousand characters. `decktalk check --json` gives the exact
+figure for your own script. A take is named by the digest of its text and its voice settings, so an
+unchanged turn is read from the cache and a new voice id voices every turn that voice reads again.
 
 <Warning>`--replace-voiced` with `--spend` voices a section again and plays the new take in place of
 the one you already have, and `--replace-score` with `--spend` buys every bought sound again. They are the
@@ -357,6 +290,7 @@ decktalk check --json
       "price_key": "elevenlabs.dollars_per_1000_characters",
       "averaged": false,
       "price_layer": "project",
+      "provider": "elevenlabs",
       "stage": "narrate"
     }
   ]
@@ -366,7 +300,7 @@ decktalk check --json
 - `state` is `estimate` for what a run would cost and `charged` for what one did cost.
 - `sections` are the sections the price covers, in script order.
 - `characters` is what would be sent, and `seconds` is how long the takes are expected to run.
-- `billing` is how the voice declares it bills: `per_character`, `per_second`, `free`, or
+- `billing` is how the provider declares it bills: `per_character`, `per_second`, `free`, or
   `undeclared` for a voice or a sound provider a host registered itself. A build's total is `mixed`
   when it adds characters of speech to seconds of sound, and then carries both rates.
 - `dollars` is the characters or the seconds the bill counts, at the stated rate, rounded up to the cent.
@@ -382,8 +316,8 @@ decktalk check --json
   shown as spent. A total adds only the amounts each row is billed on.
 
 `dollars` and `ceiling_dollars` differ when a section's take cannot be matched. A take is named by
-its text and its voice, so with no `[voice] id` named a voiced take of a section's current text cannot
-be matched to the voice that made it: each such section's characters go into the ceiling and none of
+its text and its voice, so with no voice id named a voiced take of a turn's current text cannot
+be matched to the voice that made it: each such turn's characters go into the ceiling and none of
 them into the price. A section whose text changed, or whose take is gone, needs a take whatever the
 voice is, so its characters go into the price. The key is not needed to price a run, because the price
 never asks the voice anything.
@@ -418,7 +352,7 @@ together first, so a run it refuses has bought nothing. Each request that buys i
 made, against what the run already approved, so a stage that asks for more than the build was
 priced at is still refused, and the refusal says that what the run bought before it is kept.
 
-{/* sample: narrate-over-the-ceiling, decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request */}
+{/* sample: narrate-over-the-ceiling, decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which refuses before any request */}
 ```text
 error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
   hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
@@ -448,10 +382,24 @@ you intend to.
 
 ## Time
 
-Recording runs in real time, so a section takes as long to record as it plays. Several page
-sections record at once, as many as `record.concurrency` allows, so a film of several sections
-records in about the time of its longest few rather than of all of them end to end, and most of a
-build is the recording. [Build times](/reference/measured#build-times) gives the starter's build
+Recording steps each section one frame at a time, and each frame the page changed on costs a capture
+and an encode, so a section takes as long to record as its changing frames take to draw and a heavy
+page records slower than it plays. A frame nothing changed on is written again without a capture,
+which is most frames of a narrated slide, and a stretch of them is written again without stepping
+the page to each. Frame `k` is the page at second `k / fps` however the page reached it, so `record` splits each
+long section into chunks and runs as many recorders at once as `record.concurrency` allows, each
+recording one chunk after another, longest first. Each chunk is a lossless file of its own, and the
+chunks of a section are joined into its recording without an encode, so a film records in about its
+frames divided by the recorders rather than in the time of its longest section, and most of a build
+is the recording.
+
+How finely a section is split weighs what a chunk costs to start, a page loaded in a recorder's
+Chromium and stepped to its first frame, against what one step costs, which are this machine's
+`record.chunk_startup_seconds` and `record.step_seconds`. A section's work is the steps its last
+recording took, or one a frame when it has none, and it is split into about
+`sqrt(step_seconds * steps * recorders / chunk_startup_seconds)` chunks, never more than the
+recorders, and never into chunks shorter than `record.chunk_frames_min` frames, so a short section is
+recorded whole. [Build times](/reference/measured#build-times) gives the starter's build
 cold, kept and after one changed word, measured on a named machine.
 
 [Rebuild one section](/guides/rebuild-one-section) shows how to record only what changed.

@@ -28,8 +28,11 @@ from decktalk.cli.options import (
     ReplaceVoiced,
     Sections,
     Skip,
+    Takes,
+    Turns,
     one_section,
     sections_of,
+    turns_of,
 )
 from decktalk.pipeline import Stage
 from decktalk.project import Project
@@ -91,6 +94,12 @@ SCORE_SPEND = {
 RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
 """What `--force` redoes on `record`, which is the capture rather than the whole build."""
 
+NARRATE_AGAIN = {
+    "force": "Build every placeholder again, keep every voiced take, and ask the aligner again for every take whose "
+    "voice sent no word times."
+}
+"""What `--force` redoes on `narrate`, which never buys a take and does ask the aligner again."""
+
 BUILD_AGAIN = {
     "force": "Build again from nothing, keeping every voiced take and every bought sound, and measure the film again."
 }
@@ -106,15 +115,20 @@ Watch = Annotated[
 ]
 
 
-@command(group=Group.STAGE)
+@command(
+    group=Group.STAGE,
+    helps=NARRATE_AGAIN,
+)
 def narrate(
     ctx: Context,
     section: Sections = None,
     force: Force = False,
     replace_voiced: ReplaceVoiced = False,
+    turn: Turns = None,
+    take: Takes = None,
     set_: Overrides = None,
 ) -> NarrateResult:
-    """Voice each section of script.md and time every word.
+    """Voice each turn of script.md and time every word.
 
     It owns the take index and the words every later stage measures against.
     \f
@@ -123,14 +137,19 @@ def narrate(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spending = session.spends(project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced)
+    turns, takes = turns_of(turn), tuple(take or ())
+    allowance = session.spends(
+        project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced, turns=turns, takes=takes
+    )
     with session.watching(project.events):
         return project.narrate(
             only=only,
-            spend=spending.spend,
+            spend=allowance.spend,
             max_cost=session.max_cost,
             force=force,
-            replace_voiced=spending.replace_voiced,
+            replace_voiced=allowance.replace_voiced,
+            turns=turns,
+            takes=takes,
             cancel=session.cancel,
         )
 
@@ -155,15 +174,16 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
     helps=RECORD_AGAIN,
 )
 def record(ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None) -> RecordResult:
-    """Record each page section in headless Chromium.
+    """Record each page in headless Chromium and run each render program.
 
     The pages are played against the seconds the cues named, so the picture lands on its word before
     anything is cut.
     """
     session = sessions.of(ctx)
-    project = session.opened(set_)
+    only = sections_of(section)
+    project = session.programs(session.opened(set_), only=only)
     with session.watching(project.events):
-        return project.record(only=sections_of(section), force=force, cancel=session.cancel)
+        return project.record(only=only, force=force, cancel=session.cancel)
 
 
 @command(
@@ -182,13 +202,13 @@ def score(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spending = session.spends(project, (Stage.SCORE,), only=only, replace_score=replace_score)
+    allowance = session.spends(project, (Stage.SCORE,), only=only, replace_score=replace_score)
     with session.watching(project.events):
         return project.score(
             only=only,
-            spend=spending.spend,
+            spend=allowance.spend,
             max_cost=session.max_cost,
-            replace_score=spending.replace_score,
+            replace_score=allowance.replace_score,
             cancel=session.cancel,
         )
 
@@ -261,12 +281,14 @@ def build(
     --no-spend is passed. A free provider makes its takes without asking once a voice is named.
     """
     session = sessions.of(ctx)
-    project = session.opened(set_)
     only = sections_of(section)
+    project = session.opened(set_)
+    if Stage.RECORD in _planned(_span(from_stage, to_stage), skip):
+        project = session.programs(project, only=only)
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
     stages = _span(from_stage, to_stage)
-    spending = session.spends(
+    allowance = session.spends(
         project,
         _planned(stages, skip),
         only=only,
@@ -279,11 +301,11 @@ def build(
             stages=stages,
             skip=tuple(skip or ()),
             only=only,
-            spend=spending.spend,
+            spend=allowance.spend,
             max_cost=session.max_cost,
             force=force,
-            replace_voiced=spending.replace_voiced,
-            replace_score=spending.replace_score,
+            replace_voiced=allowance.replace_voiced,
+            replace_score=allowance.replace_score,
             cancel=session.cancel,
         )
     return _offered(session, project, built, fix)
@@ -320,9 +342,13 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
 @command(group=Group.WHOLE)
 def clip(
     ctx: Context,
+    *,
     section: OneSection = None,
     start: Annotated[float, typer.Option("--start", metavar="SECONDS", help="Where the clip starts.")] = 0.0,
-    end: Annotated[float, typer.Option("--end", metavar="SECONDS", help="Where the clip ends.")] = 0.0,
+    # Keyword-only, so the one option with no default can sit where the help lists it, after --start.
+    end: Annotated[
+        float, typer.Option("--end", metavar="SECONDS", help="Where the clip ends, after --start. Required.")
+    ],
     out: Annotated[
         Path | None,
         typer.Option("--out", metavar="FILE", help="Where to write the clip. Default: clip-N.mp4, for section N."),

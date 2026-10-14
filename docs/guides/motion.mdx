@@ -1,0 +1,406 @@
+---
+title: Things that move
+description: Move an element from one word to another, turn a loop, draw every frame from the section second, or hand a section's picture to a program, and let verify measure each of them.
+---
+
+A moment is a reveal. It is over in 0.46 seconds at most, and verify measures it as one step in the
+picture at its cue. Anything longer is a **motion**, the other noun the page contract has. A motion
+may run for any length, it is declared on the element it moves, and its length is the seconds between
+two cues rather than a number in the markup, so a line voiced again times it again.
+
+DeckTalk asks for every thing that moves to be declared, and refuses motion it was not told about.
+Verify reads a reveal as a rise in how much of the frame changed, so anything moving beside the
+reveal rises too and reads as the reveal starting early. A declared thing is masked out of every cue
+it overlaps, and a motion that starts or stops on a cue is measured on its own instead.
+
+`decktalk init --example motion my-motion` writes a project that does every kind of motion on this
+page. Its first section moves a packet across the frame, turns a ring and springs a card in. Its
+second fills a bar from script. Its third is drawn by a Python script rather than a page.
+
+That script is a program the project names, and a machine refuses a project's programs until you
+allow them, because a program runs with your user's rights and can read every file you can, your
+`.env` included. Read `render/draw_bars`, then build the example on placeholders with it allowed
+for that one run:
+
+```console
+decktalk build --no-spend --set record.programs=run
+```
+
+[Programs a project names](/reference/trust#programs-a-project-names) says how to allow them on a
+machine instead.
+
+## Choose the noun
+
+| You want | Write | What verify does with it |
+|---|---|---|
+| An element arrives, steps back, comes forward or leaves on a word. | A moment: `data-in`, `data-back`, `data-front` or `data-out`. | Measures the step at its cue. |
+| An element travels from one word to another. | A motion: `data-motion` with `data-motion-from` and `data-motion-to`. | Masks it, and measures its departure and its arrival on its own lane. |
+| Something turns for as long as its slide is on screen. | A loop: `data-loop`. | Masks it, and measures no landing. |
+| Script draws the progress of a motion between two words. | `DeckTalk.motion(el, { from, to, ease, draw })`. | The same as a motion in markup. |
+| Script draws every frame from the section second, such as a canvas. | A frame hook: `DeckTalk.frame(fn, { region })`. | Masks its region. |
+| A program other than the page draws the whole section. | A render section: `render_command` on the `[[section]]`. | Masks and measures the landings the program writes, or measures none of the section's cues without them. |
+| Footage you already have plays with its own sound, and the voice pauses. | A clip section: `clip` on the `[[section]]`. | Checks its start and its seams. [Play a clip](/guides/clip-section) covers it. |
+
+A `<video>` or an `<audio>` element on a page is
+[`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA). It plays at its own rate rather
+than on the stepped clock, so the recording could not say which frame of it shows at which second.
+Footage belongs in a clip section, and a moving picture a program makes belongs in a render section.
+
+## The four eases
+
+`data-motion-ease`, and `ease` in `DeckTalk.motion`, names how a motion moves between its two cues.
+
+| Ease | How it moves | Its arrival |
+|---|---|---|
+| `firm` | Fast out and slowing in, with a little speed kept into its last frame. It is the default. | An edge: the motion stops dead on one frame. |
+| `glide` | At one speed from departure to arrival. | An edge. |
+| `settle` | Fast out and slowing until it is barely moving. | At rest: it slows to nothing, with no frame where it stops. |
+| `spring` | A critically damped spring stretched over the motion, within a thousandth of rest at its arrival and with no bounce. | At rest. |
+
+`firm` is the default because an arrival has to stop on a frame edge to be measured. Verify finds an
+arrival as the last frame on which the motion still moved, and a motion that keeps some speed to the
+end has a last moving frame that sits exactly on its cue. A motion that eases to rest moves less and
+less, so its last measurable frame comes before its cue by however long the slow tail is, and a
+viewer sees it settle before the word.
+
+So a `settle` or `spring` arrival is allowed only on a cue that `cues.json` marks `"verify": false`.
+Anywhere else, `decktalk check` raises
+[`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE) before anything is
+recorded. A departure is measured whatever the ease, because every ease leaves its first frame
+moving.
+
+## A motion in markup
+
+A motion names the `@keyframes` it moves through, the cue it departs on and the cue it arrives on.
+Both are cue names local to the slide, like a moment's, and both join the slide's cues, so each needs
+its row in `cues.json`. This is the packet in the example's first section.
+
+{/* input: src/decktalk/template/examples/motion/deck/index.html, slide 1.1 */}
+```html deck/index.html
+<style>
+  .packet { left: 120px; top: 352px; width: 140px; height: 140px; border-radius: 20px; background: var(--ink); }
+  @keyframes travel { from { transform: translateX(0px) } to { transform: translateX(1540px) } }
+</style>
+
+<div class="packet" data-motion="travel" data-motion-from="go" data-motion-to="now" data-motion-ease="firm"
+     data-describe=""></div>
+<div class="label" data-in="now" data-describe="a label that says it stopped on its word">on its word</div>
+```
+
+{/* input: src/decktalk/template/examples/motion/cues.json, section 1 */}
+```json cues.json
+{ "id": "1.1:go", "phrase": "when I say go", "occurrence": 1 },
+{ "id": "1.1:now", "phrase": "one word now", "occurrence": 1 }
+```
+
+The packet leaves on "go" and stops on "now", and the runtime plays `travel` for exactly the seconds
+between the two. Nothing in the markup is a length, so rewriting the sentence between the two words
+makes the packet travel faster or slower and still land on "now".
+
+Until its departure the element rests as its own style draws it, so the first step of its
+`@keyframes` should be that same style. A first step that differs makes the element jump on the
+departure frame.
+
+A motion whose arrival is not after its departure, or whose cue has no second, never plays, and the
+page reports it as [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN).
+
+The label beside the packet is an ordinary `data-in` on the same cue the packet arrives on. Verify
+measures it as a reveal with the packet masked out, which is what keeps the cue measured as a step.
+
+## A spring that comes to rest
+
+The card in the same slide springs in from "spring" and comes to rest on "rest". A spring has no
+edge to measure, so the arrival cue opts out of verify.
+
+{/* input: src/decktalk/template/examples/motion/deck/index.html and cues.json, slide 1.1 */}
+```html deck/index.html
+<div class="card" data-motion="slide-in" data-motion-from="spring" data-motion-to="rest" data-motion-ease="spring"
+     data-describe="">A card on a spring</div>
+```
+
+```json cues.json
+{ "id": "1.1:spring", "phrase": "on a spring", "occurrence": 1 },
+{ "id": "1.1:rest", "phrase": "without a bounce", "occurrence": 1, "verify": false }
+```
+
+Its departure on "spring" is still measured, and only its arrival is left out.
+
+## A loop
+
+A loop names the `@keyframes` it turns through and how long one turn takes. `data-loop-seconds` runs
+from 0.2 to 60 and is 1 when it is left out.
+
+{/* input: src/decktalk/template/examples/motion/deck/index.html, slide 1.1 */}
+```html deck/index.html
+<style>
+  .ring { left: 1700px; top: 80px; width: 96px; height: 96px; border: 10px solid var(--accent); border-right-color: transparent; border-radius: 50%; }
+  @keyframes spin { to { transform: rotate(360deg) } }
+</style>
+
+<div class="ring" data-loop="spin" data-loop-seconds="6" data-describe=""></div>
+```
+
+A loop starts turning when its slide mounts and turns until the slide leaves. It names no cue, so it
+is never a landing, and verify masks the whole box it sweeps out of every cue on its slide.
+
+## A motion drawn from script
+
+`DeckTalk.motion(el, { from, to, ease, draw })` is the same noun for a page that draws the motion
+itself. `from` and `to` are cue ids, `ease` is one of the four eases and is `firm` when it is left
+out, and `el` is the element, or a selector for it, that the motion draws inside.
+
+`draw(progress, seconds)` is called on every frame between the two cues, with the eased progress
+from 0 to 1 and the section second. Nothing is drawn before the departure, and the last call is made
+exactly at the arrival with progress 1. This is the bar in the example's second section.
+
+Nothing is drawn after the arrival, so `draw` finishes by then. Just before its last call, `draw` is
+called once more with progress 1 at half a second past the arrival, and when the element shows
+something different there, such as a fade timed from the second once the progress reached 1, the page
+reports [`PAGE_MOTION_UNFINISHED`](/reference/findings/PAGE_MOTION_UNFINISHED) at the arrival's cue:
+the picture stops where the arrival left it. Move the arrival to a later cue, or end what `draw`
+changes by the arrival.
+
+{/* input: src/decktalk/template/examples/motion/deck/index.html, slide 2.1 */}
+```html deck/index.html
+<template data-slide="2.1" data-preview-seconds="8" data-owns="fill finish" data-describe="a bar that fills between two words">
+  <div class="track"><i></i></div>
+</template>
+
+<script>
+  DeckTalk.on("2.1:fill", (slide) => {
+    const bar = slide.querySelector(".track i");
+    DeckTalk.motion(bar, { from: "2.1:fill", to: "2.1:finish", ease: "glide", draw: (p) => { bar.style.width = `${p * 100}%`; } });
+  });
+</script>
+```
+
+No attribute in the markup names "fill" or "finish", so the slide lists them in `data-owns`. That is
+how a slide owns a cue only a script serves.
+
+A cue the page does not know, or an arrival that is not after its departure, is
+[`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN), and the motion draws
+nothing.
+
+## A frame hook and its region
+
+`DeckTalk.frame(fn, { region })` calls `fn(t)` on every frame with the section second, for
+something that is drawn rather than animated: a canvas, a typed line, a scrolling voice line.
+`region` is the element, or a selector for it, that the hook draws inside, and verify masks that box
+out of every cue while it is on the page.
+
+A hook with no region is [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED),
+because nothing tells verify where it draws. A hook is also how the recorder knows a frame changed:
+it writes the frame before again for a frame where nothing it knows of moved, so anything a page
+draws outside the DOM, a cue, an animation or a declared motion is drawn from a hook. A page that
+holds a canvas is captured on every frame regardless. [Still
+frames](/decisions/the-recorder-steps-the-clock#still-frames) lists what counts. A hook that throws is reported once as
+[`PAGE_FRAME_THREW`](/reference/findings/PAGE_FRAME_THREW) and is not called again.
+
+This voice line scrolls under a fixed playhead at the speed of speech. It is drawn from the second
+alone, so a recorded frame and a preview frame of the same second are the same picture.
+
+{/* input: tests/e2e/landing/deck/index.html, cut to its shape */}
+```html deck/index.html
+<canvas id="voice" width="1920" height="300"></canvas>
+
+<script>
+  const PX_PER_SECOND = 340, HEAD = 960;
+  let ctx = null;
+  DeckTalk.frame((t) => {
+    ctx = ctx || document.getElementById("voice")?.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, 1920, 300);
+    for (const word of DeckTalk.words) {
+      ctx.fillText(word.word, HEAD + (word.at - t) * PX_PER_SECOND, 260);
+    }
+  }, { region: "#voice" });
+</script>
+```
+
+The sample is drawn for the wide canvas. On a square or vertical frame, size the canvas from
+`--dt-width`, which the runtime puts on `:root`.
+
+The pictures above the voice line still arrive with `data-in` on their words, and verify measures
+each of them with the voice line masked out.
+
+## A composition page
+
+A composition page is a page section whose page draws the whole picture itself, in a canvas, in
+WebGL or with three.js. It is an ordinary page section, and it reads its timing from the runtime
+rather than keeping a clock.
+
+| Member | What it holds |
+|---|---|
+| `DeckTalk.cues` | Every cue the page plays, keyed by cue id, against its second on the section clock. |
+| `DeckTalk.words` | Every word the section speaks, as `{ word, at, voice, turn }`. Each word is lower case with its punctuation taken out, which is how the runtime matches it, and `voice` and `turn` say who says it, so a dialogue can place each voice's words on a side of its own without naming anyone. |
+| `DeckTalk.frame(fn, { region })` | The hook that draws each frame from its second, inside the region it names. |
+
+Key every change on a cue's second from `DeckTalk.cues` rather than on a number of your own, so a
+line voiced again moves the composition with it. A cue that only the composition uses still needs a
+slide that owns it, through `data-owns` or a script slide's `owns`.
+
+A WebGL canvas drawn from a frame hook records frame for frame, and two recordings of it are the
+same frames. That is tested with raw WebGL and a context created with `preserveDrawingBuffer: true`.
+three.js draws through the same WebGL and is not tested itself.
+
+## A render section
+
+A render section is a section whose picture a program draws rather than a page. It names a
+`render_command` and no `page` and no `scene`.
+
+{/* input: src/decktalk/template/examples/motion/decktalk.toml, section 3 */}
+```toml decktalk.toml
+[[section]]
+number = 3
+chapter = "A picture from elsewhere"
+render_command = ["{python}", "render/draw_bars", "{motion}", "{out}", "{landings}", "{ffmpeg}"]
+hold_seconds = 1.0
+```
+
+It is narrated exactly like a page section. Its take decides its length, `cue` resolves its cues from
+its words, and the voice runs straight through it. That is the difference from a clip section,
+which carries its own sound and pauses the narration while it plays.
+
+`record` writes the section's motion document and runs the command once, in an empty scratch folder,
+with each `{name}` word in it replaced.
+
+| Word | What it becomes |
+|---|---|
+| `{motion}` | The motion document the command reads, `build/recordings/render/NN/motion.json`. |
+| `{out}` | Where the command writes the section's video, a hidden draft beside `build/recordings/NN.mp4` that `record` moves onto it once the command exits. |
+| `{landings}` | Where the command may write its landings, `build/recordings/render/NN/landings.json`. |
+| `{python}` | The Python this run of DeckTalk is running on. |
+| `{ffmpeg}` | The ffmpeg this run encodes with. |
+
+The motion document holds the frame, the length, every spoken word and every cue, and every second
+in it is on the section clock.
+
+```json build/recordings/render/03/motion.json
+{
+ "fps": 25,
+ "width": 1920,
+ "height": 1080,
+ "seconds": 9.4,
+ "frames": 235,
+ "words": [{ "word": "This", "start": 0.5, "end": 0.71 }],
+ "cues": { "3.1:one": 4.12, "3.1:two": 5.3, "3.1:three": 6.48 }
+}
+```
+
+The numbers above show the shape and are not from a real run. A renderer keys a change on a cue at
+frame `round(cue * fps)`.
+
+The command is a program the project names, so it runs only on a machine that allows it through
+`record.programs`, as [programs a project names](/reference/trust#programs-a-project-names) says. It
+runs with your user's rights and can read every file you can, `.env` included. It runs in an empty
+scratch folder rather than the project, a word that names a project file by a relative path such as
+`render/draw_bars` is handed to it as that file's absolute path, and it is given the scrubbed
+environment with no proxy, so a credential in your shell does not reach it. It may run for
+`tools.timeout_seconds`. It fails the section when it exits with an error or writes no video. The section is recorded again when the command, the
+motion document or a project file the command names changes, so editing `render/draw_bars` draws
+the section again.
+
+A machine whose `record.page_policy` is `untrusted` runs no program a project names, so a render
+section is refused there with `INPUT`.
+
+### Landings
+
+A command may write `{landings}` as a list of lanes in the shape a page reports its own, and verify
+then masks and measures them as it does a page's.
+
+```json build/recordings/render/03/landings.json
+[
+ {
+  "id": "bar-1",
+  "kind": "motion",
+  "box": { "x": 0, "y": 270, "w": 1600, "h": 135 },
+  "size": { "w": 1280, "h": 135 },
+  "departs": 4.12,
+  "arrives": 4.52,
+  "landings": [{ "cue": "3.1:one", "kind": "depart", "at": 4.12 }]
+ }
+]
+```
+
+| Field | What it holds |
+|---|---|
+| `id` | A name for the lane, which no other lane in the section shares. |
+| `kind` | `motion`, `loop` or `region`. |
+| `box` | The whole box the lane swept, in the recording's pixels. |
+| `size` | The size of the moving thing itself, which is the area a landing is measured against. |
+| `departs` and `arrives` | The first and last second the lane moved, on the section clock. |
+| `landings` | Each cue the lane lands on, as its cue id, `depart` or `arrive`, and the cue's second. |
+
+A file in any other shape fails the section. A section whose command writes no landings has every
+cue skipped as `rendered`, and verify says on its stream that it measured none of them, because a
+frame difference over a picture nobody described could read the picture's own motion as a reveal.
+
+`render/draw_bars` in the example is a Python script with no dependency beyond the standard library.
+It reads the motion document, composes one ffmpeg filter graph in which a bar slides in on each of
+the three cues, runs the ffmpeg it was handed, and writes one lane per bar so verify measures each
+departure against its word.
+
+Remotion, a three.js scene under a frame stepper of its own, or any program that turns a JSON file
+into a video fits the same contract. Wiring Remotion as a `render_command` is untested, and it is
+never a dependency of DeckTalk. Remotion is free for individuals and small companies and paid above
+that, so read [its licence](https://www.remotion.dev/license) before a project depends on it.
+
+## What verify does with each
+
+The recorder samples every declared motion, loop and region on every frame it steps, and the
+recording log keeps one **lane** for each: the box it swept, the size of the element, the first and
+last second it moved, and the cues it lands on. [The lane report](/concepts/page-contract#the-lane-report)
+gives its fields.
+
+**Masks.** Every cue is measured with every lane that is alive anywhere from its control spans to
+its last probe masked out of the changed share, the control share and the onset. The `Masked`
+column of the verify table says how much of the frame that took. Over
+`verify.motion_mask_max_percent` of the frame, 40 percent by default, raises
+[`MOTION_MASK_LARGE`](/reference/findings/MOTION_MASK_LARGE), a warning that the cue was judged on
+what was left.
+
+**Landings.** A cue that is only a motion's departure or arrival, where the page reveals nothing
+else, is skipped in the cue table as `motion_landing` and measured on the motion's own lane instead.
+Inside the lane, frame by frame, the motion counts as moving while more than
+`verify.motion_floor_percent` of its own area changes, 0.5 percent by default. Its departure is the
+first moving frame from one reference lead before its cue, and its arrival is the last moving frame.
+Each landing is a row in a second table, under the cue table.
+
+| Column | JSON field | Meaning |
+|---|---|---|
+| `Section` | `section` | The section number. |
+| `Motion` | `cue` | The cue id the motion lands on. |
+| `Landing` | `kind` | `depart` or `arrive`. |
+| `Spoken` | `spoken` | When the cue's word is spoken in the film. |
+| `Shown` | `shown` | The first or the last moving frame, or null when it never moved. |
+| `Offset` | `offset_seconds` | `Shown` less `Spoken`. |
+
+A landing on a cue that `cues.json` marks `"verify": false` has no row. [Verify](/reference/verify#motions)
+gives the whole measurement.
+
+## On a still
+
+`storyboard` and `check` draw stills, and a still has no clock. A loop rests in its own style, and a
+motion whose departure cue has fired is drawn where it ends.
+
+## The findings
+
+| Code | Raised by | What happened | What to do |
+|---|---|---|---|
+| [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | `check` and `record` | Something still moves 0.46 seconds after it starts and declares no motion, loop or region. `check` reads every slide's stylesheet for it, and `record` catches anything a script starts. | Declare it as a motion or a loop, or give its frame hook a region. |
+| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | `record` | A motion names a cue with no second, or arrives no later than it departs. | Correct the cue name, add its row to `cues.json`, or list a script's cue in `data-owns`. |
+| [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) | `record` | A timer or an animation frame of the page's own changed the picture inside no declared motion, loop or region. | Make the change in a cue's handler, draw it from a frame hook with a region, or declare it as a motion. |
+| [`PAGE_MOTION_UNFINISHED`](/reference/findings/PAGE_MOTION_UNFINISHED) | `record` | A script motion's `draw` still changes its element half a second after the arrival, which is never drawn. | Move the arrival to a later cue, or end the change by the arrival. |
+| [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA) | `check` and `record` | A slide holds a `<video>` or an `<audio>`. | Play the footage as a clip section, or draw the picture in a render section. |
+| [`PAGE_FRAME_THREW`](/reference/findings/PAGE_FRAME_THREW) | `check` and `record` | A frame hook threw, and it draws nothing from that frame on. Off the recorder, a hook draws once as the page hands it over, so `check` meets the throw too. | Open the browser console under `decktalk serve` and fix the hook. |
+| [`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE) | `check` | A `settle` or `spring` motion arrives on a cue verify would measure. | Make the ease `firm`, or mark the arrival cue `"verify": false`. |
+| [`MOTION_OFF`](/reference/findings/MOTION_OFF) | `verify` | A departure or an arrival landed outside the offset limit of its word, or a departure never moved. | Read the offset in the message, and look at the cue's phrase as you would for `CUE_OFF`. |
+| [`MOTION_NO_EDGE`](/reference/findings/MOTION_NO_EDGE) | `verify` | An arrival came to rest before its word by more than the limit, or never moved near it. | Make the ease `firm`. |
+| [`MOTION_MASK_LARGE`](/reference/findings/MOTION_MASK_LARGE) | `verify` | Declared motion covered over 40 percent of the frame around a cue. | Make the moving thing smaller or move the cue away from it, so the reveal is judged on more of the picture. |
+
+## Related
+
+- **Read the noun beside the moment:** [The page contract](/concepts/page-contract#motion)
+- **Look up every call a page may make:** [Runtime](/reference/runtime#the-decktalk-object)
+- **Read what verify measures:** [Verify](/reference/verify)
+- **Play footage you already have:** [Play a clip](/guides/clip-section)

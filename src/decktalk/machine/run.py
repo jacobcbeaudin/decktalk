@@ -55,7 +55,7 @@ if TYPE_CHECKING:  # pragma: no cover
 log = logging.getLogger(__name__)
 
 RUN_DIGITS = 12
-"""How much of a random id names a run, which is enough that two runs never share a file."""
+"""Calibration: how much of a random id names a run, which is enough that two runs never share a file."""
 
 
 def new_run() -> str:
@@ -70,14 +70,15 @@ class Ending:
     outcome: Outcome = Outcome.RAN
 
 
-_PROVIDER_OF = {Stage.NARRATE: "the voice", Stage.SCORE: "the score's provider"}
+_PROVIDER_OF = {Stage.NARRATE: "the speech provider", Stage.SCORE: "the score's provider"}
 """Who is paid for what each stage that buys buys, as a refusal names it."""
 
 
 def _undeclared(cost: Cost) -> str:
     """Who declares no bill in this price, with its verb: the provider of each buying row nobody can price.
 
-    A price with no such row names the voice when it counts characters, and the score's provider otherwise.
+    A price with no such row names the speech provider when it counts characters, and the score's provider
+    otherwise.
     """
     rows = [
         _PROVIDER_OF[row.stage]
@@ -85,7 +86,7 @@ def _undeclared(cost: Cost) -> str:
         if row.state is cost.state and row.buys and row.billing is BillingBasis.UNDECLARED
     ]
     if not rows:
-        return f"{'the voice' if cost.characters > 0 else _PROVIDER_OF[Stage.SCORE]} declares"
+        return f"{_PROVIDER_OF[Stage.NARRATE] if cost.characters > 0 else _PROVIDER_OF[Stage.SCORE]} declares"
     return f"{' and '.join(rows)} {'declares' if len(rows) == 1 else 'declare'}"
 
 
@@ -241,10 +242,13 @@ class Run:
         """Open and close one stage on the stream, whatever the stage does inside."""
         return self._timed(StageStart, StageDone, stage=stage, opening={"index": index, "count": count})
 
-    def section(self, stage: Stage, section: int) -> AbstractContextManager[Ending]:
-        """Open and close one section of one stage on the stream, and check the cancel token first."""
+    def section(self, stage: Stage, section: int, *, turn: int | None = None) -> AbstractContextManager[Ending]:
+        """Open and close one section of one stage on the stream, or one turn of it, and check the cancel token
+        first."""
         self.check()
-        return self._timed(SectionStart, SectionDone, stage=stage, section=section)
+        if turn is None:
+            return self._timed(SectionStart, SectionDone, stage=stage, section=section)
+        return self._timed(SectionStart, SectionDone, stage=stage, section=section, turn=turn)
 
     @contextmanager
     def _timed(

@@ -1,0 +1,34 @@
+{
+  "_comment": [
+    "Which spoken phrase each moment on the page lands on. `id` is a cue id: the slide id, a colon,",
+    "then the cue name the page writes. `phrase` is a word or short phrase from that section of",
+    "script.md, matched ignoring case and punctuation. A section's turns share one clock, so a cue",
+    "may land on any voice's words. `occurrence` picks which match, counting from 1."
+  ],
+  "sections": {
+    "1": {
+      "cues": [
+        { "id": "1.1:title", "phrase": "Welcome to the interview", "occurrence": 1 },
+        { "id": "1.1:narrator", "phrase": "a narrator", "occurrence": 1 },
+        { "id": "1.1:guest", "phrase": "and a guest", "occurrence": 1 },
+        { "id": "1.1:table", "phrase": "a table", "occurrence": 1 }
+      ]
+    },
+    "2": {
+      "cues": [
+        { "id": "2.1:question", "phrase": "one sentence at a time", "occurrence": 1 },
+        { "id": "2.1:first", "phrase": "the sentence first", "occurrence": 1 },
+        { "id": "2.1:changes", "phrase": "a sentence changes", "occurrence": 1 },
+        { "id": "2.1:again", "phrase": "voiced again", "occurrence": 1 },
+        { "id": "2.1:kept", "phrase": "keeps its take", "occurrence": 1 }
+      ]
+    },
+    "3": {
+      "cues": [
+        { "id": "3.1:idea", "phrase": "a dialogue", "occurrence": 1 },
+        { "id": "3.1:again", "phrase": "the narrator again", "occurrence": 1 },
+        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }
+  }
+}

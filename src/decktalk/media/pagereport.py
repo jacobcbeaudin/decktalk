@@ -15,6 +15,9 @@ two names of a field sit beside each other, and `page.REPORT` is what holds the 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Literal
+
 from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from .. import page
@@ -50,10 +53,11 @@ class CueRow(Model):
     id: str = Field(description="The cue id of the cue that fired.")
     due: float = Field(description="The second the cue was due.")
     ran: float = Field(description="The second the cue actually ran.")
-    frame: float | None = Field(None, description="The second the frame that ran it began, or null before t=0.")
-    describe: str | None = Field(None, description="What this cue's reveals describe themselves as, or null.")
-    next: float | None = Field(None, description="The second the frame after that one began, or null.")
-    after: float | None = Field(None, description="The second the frame after the next one began, or null.")
+    frame: float | None = Field(None, description="The second of the frame that showed it, or null before t=0.")
+    describe: str | None = Field(
+        None,
+        description="What this cue's reveals describe themselves as that an earlier cue of its slide did not, or null.",
+    )
 
 
 class WordRow(Model):
@@ -66,20 +70,19 @@ class WordRow(Model):
     first_shown: float = Field(alias="firstShown", description="The second the first word was drawn.")
 
 
-class FrameGap(Model):
-    """One gap between two animation frames longer than the recorder can absorb."""
+class Landing(Model):
+    """One cue a motion lands on, and whether it departs or arrives there."""
 
-    at: float | None = Field(description="The second the gap ended, or null when it ended before t=0.")
-    ms: int = Field(ge=0, description="How long the gap lasted.")
+    cue: str = Field(description="The cue id the motion lands on.")
+    kind: Literal["depart", "arrive"] = Field(description="Whether the motion departs or arrives at this cue.")
+    at: float = Field(description="The second on the section clock the cue was due.")
 
 
-class LongFrame(Model):
-    """One animation frame that took longer than a captured frame, with when it was presented."""
+class Size(Model):
+    """How big one element is, in the picture's own pixels."""
 
-    start: float | None = Field(description="The second the frame began, or null before t=0.")
-    ms: int = Field(ge=0, description="How long the frame took.")
-    render: float | None = Field(None, description="The second rendering began, or null when unreported.")
-    presented: float | None = Field(None, description="The second the frame was presented, or null.")
+    w: float
+    h: float
 
 
 class Box(Model):
@@ -89,6 +92,22 @@ class Box(Model):
     y: float
     w: float
     h: float
+
+
+class MotionLane(Model):
+    """One declared motion, loop or region as the recorder saw it, which verify masks and measures on.
+
+    The box is in the recording's own pixels, the union of where the element was on every frame it
+    moved, so a mask over it hides the whole lane and nothing else.
+    """
+
+    id: str = Field(description="The lane's own name, which no cue shares.")
+    kind: Literal["motion", "loop", "region"] = Field(description="A motion, a loop or a region a frame hook draws in.")
+    box: Box | None = Field(None, description="The box the lane swept, in the recording's pixels, or null when unseen.")
+    size: Size | None = Field(None, description="How big the moving element is, in the recording's pixels.")
+    departs: float | None = Field(None, description="The first second the lane moved, or null when it never did.")
+    arrives: float | None = Field(None, description="The last second the lane moved, or null when it never did.")
+    landings: tuple[Landing, ...] = Field((), description="Every cue the lane lands on, which verify measures.")
 
 
 class ElementRow(Model):
@@ -137,6 +156,19 @@ class ElementRow(Model):
         return stagger_span(float(step) * scale, self.children, entrance)
 
 
+class MotionRow(Model):
+    """One motion or loop a slide declares, with the cue ids it departs and arrives on."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    kind: Literal["motion", "loop"] = Field(description="A motion between two cues, or a loop for the whole slide.")
+    name: str = Field(description="The @keyframes the element moves through.")
+    departs: str | None = Field(None, alias="from", description="The cue id the motion departs at, or null.")
+    arrives: str | None = Field(None, alias="to", description="The cue id the motion arrives at, or null.")
+    ease: str | None = Field(None, description="How the motion moves between its cues, or null for a loop.")
+    seconds: float | None = Field(None, description="How long one turn of a loop takes, or null for a motion.")
+
+
 class MeasuredScene(Model):
     """One scene of the catalog the page published, with the boxes the probe measured onto it.
 
@@ -157,6 +189,12 @@ class MeasuredScene(Model):
     cues: dict[str, tuple[str, ...]] = Field(
         default_factory=dict, description="The cue ids of the cues each slide declares, keyed by the slide id."
     )
+    motions: dict[str, tuple[MotionRow, ...]] = Field(
+        default_factory=dict, description="Every motion and loop each slide declares, keyed by the slide id."
+    )
+    spans: dict[str, float] = Field(
+        default_factory=dict, description="How long each moment and class change plays, keyed by its cue id."
+    )
 
 
 class PageReport(Model):
@@ -170,22 +208,10 @@ class PageReport(Model):
     catalog: tuple[MeasuredScene, ...] = Field((), description=REPORT["catalog"])
     cues: tuple[CueRow, ...] = Field((), description=REPORT["cues"])
     words: tuple[WordRow, ...] = Field((), description=REPORT["words"])
-    frame_gaps: tuple[FrameGap, ...] = Field((), alias="frameGaps", description=REPORT["frameGaps"])
-    long_frames: tuple[LongFrame, ...] = Field((), alias="longFrames", description=REPORT["longFrames"])
+    motions: tuple[MotionLane, ...] = Field((), description=REPORT["motions"])
     unreadable: tuple[str, ...] = Field(
         (), description="One sentence per row this contract could not read, which is a page that went its own way."
     )
-
-    @property
-    def worst_gap_ms(self) -> int:
-        """The longest stall a viewer can see, which is the part of each gap that falls after t=0.
-
-        Frames before t=0 sit under the cover and are trimmed from the cut, so a scene may warm up
-        there. A gap is recorded when it ends, so a gap that began before t=0 counts only what fell
-        after it, and a gap with no time on the section clock counts nothing.
-        """
-        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * 1000) for gap in self.frame_gaps)
-        return int(max((seen for seen in visible if seen > 0), default=0))
 
 
 ROWS: dict[str, type[Model]] = {
@@ -193,14 +219,25 @@ ROWS: dict[str, type[Model]] = {
     "catalog": MeasuredScene,
     "cues": CueRow,
     "words": WordRow,
-    "frameGaps": FrameGap,
-    "longFrames": LongFrame,
+    "motions": MotionLane,
 }
 """Each list field of the report against the model one of its rows has to be, which is what `read` walks."""
 
 
+class UndeclaredChange(Model):
+    """One element a script changed the picture in between two steps, inside nothing the page declared as moving.
+
+    The page names the element and the recorder counts the frames, because only a captured frame that
+    differs from the one before says the change was seen.
+    """
+
+    what: str = Field(description="The element the change was made in, as the page names it.")
+    at: float = Field(ge=0, description="The first second on the section clock a frame showed the change.")
+    frames: int = Field(gt=0, description="How many frames showed a change made in it.")
+
+
 class Recording(Model):
-    """One section recorded: what the page loaded, what it said, and where the section clock starts in the webm.
+    """One section recorded: what the page loaded, what it said, and the rate its clock was stepped at.
 
     This is what the recorder knows. Whether the recording still matches the project, and what the
     frames of it show, are the stage's to add when it writes the log. It is declared beside the
@@ -212,14 +249,29 @@ class Recording(Model):
     assets: tuple[str, ...] = Field(description="Every project file the page loaded, project-relative.")
     external: tuple[str, ...] = Field(description="Every other origin the page reached for while recording.")
     missing: tuple[str, ...] = Field((), description="Every project file the page asked for that is not there.")
-    requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
-    load_seconds: float = Field(ge=0, description="How long the page took to load.")
-    settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")
-    clock_start_seconds: float = Field(
-        ge=0, description="Seconds from the recorder's start to the start of the section clock."
+    requested_seconds: float = Field(
+        ge=0, description="How many seconds of section clock the page was stepped through."
     )
+    fps: int = Field(
+        gt=0, description="The rate the section clock was stepped at, which is one frame of the video a step."
+    )
+    load_seconds: float = Field(ge=0, description="How long the page took to load and paint before its first step.")
     page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
     report: PageReport = Field(description="What the page said about itself, read once.")
+    undeclared: tuple[UndeclaredChange, ...] = Field(
+        (), description="Every element a script changed the picture in with nothing declared to explain it."
+    )
+    pieces: tuple[int, ...] = Field(
+        (0,),
+        description="The first frame of each piece the video was joined from, which is one piece when one page "
+        "recorded it whole.",
+    )
+    steps: int = Field(
+        0,
+        ge=0,
+        description="How many times the pages that recorded it were moved, which is what recording it cost, or 0 "
+        "when a command drew it.",
+    )
 
 
 def _rows(field: str, given: object) -> tuple[list[Model], list[str]]:
@@ -263,3 +315,90 @@ def read(given: object) -> PageReport:
         fields[field] = tuple(kept)
         unreadable += refused
     return PageReport.model_validate({**fields, "unreadable": tuple(unreadable)})
+
+
+def _once[T: Model](groups: Sequence[Sequence[T]]) -> tuple[T, ...]:
+    """Every row of `groups` once, in the order the groups first hold it, a row being equal to one with its values."""
+    seen: dict[str, T] = {}
+    for group in groups:
+        for row in group:
+            seen.setdefault(row.model_dump_json(), row)
+    return tuple(seen.values())
+
+
+def _first_shown(groups: Sequence[Sequence[WordRow]]) -> tuple[WordRow, ...]:
+    """Each line shown word by word once, at the earliest second any page saw its first word drawn.
+
+    A page draws a line's words at the seconds it is stepped to, and a page that started after the
+    line began only stepped the seconds work was due before its first frame, so it may see the first
+    word later than the page whose frames hold it. The page whose frames hold it saw it at its own
+    second, which is the earliest any page saw. Lines are told apart by what they are and how many
+    times a page reported one of them, and stay in the order they were first shown.
+    """
+    best: dict[tuple[str, int], tuple[WordRow, int, int]] = {}
+    for piece, group in enumerate(groups):
+        counted: dict[str, int] = {}
+        for at, row in enumerate(group):
+            line = row.model_dump_json(exclude={"first_shown"})
+            nth = counted[line] = counted.get(line, 0) + 1
+            kept = best.get((line, nth))
+            if kept is None or row.first_shown < kept[0].first_shown:
+                best[(line, nth)] = (row, piece, at)
+    ordered = sorted(best.values(), key=lambda kept: (kept[0].first_shown, kept[1], kept[2]))
+    return tuple(row for row, _piece, _at in ordered)
+
+
+def _swept(groups: Sequence[Sequence[MotionLane]]) -> tuple[MotionLane, ...]:
+    """Each lane once, with the box every page saw it sweep and the first and last second any page saw it move.
+
+    A page notes a lane at every second it is stepped to, and each page stepped some of the seconds
+    of one recording, so the lane the recording swept is the union of what the pages saw. Its size is
+    the one seen at the first second it moved. A page declares lanes as it reaches them, so the pages
+    that started later hold every lane the earlier ones declared, in the order the page declared them.
+    """
+    seen: dict[str, list[MotionLane]] = {}
+    # The page that declared the most lanes goes first, so the lanes keep the order the page declared them in.
+    for group in sorted(groups, key=len, reverse=True):
+        for lane in group:
+            seen.setdefault(lane.id, []).append(lane)
+    return tuple(_lane(lanes) for lanes in seen.values())
+
+
+def _lane(seen: Sequence[MotionLane]) -> MotionLane:
+    """One lane as several pages saw it, joined into the lane one page stepping every second would have seen."""
+    moved = [lane for lane in seen if lane.box is not None and lane.departs is not None and lane.arrives is not None]
+    if not moved:
+        return seen[0]
+    boxes = [lane.box for lane in moved if lane.box is not None]
+    left, top = min(box.x for box in boxes), min(box.y for box in boxes)
+    right, bottom = max(box.x + box.w for box in boxes), max(box.y + box.h for box in boxes)
+    first = min(moved, key=lambda lane: lane.departs if lane.departs is not None else 0.0)
+    return first.model_copy(
+        update={
+            "box": Box(x=left, y=top, w=right - left, h=bottom - top),
+            "arrives": max(lane.arrives for lane in moved if lane.arrives is not None),
+        }
+    )
+
+
+def joined(reports: Sequence[PageReport]) -> PageReport:
+    """What several pages that each recorded a range of one section said, as one page recording all of it said.
+
+    Each page loaded the section and stepped every second work was due before its own frames, so
+    every cue that ran and every warning raised before a page's last frame is in its report, and the
+    page that recorded the last frames saw the section end. What a page measures only on the frames
+    it draws, the lanes a motion swept and the second a line's first word was shown, is joined from
+    every page. `reports` is in frame order.
+    """
+    if len(reports) == 1:
+        return reports[0]
+    last = reports[-1]
+    return last.model_copy(
+        update={
+            "warnings": _once([report.warnings for report in reports]),
+            "cues": _once([report.cues for report in reports]),
+            "words": _first_shown([report.words for report in reports]),
+            "motions": _swept([report.motions for report in reports]),
+            "unreadable": tuple(dict.fromkeys(line for report in reports for line in report.unreadable)),
+        }
+    )

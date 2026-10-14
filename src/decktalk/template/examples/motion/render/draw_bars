@@ -1,0 +1,60 @@
+# Draws section 3 of the motion example, which a program draws rather than a page.
+#
+# DeckTalk runs this as the section's render_command:
+#
+#     {python} render/draw_bars {motion} {out} {landings} {ffmpeg}
+#
+# It reads the motion document DeckTalk writes, which holds the frame size, the frame rate, the
+# section's length and the second every cue is due, and writes one bar per cue that slides in
+# from the left the moment its word is spoken. It composes an ffmpeg filter graph rather than
+# drawing pixels itself, so it needs nothing but Python and the ffmpeg DeckTalk already uses.
+#
+# It also writes the landings of what it drew, in the shape a page reports its motions, so
+# `decktalk verify` measures every bar's departure against its word.
+
+import json
+import subprocess
+import sys
+
+SLIDE_SECONDS = 0.4  # how long a bar takes to slide in, which the eye reads as one movement
+GROUND = "0xffffff"  # the ground every bar slides in over, which is the deck's own
+BAR = "0x2c1fea"  # the bar, in the deck's own accent
+
+
+def main() -> None:
+    motion_path, out, landings, ffmpeg = sys.argv[1:5]
+    motion = json.loads(open(motion_path, encoding="utf-8").read())
+    width, height, fps, seconds = motion["width"], motion["height"], motion["fps"], motion["seconds"]
+    cues = sorted(motion["cues"].items(), key=lambda pair: pair[1])
+    bar_w, bar_h, gap = width * 2 // 3, height // 8, height // 16
+    top = (height - len(cues) * bar_h - (len(cues) - 1) * gap) // 2
+    left = (width - bar_w) // 2
+
+    inputs = ["-f", "lavfi", "-i", f"color=c={GROUND}:s={width}x{height}:r={fps}:d={seconds}"]
+    graph, last, rows = [], "0:v", []
+    for index, (cue, at) in enumerate(cues):
+        inputs += ["-f", "lavfi", "-i", f"color=c={BAR}:s={bar_w}x{bar_h}:r={fps}:d={seconds}"]
+        y = top + index * (bar_h + gap)
+        # Off the left edge until the cue, then a steady slide that stops on its own place.
+        x = f"if(lt(t,{at}),-{bar_w},if(lt(t,{at + SLIDE_SECONDS}),-{bar_w}+({left}+{bar_w})*(t-{at})/{SLIDE_SECONDS},{left}))"
+        graph.append(f"[{last}][{index + 1}:v]overlay=x='{x}':y={y}:eval=frame:shortest=1[v{index}]")
+        last = f"v{index}"
+        rows.append({
+            "id": f"bar-{index + 1}",
+            "kind": "motion",
+            "box": {"x": 0, "y": y, "w": left + bar_w, "h": bar_h},
+            "size": {"w": bar_w, "h": bar_h},
+            "departs": at,
+            "arrives": round(at + SLIDE_SECONDS, 3),
+            "landings": [{"cue": cue, "kind": "depart", "at": at}],
+        })
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(graph), "-map", f"[{last}]",
+         "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-pix_fmt", "yuv444p", out],
+        check=True,
+    )
+    with open(landings, "w", encoding="utf-8") as written:
+        json.dump(rows, written, indent=1)
+
+
+main()

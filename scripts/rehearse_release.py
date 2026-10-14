@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Rehearse the version bump release-please makes, then prove every generated file survives it.
 
     uv run scripts/rehearse_release.py    # bump a scratch copy of this checkout, regenerate, check
@@ -11,8 +8,12 @@ nowhere earlier. This script makes the same bump on every pull request instead. 
 checkout into a temporary directory, so the checkout itself is never touched and nothing is ever
 committed or pushed. In the copy it writes the version release-please would propose next everywhere
 release-please would write one, runs `uv lock`, then `uv run scripts/check.py --group generated
---write`, and then `uv run scripts/check.py --group generated`. It fails when a file cannot take the version,
-when a generator cannot write, or when anything is still stale afterwards.
+--write`, and then `uv run scripts/check.py --group generated`. Then it runs the `wheel` row's own
+commands in the copy, `uv build`, `pytest -m wheel` and `check_wheel.py`, the last told the tag
+release-please would cut, because a candidate is spelled `0.6.0-rc1` in the tree and `0.6.0rc1` in the
+wheel's name and only a bumped build shows whether every wheel check reads both. It fails when a file
+cannot take the version, when a generator cannot write, when anything is still stale afterwards, or
+when the bumped wheel fails a wheel check.
 
 The version comes from `node scripts/next_version.mjs`, which runs release-please's own code over
 the history since the last release tag. When nothing releasable has landed it is the version one fix
@@ -31,6 +32,9 @@ ci.yml writes that branch for real.
 
 The bump itself is `node scripts/next_version.mjs --bump`, which runs release-please's own updaters
 over every file its config names, so a new extra file is rehearsed on the pull request that adds it.
+
+This script carries no `# /// script` header because it reads the `wheel` row from `check.py` beside
+it, so it runs from the project environment, as `build_contributing.py` does for the same table.
 """
 
 from __future__ import annotations
@@ -45,10 +49,18 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import check
+
 ROOT = Path(__file__).resolve().parent.parent
 
 GENERATED = ("uv", "run", "scripts/check.py", "--group", "generated")
 NEXT_VERSION = ("node", "scripts/next_version.mjs")
+RELEASED_PACKAGE = "."
+"""The package whose wheel is built, which release-please-config.json names as the repository root."""
+
+TAG_PREFIX = "v"
+"""What release-please puts before the version in a tag, since the config leaves the component out."""
+
 PRERELEASE_NUMBER = re.compile(r"\d")
 """A candidate's prerelease part carries a number, so the series counts rc1, rc2 rather than rc, rc.1."""
 
@@ -144,6 +156,24 @@ def run(command: tuple[str, ...], tree: Path) -> None:
         raise SystemExit(f"the rehearsal failed at: {' '.join(command)}")
 
 
+def rehearsed(version: str) -> tuple[tuple[str, ...], ...]:
+    """Every command the rehearsal runs in the bumped copy, with the wheel row's last check told the tag.
+
+    The wheel commands are read from the `wheel` row, so the rehearsal builds and judges the wheel
+    exactly as a pull request does, and adds only the tag release-please would cut for `version`.
+    """
+    *build, judge = check.BY_NAME["wheel"].commands
+    return (
+        # uv writes the lockfile's own spelling of the version, which is what `uv run` would
+        # otherwise do unasked in the first generator it starts.
+        ("uv", "lock"),
+        (*GENERATED, "--write"),
+        GENERATED,
+        *build,
+        (*judge, "--tag", f"{TAG_PREFIX}{version}"),
+    )
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="decktalk-rehearsal-") as scratch:
         tree = Path(scratch)
@@ -156,12 +186,12 @@ def main() -> int:
         if not versions:
             print("\nthe release pull request's version keeps the rules of the candidate cycle")
             return 0
-        # uv writes the lockfile's own spelling of the version, which is what `uv run` would
-        # otherwise do unasked in the first generator it starts.
-        run(("uv", "lock"), tree)
-        run((*GENERATED, "--write"), tree)
-        run(GENERATED, tree)
-    print(f"\nthe release path is green at {', '.join(versions.values())}: every generator wrote, nothing is stale")
+        for command in rehearsed(versions[RELEASED_PACKAGE]):
+            run(command, tree)
+    print(
+        f"\nthe release path is green at {', '.join(versions.values())}: every generator wrote, nothing is stale, "
+        "and the wheel passed every wheel check"
+    )
     return 0
 
 

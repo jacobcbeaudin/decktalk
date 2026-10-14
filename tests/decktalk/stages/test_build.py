@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Callable, Iterator, Mapping
+import sys
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,7 @@ from decktalk.results import (
     money,
 )
 from decktalk.settings import MACHINE_FILE_VARIABLE
+from decktalk.speech.sound import SoundRequest
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import score as score_stage
 from decktalk.stages.build import build
@@ -87,13 +89,13 @@ A ball.
 """
 
 
-VOICED = {"DECKTALK_VOICE_ID": "voice-under-test"}
+VOICED = {"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"}
 """What a machine that names the voice hands a project, so a take on disk can be matched to it."""
 
 
 def priced(stage: Stage, **fields: Any) -> Cost:
     """One stage's price from its fields, with the one row that stage reports."""
-    return Cost(**fields, stages=(StageCost(stage=stage, **fields),))
+    return Cost(**fields, stages=(StageCost(stage=stage, provider="elevenlabs", **fields),))
 
 
 def price(dollars: float = 0.0, *, state: CostState = CostState.ESTIMATE, stage: Stage = Stage.NARRATE) -> Cost:
@@ -360,10 +362,16 @@ def test_a_run_of_the_score_alone_needs_no_take_index(inputs: Inputs, watched: W
     assert calls.names == ["score"]
 
 
+def _narrated_and_cued(inputs: Inputs) -> None:
+    """The take index and the cue times a run that starts past `cue` reads, as placeholders."""
+    inputs.workspace.narrate_dir.mkdir(parents=True)
+    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    inputs.workspace.cue_times_path.write_text("{}", encoding="utf-8")
+
+
 def test_a_project_with_no_score_may_still_assemble_without_one(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """The score is the one artifact a project may honestly have none of."""
-    (inputs.workspace.narrate_dir).mkdir(parents=True)
-    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for section in inputs.document.page_sections:
         inputs.workspace.recording(section.key).write_bytes(b"")
@@ -373,8 +381,7 @@ def test_a_project_with_no_score_may_still_assemble_without_one(inputs: Inputs, 
 
 def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A build and the status report read one rule, so neither calls half a record stage finished."""
-    inputs.workspace.narrate_dir.mkdir(parents=True)
-    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     first = inputs.document.page_sections[0]
     inputs.workspace.recording(first.key).write_bytes(b"")
@@ -388,8 +395,7 @@ def _with_a_score(inputs: Inputs) -> Inputs:
     """The same project with one generated ambience bed declared and nothing generated yet."""
     toml = inputs.root / "decktalk.toml"
     toml.write_text(TOML + '\n[score.ambience]\nprompt = "a quiet room"\n', encoding="utf-8")
-    inputs.workspace.narrate_dir.mkdir(parents=True)
-    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for section in inputs.document.page_sections:
         inputs.workspace.recording(section.key).write_bytes(b"")
@@ -422,8 +428,8 @@ def test_the_library_build_never_draws_the_storyboard(
 
 @pytest.mark.parametrize(
     ("stages", "refused"),
-    [(None, True), ((Stage.NARRATE, Stage.CUE), False)],
-    ids=["a plan that opens pages", "a plan that opens none"],
+    [(None, True), ((Stage.NARRATE, Stage.CUE), True), ((Stage.NARRATE,), False)],
+    ids=["a plan that opens pages", "a plan that reads a changed page", "a plan that opens none"],
 )
 def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stage(
     tmp_path: Path,
@@ -441,13 +447,62 @@ def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stag
         assert calls.names == []
     else:
         build(sealed, run, stages=stages)
+        assert calls.names == ["narrate"]
+
+
+@pytest.mark.parametrize(
+    ("stages", "refused"),
+    [(None, True), ((Stage.NARRATE, Stage.CUE), False)],
+    ids=["a plan that records", "a plan that stops before record"],
+)
+def test_a_program_the_machine_refuses_is_refused_before_the_first_stage(
+    tmp_path: Path,
+    make_run: Callable[..., Watched],
+    calls: Calls,
+    stages: tuple[Stage, ...] | None,
+    refused: bool,
+) -> None:
+    """A take is made for nothing when the record stage then refuses the program, so the build asks first."""
+    page = 'page = "deck/index.html"\nscene = "2"\n'
+    drawn = TOML.replace(page, 'render_command = ["{python}", "-c", "pass", "{out}"]\n')
+    assert drawn != TOML
+    inputs = load_project(tmp_path, drawn, script=SCRIPT)
+    run = make_run(inputs).run
+    if refused:
+        with pytest.raises(InputError, match="record.programs is refuse"):
+            build(inputs, run, stages=stages)
+        assert calls.names == []
+    else:
+        build(inputs, run, stages=stages)
         assert calls.names == ["narrate", "cue"]
+
+
+CLIP_CAPTIONED = (
+    '[project]\nname = "t"\n\n[output]\ncaptioned = true\n\n[[section]]\nnumber = 1\nclip = "media/b.mp4"\n'
+)
+"""A film of one clip that asks for the captioned copy, which no page of its own could draw."""
+
+
+@pytest.mark.parametrize(("stages", "refused"), [(None, True), ((Stage.NARRATE,), False)])
+def test_a_captioned_copy_no_page_can_draw_is_refused_before_the_first_stage(
+    tmp_path: Path, make_run: Callable[..., Watched], calls: Calls, stages: tuple[Stage, ...] | None, refused: bool
+) -> None:
+    """Assemble refused it after narrate had bought, record had recorded and the film was cut and published."""
+    clip = load_project(tmp_path / "clip", CLIP_CAPTIONED, script="## 1. Open\n\nA bowl.\n")
+    run = make_run(clip).run
+    if refused:
+        with pytest.raises(InputError, match=r"\[output\] captioned"):
+            build(clip, run, stages=stages)
+        assert calls.names == []
+    else:
+        build(clip, run, stages=stages)
+        assert calls.names == ["narrate"]
 
 
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A stage handed a flag it does not read would accept a switch that changes nothing."""
     build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False)
-    assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
+    assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False, "turns": (), "takes": ()}
     assert calls.options("cue") == {"only": [1]}
     assert calls.options("record") == {"only": [1], "force": True}
     assert calls.options("score") == {"only": [1], "replace_score": False}, "force reached the stage that buys sound"
@@ -470,14 +525,14 @@ class Purchases:
     """Every take and every sound a build bought, counted at the two seams that are paid."""
 
     voice: FakeVoice
-    sounds: list[dict[str, object]] = field(default_factory=list)
+    sounds: list[SoundRequest] = field(default_factory=list)
 
-    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def effect(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"sound"
 
-    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def music(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"music"
 
     @property
@@ -819,6 +874,52 @@ def test_a_ctrl_c_anywhere_in_a_build_is_cancelled(
     assert calls.names == ["narrate", "cue"]
 
 
+def test_a_ctrl_c_while_the_build_is_priced_is_cancelled(
+    inputs: Inputs, make_run: Callable[..., Watched], calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ceiling's pricing runs before any stage, and an interrupt there is the same `Cancelled`, carrying nothing."""
+
+    def interrupted(*_args: object, **_options: object) -> Cost:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys.modules[build.__module__], "price", interrupted)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True, max_cost=5.0).run)
+    assert isinstance(raised.value.__cause__, KeyboardInterrupt)
+    assert raised.value.result is None
+    assert calls.names == []
+
+
+def test_a_ctrl_c_after_the_last_stage_is_cancelled_with_what_the_build_bought(
+    inputs: Inputs,
+    make_run: Callable[..., Watched],
+    answers: Answers,
+    calls: Calls,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every stage ran and the result is being made when the interrupt lands, so the charges still reach the caller."""
+    answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+    module = sys.modules[build.__module__]
+    adding = module.total
+    landed: list[bool] = []
+
+    def interrupted_once(costs: Sequence[Cost]) -> Cost:
+        if not landed:
+            landed.append(True)
+            raise KeyboardInterrupt
+        return adding(costs)
+
+    monkeypatch.setattr(module, "total", interrupted_once)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    assert isinstance(raised.value.__cause__, KeyboardInterrupt)
+    result = raised.value.result
+    assert isinstance(result, BuildResult)
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert [row.outcome for row in result.stages] == [Outcome.RAN] * len(Stage)
+    assert calls.names == [stage.value for stage in Stage]
+
+
 def test_a_refusal_after_a_narrate_that_paid_nothing_carries_no_build(
     inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1061,8 +1162,10 @@ def test_a_charged_total_counts_only_the_stages_that_had_leave_to_buy(
 
 def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A reader that met a null there would need to know which stages price before reading zero."""
-    inputs.workspace.cue_times_path.parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.cue_times_path.write_text("{}", encoding="utf-8")
+    _narrated_and_cued(inputs)
+    inputs.workspace.recordings_dir.mkdir(parents=True)
+    for section in inputs.document.page_sections:
+        inputs.workspace.recording(section.key).write_bytes(b"")
     inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.film.write_bytes(b"")
     result = build(inputs, watched.run, stages=[Stage.VERIFY])

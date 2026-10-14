@@ -94,7 +94,7 @@ when it leaves. Write the cue name on the page and its [cue id](/concepts/cues#t
     - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-preview-seconds` is how long the preview rests on the slide, and no recording reads it.
     - An element with `data-in` stays hidden until that cue fires. The cue name is yours to choose, and it has to be unique within the slide.
     - `data-describe` says in one sentence what the moment shows. It is what the transcript reads and what a reviewer checks a reveal against, and a moment without one is reported.
-    - Every element is placed absolutely on the 1920 by 1080 stage, so one thing arriving moves nothing else.
+    - Every element is placed absolutely on the canvas, so one thing arriving moves nothing else.
 
     Declare a scene number one time per page. A second `[data-scene="4"]` wrapper replaces the first.
     [The page contract](/concepts/page-contract) covers the whole model, and `decktalk schema page`
@@ -139,10 +139,11 @@ decktalk check --section 4 --no-frames
 
 {/* sample: first-deck-check, decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
-cues.json: CUE_UNLISTED section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
+cues.json: CUE_UNLISTED section 4 declares 1 moment that cues.json does not list, which is 4.1:waits, so nothing gives it a second.
   fix (safe): Add 1 row to section 4 of cues.json, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```
@@ -157,14 +158,16 @@ decktalk check --section 4 --no-frames --fix
 
 {/* sample: first-deck-fix, decktalk check --section 4 --no-frames --fix, on the same project, which exits 1 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
 cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'phrase' and it will have a second.
 Found 1 finding, 1 error.
 ```
 
-The row is in the file:
+The row is in the file. `--fix` writes it on one line as
+`{"id": "4.1:waits", "phrase": ""},`, and the block below lays it out like the rows around it:
 
 {/* sample: first-deck-fixed-cues, cues.json after the --fix above */}
 ```json cues.json
@@ -191,7 +194,8 @@ decktalk check --section 4 --no-frames
 
 {/* sample: first-deck-phrase-written, decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
 ```
@@ -210,22 +214,23 @@ on past one code.</Tip>
 decktalk build --no-spend
 ```
 
-{/* sample: first-deck-build, decktalk build --no-spend, on the same project, which exits 0 */}
+{/* sample: first-deck-build, decktalk build --no-spend, on the same project built once before the four pastes, which exits 0 */}
 ```text
-run 2d46c8c4e483, events build/events/2d46c8c4e483.jsonl
+run ea3bec17b37b, events build/events/ea3bec17b37b.jsonl
      Narrate    0:00
+Read deck/index.html as it is now, because the recordings of sections 1, 2, 3 no longer stand.
          Cue    0:00
-      Record    0:22
+      Record    0:04
 The project declares no score for this run, so there is nothing to generate.
        Score    0:00
 The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
     Assemble    0:03
       Verify    0:02
        Built build/final/my-lesson.mp4, $0.00, 4 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
-script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 4 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 4 --spend to buy its take.
 Found 4 findings, 0 errors.
 ```
 
@@ -246,10 +251,10 @@ decktalk verify --section 4
 ```text
 Verifying build/final/my-lesson.mp4, 1:02 long.
 
- Section   Cue           Spoken   Shown   Offset
- ───────────────────────────────────────────────
- 4         4.1:heading   51.77    51.76   -0.01
- 4         4.1:waits     58.24    58.24   -0.01
+ Section   Cue           Spoken   Shown   Offset   Masked
+ ────────────────────────────────────────────────────────
+ 4         4.1:heading   51.77    51.80   +0.03
+ 4         4.1:waits     58.24    58.28   +0.04
 ```
 
 `Spoken` is the second the cue phrase is said on the film's clock. `Shown` is the second the picture

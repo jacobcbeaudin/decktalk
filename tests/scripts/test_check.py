@@ -122,6 +122,27 @@ def test_a_preparation_fetches_only_what_the_tools_cache_keeps(monkeypatch: pyte
     assert ran == [check.INSTALL]
 
 
+def test_a_shown_command_drops_the_checkout_only_where_a_path_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A checkout at `/src` leaves `runtime/src/` inside a glob alone, which CONTRIBUTING.md would otherwise lose."""
+    monkeypatch.setattr(check, "ROOT", Path("/src"))
+    root = check.ROOT
+    command = ("node", "tests/decktalk/runtime/src/*.test.ts", f"{root}/scripts/x.sh", f"--junitxml={root}/out/u.xml")
+    assert check.shell(command) == "node tests/decktalk/runtime/src/*.test.ts scripts/x.sh --junitxml=out/u.xml"
+
+
+def test_a_shown_environment_value_drops_the_checkout_only_from_its_start(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The values a group prints follow the same rule as its commands."""
+    monkeypatch.setattr(check, "ROOT", Path("/src"))
+    monkeypatch.setattr(check, "run", lambda _command, _env: True)
+    env = (("COVERAGE_FILE", f"{check.ROOT}/.coverage"), ("GLOB", "tests/runtime/src/*.ts"))
+    assert check.run_group(replace(check.BY_NAME["lint"], env=env))
+    shown = capsys.readouterr().out
+    assert "   COVERAGE_FILE=.coverage\n" in shown
+    assert "   GLOB=tests/runtime/src/*.ts\n" in shown
+
+
 @pytest.mark.parametrize("marker", tools.INSTALLED)
 def test_every_suite_that_needs_a_tool_runs_after_the_install(marker: str) -> None:
     rows = [group for group in check.GROUPS if any(marker in command for command in group.commands)]
@@ -208,6 +229,21 @@ def test_every_moment_the_workflow_computes_is_one_the_table_gates_at() -> None:
     assert {when for group in check.GROUPS for when in group.when} <= set(check.MOMENTS)
 
 
+def test_a_manual_run_can_plan_the_weekly_rows_apart_from_the_tips_run() -> None:
+    """A dispatch may choose the weekly plan, which runs in a concurrency group of its own.
+
+    YAML 1.1 reads the key `on` as true, which is the key PyYAML hands back for it.
+    """
+    document: dict[Any, Any] = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    moment = document[True]["workflow_dispatch"]["inputs"]["moment"]
+    assert moment["options"] == [when for when in check.MOMENTS if when != "pr"]
+    assert moment["default"] == "main"
+    plan = next(step for step in document["jobs"]["plan"]["steps"] if step.get("id") == "table")["env"]["MOMENT"]
+    assert "inputs.moment" in plan
+    group = document["concurrency"]["group"]
+    assert "github.event_name == 'schedule'" in group and "inputs.moment == 'schedule'" in group, group
+
+
 def test_every_runner_the_workflow_names_is_one_the_table_names() -> None:
     labels = {job["runs-on"] for job in workflow()["jobs"].values() if not job["runs-on"].startswith("${{")}
     assert labels == {check.LINUX}
@@ -233,14 +269,6 @@ def test_the_tools_cache_is_the_one_directory_doctor_names() -> None:
     assert named[0]["if"] == restore["if"]
 
 
-# ---- cue timing ----------------------------------------------------------------------------------
-
-
-def test_the_linux_e2e_row_reports_timing_until_it_is_trusted_to_gate() -> None:
-    (command,) = [command for command in check.BY_NAME["e2e"].commands if "pytest" in command]
-    assert (check.REPORT_TIMING in command) is not check.LINUX_GATES_TIMING
-
-
 # ---- one row per contract ------------------------------------------------------------------------
 
 
@@ -264,9 +292,10 @@ def test_a_suite_that_reads_a_build_runs_in_one_row_right_after_uv_build(marker:
     assert check.selected_marker(commands[1]) == marker
 
 
-def test_only_the_unit_row_runs_in_parallel() -> None:
+def test_only_the_unit_and_scaffold_rows_run_in_parallel() -> None:
+    """Scaffold is the one tool row whose tests are whole builds, each its own work, so it spreads them too."""
     parallel = [group.name for group in check.GROUPS for command in group.commands if "-n" in command]
-    assert parallel == ["unit"]
+    assert parallel == ["unit", "scaffold"]
 
 
 def test_the_scaffold_build_judges_a_release_after_it_is_cut() -> None:

@@ -261,6 +261,8 @@ def test_an_unset_build_is_priced_at_its_takes_and_its_sounds_together(run, proj
     assert made.called("price")["stages"] == [Stage.NARRATE, Stage.SCORE]
     assert " ".join(whole.sentence.split()) in said, said
     assert "Spend that now?" in said
+    # The question says what no does, which is the run going on and buying nothing.
+    assert "Answer no and the run goes on as --no-spend, buying nothing." in said, said
     assert made.called("build")["spend"] is False
 
 
@@ -445,6 +447,13 @@ def test_score_says_what_its_spending_flags_buy(run) -> None:
     assert "play a placeholder" in " ".join(run("narrate", "--help").out.split())
 
 
+def test_narrate_and_record_say_what_they_work_through(run) -> None:
+    """A take is a turn's, and a render section is recorded by running its program, so the help says both."""
+    listed = " ".join(run("--help").out.split())
+    assert "Voice each turn of script.md and time every word." in listed
+    assert "Record each page in headless Chromium and run each render program." in listed
+
+
 def test_assemble_and_clip_describe_the_narrower_flags_they_take(run) -> None:
     assert "Run every stage but this one" not in run("assemble", "--help").out
     clip = " ".join(run("clip", "--help").out.split())
@@ -553,6 +562,16 @@ def test_clip_needs_exactly_one_section(run, project) -> None:
     )
     assert run("clip", "--section", "1", "--start", "0", "--end", "2").exit_code == 0
     assert run("clip", "--section", "1,2").exit_code == 2
+
+
+def test_clip_without_an_end_is_refused_as_the_command_line_naming_end(run, project) -> None:
+    """A clip has no end of its own to fall back on, so a line without one is a usage error and not a bad span."""
+    made = project()
+    ran = run("clip", "--section", "1", "--start", "0.5")
+    assert ran.exit_code == ErrorCode.USAGE.exit_code
+    assert "--end" in ran.err
+    assert made.calls == []
+    assert "Required" in " ".join(run("clip", "--help").out.split())
 
 
 def test_applying_one_fix_says_so_in_the_singular(monkeypatch: pytest.MonkeyPatch) -> None:

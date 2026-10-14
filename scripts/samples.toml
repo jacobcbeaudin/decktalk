@@ -1,5 +1,6 @@
 # Every docs sample `scripts/build_samples.py` writes, keyed by the id its page names in a
-# `{/* sample: <id> */}` comment above the block.
+# `{/* sample: <id> */}` comment above the block, or `<!-- sample: <id> -->` in the README. A comment
+# whose id has no row here is refused.
 #
 # A row says how the project was made, what ran on it and what the block shows:
 #   page      the page whose block this row fills
@@ -14,20 +15,20 @@
 #   exit      the exit the last command must end with, 0 when it is not given
 #   file      the file the block shows, project-relative, where {digest} is section 1's take digest and
 #             {run} is the run of the newest events file, which is the last command's
+#   listing   instead of a file, the names in this project-relative folder, as `ls` prints them into a pipe
 #   stream    instead of a file, what the last command printed: "stdout", "stderr" or "both" in order
+#   lines     for a last command that serves until stopped, read this many lines of the stream and stop it
 #   fence     the block's language, from the file's suffix or "text" when it is not given. A "json"
 #             block is parsed, cut and printed again, and any other is the printed text
 #   head      keep the first N lines of a text block
 #   grep      keep the lines of a text block this pattern finds
+#   hide      write each match of these patterns as ..., so a text block names no path of the machine that ran it
 #   key       show one part of a json block, by a dotted path where a number is a list index
 #   fragment  true to write that part as the `"key": value` entry a reader pastes into the file
 #   only      keep these keys of a json block, in this order
 #   keep      how many items to keep of each named list, by a dotted path, so a long file is cut to its first rows
 #   varies    the json keys whose values a run decides, which `--check` holds by key and not by value
 #   masks     the patterns whose matches a run decides, which `--check` holds by place and not by value
-#   measured  the findings a slower machine can add to the verdict of a last command that verifies the film,
-#             since a page is recorded in real time: their lines are left out of the block, and the findings
-#             exit they bring is accepted only when every error the run names is one of them
 #
 # Rows that begin with the same steps share the project those steps made, and run only the steps
 # after them in a copy of it.
@@ -43,7 +44,7 @@ voice = "dtsp"
 run = [["narrate", "--no-spend"]]
 file = "build/narrate/takes.json"
 keep = { sections = 1 }
-varies = ["duration_seconds", "sound_end_seconds"]
+varies = ["duration_seconds", "sound_end_seconds", "audio_blake3"]
 
 [words-json]
 page = "docs/reference/artifacts.mdx"
@@ -186,6 +187,16 @@ what = "decktalk storyboard, on the starter"
 run = [["storyboard"]]
 stream = "both"
 
+[doctor]
+page = "docs/quickstart.mdx"
+what = "decktalk doctor, on a machine that has fetched its tools, with every path, the Python and the platform written as ..."
+init = false
+run = [["doctor"]]
+stream = "both"
+# A long path wraps onto a second line of its cell, which names nothing but the rest of the path.
+grep = '^(?!\s{10,}\S)'
+hide = ['(?<=\s)(?:/|~|[A-Za-z]:\\)\S.*$', '(?<=^Python    )\S.*$', '(?<=^Platform  )\S.*$']
+
 [doctor-empty-cache]
 page = "docs/quickstart.mdx"
 what = "DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor, the findings under the table, which exits 1"
@@ -210,7 +221,7 @@ key = "findings.1.fix"
 # ---- a project file the loader refuses or reads past -------------------------------------------
 
 [machine-key-in-project]
-page = "docs/requirements.mdx"
+page = "docs/guides/ci-and-offline.mdx"
 what = "decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3"
 edits = [["decktalk.toml", "[audio]\n", "[record]\nconcurrency = 2\n\n[audio]\n"]]
 run = [["status"]]
@@ -235,8 +246,8 @@ head = 1
 
 [key-in-the-wrong-table]
 page = "docs/reference/decktalk-toml.mdx"
-what = "decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line"
-edits = [["decktalk.toml", "speed = 1.0\n", "speed = 1.0\nstability = 0.5\n"]]
+what = "decktalk status, on a fresh decktalk init my-lesson with tail_seconds = 1.0 added under [voices.narrator], the first line"
+edits = [["decktalk.toml", "speed = 1.0\n", "speed = 1.0\ntail_seconds = 1.0\n"]]
 run = [["status"]]
 stream = "both"
 head = 1
@@ -245,7 +256,7 @@ head = 1
 
 [narrate-over-the-ceiling]
 page = "docs/requirements.mdx"
-what = "decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request"
+what = "decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which refuses before any request"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["narrate", "--spend", "--max-cost", "0.05"]]
 exit = 2
@@ -264,15 +275,24 @@ stream = "both"
 
 [narrate-no-terminal]
 page = "docs/guides/ci-and-offline.mdx"
-what = "decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2"
+what = "decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which exits 2"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["narrate", "--no-input"]]
 exit = 2
 stream = "both"
 
+[build-json-no-terminal]
+page = "README.md"
+what = "decktalk --json build, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which exits 2"
+edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
+run = [["--json", "build"]]
+exit = 2
+stream = "stdout"
+fence = "json"
+
 [build-over-the-ceiling]
 page = "docs/quickstart.mdx"
-what = "decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request"
+what = "decktalk build --spend --max-cost 0.05, on the starter with [voices.narrator] id set and no API key, which exits 2 before any request"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["build", "--spend", "--max-cost", "0.05"]]
 exit = 2
@@ -281,7 +301,7 @@ masks = ['[0-9a-f]{12}']
 
 [build-no-terminal]
 page = "docs/quickstart.mdx"
-what = "decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2"
+what = "decktalk build --no-input, on the starter with [voices.narrator] id set and no API key, which exits 2"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["build", "--no-input"]]
 exit = 2
@@ -316,7 +336,7 @@ grep = "SCRIPT_UNFINISHED|^Found"
 
 [check-json-findings]
 page = "docs/agents/json.mdx"
-what = 'decktalk check --no-pages --json, on a starter whose line 14 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers"'
+what = 'decktalk check --no-pages --json, on a starter whose line 17 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers"'
 edits = [
     ["script.md", "This is DeckTalk. [beat]", "This is DeckTalk [VERSION]. [beat]"],
     ["cues.json", '"phrase": "the average"', '"phrase": "the mean of the numbers"'],
@@ -364,7 +384,7 @@ grep = "CUE_UNRESOLVED"
 [cue-no-change]
 page = "docs/help/troubleshooting.mdx"
 what = "decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line"
-edits = [["deck/index.html", 'style="top: 190px" data-in="title"', 'style="top: 190px; visibility: hidden" data-in="title"']]
+edits = [["deck/index.html", '<div class="title" data-in="title"', '<div class="title" style="visibility: hidden" data-in="title"']]
 run = [["check"]]
 exit = 1
 stream = "both"
@@ -395,28 +415,40 @@ varies = ["elapsed_seconds"]
 [build]
 page = "docs/quickstart.mdx"
 what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 stream = "both"
 masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
 
+[build-built-line]
+page = "README.md"
+what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, the Built line"
+run = [["build", "--no-spend"]]
+stream = "both"
+grep = '^\s*Built '
+
+[build-final]
+page = "docs/quickstart.mdx"
+what = "ls build/final, after decktalk build --no-spend on a fresh decktalk init my-lesson"
+run = [["build", "--no-spend"]]
+listing = "build/final"
+
 [build-assemble-line]
 page = "docs/help/troubleshooting.mdx"
 what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 stream = "both"
 grep = "^The loudness pass"
 
 [build-events]
 page = "docs/agents/json.mdx"
-what = "decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson"
-measured = ["CUE_OFF"]
+what = "decktalk build --no-spend --events --json, the first five lines of stderr, on a fresh decktalk init my-lesson"
 run = [["build", "--no-spend", "--events", "--json"]]
 stream = "stderr"
 fence = "jsonl"
-head = 6
-varies = ["time", "run", "events_file", "pid", "elapsed_seconds"]
+# Two narrate workers start at once, so the run decides which section's start comes first, and the line
+# after it is the other worker's start or the first worker's own next line. The block stops at that start.
+head = 5
+varies = ["time", "run", "events_file", "pid", "elapsed_seconds", "section"]
 
 [status-built]
 page = "docs/quickstart.mdx"
@@ -427,7 +459,6 @@ stream = "both"
 [build-unchanged]
 page = "docs/guides/rebuild-one-section.mdx"
 what = "a second decktalk build --no-spend on an unchanged starter named my-lesson"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"], ["build", "--no-spend"]]
 stream = "both"
 masks = ['[0-9a-f]{12}', '\b\d+ findings?\b', '\b\d+ errors?\b']
@@ -435,7 +466,6 @@ masks = ['[0-9a-f]{12}', '\b\d+ findings?\b', '\b\d+ errors?\b']
 [verify]
 page = "docs/reference/verify.mdx"
 what = "decktalk verify, a --no-spend build of a fresh starter"
-measured = ["CUE_OFF"]
 grep = '^Verifying|^ |^$'
 run = [["build", "--no-spend"], ["verify"]]
 stream = "both"
@@ -444,7 +474,6 @@ masks = ['(?<=\d)  +\d+\.\d\d   +[-+]\d\.\d\d$']
 [verify-close-pair]
 page = "docs/reference/verify.mdx"
 what = "decktalk -v verify, a --no-spend build of a fresh starter"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"], ["-v", "verify"]]
 stream = "both"
 grep = "sits close to another cue"
@@ -452,7 +481,6 @@ grep = "sits close to another cue"
 [verify-json]
 page = "docs/reference/verify.mdx"
 what = "decktalk verify --json, a --no-spend build of a fresh starter"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"], ["verify", "--json"]]
 stream = "stdout"
 fence = "json"
@@ -476,24 +504,21 @@ varies = ["run", "elapsed_seconds"]
 [cue-times-json]
 page = "docs/reference/artifacts.mdx"
 what = "build/cue-times.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section's first two cues"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 file = "build/cue-times.json"
 keep = { sections = 1, "sections.0.cues" = 2 }
 
 [recording-json]
 page = "docs/reference/artifacts.mdx"
-what = "build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues, words, frame gaps and long frames cut to []"
-measured = ["CUE_OFF"]
+what = "build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues and words cut to []"
 run = [["build", "--no-spend"]]
 file = "build/recordings/01.json"
-keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0, "recording.report.frameGaps" = 0, "recording.report.longFrames" = 0 }
-varies = ["digest", "load_seconds", "settle_seconds", "clock_start_seconds", "seconds", "method", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
+keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0 }
+varies = ["engine", "load_seconds", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
 
 [section-json]
 page = "docs/reference/artifacts.mdx"
 what = "build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 file = "build/sections/01.json"
 varies = ["digest"]
@@ -501,7 +526,6 @@ varies = ["digest"]
 [placements-json]
 page = "docs/reference/artifacts.mdx"
 what = "build/final/placements.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section"
-measured = ["CUE_OFF"]
 run = [["build", "--no-spend"]]
 file = "build/final/placements.json"
 keep = { sections = 1 }
@@ -528,14 +552,6 @@ exit = 1
 stream = "both"
 grep = "CUE_STALE"
 
-[no-cover]
-page = "docs/help/troubleshooting.mdx"
-what = "decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line"
-run = [["narrate", "--no-spend"], ["cue"], ["record", "--section", "2", "--force", "--set", "record.cover_min_chroma=255"]]
-stream = "both"
-grep = "shows no cover"
-masks = ['\d+\.\d+s']
-
 [effect-plan]
 page = "docs/guides/effects-on-a-cue.mdx"
 what = "decktalk score --no-spend --json, on a fresh decktalk init my-lesson with the [score.effects.tick] table above, which exits 0"
@@ -560,7 +576,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -612,7 +628,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -664,7 +680,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -718,7 +734,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -762,10 +778,10 @@ stream = "both"
 
 [first-deck-build]
 page = "docs/guides/first-deck.mdx"
-what = "decktalk build --no-spend, on the same project, which exits 0"
-measured = ["CUE_OFF"]
-edits = [
-    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+what = "decktalk build --no-spend, on the same project built once before the four pastes, which exits 0"
+run = [
+    ["build", "--no-spend"],
+    { edit = ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
 
 ## 4. One more section
 
@@ -773,16 +789,16 @@ edits = [
 
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
-'''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+'''] },
+    { edit = ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
 chapter = "One more section"
 page = "deck/index.html"
 scene = "4"
-'''],
-    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+'''] },
+    { edit = ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
   <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
     <p class="eyebrow">One more section</p>
 
@@ -797,8 +813,8 @@ scene = "4"
     </p>
   </template>
 </div>
-</body>'''],
-    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+</body>'''] },
+    { edit = ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
       ]
     }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
       ]
@@ -807,9 +823,7 @@ scene = "4"
       "cues": [
         { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
       ]
-    }'''],
-]
-run = [
+    }'''] },
     ["check", "--section", "4", "--no-frames", "--fix"],
     { edit = ["cues.json", '"phrase": ""', '"phrase": "the picture waits"'] },
     ["build", "--no-spend"],
@@ -820,7 +834,6 @@ masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
 [first-deck-verify]
 page = "docs/guides/first-deck.mdx"
 what = "decktalk verify --section 4, on the same project after the build, which exits 0"
-measured = ["CUE_OFF"]
 grep = '^Verifying|^ |^$'
 edits = [
     ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
@@ -832,7 +845,7 @@ edits = [
 Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
 picture waits for it.
 '''],
-    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+    ["decktalk.toml", "hold_seconds = 1.5     # the page plays on this long after the narration\n", '''hold_seconds = 1.5     # the page plays on this long after the narration
 
 [[section]]
 number = 4
@@ -875,3 +888,30 @@ run = [
 ]
 stream = "both"
 masks = ['(?<=\d)  +\d+\.\d\d   +[-+]\d\.\d\d$']
+
+# ---- commands that serve until stopped ---------------------------------------------------------
+
+[serve]
+page = "docs/quickstart.mdx"
+what = "decktalk serve, in a fresh decktalk init my-lesson, the line it prints before it is stopped"
+run = [["serve"]]
+stream = "stdout"
+lines = 1
+masks = ['(?<=127\.0\.0\.1:)\d+']
+
+[build-watch]
+page = "docs/guides/rebuild-one-section.mdx"
+what = "decktalk build --watch, on a fresh decktalk init my-lesson, the lines it prints before its first build"
+run = [["build", "--watch"]]
+stream = "stderr"
+lines = 2
+masks = ['(?<=127\.0\.0\.1:)\d+']
+
+[page-cdn-asset]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk check, on a fresh decktalk init my-lesson whose page links https://fonts.example.com/inter.css, the finding line"
+edits = [["deck/index.html", "</head>", "<link rel=\"stylesheet\" href=\"https://fonts.example.com/inter.css\">\n</head>"]]
+run = [["check"]]
+exit = 1
+stream = "both"
+grep = "PAGE_CDN_ASSET"

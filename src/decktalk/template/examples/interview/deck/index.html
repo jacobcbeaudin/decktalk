@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+
+<!-- DeckTalk serves its runtime and KaTeX from /__decktalk/ on the origin it opens the page at, so the
+     page loads nothing from the network. -->
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
+
+<style>
+  /* Tokens. The accent belongs to the guest, so the voice that answers is the colour that arrives. */
+  :root {
+    --ground: #ffffff;
+    --ink: #0f0f12;
+    --mute: #71717a;
+    --accent: #2c1fea;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+  body { width: 100vw; height: 100vh; overflow: hidden; }
+  #dt-canvas { background: var(--ground); }
+
+  /* Every element is placed absolutely on the 1920 by 1080 canvas, so a reveal moves nothing else. */
+  .eyebrow, .title, .card, .strip, .bubble { position: absolute; margin: 0; box-sizing: border-box; }
+  .eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
+
+  /* A reveal has to change about 0.3 percent of the frame, compared on luma alone, so every card,
+     strip and bubble below is a filled shape rather than text on white. */
+  .title { left: 120px; width: 1680px; font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
+  .title h1 { margin: 0; font: inherit; letter-spacing: inherit; }
+  .title .rule { margin-top: 28px; width: 1000px; height: 12px; background: var(--accent); }
+
+  .card { width: 760px; height: 220px; padding: 34px 40px; border-radius: 20px; background: var(--ink); color: #fff; }
+  .card.guest { background: var(--accent); }
+  .card .k { font: 600 28px/36px var(--mono); color: #c9c9ff; }
+  .card .v { margin-top: 18px; font: 500 44px/54px var(--sans); }
+
+  .strip { left: 120px; width: 1680px; padding: 28px 40px; border-radius: 18px; background: var(--ink); color: #fff; font: 600 52px/62px var(--sans); }
+
+  /* Scene 2: one bubble per turn, the narrator's on the left in ink and the guest's on the right in
+     the accent, so the picture says who is speaking without a name on screen. */
+  .bubble { width: 1100px; padding: 30px 44px; border-radius: 28px; font: 600 46px/58px var(--sans); color: #fff; }
+  .bubble.narrator { left: 120px; background: var(--ink); }
+  .bubble.guest { left: 700px; background: var(--accent); }
+
+  /* The captioned copy: the captions are set in the deck's own ink on a halo of its ground, the
+     guest's on the right under the guest's bubbles and the narrator's centred. A caption carries its
+     voice as data-voice and never as text, so it names nobody. */
+  .dt-caption { font-family: var(--sans); color: var(--ink); text-shadow: 0 0 6px var(--ground), 0 0 18px var(--ground); }
+  .dt-caption[data-voice="guest"] { text-align: right; color: var(--accent); }
+
+  .end { position: absolute; left: 120px; top: 620px; width: 980px; height: 240px; box-sizing: border-box;
+         display: flex; align-items: center; padding: 0 56px; border-radius: 24px; background: var(--accent);
+         color: #fff; font: 700 92px/1 var(--sans); letter-spacing: -.02em; }
+</style>
+</head>
+
+<body>
+
+<!-- Each <template data-slide> is one slide, and each data-in names the cue its element arrives on.
+     The runtime qualifies a cue name with the slide it is written in, so data-in="title" inside
+     <template data-slide="1.1"> is the cue 1.1:title that cues.json carries. A cue may land on any
+     voice's words, because a section's turns share one clock. -->
+
+<div data-scene="1" data-name="Welcome">
+  <template data-slide="1.1" data-preview-seconds="10" data-describe="the title, the two voices and the table each one is">
+    <p class="eyebrow">An interview</p>
+
+    <div class="title" style="top: 170px" data-in="title" data-describe="the title, Welcome to the interview">
+      <h1>Welcome to the interview.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <div class="card" style="left: 120px; top: 420px" data-in="narrator"
+         data-describe="a card for the narrator, the default voice">
+      <div class="k">[voices.narrator]</div>
+      <div class="v">the narrator</div>
+    </div>
+
+    <div class="card guest" style="left: 1040px; top: 420px" data-in="guest"
+         data-describe="a card for the guest, the second voice">
+      <div class="k">[voices.guest]</div>
+      <div class="v">the guest</div>
+    </div>
+
+    <p class="strip" style="top: 760px" data-in="table" data-in-style="fade"
+       data-describe="a band reading: each voice is a table in decktalk.toml">
+      Each voice is a table in decktalk.toml.
+    </p>
+  </template>
+</div>
+
+<div data-scene="2" data-name="The interview">
+  <template data-slide="2.1" data-preview-seconds="14" data-describe="the question and the guest's answers, turn by turn">
+    <p class="eyebrow">The interview</p>
+
+    <p class="bubble narrator" style="top: 150px" data-in="question"
+       data-describe="the narrator's question: how do you write a film one sentence at a time">
+      How do you write a film one sentence at a time?
+    </p>
+
+    <p class="bubble guest" style="top: 330px" data-in="first"
+       data-describe="the guest's answer: the sentence first, then the picture">
+      The sentence first. Then the picture.
+    </p>
+
+    <p class="bubble narrator" style="top: 510px" data-in="changes"
+       data-describe="the narrator's second question: and when a sentence changes">
+      And when a sentence changes?
+    </p>
+
+    <p class="bubble guest" style="top: 690px" data-in="again"
+       data-describe="the guest's answer: only that turn is voiced again">
+      Only that turn is voiced again.
+    </p>
+
+    <p class="strip" style="top: 870px; left: 700px; width: 1100px" data-in="kept" data-in-style="fade"
+       data-describe="a band reading: everything else keeps its take">
+      Everything else keeps its take.
+    </p>
+  </template>
+</div>
+
+<div data-scene="3" data-name="Close">
+  <template data-slide="3.1" data-preview-seconds="10" data-describe="the closing idea and the end card">
+    <p class="eyebrow">Close</p>
+
+    <div class="title" style="top: 190px" data-in="idea" data-describe="the heading, a dialogue">
+      <h1>That is a dialogue.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 440px; width: 1440px" data-in="again"
+       data-describe="a band reading: every section starts with the narrator">
+      Every section starts with the narrator.
+    </p>
+
+    <div class="end" data-in="make" data-in-style="pop" data-describe="the end card, decktalk.ai">decktalk.ai</div>
+  </template>
+</div>
+
+</body>
+</html>

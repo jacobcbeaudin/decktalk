@@ -23,10 +23,12 @@ from decktalk.stages.assemble.mix import (
     LAVFI,
     LOOP,
     ONCE,
+    Embedded,
     MixInput,
     MixPlan,
     delay,
     marker_times,
+    matched_gains,
     max_expr,
     mix_input_args,
     mix_soundtrack,
@@ -38,7 +40,15 @@ from decktalk.stages.assemble.mix import (
 )
 from support.media_cards import write_tone_with_tail
 
-from .conftest import MID_CLIP_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
+from .conftest import (
+    MID_CLIP_TOML,
+    cue_times,
+    open_run,
+    rendered,
+    spoken,
+    take_index,
+    write_project,
+)
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -206,8 +216,17 @@ def test_one_unbroken_run_of_pages_plays_the_whole_track_once(tmp_path):  # fmt:
     assert "atrim=start=" not in plan.filter
 
 
-def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_path):
+def loudnorm_says(integrated: float) -> str:
+    """What loudnorm prints for a file it measured at `integrated` LUFS, which is all a loudness match reads."""
+    return (
+        f'{{"input_i": "{integrated}", "input_tp": "-3.0", "input_lra": "4.0", "input_thresh": "-40.0", '
+        '"target_offset": "0.0"}'
+    )
+
+
+def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_path, fake_ffmpeg):
     """The narration pauses for a clip, so each run of page sections plays its own stretch of the track."""
+    fake_ffmpeg.stderr_text = loudnorm_says(-16.0)
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     opened = open_run(tmp_path)
     takes = take_index(
@@ -227,7 +246,8 @@ def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_pat
     assert "adelay=5000:all=1" in plan.filter
 
 
-def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp_path):
+def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp_path, fake_ffmpeg):
+    fake_ffmpeg.stderr_text = loudnorm_says(-30.0)
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
@@ -237,6 +257,38 @@ def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp
     assert "afade=t=in:d=0.02" in plan.filter
     assert "afade=t=out:st=2.980:d=0.02" in plan.filter
     assert "atrim=duration=3.000" in plan.filter
+
+
+def measured_as(monkeypatch, levels: dict[str, float]) -> None:
+    """Make loudnorm answer each file by its name, at the integrated loudness `levels` gives it."""
+
+    def stderr(*args: str) -> str:
+        return next(loudnorm_says(level) for name, level in levels.items() if any(arg.endswith(name) for arg in args))
+
+    monkeypatch.setattr(ffmpeg, "stderr", stderr)
+
+
+def test_a_clip_s_sound_is_matched_to_the_narration_s_loudness(tmp_path, monkeypatch):
+    """A film made elsewhere plays as loud as the voice beside it, so the master lifts both by one gain."""
+    inputs = write_project(tmp_path, MID_CLIP_TOML)
+    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
+    narration = inputs.workspace.narration_path
+    narration.parent.mkdir(parents=True, exist_ok=True)
+    narration.write_bytes(b"narration")
+    clip = tmp_path / "media" / "broll.mp4"
+    measured_as(monkeypatch, {narration.name: -19.5, clip.name: -31.0})
+    gains = matched_gains(inputs, takes, [Embedded(clip, 2.0, 3.0, "clip02")])
+    assert gains == {clip: pytest.approx(11.5)}
+
+
+def test_a_clip_beside_a_placeholder_narration_is_matched_to_the_master_s_target(tmp_path, monkeypatch):
+    """A placeholder is clicks and silence with no level of its own, so the target stands in for it."""
+    inputs = write_project(tmp_path, MID_CLIP_TOML)
+    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
+    clip = tmp_path / "media" / "broll.mp4"
+    measured_as(monkeypatch, {clip.name: -31.0})
+    gains = matched_gains(inputs, takes, [Embedded(clip, 2.0, 3.0, "clip02")])
+    assert gains == {clip: pytest.approx(inputs.settings.audio.target_lufs + 31.0)}
 
 
 def test_a_music_bed_the_project_names_and_has_not_got_is_an_error(tmp_path):
@@ -341,10 +393,7 @@ def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
 
 def test_a_marker_on_a_clip_section_resolves_only_its_start_and_never_reads_the_clip_words(tmp_path):
     """A clip's words are not narration, so a damaged clip words file never refuses the mix."""
-    toml = MID_CLIP_TOML.replace(
-        'clip = "media/broll.mp4"', 'clip = "media/broll.mp4"\nwords = "media/broll.words.json"'
-    )
-    inputs = write_project(tmp_path, toml)
+    inputs = write_project(tmp_path, MID_CLIP_TOML)
     (tmp_path / "media").mkdir(exist_ok=True)
     (tmp_path / "media" / "broll.words.json").write_text("{not json", encoding="utf-8")
     markers = [

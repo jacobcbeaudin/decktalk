@@ -18,25 +18,32 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from decktalk.artifacts import Take
+from decktalk.artifacts import Takes
 from decktalk.captions import display_words
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.machine.run import Run
-from decktalk.results import SectionWords, WordsResult
+from decktalk.results import SectionTurn, SectionWords, Word, WordsResult
 from decktalk.stages import selects
 
 
-def row_of(inputs: Inputs, take: Take) -> SectionWords:
-    """One section's words, on its own clock, carrying the script's own spelling."""
-    heard = inputs.words(take.section)
-    shown = display_words(list(heard.words), take.spoken) if take.spoken else list(heard.words)
+def row_of(inputs: Inputs, takes: Takes, number: int) -> SectionWords:
+    """One section's words on its own clock, each turn's carrying the script's own spelling and named by its voice."""
+    rows = takes.turns_of(number)
+    shown: list[Word] = []
+    turns: list[SectionTurn] = []
+    for turn in inputs.turn_words(number):
+        said = list(turn.words.words)
+        spelled = display_words(said, turn.spoken) if turn.spoken else said
+        shown += spelled
+        turns.append(SectionTurn(turn=turn.turn, voice=turn.voice, estimated=turn.estimated, word_count=len(spelled)))
     return SectionWords(
-        section=take.section,
-        key=take.key,
-        estimated=heard.estimated,
+        section=number,
+        key=rows[0].key,
+        estimated=inputs.words(number).estimated,
         words=tuple(shown),
+        turns=tuple(turns),
     )
 
 
@@ -49,7 +56,7 @@ def words(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Wor
     takes = inputs.takes(required=True)
     chosen = selects(only)
     if only:
-        spoken = {take.section for take in takes.sections}
+        spoken = set(takes.numbers)
         absent = sorted(number for number in only if number not in spoken)
         if absent:
             raise InputError(
@@ -57,7 +64,7 @@ def words(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Wor
                 hint=f"The spoken sections are {sorted(spoken)}.",
                 location=at(inputs.workspace.takes_path, inputs.root),
             )
-    rows = tuple(row_of(inputs, take) for take in takes.sections if chosen(take.section))
+    rows = tuple(row_of(inputs, takes, number) for number in takes.numbers if chosen(number))
     return run.result(WordsResult, sections=rows)
 
 

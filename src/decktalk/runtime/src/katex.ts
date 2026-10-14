@@ -11,7 +11,12 @@ import { MILLISECONDS } from "./contract.ts";
 import { ATTR, flagged, written } from "./scene.ts";
 import { warn } from "./warn.ts";
 
-/** How long a page that wants KaTeX waits for it before it is drawn without it. */
+/**
+ * How long a page that wants KaTeX waits for it before it is drawn without it.
+ *
+ * Calibration: long enough for KaTeX to load from the local origin, and well under the default
+ * `record.page_deadline_seconds`, so a typesetter that never arrives costs the page its wait and not the section.
+ */
 const KATEX_SECONDS = 5;
 
 /** How often the wait looks for the typesetter, which is often enough to be invisible to a person. */

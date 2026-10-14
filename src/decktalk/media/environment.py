@@ -20,6 +20,9 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+PROXY_KEYS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+"""The names that say how the machine reaches the network, which a proxy's user and password may be written into."""
+
 CHILD_KEYS = (
     "HOME",
     "PATH",
@@ -48,10 +51,7 @@ CHILD_KEYS = (
     "LOCALAPPDATA",
     "APPDATA",
     "PROGRAMDATA",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "ALL_PROXY",
-    "NO_PROXY",
+    *PROXY_KEYS,
 )
 """The names a child process may see, each of which says where a file or a display is or how to print a date.
 
@@ -60,7 +60,8 @@ formats a number or a date the way the author's own browser does, the proxy name
 network the way the machine does, and the Windows names because a Windows process started without
 them cannot load its own system libraries. An untrusted page's Chromium is handed a proxy of its own
 on the command line, which wins over any proxy named here, and ffmpeg opens files alone, so a proxy
-named here reaches nothing through it.
+named here reaches nothing through it. A program a project names is handed none of the proxy
+names, by `program_environment`, because a proxy URL can carry a password.
 """
 
 TEMP_KEYS = ("TMPDIR", "TMP", "TEMP")
@@ -96,4 +97,15 @@ def child_environment() -> dict[str, str]:
     return kept
 
 
-__all__ = ["CHILD_KEYS", "child_environment", "children_see"]
+def program_environment() -> dict[str, str]:
+    """The environment a program a project names is given: `child_environment` without any proxy name.
+
+    A proxy URL of the form `http://user:pass@host` is a credential, and a project's program is a
+    stranger's code whenever the project is, so it never sees one. Chromium and the tool fetchers
+    still reach the network through the machine's proxy.
+    """
+    proxies = {key.upper() for key in PROXY_KEYS}
+    return {name: value for name, value in child_environment().items() if name.upper() not in proxies}
+
+
+__all__ = ["CHILD_KEYS", "PROXY_KEYS", "child_environment", "children_see", "program_environment"]

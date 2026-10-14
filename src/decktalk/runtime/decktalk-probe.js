@@ -22,6 +22,7 @@
    * `MEASURABLE_SPAN_SECONDS`, because an effect still moving half a second after its cue marks its
    * own cue unmeasurable.
    */
+  var MILLISECONDS = 1e3;
   var EXITS = {
     fade: { seconds: 0.2 },
     fall: { seconds: 0.2 },
@@ -45,6 +46,7 @@
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
+  var LOOP_SECONDS_RANGE = { min: 0.2, max: 60, step: 0.04, unit: "seconds" };
   var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
@@ -264,6 +266,80 @@
       affects: ["transcript"],
       summary: "Overrides the departure sentence when leaving means something of its own.",
     },
+    "data-motion": {
+      name: "data-motion",
+      on: ["element"],
+      kind: "keyframes",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_UNDECLARED",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element moves through these @keyframes from one cue to another, masked from every reveal check and landing on its cues.",
+    },
+    "data-motion-from": {
+      name: "data-motion-from",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The motion departs at this cue.",
+    },
+    "data-motion-to": {
+      name: "data-motion-to",
+      on: ["element"],
+      kind: "cue",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_CUE_UNKNOWN",
+      span: 0,
+      affects: ["cue-order", "motion", "catalog"],
+      summary: "The motion arrives at this cue, so its length is the two cues' seconds apart.",
+    },
+    "data-motion-ease": {
+      name: "data-motion-ease",
+      on: ["element"],
+      kind: "word",
+      values: ["firm", "glide", "settle", "spring"],
+      default: "firm",
+      range: null,
+      code: "PAGE_BAD_VALUE",
+      span: 0,
+      affects: ["motion", "style"],
+      summary: "How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify.",
+    },
+    "data-loop": {
+      name: "data-loop",
+      on: ["element"],
+      kind: "keyframes",
+      values: [],
+      default: null,
+      range: null,
+      code: "PAGE_MOTION_UNDECLARED",
+      span: 0,
+      affects: ["motion", "catalog"],
+      summary:
+        "The element turns through these @keyframes for as long as its slide is on screen, masked and never a landing.",
+    },
+    "data-loop-seconds": {
+      name: "data-loop-seconds",
+      on: ["element"],
+      kind: "seconds",
+      values: [],
+      default: "1",
+      range: LOOP_SECONDS_RANGE,
+      code: "PAGE_BAD_VALUE",
+      span: 0,
+      affects: ["motion"],
+      summary: "How long one turn of the loop takes.",
+    },
     "data-scene": {
       name: "data-scene",
       on: ["scene"],
@@ -342,6 +418,7 @@
   var CUE_MARK = ":";
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
+  var PREVIEW_CANVAS = `${ENGINE_PATH}canvas.json`;
   function cueId(slide, local) {
     return `${slide}${CUE_MARK}${local}`;
   }
@@ -350,22 +427,26 @@
   /*! The recorder's instrumentation, injected into a page before it loads.
    *
    * Every DeckTalk command that opens a page drives a headless Chromium, and what that command needs
-   * from the page is not what a reader needs: a cover over the first paint so the recording starts on
-   * a known frame, a helper that says when the page has settled, a measured catalog that says where
-   * every reveal sits, a freeze that stops at one cue, and a record of how the page behaved while it
-   * was captured. None of that belongs to a deck, so none of it is in the runtime a deck loads.
+   * from the page is not what a reader needs: a step that moves the section clock to one recorded
+   * frame, a helper that says when the page has settled, a measured catalog that says where every
+   * reveal sits, a freeze that stops at one cue, and a record of what the page did while it was
+   * recorded. None of that belongs to a deck, so none of it is in the runtime a deck loads.
    *
    * Playwright adds this file with `add_init_script`, so it runs before the page's own scripts and no
    * page ever references it. A page opened without it plays, previews, freezes and lists its scenes
    * the same, and keeps nothing.
    *
    * What the recorder calls
-   *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
-   *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
-   *                                    frame, whose stamp is the recording's t=0 on the section clock, and
-   *                                    resolving to performance.now() read in that frame
+   *   window.__decktalkProbe.step(t, s) move the section clock to second t and answer the next due second,
+   *                                    whether the picture may have changed, the earliest second it next
+   *                                    can and what the page changed undeclared since the step before,
+   *                                    once the page has drawn it, or refuse once s seconds pass without that
+   *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
+   *                                    refuse once s seconds pass without that
    *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
    *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
+   *   window.__decktalkProbe.within(p, s) what p settles with, or a refusal once s seconds pass on the
+   *                                    browser's own timer, which every other call is raced through
    *
    * What the runtime reads, and only when this file is there
    *   window.__decktalkProbe.recorder                          the telemetry sink, read once at startup
@@ -376,45 +457,270 @@
    * split honest: the probe knows the vocabulary and it knows the sink, and it knows no DOM the
    * runtime owns.
    */
-  var COVER_ID = "dt-cover";
-  var KEEPALIVE_ID = "dt-keepalive";
-  var GAP_MS = 100;
-  var AFTER = "after";
-  var BEFORE = "before";
   var KEEP = 5e3;
   var TEXT_MAX = 80;
-  function cover() {
-    const add = () => {
-      if (document.getElementById(COVER_ID)) return;
-      const parent = document.body || document.documentElement;
-      const sheet = document.createElement("div");
-      sheet.id = COVER_ID;
-      sheet.style.cssText = "position:fixed;inset:0;background:#ff00ff;z-index:2147483647;pointer-events:none";
-      parent.appendChild(sheet);
-      const alive = document.createElement("div");
-      alive.id = KEEPALIVE_ID;
-      alive.setAttribute("aria-hidden", "true");
-      alive.style.cssText = `position:fixed;right:1px;bottom:1px;width:2px;height:2px;background:#808080;opacity:.03;z-index:2147483647;pointer-events:none;animation:${KEEPALIVE_ID} .5s linear infinite`;
-      const style = document.createElement("style");
-      style.textContent = `@keyframes ${KEEPALIVE_ID}{to{transform:rotate(360deg)}}`;
-      alive.appendChild(style);
-      parent.appendChild(alive);
+  var AFTER = "after";
+  var BEFORE = "before";
+  var nativeFrame = window.requestAnimationFrame.bind(window);
+  var nativeTimer = window.setTimeout.bind(window);
+  var nativeCancel = window.clearTimeout.bind(window);
+  var decoded = /* @__PURE__ */ new WeakMap();
+  var SELF_DRAWN = "canvas, video, iframe, embed, object";
+  var SHOWN = { opacityProperty: true, visibilityProperty: true };
+  var touched = true;
+  var touch = () => {
+    touched = true;
+  };
+  var between = [];
+  function keep(records) {
+    if (!records.length) return;
+    touched = true;
+    for (const record of records) {
+      if (between.length >= KEEP) return;
+      between.push(inDocument(record.target));
+    }
+  }
+  var OBSERVED = { subtree: true, childList: true, attributes: true, characterData: true };
+  var watcher = new MutationObserver(keep);
+  watcher.observe(document, OBSERVED);
+  document.addEventListener("scroll", touch, { capture: true, passive: true });
+  var roots = /* @__PURE__ */ new Set();
+  function reached(root) {
+    if (root && !roots.has(root)) {
+      roots.add(root);
+      watcher.observe(root, OBSERVED);
+      root.addEventListener("scroll", touch, { capture: true, passive: true });
+    }
+    return root;
+  }
+  function inDocument(node) {
+    let shown2 = node;
+    for (let root = shown2.getRootNode(); root instanceof ShadowRoot; root = shown2.getRootNode()) shown2 = root.host;
+    return shown2;
+  }
+  function wrapMethod(owner, name, after) {
+    const own = Object.getOwnPropertyDescriptor(owner, name);
+    const original = own?.value;
+    if (!own?.configurable || typeof original !== "function") return;
+    Object.defineProperty(owner, name, {
+      ...own,
+      value: function (...args) {
+        let answer;
+        try {
+          answer = original.apply(this, args);
+          return answer;
+        } finally {
+          after(answer);
+        }
+      },
+    });
+  }
+  function wrapAccessor(owner, name, side, after) {
+    const own = Object.getOwnPropertyDescriptor(owner, name);
+    const original = own?.[side];
+    if (!own?.configurable || typeof original !== "function") return;
+    const wrapped = function (...args) {
+      return after(original.apply(this, args));
     };
-    if (document.documentElement) add();
-    else document.addEventListener("DOMContentLoaded", add, { once: true });
+    Object.defineProperty(owner, name, { ...own, [side]: wrapped });
   }
-  var origin = null;
-  function clockAt(ms) {
-    return origin === null ? null : Number(((ms - origin) / 1e3).toFixed(3));
+  wrapMethod(Element.prototype, "attachShadow", (root) => reached(root));
+  wrapAccessor(Element.prototype, "shadowRoot", "get", (root) => reached(root));
+  wrapAccessor(ElementInternals.prototype, "shadowRoot", "get", (root) => reached(root));
+  var SHEET_INTERFACES = /^(?:StyleSheet|MediaList|StylePropertyMap|CSS\w*(?:Rule|StyleSheet|Declaration|Properties))$/;
+  var SHEET_WRITERS = /* @__PURE__ */ new Set([
+    "insertRule",
+    "deleteRule",
+    "addRule",
+    "removeRule",
+    "appendRule",
+    "replace",
+    "replaceSync",
+    "setProperty",
+    "removeProperty",
+    "appendMedium",
+    "deleteMedium",
+    "set",
+    "append",
+    "delete",
+    "clear",
+  ]);
+  function written(answer) {
+    touch();
+    if (answer instanceof Promise) answer.then(touch, touch);
   }
-  function lift() {
-    return new Promise((resolve) => {
-      document.getElementById(COVER_ID)?.remove();
-      requestAnimationFrame((at) => {
-        origin = at;
-        window.DeckTalk?.startClock?.();
-        resolve(performance.now());
+  var declarations = /* @__PURE__ */ new WeakMap();
+  function heard(declaration) {
+    if (typeof declaration !== "object" || declaration === null) return declaration;
+    let view = declarations.get(declaration);
+    if (!view) {
+      view = new Proxy(declaration, {
+        get(target, key) {
+          const value = Reflect.get(target, key, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+        set(target, key, value) {
+          const done = Reflect.set(target, key, value, target);
+          touch();
+          return done;
+        },
       });
+      declarations.set(declaration, view);
+    }
+    return view;
+  }
+  var scope = window;
+  for (const name of Object.getOwnPropertyNames(window).filter((one) => SHEET_INTERFACES.test(one))) {
+    const prototype = scope[name]?.prototype;
+    if (typeof prototype !== "object" || prototype === null) continue;
+    for (const [member, own] of Object.entries(Object.getOwnPropertyDescriptors(prototype))) {
+      if (member === "style" && own.get) wrapAccessor(prototype, member, "get", heard);
+      if (own.set) wrapAccessor(prototype, member, "set", written);
+      else if (SHEET_WRITERS.has(member)) wrapMethod(prototype, member, written);
+    }
+  }
+  var adopted = /* @__PURE__ */ new WeakMap();
+  function readopted() {
+    let changed = false;
+    for (const holder of [document, ...roots]) {
+      const now = holder.adoptedStyleSheets;
+      const before = adopted.get(holder) ?? [];
+      if (now.length === before.length && now.every((sheet, at) => sheet === before[at])) continue;
+      adopted.set(holder, [...now]);
+      changed = true;
+    }
+    return changed;
+  }
+  function shown(el) {
+    if (!el.checkVisibility(SHOWN)) return false;
+    const box = el.getBoundingClientRect();
+    return (
+      box.width > 0 &&
+      box.height > 0 &&
+      box.right > 0 &&
+      box.bottom > 0 &&
+      box.left < innerWidth &&
+      box.top < innerHeight
+    );
+  }
+  function selfDrawn() {
+    for (const holder of [document, ...roots]) {
+      for (const el of holder.querySelectorAll(SELF_DRAWN)) if (shown(el)) return el;
+    }
+    return null;
+  }
+  function named(el) {
+    const id = el.id ? `#${el.id}` : "";
+    const classes = [...el.classList].map((one) => `.${one}`).join("");
+    return `<${el.localName}${id}${classes}>`;
+  }
+  var PAGE_CLOCK = "__pwClock";
+  function nextTimer(seconds) {
+    const clock = window[PAGE_CLOCK]?.controller;
+    if (typeof clock?._firstTimer !== "function" || typeof clock.performanceNow !== "function") return seconds;
+    const timer = clock._firstTimer();
+    if (!timer) return null;
+    return seconds + Math.max(0, timer.callAt - clock.performanceNow()) / MILLISECONDS;
+  }
+  function sooner(one, other) {
+    if (one === null) return other;
+    if (other === null) return one;
+    return Math.min(one, other);
+  }
+  function mutated() {
+    const seen = readopted() || touched || watcher.takeRecords().length > 0;
+    touched = false;
+    between = [];
+    return seen;
+  }
+  var answered = false;
+  function undeclared() {
+    keep(watcher.takeRecords());
+    const changed = between;
+    between = [];
+    if (!answered || !changed.length) return null;
+    return window.__decktalk?.undeclared(changed) ?? null;
+  }
+  function rendered() {
+    return new Promise((done) => {
+      nativeFrame(() => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => done();
+        channel.port2.postMessage(null);
+      });
+    });
+  }
+  function outstanding() {
+    const waits = [];
+    if (document.fonts && document.fonts.status !== "loaded") waits.push(document.fonts.ready);
+    for (const image of Array.from(document.images)) {
+      const source = image.currentSrc || image.src;
+      if (decoded.get(image) === source) continue;
+      waits.push(
+        image
+          .decode()
+          .catch(() => void 0)
+          .then(() => decoded.set(image, source)),
+      );
+    }
+    return waits;
+  }
+  async function drawn() {
+    let waited = false;
+    for (;;) {
+      await rendered();
+      const waits = outstanding();
+      if (!waits.length) return waited;
+      waited = true;
+      await Promise.all(waits);
+    }
+  }
+  function step(seconds, waitSeconds) {
+    const outside = undeclared();
+    const stepped = window.DeckTalk?.stepTo?.(seconds) ?? { due: null, changed: true, stillUntil: seconds };
+    const touchedBefore = mutated();
+    const late = `the page had not drawn second ${seconds} within ${waitSeconds} seconds`;
+    return within(drawn(), waitSeconds, late).then((waited) => {
+      const touchedWhileDrawn = mutated();
+      const drawing = selfDrawn();
+      answered = true;
+      const heard2 = waited || touchedWhileDrawn || drawing !== null;
+      return {
+        due: stepped.due,
+        changed: stepped.changed || touchedBefore || heard2,
+        stillUntil: heard2 ? seconds : sooner(stepped.stillUntil, nextTimer(seconds)),
+        undeclared: outside,
+        selfDrawn: drawing && named(drawing),
+      };
+    });
+  }
+  function started(waitSeconds) {
+    const pending = () => document.getAnimations().filter((animation) => animation.pending);
+    const settle = async () => {
+      for (let waiting = pending(); waiting.length; waiting = pending()) {
+        await Promise.all(waiting.map((animation) => animation.ready.catch(() => void 0)));
+      }
+    };
+    const late = `the page's animations had not started within ${waitSeconds} seconds`;
+    return within(
+      settle().then(() => true),
+      waitSeconds,
+      late,
+    );
+  }
+  function within(answer, seconds, late = `the page did not answer within ${seconds} seconds`) {
+    return new Promise((settle, refuse) => {
+      const timer = nativeTimer(() => refuse(new Error(late)), seconds * MILLISECONDS);
+      answer.then(
+        (value) => {
+          nativeCancel(timer);
+          settle(value);
+        },
+        (error) => {
+          nativeCancel(timer);
+          refuse(error);
+        },
+      );
     });
   }
   function ready() {
@@ -424,48 +730,14 @@
   }
   var cues = [];
   var words = [];
-  var frameGaps = [];
-  var longFrames = [];
   var recorder = {
     cue(event) {
-      if (cues.length >= KEEP) return;
-      const row = { ...event, next: null, after: null };
-      cues.push(row);
-      requestAnimationFrame((next) => {
-        row.next = clockAt(next);
-        requestAnimationFrame((after) => {
-          row.after = clockAt(after);
-        });
-      });
+      if (cues.length < KEEP) cues.push(event);
     },
     words(event) {
       if (words.length < KEEP) words.push(event);
     },
   };
-  function watchFrames() {
-    let last = null;
-    const tick = (at) => {
-      if (last !== null && at - last > GAP_MS && frameGaps.length < KEEP) {
-        frameGaps.push({ at: clockAt(at), ms: Math.round(at - last) });
-      }
-      last = at;
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-    const kinds = window.PerformanceObserver ? PerformanceObserver.supportedEntryTypes || [] : [];
-    if (!kinds.includes("long-animation-frame")) return;
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        if (origin === null || entry.startTime < origin || longFrames.length >= KEEP) continue;
-        longFrames.push({
-          start: clockAt(entry.startTime),
-          ms: Math.round(entry.duration),
-          render: entry.renderStart === void 0 ? null : clockAt(entry.renderStart),
-          presented: entry.presentationTime === void 0 ? null : clockAt(entry.presentationTime),
-        });
-      }
-    }).observe({ type: "long-animation-frame" });
-  }
   function report() {
     const view = window.__decktalk;
     return {
@@ -477,8 +749,7 @@
       catalog: view?.catalog ?? [],
       cues,
       words,
-      frameGaps,
-      longFrames,
+      motions: view?.motions ?? [],
     };
   }
   function freezeCues(order, slideId, warn) {
@@ -511,8 +782,8 @@
   function rowFor(el, slideId, frame, scale) {
     const attrs = {};
     for (const name of ELEMENT_ATTRS) {
-      const written = el.getAttribute(name);
-      if (written !== null) attrs[name] = written;
+      const written2 = el.getAttribute(name);
+      if (written2 !== null) attrs[name] = written2;
     }
     const moments = {};
     for (const name of MOMENT_ATTRS) {
@@ -558,7 +829,6 @@
     layer.remove();
     return catalog;
   }
-  watchFrames();
-  var probe = { cover, lift, ready, report, recorder, freezeCues, measure };
+  var probe = { step, started, ready, report, within, recorder, freezeCues, measure };
   window.__decktalkProbe = probe;
 })();

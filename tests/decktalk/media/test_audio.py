@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import io
+import wave
 from pathlib import Path
 
 import pytest
 
 from decktalk.errors import ToolError
 from decktalk.media import audio, ffmpeg
+from decktalk.settings import AudioConfig
 from support.media_cards import write_tone_with_tail
 
 # What `[narration] sound_end_noise_dbfs` and `sound_end_min_run_seconds` default to, which is what
@@ -96,24 +99,64 @@ LOUDNORM = """[Parsed_loudnorm_0 @ 0x1]
 
 def test_a_loudness_measurement_reads_every_number_loudnorm_printed(monkeypatch):
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: LOUDNORM.format(i="-21.75", tp="-18.06", offset="0.01"))
-    read = audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+    read = audio.measure_loudness(Path("mix.mov"), AudioConfig())
     assert (read.i, read.tp, read.lra, read.thresh, read.offset) == (-21.75, -18.06, 0.0, -70.0, 0.01)
 
 
 def test_a_silent_file_measures_as_no_loudness_rather_than_as_zero_lufs(monkeypatch):
     """loudnorm spells silence as -inf, which a pattern for digits read as 0.0 LUFS, the loudest film there is."""
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: LOUDNORM.format(i="-inf", tp="-inf", offset="inf"))
-    read = audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+    read = audio.measure_loudness(Path("mix.mov"), AudioConfig())
     assert read.i == read.tp == float("-inf")
 
 
 def test_a_pass_that_printed_no_measurement_is_a_tool_error(monkeypatch):
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: "size=N/A time=00:00:02.00\n")
     with pytest.raises(ToolError, match="no measurement"):
-        audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+        audio.measure_loudness(Path("mix.mov"), AudioConfig())
 
 
 def test_a_level_becomes_the_factor_that_plays_it() -> None:
     assert audio.gain(0) == 1.0
     assert round(audio.gain(-6), 3) == 0.501
     assert round(audio.gain(20), 3) == 10.0
+
+
+@pytest.mark.media
+def test_a_take_decodes_to_a_mono_wav_of_its_own_length(tmp_path):
+    """The aligner is sent a WAV whose every size field is true, which a WAV piped out of ffmpeg's own muxer is not."""
+    take = write_tone_with_tail(tmp_path / "take.mp3", tail=0.5)
+    with wave.open(io.BytesIO(audio.wav(take, sample_rate=16000)), "rb") as sound:
+        assert (sound.getnchannels(), sound.getsampwidth(), sound.getframerate()) == (1, 2, 16000)
+        assert sound.getnframes() / sound.getframerate() == pytest.approx(1.5, abs=0.06)
+
+
+def write_silence(path: Path, seconds: float) -> Path:
+    """A take a voice answered with silence, which measures a sound end of nothing at all."""
+    ffmpeg.run("-f", "lavfi", "-i", f"anullsrc=r=44100:cl=mono:d={seconds}", "-c:a", "libmp3lame", str(path))
+    return path
+
+
+@pytest.mark.media
+def test_takes_cut_at_every_edge_join_into_one_track_of_the_placed_length(tmp_path):
+    """A silent take plays nothing, a take cut under one frame and one cut inside its last word play what they keep.
+
+    The silent take measures a sound end of 0, which once asked afade for a fade of no samples, a filter
+    ffmpeg refuses, so every join after that take was kept failed.
+    """
+    silent = write_silence(tmp_path / "silent.mp3", 1.0)
+    assert ends(silent) == 0.0
+    tone = write_tone_with_tail(tmp_path / "tone.mp3", tail=0.3)
+    rate = 48000
+    parts = [
+        audio.Placement(silent, lead=0.5, play=ends(silent), tail=0.7),
+        audio.Placement(tone, lead=0.2, play=1 / rate, tail=0.3),
+        audio.Placement(tone, lead=0.0, play=0.5, tail=0.4),
+    ]
+    out = tmp_path / "narration.mp3"
+    audio.concat_audio(parts, out, bitrate="128k", sample_rate=rate)
+    placed = sum(part.lead + (part.play or 0.0) + part.tail for part in parts)
+    assert ffmpeg.probe_duration(out) == pytest.approx(placed, abs=0.06)
+    assert audio.rms_db(out, 0.0, 1.2) < NOISE_DBFS
+    assert audio.rms_db(out, 2.1, 0.4) > NOISE_DBFS
+    assert audio.rms_db(out, 2.65, 0.3) < NOISE_DBFS

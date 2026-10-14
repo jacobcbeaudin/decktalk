@@ -1,12 +1,10 @@
 """The projects and the skills packaged in the wheel, and writing one of them into a directory.
 
 `decktalk init DIR` writes the starter: three sections, one equation, markup slides and a
-placeholder build of about a minute. `--example NAME` writes a finished project instead. Either way
-the skills land in `.agents/skills/` and an `AGENTS.md` is written when the directory has none. No
-copy of the runtime or of KaTeX is written, because the origin serves both from the engine.
-
-An example with no project behind it yet is reserved here rather than left out, so the flag value
-never changes meaning and the refusal says what it is waiting for.
+placeholder build of about a minute. `--example NAME` writes another packaged project instead, and
+`--example starter` names the default. Either way the skills land in `.agents/skills/` and an
+`AGENTS.md` is written when the directory has none. No copy of the runtime or of KaTeX is written,
+because the origin serves both from the engine.
 """
 
 from __future__ import annotations
@@ -24,7 +22,7 @@ from decktalk.toolchain import assets
 log = logging.getLogger(__name__)
 
 STARTER = "starter"
-"""The packaged project `init` writes when no example is named, which is not itself an example."""
+"""The packaged project `init` writes when no example is named."""
 
 AGENTS_FILE = "AGENTS.md"
 """The file an agent reads first, which is written only when the directory has none."""
@@ -64,15 +62,16 @@ class Example:
 
     name: str
     summary: str
-    path: str | None
-    """The directory under `template/`, or None while the example is only a reserved name."""
-
-    @property
-    def shipped(self) -> bool:
-        return self.path is not None
+    path: str
+    """The directory under `template/`."""
 
 
 EXAMPLES: tuple[Example, ...] = (
+    Example(
+        STARTER,
+        "three sections, one equation and markup slides, with a placeholder build of about a minute",
+        STARTER,
+    ),
     Example(
         "lesson",
         "a lesson that teaches how a model learns, whose one long scene is written in markup, and "
@@ -80,22 +79,27 @@ EXAMPLES: tuple[Example, ...] = (
         "examples/lesson",
     ),
     Example(
-        "product",
-        "the project behind the product film, which is that film's deck and script without its voice",
-        None,
+        "interview",
+        "an interview between a narrator and a guest, whose second section is a dialogue read by two voices",
+        "examples/interview",
     ),
     Example(
-        "tutorial",
-        "the six-section technical tutorial whose measured numbers the product film shows",
-        None,
+        "motion",
+        "things that travel between two words: a firm arrival, a spring, a loop and a bar that fills",
+        "examples/motion",
     ),
 )
-"""Every packaged example, including the names that are reserved and not yet written."""
+"""Every packaged project `init` writes, the starter first because it is the default."""
+
+
+def names() -> tuple[str, ...]:
+    """Every `--example` value, in the order `listed_names` gives them."""
+    return tuple(found.name for found in EXAMPLES)
 
 
 def listed_names() -> str:
-    """Every `--example` value in one line, with each reserved name marked as one."""
-    return ", ".join(example.name if example.shipped else f"{example.name} (reserved)" for example in EXAMPLES)
+    """Every `--example` value in one line, the starter first."""
+    return ", ".join(names())
 
 
 def example(name: str) -> Example:
@@ -116,7 +120,10 @@ def title_from(name: str) -> str:
 
 
 def write_project(target: Path, *, name: str, example_name: str | None, skills: bool, force: bool) -> tuple[Path, ...]:
-    """Write a packaged project into `target` and give back every file written, in the order written."""
+    """Write a packaged project into `target` and give back every file written, in the order written.
+
+    `example_name` None is the starter, as `init` with no `--example` is.
+    """
     if not NAME_PATTERN.fullmatch(name):
         raise InputError(
             f"a project name must be letters, digits, dots, dashes or underscores, and {name!r} is not.",
@@ -127,7 +134,7 @@ def write_project(target: Path, *, name: str, example_name: str | None, skills: 
             f"{target.name} is not empty, so nothing was written.",
             hint="Pass --force to write into it anyway, or name an empty directory.",
         )
-    source = _source(example_name)
+    source = assets.package_file(f"template/{example(example_name or STARTER).path}")
     written = [_copy(found, target / _destination(found.relative_to(source)), name) for found in _files(source)]
     agents = target / AGENTS_FILE
     # An AGENTS.md the author already wrote is theirs, so it is never replaced.
@@ -173,19 +180,6 @@ def _link(root: Path) -> Path:
         log.debug("%s could not be a link, so it is a copy.", LINK_DIR, exc_info=refused)
         shutil.copytree(root / SKILLS_DIR, link)
     return link
-
-
-def _source(example_name: str | None) -> Path:
-    """The packaged project directory to copy, refusing an example that is only a reserved name."""
-    if example_name is None:
-        return assets.package_file(f"template/{STARTER}")
-    found = example(example_name)
-    if not found.shipped:
-        raise InputError(
-            f"--example {found.name} is a reserved name and no project stands behind it yet: {found.summary}.",
-            hint="Run `decktalk init` for the starter, or `decktalk init --example lesson` for a finished project.",
-        )
-    return assets.package_file(f"template/{found.path}")
 
 
 def _files(source: Path) -> list[Path]:

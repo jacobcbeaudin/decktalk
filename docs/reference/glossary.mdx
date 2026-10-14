@@ -15,11 +15,13 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
 | project | One directory holding `script.md`, `decktalk.toml`, `cues.json`, the deck pages and the `build/` directory those four produce. | | [decktalk.toml](/reference/decktalk-toml) |
-| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene or a clip. | segment | [decktalk.toml](/reference/decktalk-toml) |
+| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene, a program that draws it or a clip. | segment | [decktalk.toml](/reference/decktalk-toml) |
+| render section | A section whose picture a program draws, which `render_command` names. It is narrated like a page section and names no page and no scene. | | [Things that move](/guides/motion#a-render-section) |
+| motion document | `build/recordings/render/NN/motion.json`, the frame rate, the size, the length, every spoken word and every cue's second that `record` hands a render section's program. | | [Things that move](/guides/motion#a-render-section) |
 | section key | The two-digit `"01"` that names a section's files and its rows in `cues.json`. | | [cues.json](/reference/cues-json) |
 | chapter | The title a section shows in the chapter markers, the transcript and a slate. | | [decktalk.toml](/reference/decktalk-toml) |
 | script | `script.md`, which the voice reads once it is cleaned into spoken text. | | [script.md](/reference/script-md) |
-| direction | A bracketed instruction the voice does not speak, such as `[beat]` or `[pause 2]`. | stage direction | [script.md](/reference/script-md) |
+| direction | A bracketed instruction the voice does not speak, such as `[beat]`, `[pause 2]` or `[voice guest]`. | stage direction | [script.md](/reference/script-md) |
 | unfinished text | An unfilled blank such as `[NUMBER]`, or other text a voice would read out or swallow, which `check` reports as `SCRIPT_UNFINISHED`. It is never called a placeholder, because a placeholder is a take. | | [script.md](/reference/script-md) |
 
 ## The page and the cues
@@ -33,6 +35,16 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | freeze | One slide drawn with its cues already fired and nothing in motion, which `?freeze=ID` asks the page for. | ?slide | [The runtime](/reference/runtime) |
 | container | An element whose children carry moments, so one cue can stagger them or a spotlight can walk them. | | [The page contract](/concepts/page-contract) |
 | moment | One of the four things an element does, which are `data-in`, `data-back`, `data-front` and `data-out`. A moment is never an event, a cue name or a time. | | [The page contract](/concepts/page-contract) |
+| motion | Something an element does for longer than a moment, from the cue it departs on to the cue it arrives on, declared with `data-motion` or `DeckTalk.motion`. Its length is the seconds between the two cues and is never written on the page. | | [The page contract](/concepts/page-contract#motion) |
+| ease | How a motion moves between its two cues: `firm`, `glide`, `settle` or `spring`. | | [Things that move](/guides/motion#the-four-eases) |
+| firm arrival | An arrival that keeps a little speed into its last frame, so it stops on a frame edge verify can measure. `firm` and `glide` arrive firm. | | [Things that move](/guides/motion#the-four-eases) |
+| ease to rest | An arrival that slows to nothing, which `settle` and `spring` make. It has no edge to measure, so its cue must be marked `"verify": false`. | | [Things that move](/guides/motion#the-four-eases) |
+| loop | An element that turns through its `@keyframes` for as long as its slide is on screen, declared with `data-loop`. It names no cue. | | [Things that move](/guides/motion#a-loop) |
+| frame hook | A function `DeckTalk.frame` calls on every frame with the section second, which draws something from that second alone. | | [The runtime](/reference/runtime#the-decktalk-object) |
+| region | The element a frame hook draws inside, which `DeckTalk.frame` names in `region` and verify masks. | | [Things that move](/guides/motion#a-frame-hook-and-its-region) |
+| composition page | A deck page that draws its whole picture itself, in a canvas, WebGL or three.js, from a frame hook and the runtime's cues and words. It plays in an ordinary page section. | | [Things that move](/guides/motion#a-composition-page) |
+| lane | One declared motion, loop or region as the recorder saw it: the box it swept, its size, when it moved and the cues it lands on. Verify masks a lane out of every cue and measures a motion's landings on it. | | [The page contract](/concepts/page-contract#the-lane-report) |
+| landing | One cue a motion lands on, either its departure, `depart`, or its arrival, `arrive`. | | [Verify](/reference/verify#motions) |
 | cue name | The name a moment attribute writes, such as `expand`, which means something inside its own slide alone. | local name | [The page contract](/concepts/page-contract) |
 | cue id | The slide id, a colon and the cue name. `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`. | wire id | [Cues](/concepts/cues) |
 | cue | One row of `cues.json`, pairing a cue id with the phrase its moment waits for. | | [cues.json](/reference/cues-json) |
@@ -40,8 +52,10 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | description | The text an author writes in `data-describe` and its kin, which the transcript is written from. It is never called a phrase. | | [The page contract](/concepts/page-contract) |
 | cue time | The second a cue lands on, counted on its section clock. | | [Cues](/concepts/cues) |
 | section clock | The seconds since a section starts, which its words, its cues and its page all run on. | narration clock | [Cues](/concepts/cues) |
+| stepped clock | The section clock as the recorder moves it, one frame at a time, so frame `k` of a recording is the page at second `k / fps`. | | [The recorder steps the clock](/decisions/the-recorder-steps-the-clock) |
+| chunk | A range of one page section's frames that one recorder records in a page of its own, into a lossless file that starts on a keyframe. `record` splits a long section into chunks so several recorders share it, and joins the files into the section's recording without an encode. | | [Requirements and costs](/requirements#time) |
 | film clock | The seconds since the film starts, which `verify` reports on. | | [Verify](/reference/verify) |
-| canvas | The 1920 by 1080 surface the runtime draws on, which is `#dt-canvas` on the page. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
+| canvas | The surface the runtime draws on, which is `#dt-canvas` on the page: the shape of the frame `[video] size` names, with a short side of 1080 CSS pixels, so 1920 by 1080 for a wide project. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
 | runtime | `decktalk-runtime.js`, the page's script, which the engine serves beside every deck. The recorder reads it through `window.__decktalkProbe`. | __dtprobe | [The runtime](/reference/runtime) |
 
 ## The six stages
@@ -50,7 +64,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
-| narrate | The stage that turns the script into one take per section and its words. It writes a voiced take into the takes directory, a placeholder into `build/narrate/`, and the take index `build/narrate/takes.json`. | | [How it works](/concepts/how-it-works) |
+| narrate | The stage that turns the script into one take per turn and its words. It writes a voiced take into the takes directory, a placeholder into `build/narrate/`, and the take index `build/narrate/takes.json`. | | [How it works](/concepts/how-it-works) |
 | cue | The stage that turns each cue phrase into a second on its section clock. It writes `build/cue-times.json`. | | [Cues](/concepts/cues) |
 | record | The stage that records each page section in headless Chromium against those seconds. It writes `build/recordings/`. | | [How it works](/concepts/how-it-works) |
 | score | The music, the ambience bed and the effects beside the narration, and the stage that composes them. It keeps what it buys in the score directory and joins the music under `build/score/`. | soundscape | [Sound](/concepts/sound) |
@@ -75,31 +89,39 @@ They run in this order, and each is both a command and a call on a `Project`.
 | seconds | How long a piece of media runs. | | [Build artifacts](/reference/artifacts) |
 | machine | This computer and this process, which hold the toolchain, the machine file and the API key. | | [Python API](/reference/python-api) |
 | host | An application that runs DeckTalk as a library. | | [Python API](/reference/python-api) |
-| stability promise | What `build/` and `--json` promise a caller: the results, the events, `build/final/` and the exit codes. | | [Stability](/reference/stability) |
+| stability promise | What `build/` and `--json` promise a caller: the results, the events, `build/final/` and the exit codes. | | [The stability promise](/reference/stability) |
 
 ## The voice and the takes
 
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
-| provider | The service that makes takes, which `[voice] provider` names: `elevenlabs` or `dtsp`. | | [Requirements and costs](/requirements) |
-| voice | The provider's named speaker, which `[voice] id` names. | | [Requirements and costs](/requirements) |
-| voice in force | What `[voice]` resolves to for one project on one machine: the provider, the voice it reads in, the model, and what that provider declares about its output and its bill. Every take's digest and every price is read from it. | | [Requirements and costs](/requirements) |
-| API key | The secret a provider that bills needs. `doctor` reports it as `api_key`: `set`, `missing` or `not_needed`. | voice key | [Requirements and costs](/requirements) |
-| take | One section's spoken audio, named by its digest. Two sections with the same text and voice share one take. | | [Build artifacts](/reference/artifacts) |
+| provider | The service that makes a voice's takes, which that voice's `provider` names: `elevenlabs` or `dtsp`. One film may mix providers. | | [Requirements and costs](/requirements) |
+| voice | One `[voices.NAME]` table of `decktalk.toml`: a provider, its voice id, a speed and any of that provider's voice settings, under the name the script calls it by. | speaker, utterance | [decktalk.toml](/reference/decktalk-toml) |
+| voice name | The name a voice is written under, such as `guest` in `[voices.guest]`, which a voice direction and `DECKTALK_VOICES_GUEST_ID` both spell. It is never part of a take's digest, so renaming a voice voices nothing. | | [decktalk.toml](/reference/decktalk-toml) |
+| voice id | The provider's own name for a voice, which its `id` key holds. It is a published name rather than a secret. | | [Requirements and costs](/requirements) |
+| default voice | The voice `[narration] voice` names, which reads every section no voice direction names. | | [script.md](/reference/script-md) |
+| voice direction | A line holding only `[voice NAME]`, which hands the turns after it to that voice until the next one or the next section. | | [script.md](/reference/script-md) |
+| turn | The stretch of one section that one voice reads, from one voice direction to the next. A section one voice reads is one turn. A turn is never called a line, which is a line of a file. | | [script.md](/reference/script-md) |
+| voice in force | What one voice resolves to on this machine: its provider, voice id, model, settings, and what that provider declares about its output and its bill. Every take's digest and every price is read from the voice in force of its turn. | | [Requirements and costs](/requirements) |
+| API key | The secret a provider that bills needs. `doctor` reports one row per shipped provider that needs one under `api_keys`, each `set` or `missing`. | voice key | [Requirements and costs](/requirements) |
+| take | One turn's spoken audio, named by its digest. Two turns with the same text and the same voice in force share one take. | | [Build artifacts](/reference/artifacts) |
 | voiced take | A take a provider spoke, whether that provider bills or is free. | paid take, bought take | [Rebuild one section](/guides/rebuild-one-section) |
+| rejected take | A voiced take that `narrate --turn`, `--take` or `--replace-voiced` bought again, set aside with its words file in the takes directory's `rejected/` folder as `<digest>.<n>`, counting from 1. Moving the pair back under its digest plays it again. | re-roll | [Rebuild one section](/guides/rebuild-one-section#voice-one-turn-again) |
 | placeholder | A take made with no provider: click audio sized from the script's pace, which a run that does not spend plays where a take is missing. | silent take, click track, build without voice | [How it works](/concepts/how-it-works) |
 | take index | `build/narrate/takes.json`, every take row and the narration track's layout. It is a cache, rebuilt from the takes on disk. | | [Build artifacts](/reference/artifacts) |
 | takes directory | The folder inside the project that holds every take the film plays and its words, `takes/` unless `[narration] takes_dir` names another. You commit it, so a clone builds the film with no key. | | [Rebuild one section](/guides/rebuild-one-section) |
 | take store | The folder outside every project where this machine keeps a second copy of every voiced take it makes, which `[narration] store_dir` names. A take missing from the takes directory is checked and copied in from here, and nothing plays from it directly. | | [Rebuild one section](/guides/rebuild-one-section) |
-| take state | What the disk holds for one spoken section, judged against its current text, voice, model and voice settings: `voiced`, `unchecked`, `stale`, `placeholder` or `missing`, each with the clause that says why. `status` reports it as `take_state` and `take_reason`. | | [Rebuild one section](/guides/rebuild-one-section) |
-| stale | Made from inputs that have changed since. A stale take is a voiced take of this section still held under an older text, voice, model or voice settings, which a voiced run would replace. A recording, a section video and a score item go stale the same way. | outdated | [Rebuild one section](/guides/rebuild-one-section) |
-| unchecked | The take state of a voiced take of this text when no voice is named, so it cannot be matched until `[voice] id` or `DECKTALK_VOICE_ID` names one. A run keeps it and never buys it again on a guess. | unmatched | [Rebuild one section](/guides/rebuild-one-section) |
-| missing | The take state of a section with nothing it could play held. A `TAKE_MISSING` finding is wider: it is raised for every section that plays a placeholder for want of a voiced take of its current inputs. | | [Rebuild one section](/guides/rebuild-one-section) |
+| take state | What the disk holds for one turn, judged against its current text and voice in force: `voiced`, `unchecked`, `stale`, `placeholder` or `missing`, each with the clause that says why. A section reports the worst of its turns. `decktalk status` prints each section's, and `decktalk --json status` carries every turn's under `turns` too. | | [Rebuild one section](/guides/rebuild-one-section) |
+| stale | Made from inputs that have changed since. A stale take is a voiced take of this turn still held under an older text, voice, model or voice settings, which a voiced run would replace. A recording, a section video and a score item go stale the same way. | outdated | [Rebuild one section](/guides/rebuild-one-section) |
+| unchecked | The take state of a voiced take of a turn's text when its voice has no voice id, so it cannot be matched until `[voices.NAME] id` or `DECKTALK_VOICES_<NAME>_ID` names one. A run keeps it and never buys it again on a guess. | unmatched | [Rebuild one section](/guides/rebuild-one-section) |
+| missing | The take state of a turn with nothing it could play held. A `TAKE_MISSING` finding is wider: it is raised for every section that plays a placeholder for want of a voiced take of its current inputs. | | [Rebuild one section](/guides/rebuild-one-section) |
 | digest | A take's name. For a voiced take it is the first 16 hex digits of a sha256 over everything that changes the take. | input hash | [Build artifacts](/reference/artifacts) |
-| words | Every spoken word of a take with its start and its end on the take's own clock, kept in a words file beside the take. A stage reads them on the section clock, which adds the section's lead. | word clock | [Build artifacts](/reference/artifacts) |
+| words | Every spoken word of a take with its start and its end on the take's own clock, kept in a words file beside the take, or in `takes/aligned/` when an aligner timed them. A stage reads them on the section clock, which adds the section's lead. | word clock | [Build artifacts](/reference/artifacts) |
 | provider words | The words a provider sent back with a voiced take. They are a paid record, because only voicing the take again gives them back. | voiced words, bought words | [Build artifacts](/reference/artifacts) |
-| estimated words | The words DeckTalk timed from the script's pace for a placeholder. They cost nothing to make again. | placeholder words | [Build artifacts](/reference/artifacts) |
-| clip words | The words of one clip, cut from its section's words, or a words file the author names for a clip section. | | [Add a clip section](/guides/clip-section) |
+| estimated words | The words DeckTalk timed from the script's pace, for a placeholder or for a take no aligner could time. They cost nothing to make again. | placeholder words | [Build artifacts](/reference/artifacts) |
+| aligner | What times the words of a take whose voice sent none, from its audio and the script's words. DeckTalk ships one, the local server `[dtsp] base_url` names. | | [Providers](/decisions/the-provider-interface) |
+| aligned words | The words an aligner measured in a take, kept in `takes/aligned/` under a key of the take and the aligner. They cost nothing to make again. | | [Build artifacts](/reference/artifacts) |
+| clip words | The words of one clip, cut from its section's words, or the words file beside a clip section's clip as `<clip>.words.json`, each word with the voice and the turn that say it when the file names them. A built film writes its own as `<name>.words.json`. | | [Play a clip](/guides/clip-section#caption-the-speech-inside-a-clip) |
 
 ## Money and records
 
@@ -110,8 +132,8 @@ They run in this order, and each is both a command and a call on a `Project`.
 | cost state | Whether a cost is an `estimate` or was `charged`. | | [Requirements and costs](/requirements) |
 | billing | How a provider charges: per character, per second, free, undeclared or mixed. | | [Requirements and costs](/requirements) |
 | buy | To pay a provider for a take or a sound. A `*.charged` event is written for each bill that is not free. | purchase | [The JSON contract](/agents/json) |
-| paid record | A file only remaking can replace, which is refused with a sentence when it does not read and is never rebuilt or deleted. Remaking it costs money on a provider that bills. | | [Stability](/reference/stability) |
-| cache | A file DeckTalk rebuilds for free. Everything under `build/` is a cache except what the stability promise names. | | [Stability](/reference/stability) |
+| paid record | A file only remaking can replace, which is refused with a sentence when it does not read and is never rebuilt or deleted. Remaking it costs money on a provider that bills. | | [The stability promise](/reference/stability) |
+| cache | A file DeckTalk rebuilds for free. Everything under `build/` is a cache except what the stability promise names. | | [The stability promise](/reference/stability) |
 | ledger | `score/ledger.json`, every request the score stage has bought. | | [Sound](/concepts/sound) |
 
 ## Sound and film
@@ -123,8 +145,9 @@ They run in this order, and each is both a command and a call on a `Project`.
 | score directory | The folder inside the project that holds every sound the score bought and the ledger, each named by its item, `score/` unless `[score] dir` names another. You commit it, so a clone mixes the film with no key. | | [Sound](/concepts/sound) |
 | section video | One section encoded to its own span, `build/sections/NN.mp4`, which `assemble` joins into the film. | | [Build artifacts](/reference/artifacts) |
 | film | The finished mp4, `build/final/<name>.mp4`. | | [Build artifacts](/reference/artifacts) |
-| clip | A video file of your own that a clip section plays with its own audio, and the file `decktalk clip` cuts out of a built section. | | [Add a clip section](/guides/clip-section) |
-| slate | The titled frame a missing clip plays. | placeholder frame | [Add a clip section](/guides/clip-section) |
+| captioned copy | The film with its captions drawn into the picture by the page, `build/final/<name>-captioned.mp4`, which `[output] captioned` asks for. | | [Accessible video](/guides/accessible-video) |
+| clip | A video file with its own audio, which a clip section plays full frame: one of your own, a film DeckTalk built, or the file `decktalk clip` cuts out of a built section. | | [Play a clip](/guides/clip-section) |
+| slate | The titled frame a missing clip plays. | placeholder frame | [Play a clip](/guides/clip-section) |
 | cut | The boundary where one section ends and the next starts. | | [Verify](/reference/verify) |
 | seam | A cut a `seamless` section claims shows nothing. | | [Verify](/reference/verify) |
 | placement | A section as placed in the film, which is one row of `build/final/placements.json`. | | [Build artifacts](/reference/artifacts) |

@@ -34,6 +34,10 @@
         "PAGE_ENTER_THREW",
         "PAGE_SLIDE_HANDLER_THREW",
         "PAGE_HANDLER_THREW",
+        "PAGE_MOTION_UNDECLARED",
+        "PAGE_MOTION_CUE_UNKNOWN",
+        "PAGE_REALTIME_MEDIA",
+        "PAGE_FRAME_THREW",
         "PAGE_WAIT_REJECTED",
         "PAGE_WAIT_UNSETTLED",
         "PAGE_CLASS_UNDESCRIBED",
@@ -43,15 +47,20 @@
         "PAGE_APPEAR_TOO_LONG",
         "PAGE_STAGGER_EMPTY",
         "PAGE_SPOTLIGHT_EMPTY",
+        "PAGE_MOTION_UNFINISHED",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
         "PAGE_CDN_ASSET",
-        "RECORD_STALLED",
+        "PAGE_CHANGE_UNDECLARED",
         "RECORD_BLACK",
         "RECORD_TRUNCATED",
+        "MOTION_EASE_UNMEASURABLE",
+        "MOTION_OFF",
+        "MOTION_NO_EDGE",
+        "MOTION_MASK_LARGE",
         "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
@@ -64,12 +73,20 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
+        "TAKE_UNALIGNED",
+        "TAKE_WORD_CUT",
+        "TAKE_SILENT",
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
         "SOUND_MISSING",
-        "FILE_MISSING"
+        "FILE_MISSING",
+        "PROGRAM_NAMED"
       ],
       "title": "Code",
       "type": "string"
@@ -439,6 +456,38 @@
       "title": "Location",
       "type": "object"
     },
+    "Program": {
+      "additionalProperties": false,
+      "description": "One program a project names, which `[record] programs` decides whether `record` starts.",
+      "properties": {
+        "named_by": {
+          "description": "What names the program, such as section 3's render_command.",
+          "title": "Named By",
+          "type": "string"
+        },
+        "command": {
+          "description": "The words as decktalk.toml writes them, placeholders and all.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Command",
+          "type": "array"
+        },
+        "section": {
+          "description": "The section whose render_command it is.",
+          "minimum": 0,
+          "title": "Section",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "named_by",
+        "command",
+        "section"
+      ],
+      "title": "Program",
+      "type": "object"
+    },
     "Severity": {
       "description": "Whether a finding fails the default run or is reported and passes.\n\n`--fail-on` names the least severe finding that fails a run, so its values are these two words\nplus `never`, and a reader meets one vocabulary on the flag and on the field.",
       "enum": [
@@ -534,6 +583,22 @@
       "description": "True when the packaged skills were written into the project.",
       "title": "Skills Written",
       "type": "boolean"
+    },
+    "voices": {
+      "description": "The voices the project's decktalk.toml declares, the default first, read with no machine setting or variable.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Voices",
+      "type": "array"
+    },
+    "programs": {
+      "description": "Every program the project names, which a build starts only where record.programs allows it.",
+      "items": {
+        "$ref": "#/$defs/Program"
+      },
+      "title": "Programs",
+      "type": "array"
     }
   },
   "required": [
@@ -542,7 +607,9 @@
     "root",
     "name",
     "example",
-    "skills_written"
+    "skills_written",
+    "voices",
+    "programs"
   ],
   "title": "InitResult",
   "type": "object"

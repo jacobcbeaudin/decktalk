@@ -1,14 +1,19 @@
 """`script.md` parsed into the sections the voice reads.
 
-The script is markdown with "## N. Title" headings and an optional "- 0:40 to 1:10" budget after
-the title, after a hyphen or a dash. Bracketed directions such as [Deck. The curve draws.] or [beat] are not spoken and
+The script is markdown with "## N. Title" headings, whose whole text after the number is the title.
+Bracketed directions such as [Deck. The curve draws.] or [beat] are not spoken and
 become a beat, a [pause N] direction or a `<break time="Ns" />` tag becomes a pause of N seconds,
 markdown formatting is stripped, and ALL-CAPS unfinished text like [NUMBER] stays in the text, which
 `check` reports as `SCRIPT_UNFINISHED`.
 
-A section is pieces of text with the pause after each, and never markup. What a take is named by
-is `speech.canonical_text` over those pieces, so nothing here may change what they are without
-re-voicing every project.
+A section is one or more turns, each a stretch one voice reads, and a turn is pieces of text with
+the pause after each, and never markup. A line holding only `[voice NAME]` hands the turns after it
+to that voice until the next such line or the next section, and every whole line whose bracket opens
+with the word voice is claimed by that rule, so it is never a note. The pause written where the
+voice changes is the gap between two turns, which is placement and in neither turn's text. What a
+take is named by is `speech.canonical_text` over a turn's pieces, and a section with no voice
+direction is one turn of exactly the pieces it always had, so nothing here may change what they are
+without re-voicing every project.
 """
 
 from __future__ import annotations
@@ -20,16 +25,17 @@ from typing import Any
 
 from decktalk.errors import InputError
 from decktalk.inputs.paths import at
-from decktalk.results import section_key
+from decktalk.page import SECOND_DIGITS
+from decktalk.results import Word, section_key
 from decktalk.settings import NarrationConfig
-from decktalk.speech import BEAT, Piece
+from decktalk.speech import BEAT, PUNCT, Piece
+
+SECONDS_PER_MINUTE = 60
+"""Truth: a minute is sixty seconds, which a words-per-minute rate and an `m:ss` budget are both written in."""
 
 DIRECTION_MARK = "\x00DIR\x00"
-# "## 3. The demo - 1:40 to 3:40"  (the dash and time range are optional, and a hyphen, an en dash or an
-# em dash all read)
-SECTION_RE = re.compile(
-    r"^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)(?:\s+[—–-]+\s+(?P<start>\d+:\d{2})\s+to\s+(?P<end>\d+:\d{2}))?\s*$"
-)
+# "## 3. The demo": a number, a full stop and a space, then the title.
+SECTION_RE = re.compile(r"^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)\s*$")
 DIRECTION_RE = re.compile(r"\[(?![A-Z][A-Z0-9_]*\])[^\]]*\]")
 # "[pause 3]" or "[pause 2.5]": a timed pause, in seconds, in place of the default direction pause.
 PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
@@ -40,21 +46,59 @@ TAG_RE = re.compile(r"<break\b[^>]*>", re.IGNORECASE)
 BEAT_DASH_RE = re.compile(r"\s+—(?=\s|$)")
 """A dash standing alone, which the voice pauses on rather than says."""
 
+WHOLE_BRACKET_RE = re.compile(r"\[[^\]\n]*\]")
+"""One bracketed span and nothing else, which is what a line must be to be a direction of its own."""
 
-@dataclass
-class ScriptSection:
-    """One "## N. Title" section of the script, cleaned for speech."""
+VOICE_CLAIM_RE = re.compile(r"^\[\s*voice\b", re.IGNORECASE)
+"""A whole line whose bracket opens with the word voice, which is a voice direction or is refused, and never a note."""
 
-    number: int
-    title: str
-    slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its digest.
-    pieces: tuple[Piece, ...]  # the paragraphs the voice reads, each with the pause after it
-    start: str | None = None
-    end: str | None = None
+VOICE_DIRECTION_RE = re.compile(r"^\[\s*(?i:voice)\s+(?P<name>[a-z][a-z0-9]*)\s*\]$")
+"""A voice direction: the word voice, in any case, and a voice's name, alone on a line."""
 
-    @property
-    def key(self) -> str:
-        return section_key(self.number)
+VOICE_HINT = (
+    "A voice direction is a line holding only [voice NAME], where NAME is a [voices.NAME] table of decktalk.toml. "
+    "A section that names a voice names one before every turn, its first included."
+)
+"""What every refusal of a voice direction ends on, which is the rule in two sentences."""
+
+WORD_GAP_SECONDS = 0.02
+"""Calibration: the gap an estimated word leaves before the next one, so two clicks are never one sound."""
+
+SHORTEST_PLACEHOLDER_SECONDS = 0.1
+"""Calibration: the least a placeholder take may run, so a section of one short word still has room for a click."""
+
+
+def spoken_words(spoken: str) -> tuple[str, ...]:
+    """The words of spoken text, each with its punctuation stripped, and no token that was only punctuation.
+
+    It is the one tokenizer: the words DeckTalk estimates and the words an aligner is asked to time are
+    both read through it, so the two never disagree about what a take says.
+    """
+    return tuple(word for token in spoken.split() if (word := token.strip(PUNCT)))
+
+
+def estimated_words(spoken: str, seconds: float) -> list[Word]:
+    """The words of spoken text spread evenly over `seconds`, so every cue resolves to a plausible time.
+
+    Each word leaves a gap before the next, unless its share of the time is shorter than the gap,
+    when it ends where it starts.
+    """
+    tokens = spoken_words(spoken)
+    if not tokens:
+        return []
+    per = max(SHORTEST_PLACEHOLDER_SECONDS, seconds) / len(tokens)
+    words: list[Word] = []
+    for place, token in enumerate(tokens):
+        start = round(place * per, SECOND_DIGITS)
+        end = round((place + 1) * per - WORD_GAP_SECONDS, SECOND_DIGITS)
+        words.append(Word(word=token, start=start, end=max(start, end)))
+    return words
+
+
+class Reading:
+    """What a stretch of script says and how long it runs, read from its pieces, for a section or one of its turns."""
+
+    pieces: tuple[Piece, ...]
 
     @property
     def spoken(self) -> str:
@@ -66,32 +110,63 @@ class ScriptSection:
     def word_count(self) -> int:
         return len(self.spoken.split())
 
-    @property
-    def target_seconds(self) -> float | None:
-        if self.start and self.end:
-            return _mmss(self.end) - _mmss(self.start)
-        return None
+    def estimated_words(self, seconds: float) -> list[Word]:
+        """The spoken words spread evenly over `seconds`, so every cue resolves to a plausible time."""
+        return estimated_words(self.spoken, seconds)
 
     def estimated_seconds(self, cfg: NarrationConfig) -> float:
-        return round(self.word_count / cfg.words_per_minute * 60, 1)
+        return round(self.word_count / cfg.words_per_minute * SECONDS_PER_MINUTE, 1)
 
     def placeholder_seconds(self, cfg: NarrationConfig) -> float:
-        """How long a placeholder take of this section runs, which is speech and pauses and no silence around them.
+        """How long a placeholder take of these pieces runs, which is speech and pauses and no silence around them.
 
         A beat, and a dash the author wrote after a word, each run `placeholder_beat_seconds`. The lead
-        before the first word and the tail after the last belong to the section rather than to the
-        take, so they are placed when the takes are joined and are not counted here.
+        before the first word, the gap between two turns and the tail after the last belong to the
+        section rather than to a take, so they are placed when the takes are joined and are not counted here.
         """
         timed = sum(piece.pause for piece in self.pieces if piece.pause is not None and piece.timed)
         beats = sum(piece.pause == BEAT for piece in self.pieces) + sum(piece.text.count(" —") for piece in self.pieces)
         return round(
-            self.word_count / cfg.placeholder_words_per_minute * 60 + timed + beats * cfg.placeholder_beat_seconds, 3
+            self.word_count / cfg.placeholder_words_per_minute * SECONDS_PER_MINUTE
+            + timed
+            + beats * cfg.placeholder_beat_seconds,
+            3,
         )
 
 
-def _mmss(value: str) -> int:
-    minutes, seconds = value.split(":")
-    return int(minutes) * 60 + int(seconds)
+@dataclass(frozen=True)
+class Turn(Reading):
+    """One stretch of a section that one voice reads, from one voice direction to the next."""
+
+    number: int
+    """Counted from one within its section."""
+    voice: str | None
+    """The name its direction gave, or None when no direction names one, which the default voice reads."""
+    pieces: tuple[Piece, ...]
+    """The paragraphs this voice reads, each with the pause after it."""
+    gap: float | None
+    """The timed pause written where the voice changes after this turn, or None when none is written."""
+    line: int
+    """The script.md line its first prose sits on."""
+
+
+@dataclass
+class ScriptSection(Reading):
+    """One "## N. Title" section of the script, cleaned for speech, as the turns its voices read."""
+
+    number: int
+    title: str
+    slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its digest.
+    turns: tuple[Turn, ...]  # the stretches each voice reads, in script order, at least one
+
+    @property
+    def key(self) -> str:
+        return section_key(self.number)
+
+    @property
+    def pieces(self) -> tuple[Piece, ...]:
+        """Every turn's paragraphs in order, which for a section with no voice direction is its one turn's."""
+        return tuple(piece for turn in self.turns for piece in turn.pieces)
 
 
 def slugify(title: str) -> str:
@@ -99,8 +174,12 @@ def slugify(title: str) -> str:
     return slug or "section"
 
 
-def strip_markdown(text: str) -> tuple[Piece, ...]:
-    """Prose ready for speech, as paragraphs. Every direction becomes the pause after the paragraph before it."""
+def _read(text: str) -> tuple[float | None, tuple[Piece, ...], float | None]:
+    """The pause written before the first prose, the paragraphs, and the pause written after the last.
+
+    Neither pause is asked of the voice. A pause before any prose has nothing to pause after, and one
+    after the last words is the section's tail or the gap before another voice, which the join places.
+    """
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)  # links, before directions
     # A timed pause carries its own length through the direction marker, and every other
     # direction carries the default. A break tag written by hand is a timed pause like any other.
@@ -121,23 +200,74 @@ def strip_markdown(text: str) -> tuple[Piece, ...]:
     text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.M)
     paragraphs = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", text)]
     pieces: list[Piece] = []
+    head: float | None = None
     for p in (p for p in paragraphs if p):
         if p.startswith(DIRECTION_MARK):
-            # A direction before any prose has nothing to pause after, and back-to-back
-            # directions keep the longest pause rather than stacking. A plain direction is a
-            # beat, and only a timed pause asks for measured silence, because the voice is
+            # Back-to-back directions keep the longest pause rather than stacking. A plain direction
+            # is a beat, and only a timed pause asks for measured silence, because the voice is
             # unsettled by measured silences when they are frequent.
             value = p.removeprefix(DIRECTION_MARK)
             seconds = BEAT if value == "beat" else float(value)
             if pieces:
                 last = pieces[-1]
                 pieces[-1] = replace(last, pause=seconds if last.pause is None else max(last.pause, seconds))
+            else:
+                head = seconds if head is None else max(head, seconds)
             continue
         pieces.append(Piece(p))
+    tail: float | None = None
     if pieces and pieces[-1].pause is not None:
-        # A pause after the last words is the section's tail, which the join places, so it is not asked for.
+        tail = pieces[-1].pause
         pieces[-1] = replace(pieces[-1], pause=None)
-    return tuple(pieces)
+    return head, tuple(pieces), tail
+
+
+def claimed(line: str) -> bool:
+    """Whether one line of a script is a whole bracket opening with the word voice, which the voice rule claims."""
+    stripped = line.strip()
+    return WHOLE_BRACKET_RE.fullmatch(stripped) is not None and VOICE_CLAIM_RE.match(stripped) is not None
+
+
+def directed(line: str) -> str | None:
+    """The voice a line names when it is a voice direction, or None when it is not one."""
+    found = VOICE_DIRECTION_RE.fullmatch(line.strip())
+    return found["name"] if found else None
+
+
+def _turns(body: list[tuple[int, str]], heading: int) -> tuple[Turn, ...]:
+    """A section's body, as numbered lines, read into the turns each voice reads.
+
+    A claimed line is removed. A voice direction naming a voice other than the one in force ends the
+    stretch before it. A stretch with no prose is no turn, and its pauses join the boundary it sits
+    on, whose gap is the longest timed pause written between the two turns' prose. A section with no
+    prose at all is one empty turn, so every section has a first turn.
+    """
+    stretches: list[tuple[str | None, list[tuple[int, str]]]] = []
+    voice: str | None = None
+    current: list[tuple[int, str]] = []
+    for number, line in body:
+        if claimed(line):
+            name = directed(line)
+            if name is not None and name != voice:
+                stretches.append((voice, current))
+                voice, current = name, []
+            continue
+        current.append((number, line))
+    stretches.append((voice, current))
+    turns: list[Turn] = []
+    between: list[float | None] = []
+    for voice, lines in stretches:
+        head, pieces, tail = _read("\n".join(line for _number, line in lines))
+        if not pieces:
+            between.append(head)
+            continue
+        if turns:
+            timed = [pause for pause in (*between, head) if pause is not None and pause > BEAT]
+            turns[-1] = replace(turns[-1], gap=max(timed) if timed else None)
+        first = next(number for number, line in lines if _read(line)[1])
+        turns.append(Turn(number=len(turns) + 1, voice=voice, pieces=pieces, gap=None, line=first))
+        between = [tail]
+    return tuple(turns) or (Turn(number=1, voice=voice, pieces=(), gap=None, line=heading),)
 
 
 def _tag_seconds(match: re.Match[str]) -> float:
@@ -147,10 +277,11 @@ def _tag_seconds(match: re.Match[str]) -> float:
 
 
 def parse_script(markdown: str) -> list[ScriptSection]:
-    """Every "## N. Title" section of the text, in the order it appears."""
+    """Every "## N. Title" section of the text, in the order it appears, each read into its turns."""
     sections: list[ScriptSection] = []
     current: dict[str, Any] | None = None
-    body: list[str] = []
+    heading = 0
+    body: list[tuple[int, str]] = []
 
     def flush() -> None:
         if current is None:
@@ -160,17 +291,15 @@ def parse_script(markdown: str) -> list[ScriptSection]:
                 number=int(current["num"]),
                 title=current["title"].strip(),
                 slug=slugify(current["title"]),
-                pieces=strip_markdown("\n".join(body)),
-                start=current["start"],
-                end=current["end"],
+                turns=_turns(body, heading),
             )
         )
 
-    for line in markdown.splitlines():
+    for number, line in enumerate(markdown.splitlines(), start=1):
         match = SECTION_RE.match(line)
         if match:
             flush()
-            current = match.groupdict()
+            current, heading = match.groupdict(), number
             body = []
             continue
         if line.startswith("## ") or line.startswith("# ") or line.strip() == "---":
@@ -179,7 +308,7 @@ def parse_script(markdown: str) -> list[ScriptSection]:
             body = []
             continue
         if current is not None:
-            body.append(line)
+            body.append((number, line))
     flush()
     return sections
 

@@ -28,10 +28,11 @@ from decktalk import ApprovalRequired, InputError, ProviderError
 from decktalk.cli import catalog
 from decktalk.cli.app import docs_for
 from decktalk.explain import explain
+from decktalk.inputs.workspace import Workspace
 from decktalk.results import Layer
 from decktalk.settings import BY_ID, KEYS, Scope
-from decktalk.speech import SpeechRequest, Word
-from support.fakes import FAKE_VOICE_NAME, FakeVoice
+from decktalk.speech import Speech, SpeechRequest
+from support.fakes import FAKE_VOICE_NAME, FakeVoice, stand_in
 from support.installer import fake_path
 from support.links import link
 from support.paths import REPO
@@ -250,12 +251,14 @@ class ClosedVoice(FakeVoice):
     """A voice that keeps every request it is sent and then fails it, so a run the gate let through
     stops at the voice rather than going on to measure a take with tools a unit test does not fetch."""
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         self.requests.append(request)
         raise ProviderError("the voice under test sells nothing")
 
 
-def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp_path: Path) -> None:
+def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The requirements page says `--max-cost` refuses a run whose most is over the ceiling, and the
     refusal's hint names the ceiling to raise it to. That ceiling has to let the run through to the
     voice, and one cent under it has to refuse the run before the voice hears a word."""
@@ -264,12 +267,14 @@ def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<html></html>", encoding="utf-8")
     voice = ClosedVoice()
+    voices = stand_in(monkeypatch)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     machine = decktalk.Machine.of(
-        environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+        environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
         machine_file=tmp_path / "machine.toml",
         cwd=tmp_path,
         cache_dir=tmp_path / "cache",
-        speech_providers={FAKE_VOICE_NAME: lambda _context: voice},
+        speech_providers=voices.table,
     )
     project = decktalk.open(tmp_path, machine=machine)
     with pytest.raises(ApprovalRequired) as refused:
@@ -283,3 +288,75 @@ def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp
     with pytest.raises(ProviderError):
         project.narrate(spend=True, max_cost=ceiling)
     assert voice.requests, f"--max-cost {ceiling:.2f}, the ceiling the refusal named, was refused"
+
+
+FETCHES_NOTHING = re.compile(r"fetch(?:es)? (?:nothing|neither)|without fetching anything")
+"""How a page says a command fetches nothing, which for `decktalk doctor` is true only in some cases."""
+
+
+def test_no_page_says_doctor_fetches_nothing_without_saying_when_it_does() -> None:
+    """`doctor` offers to fetch on a terminal and `--fix` fetches under any flag, as its help says.
+
+    So a sentence about `decktalk doctor` that says it fetches nothing names both cases, or a reader
+    in front of a terminal, or one who passes `--fix` beside `--json`, meets a download the page
+    promised would not happen.
+    """
+    wrong = []
+    for page in reader_pages():
+        for paragraph in re.split(r"\n\s*\n|\n\s*(?=\d+\. |- )", page.read_text(encoding="utf-8")):
+            if "decktalk doctor" not in paragraph:
+                continue
+            for sentence in re.split(r"(?<=\.)\s+(?=[A-Z`])", " ".join(paragraph.split())):
+                if FETCHES_NOTHING.search(sentence) and not ("--fix" in sentence and "terminal" in sentence):
+                    wrong.append(f"{page.relative_to(REPO)}: {sentence}")
+    assert not wrong, "\n".join(wrong)
+
+
+FINAL = Workspace(root=REPO, build=REPO / "build", name="<name>", takes=REPO / "takes", score_dir=REPO / "score")
+"""A workspace whose project is called `<name>`, the way the pages write the film's name."""
+
+
+def written_to_final() -> set[str]:
+    """Every file a build can write into `build/final/`: what assemble always writes, and the captioned copy."""
+    return {path.name for path in (*FINAL.deliverables().values(), FINAL.captioned_film)}
+
+
+def section(page: Path, heading: str) -> str:
+    """The text of one page under a heading, up to the next heading of any level."""
+    text = page.read_text(encoding="utf-8")
+    at = text.index(f"{heading}\n")
+    after = re.search(r"^#+ ", text[at + len(heading) :], flags=re.MULTILINE)
+    return text[at : at + len(heading) + (after.start() if after else len(text))]
+
+
+def first_names(block: str, fence: str) -> set[str]:
+    """The first word of every line of the first fenced block opening with `fence`."""
+    body = block.split(f"```{fence}\n", 1)[1].split("```", 1)[0]
+    return {line.split()[0] for line in body.splitlines() if line.strip()}
+
+
+def table_files(block: str) -> set[str]:
+    """Every file a Markdown table names in its first column, written as code."""
+    return set(re.findall(r"^\| `([^`]+)` \|", block, flags=re.MULTILINE))
+
+
+def test_every_page_that_lists_build_final_lists_every_file_a_build_writes_there() -> None:
+    """The README, the stability promise and the artifacts reference each list `build/final/`, by hand.
+
+    The list a reader trusts is the one the code writes, so each one is held to it: a file assemble
+    adds that a page does not name fails here rather than surprising the person who reads the folder.
+    """
+    expected = written_to_final()
+    readme = {
+        name.replace("my-lesson", "<name>")
+        for name in first_names(section(REPO / "README.md", "### What a build writes"), "text")
+    }
+    tree = section(REPO / "docs" / "reference" / "artifacts.mdx", "## The tree").split("  final/\n", 1)[1]
+    listed = {
+        "README.md": readme,
+        "stability.mdx": table_files(section(REPO / "docs" / "reference" / "stability.mdx", "## `build/final/`")),
+        "artifacts.mdx table": table_files(section(REPO / "docs" / "reference" / "artifacts.mdx", "## `build/final/`")),
+        "artifacts.mdx tree": {line.split()[0] for line in tree.split("  events/", 1)[0].splitlines() if line.strip()},
+    }
+    wrong = {page: sorted(expected ^ names) for page, names in listed.items() if names != expected}
+    assert not wrong, wrong

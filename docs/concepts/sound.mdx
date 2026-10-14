@@ -15,7 +15,7 @@ file for it. A sound placed on a cue lands on the second that cue resolved to, w
 | Part | Where it comes from | What it does |
 |---|---|---|
 | Narration | `build/narrate/narration.mp3` | It plays under the page sections. A clip between two page sections, or a hold, pauses it, so it plays in the runs the timeline splits it into. |
-| Clip audio | each clip file | Each clip's own sound lands at its section start, trimmed to its picture and faded over 20 milliseconds at each edge, so a cut into it never clicks. |
+| Clip audio | each clip file | A clip section's own sound lands at its section start. It is matched to the narration's loudness, trimmed to its picture and faded over 20 milliseconds at each edge, so a cut into it never clicks. |
 | Music | `[mix] music` | One bed loops under the whole film at `[mix] music_db`. It fades in over `music_fade_in_seconds` and out over `music_fade_out_seconds`. |
 | Ambience bed | `[mix] ambience` | One bed loops at `[mix] ambience_db` under each page section that sets `with_ambience = true`, and is silent everywhere else. |
 | Effects | `[[mix.effect]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset_seconds`, at its own `db`. |
@@ -138,7 +138,7 @@ one the GitHub Action checks out, mixes the film with no key and leaves no track
 on a terminal.
 
 `score/ledger.json` records what this project has already bought, keyed by the request
-that bought it: the endpoint as the sound provider publishes it and the request body, and never
+that bought it: the endpoint as the sound provider publishes it and the body it sends, and never
 `base_url`, so a project that moves to another host of the same service buys nothing again. An item whose request still matches its row and whose audio is still on disk is kept
 rather than bought again, and the ledger is written after every paid call, so a run stopped half way
 through a long piece keeps what it has and asks only for the rest.
@@ -159,7 +159,7 @@ default of -6 dB against a `music_db` of -24, the music plays at -30 dB there.
 
 - A spoken section carries speech from where it starts until the end of its last word, or until it
   ends when it says nothing at all.
-- A clip carries speech for the whole of its own length, because its dialogue is its own.
+- A clip section carries speech for the whole of its own length, because its dialogue is its own.
 - Each edge of a span ramps over `[mix] duck_ramp_seconds`, which is 0.5 seconds by default.
 
 The music therefore begins to rise in the last half second of speech and is at full level through the
@@ -207,6 +207,18 @@ shapes nothing and says so, and a file that is not valid JSON fails the load wit
 line named.
 
 ## Loudness
+
+### A clip's sound is matched to the voice
+
+A clip is made somewhere else, at whatever level its maker left it, so each clip's sound is matched
+to the narration before it joins the mix. `assemble` measures the integrated loudness of the joined
+narration and of each clip, and gains each clip by the difference, so a film playing in a clip section is as
+loud as the voice beside it and the loudness pass below lifts both by one gain.
+A narration that is a placeholder has no level of its own, so a clip is then matched to
+`[audio] target_lufs`, which is where the pass would bring a real narration. A clip with no sound
+is laid at unity.
+
+### The programme target
 
 After the layers are summed, the loudness pass brings the whole mix to one programme target.
 

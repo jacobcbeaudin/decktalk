@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from decktalk.artifacts import (
     AudioPrint,
@@ -10,6 +11,7 @@ from decktalk.artifacts import (
     ProviderWords,
     Take,
     Takes,
+    TimedBy,
     Words,
     is_placeholder,
     take_file,
@@ -18,20 +20,45 @@ from decktalk.artifacts import (
 from decktalk.artifacts.takes import PLACEHOLDER_DIGITS, PLACEHOLDER_PREFIX
 from decktalk.inputs import Inputs
 from decktalk.results import Word
+from support.paths import DATA
 
 TAKE_SUFFIX = ".mp3"
 """The suffix ElevenLabs's default format, mp3_44100_128, names a take with, which every take here is under."""
 
 
+TAIL_TAKE_SOUND_END = 4.404
+"""Where the sound of the take `TAIL_TAKE_WORDS` came with ends, as narrate measured it from the take's own bytes."""
+
+TAIL_TAKE_DURATION = 4.969
+"""How long the audio file of that take runs, which is where its provider ended its last word."""
+
+TAIL_TAKE_SPOKEN = "Only the line that changed gets voiced again. Everything else is kept as it was."
+"""The turn that take reads."""
+
+
+def tail_take_words() -> ProviderWords:
+    """The words a real provider sent back with one take, whose last word runs on into the take's trailing silence.
+
+    They are the follows film's section 5, turn 4, as ElevenLabs timed it: "was" starts at 4.063 s and is
+    given to the end of the file, 4.969 s, while the take's sound ends at 4.404 s.
+    """
+    found = ProviderWords.read(DATA / "words_past_sound_end.json")
+    assert found is not None
+    return found
+
+
 def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: object) -> Take:
     """One voiced take that runs `seconds` long, with its speech and its sound ending where it ends.
 
-    The count of words and characters is read off `spoken`, so a row stays consistent with its own
-    text. A call site names every other field its assertions read, and those replace the defaults. A row
-    that says it was not voiced is named by a placeholder digest, as narrate names one.
+    The count of words and characters is read off `spoken`, so a row stays consistent with its own text. Its
+    provider timed its words, unless it is a placeholder, whose words DeckTalk estimated. A call site names
+    every other field its assertions read, and those replace the defaults. A row that says it was not voiced is
+    named by a placeholder digest, as narrate names one. Its voice is `narrator`, the default voice every
+    project under test is read in, unless the call site names another.
     """
     row: dict[str, object] = {
         "section": section,
+        "turn": 1,
         "key": f"{section:02d}",
         "chapter": f"Section {section}",
         "digest": f"{section:016x}",
@@ -43,9 +70,14 @@ def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: o
         "speech_end_seconds": seconds,
         "sound_end_seconds": seconds,
         "spoken": spoken,
+        "voice": "narrator",
     }
     if fields.get("voiced") is False and "digest" not in fields:
         row["digest"] = f"{PLACEHOLDER_PREFIX}{section:0{PLACEHOLDER_DIGITS}x}"
+    row["timed_by"] = TimedBy.ESTIMATED if fields.get("voiced") is False else TimedBy.PROVIDER
+    row["alignment"] = None
+    row["model_digest"] = None
+    row["audio_blake3"] = None
     return Take.model_validate({**row, **fields})
 
 
@@ -61,27 +93,30 @@ def hold_take(inputs: Inputs, digest: str, *, audio: bytes = b"take", words: tup
 
     A voiced take goes to the takes directory with the words a provider would send back, and a
     placeholder goes under the build with estimated words, which is where each kind is looked for.
+    A voiced take held with no words is one whose voice sent no word times.
     """
     if is_placeholder(digest):
         place = inputs.workspace.narrate_dir
         said: Words = EstimatedWords(words=words)
     else:
         place = inputs.workspace.takes
-        said = ProviderWords(words=words, audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX))
+        said = ProviderWords(words=words, timed=bool(words), audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX))
     place.mkdir(parents=True, exist_ok=True)
     (place / take_file(digest, TAKE_SUFFIX)).write_bytes(audio)
     said.write(place / words_file(digest))
 
 
-def narrated(inputs: Inputs, *takes: Take, words: Mapping[int, Sequence[Word]] | None = None) -> Takes:
-    """A project narrated with no stage: the index of these rows, and each row's take held with its section's words.
+def narrated(inputs: Inputs, *takes: Take, words: Mapping[Any, Sequence[Word]] | None = None) -> Takes:
+    """A project narrated with no stage: the index of these rows, and each row's take held with its words.
 
     Each take goes where the reader looks for it and is written as the kind its digest names, so a test
-    states the words a section speaks and never where they are kept or what the file is called.
+    states the words a section, or one turn of it by `(section, turn)`, speaks and never where they are
+    kept or what the file is called.
     """
     said = words or {}
     for take in takes:
-        hold_take(inputs, take.digest, words=tuple(said.get(take.section, ())))
+        spoken = said.get((take.section, take.turn), said.get(take.section, ()))
+        hold_take(inputs, take.digest, words=tuple(spoken))
     return write_takes(inputs, *takes)
 
 

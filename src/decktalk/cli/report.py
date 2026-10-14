@@ -16,9 +16,15 @@ from typer import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli.app import command
-from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, sections_of
+from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, Takes, Turns, sections_of, turns_of
 from decktalk.project import LOOPBACK
 from decktalk.results import CheckResult, ServeResult, StatusResult, StoryboardResult, WordsResult
+
+CHECK_RETAKE = {
+    "turn": "Price voicing this turn again, such as 4.2, and judge its section. Repeats.",
+    "take": "Price voicing again the turn that plays this take, by its digest or its start. Repeats.",
+}
+"""What `--turn` and `--take` do on `check`, which prices the `narrate` run they name rather than running it."""
 
 # The four selectors `storyboard` adds to `--section`, each repeatable and each a narrowing. They
 # live here rather than in `options.py`, because one command carries them and a shared family is
@@ -76,7 +82,9 @@ def status(ctx: Context, set_: Overrides = None) -> StatusResult:
 
 
 @command(
-    group=Group.PROJECT, epilog="Judges the written files and the pages, and prices the narration a voiced build buys."
+    group=Group.PROJECT,
+    epilog="Judges the written files and the pages, and prices the narration a voiced build buys.",
+    helps=CHECK_RETAKE,
 )
 def check(
     ctx: Context,
@@ -96,6 +104,8 @@ def check(
         typer.Option("--frames/--no-frames", help="Freeze and compare the slides, or keep the browser and drop that."),
     ] = True,
     fix: Fix = None,
+    turn: Turns = None,
+    take: Takes = None,
     set_: Overrides = None,
 ) -> CheckResult:
     """Judge script.md, cues.json and the pages before a build.
@@ -105,7 +115,13 @@ def check(
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
-    asked = {"only": sections_of(section), "pages": pages, "frames": frames}
+    asked = {
+        "only": sections_of(section),
+        "pages": pages,
+        "frames": frames,
+        "turns": turns_of(turn),
+        "takes": tuple(take or ()),
+    }
     heard: set[str] = set()
     with session.watching(project.events, heard=heard):
         judged = project.check(*(paths or ()), **asked, cancel=session.cancel)

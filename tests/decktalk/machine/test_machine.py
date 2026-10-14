@@ -6,12 +6,10 @@ import ast
 import logging
 import os
 import socket
-import subprocess
 import sys
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -28,15 +26,15 @@ from decktalk.media import ffmpeg as ffmpeg_module
 from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.project import open as open_project
-from decktalk.results import ApiKeyState, ClipResult, CueResult
+from decktalk.results import ApiKeyState, BillingBasis, ClipResult, CueResult
 from decktalk.settings import BY_ID, ToolsConfig
-from decktalk.speech import SpeechContext
-from decktalk.speech.sound import SOUNDS, SoundContext
+from decktalk.speech import ALIGNER, ALIGNERS, DECLARED, AlignerContext, SpeechContext
+from decktalk.speech.sound import SOUND_DECLARED, SOUNDS, SoundContext
 from decktalk.stages.narrate.plan import speech_provider
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir, standard_data_dir
-from support.fakes import BareBrowser, FakeChromium, FakeVoice
+from support.fakes import BareBrowser, FakeAligner, FakeChromium, FakeInstaller, FakeProcess, FakeVoice
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
@@ -239,15 +237,16 @@ def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
 
 
 def test_the_credential_is_asked_about_and_never_read(tmp_path: Path) -> None:
-    assert a_machine(tmp_path).api_key_state is ApiKeyState.MISSING
-    assert a_machine(tmp_path, ELEVENLABS_API_KEY="sk_real").api_key_state is ApiKeyState.SET
+    assert [key.state for key in a_machine(tmp_path).api_keys] == [ApiKeyState.MISSING]
+    assert [key.state for key in a_machine(tmp_path, ELEVENLABS_API_KEY="sk_real").api_keys] == [ApiKeyState.SET]
 
 
-def test_the_credential_asked_about_is_the_one_the_voice_declares(tmp_path: Path) -> None:
-    """A voice DeckTalk does not ship declares no variable, so nothing is reported missing for it."""
-    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="house").api_key_state is ApiKeyState.NOT_NEEDED
-    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="elevenlabs").api_key_state is ApiKeyState.MISSING
-    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="dtsp").api_key_state is ApiKeyState.NOT_NEEDED
+def test_doctor_reports_the_key_of_every_shipped_provider_that_needs_one(tmp_path: Path) -> None:
+    """A machine has no project, so it cannot know which voices a run reads, and names every key one could need."""
+    keys = a_machine(tmp_path, DECKTALK_VOICES_GUEST_PROVIDER="dtsp").doctor().api_keys
+    assert [(key.provider, key.variable, key.state) for key in keys] == [
+        ("elevenlabs", "ELEVENLABS_API_KEY", ApiKeyState.MISSING)
+    ]
 
 
 def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -260,7 +259,7 @@ def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest
 
 # ---- a machine a host builds -----------------------------------------------------------------
 
-HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "DECKTALK_VOICE_ID": "house-voice"}
+HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "DECKTALK_VOICES_NARRATOR_ID": "house-voice"}
 """What a host hands its voice job: the key and the voice, and nothing else from its own process."""
 
 
@@ -354,6 +353,13 @@ def test_a_project_opened_on_a_host_machine_keeps_the_hosts_overrides(tmp_path: 
     assert project.settings.video.crf == 20
 
 
+def read_by(root: Path, provider: str) -> None:
+    """Have the starter's narrator read by `provider`, which is the voice a project names in its own file."""
+    toml = root / "decktalk.toml"
+    text = toml.read_text(encoding="utf-8").replace('provider = "elevenlabs"', f'provider = "{provider}"')
+    toml.write_text(text, encoding="utf-8")
+
+
 @pytest.mark.usefixtures("no_network", "fake_ffmpeg")
 def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> None:
     """A host that hands its machine a fake voice must never have a request reach the real one."""
@@ -364,40 +370,95 @@ def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> N
         contexts.append(context)
         return voice
 
-    here = a_host(tmp_path, speech_providers={"elevenlabs": build})
-    project = open_project(a_starter(tmp_path, here), machine=here)
-    result = project.narrate(spend=True)
+    here = a_host(tmp_path, speech_providers={"house": build})
+    root = a_starter(tmp_path, here)
+    read_by(root, "house")
+    result = open_project(root, machine=here).narrate(spend=True)
     assert result.ok
     assert voice.requests, "the host's voice was never asked for a take"
     assert {request.voice_id for request in voice.requests} == {"house-voice"}
-    assert {context.base_url for context in contexts} == {BY_ID["elevenlabs.base_url"].default}
+    assert {context.base_url for context in contexts} == {""}, "a host's voice owns no table to name a host in"
+
+
+@pytest.mark.parametrize("name", sorted(DECLARED))
+def test_a_host_voice_under_a_shipped_name_is_refused_when_the_machine_is_built(tmp_path: Path, name: str) -> None:
+    """The bill is read off the name, so a host's code under a shipped name would be billed as the shipped voice."""
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a voice DeckTalk ships.*Register it under another"):
+        a_host(tmp_path, speech_providers={name: lambda _context: FakeVoice(name="house")})
+
+
+@pytest.mark.parametrize("name", sorted(SOUND_DECLARED))
+def test_a_host_sound_provider_under_a_shipped_name_is_refused_when_the_machine_is_built(
+    tmp_path: Path, name: str
+) -> None:
+    """A sound is priced at the rate its provider's name declares, so a host's code under it would be billed so."""
+    with pytest.raises(ValueError, match=rf"{name!r} is the name of a sound provider DeckTalk ships"):
+        a_host(tmp_path, sound_providers={name: lambda _context: object()})
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_a_host_voice_under_a_shipped_free_name_never_buys_without_approval(tmp_path: Path) -> None:
+    """`dtsp` declares itself free, so a host's voice standing under that name would be bought with no `spend`."""
+    voice = FakeVoice(name="house")
+    free = next(name for name, declared in DECLARED.items() if declared.billing.by is BillingBasis.FREE)
+    with pytest.raises(ValueError, match="DeckTalk ships"):
+        here = a_host(tmp_path, speech_providers={free: lambda _context: voice})
+        root = a_starter(tmp_path, here)
+        read_by(root, free)
+        result = open_project(root, machine=here).narrate()
+        pytest.fail(
+            f"a host's voice under {free!r} was asked for {len(voice.requests)} takes by a run that may not spend, "
+            f"priced as {result.cost.billing.value}"
+        )
+    assert voice.requests == []
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_a_host_voice_under_its_own_name_is_billed_as_undeclared_and_bought_only_with_approval(
+    tmp_path: Path,
+) -> None:
+    voice = FakeVoice(name="house")
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: voice})
+    root = a_starter(tmp_path, here)
+    read_by(root, "house")
+    project = open_project(root, machine=here)
+    assert project.price().billing is BillingBasis.UNDECLARED
+    unapproved = project.narrate()
+    assert voice.requests == [], "a run that may not spend bought from a voice that declares no bill"
+    assert unapproved.ok
+    assert project.narrate(spend=True).ok
+    assert voice.requests, "a run that may spend never reached the host's own voice"
 
 
 @pytest.mark.usefixtures("no_network")
 def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> None:
     here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
     with here._run() as run, pytest.raises(InputError, match="not a voice this machine answers for"):
-        run.machine.speech_providers.provider("elevenlabs", a_context())
+        run.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator")
 
 
 def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
     first, second = FakeVoice(name="first"), FakeVoice(name="second")
-    one = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: first})
-    two = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: second})
+    one = a_host(tmp_path, speech_providers={"house": lambda _context: first})
+    two = a_host(tmp_path, speech_providers={"house": lambda _context: second})
     with one._run() as outer:
         with two._run() as inner:
-            assert inner.machine.speech_providers.provider("elevenlabs", a_context()) is second
-        assert outer.machine.speech_providers.provider("elevenlabs", a_context()) is first
+            assert inner.machine.speech_providers.provider("house", a_context(), voice="narrator") is second
+        assert outer.machine.speech_providers.provider("house", a_context(), voice="narrator") is first
 
 
 def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices(tmp_path: Path) -> None:
     """A worker pool that never copied the context still asks its run, so it cannot reach the shipped voice."""
     house = FakeVoice(name="house")
-    here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: house})
-    project = open_project(a_starter(tmp_path, here), machine=here)
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: house})
+    root = a_starter(tmp_path, here)
+    read_by(root, "house")
+    project = open_project(root, machine=here)
     answered: list[object] = []
     with here._run() as run:
-        worker = threading.Thread(target=lambda: answered.append(speech_provider(run, project._inputs)))
+        inputs = project._inputs
+        voice = inputs.voices[inputs.default_voice]
+        worker = threading.Thread(target=lambda: answered.append(speech_provider(run, inputs, voice)))
         worker.start()
         worker.join()
     assert answered == [house]
@@ -406,9 +467,9 @@ def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices
 def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
     """A busy voice is asked again as often as the machine says, which no project may change."""
     seen: list[SpeechContext] = []
-    here = a_host(tmp_path, speech_providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
+    here = a_host(tmp_path, speech_providers={"house": seen.append}, overrides=("narration.retries=5",))
     with here._run() as run:
-        run.machine.speech_providers.provider("elevenlabs", a_context())
+        run.machine.speech_providers.provider("house", a_context(), voice="narrator")
     assert seen[0].retries == 5
 
 
@@ -418,7 +479,7 @@ def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_sound_provi
 
 def test_a_host_that_gave_its_voices_and_no_sounds_reaches_no_shipped_sound_provider(tmp_path: Path) -> None:
     """A machine built with a fake voice must not reach the real sound service by a table its host left out."""
-    here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: FakeVoice()})
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
     assert dict(here.sound_providers.factories) == {}
 
 
@@ -428,6 +489,26 @@ def test_the_sound_providers_a_host_supplies_are_the_ones_every_run_carries(tmp_
     with here._run() as run:
         run.machine.sound_providers.provider("house", SoundContext(secrets=NoSecrets(), base_url="", timeout_seconds=1))
     assert seen[0].retries == 5
+
+
+def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_aligner(tmp_path: Path) -> None:
+    assert dict(a_host(tmp_path).aligners) == dict(ALIGNERS)
+
+
+def test_a_host_that_gave_its_voices_and_no_aligners_reaches_no_shipped_aligner(tmp_path: Path) -> None:
+    """A machine built with a fake voice must not reach a local server by a table its host left out."""
+    here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
+    assert dict(here.aligners) == {}
+
+
+def test_the_aligners_a_host_supplies_are_the_ones_every_run_carries(tmp_path: Path) -> None:
+    aligner = FakeAligner()
+    here = a_host(tmp_path, aligners={ALIGNER: lambda _context: aligner})
+    with here._run() as run:
+        built = run.machine.aligners[ALIGNER](
+            AlignerContext(base_url="http://127.0.0.1:1", handshake_seconds=1, timeout_seconds=1)
+        )
+    assert built is aligner
 
 
 def keyed(voice: FakeVoice) -> Callable[[SpeechContext], FakeVoice]:
@@ -441,7 +522,7 @@ def keyed(voice: FakeVoice) -> Callable[[SpeechContext], FakeVoice]:
 
 
 def named_in_the_file(root: Path, voice_id: str) -> None:
-    """Name the voice in the starter's own `[voice] id`, which is where a project commits it."""
+    """Name the voice in the starter's own `[voices.NAME] id`, which is where a project commits it."""
     toml = root / "decktalk.toml"
     toml.write_text(toml.read_text(encoding="utf-8").replace('id = ""', f'id = "{voice_id}"'), encoding="utf-8")
 
@@ -449,8 +530,9 @@ def named_in_the_file(root: Path, voice_id: str) -> None:
 @pytest.mark.usefixtures("no_network")
 def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -> None:
     """An upload could carry a `.env`, and the key it names would then pay for the tenant's take."""
-    here = a_host(tmp_path, environ={}, speech_providers={"elevenlabs": keyed(FakeVoice())})
+    here = a_host(tmp_path, environ={}, speech_providers={"house": keyed(FakeVoice())})
     root = a_starter(tmp_path, here)
+    read_by(root, "house")
     named_in_the_file(root, "tenant-voice")
     (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\n", encoding="utf-8")
     project = open_project(root, machine=here)
@@ -461,8 +543,9 @@ def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -
 @pytest.mark.usefixtures("no_network", "fake_ffmpeg")
 def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_path: Path) -> None:
     voice = FakeVoice()
-    here = a_host(tmp_path, environ={}, speech_providers={"elevenlabs": keyed(voice)}, dotenv=True)
+    here = a_host(tmp_path, environ={}, speech_providers={"house": keyed(voice)}, dotenv=True)
     root = a_starter(tmp_path, here)
+    read_by(root, "house")
     named_in_the_file(root, "author-voice")
     (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\n", encoding="utf-8")
     assert open_project(root, machine=here).narrate(spend=True).ok
@@ -519,7 +602,6 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path) -> N
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe", "katex"]
     assert not result.ok  # this machine has no encoder, which a build needs
     assert {found.code for found in result.findings} == {Code.FILE_MISSING}
-    assert result.bias_ms is None  # the bias is measured only when a caller asks
 
 
 def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -579,6 +661,17 @@ def test_a_browser_whose_headless_shell_is_missing_says_the_shell_is_not_install
     )
 
 
+def test_install_does_not_tell_you_to_run_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`install` is the command that fetches the browser, so the line naming it is for every other command."""
+    faked_installer(monkeypatch, tmp_path)
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(tmp_path / "chrome").started())
+    a_machine(tmp_path).install()
+    said = [record.getMessage() for record in caplog.records if record.name == "decktalk.machine"]
+    assert not [line for line in said if "Run decktalk install" in line], said
+
+
 class ShellOnly(FakeChromium):
     """A cache holding the headless shell alone: no full browser on disk, and a headless launch that works."""
 
@@ -597,25 +690,10 @@ def test_a_headless_shell_alone_launches_and_is_reported_as_there(
     assert [record for record in caplog.records if record.name == "decktalk.machine"] == []
 
 
-@pytest.mark.usefixtures("launched")
-def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No stage reads the bias, so it is read off the report and never written into a settings file."""
-    here = a_machine(tmp_path)
-    monkeypatch.setattr(
-        machine_module,
-        "import_module",
-        lambda _name: SimpleNamespace(measure_presentation_bias=lambda: 12.5),
-    )
-    assert here.doctor(measure=True).bias_ms == 12.5
-    assert not here.machine_file.exists()
-
-
 def rows(*answers: InstalledTool) -> Callable[[Machine], InstalledTool]:
     """`_browser_row` answering each call with the next of `answers`, the last one for every call after."""
     queue = list(answers)
-    return lambda _self: queue.pop(0) if len(queue) > 1 else queue[0]
+    return lambda _self, **_asked: queue.pop(0) if len(queue) > 1 else queue[0]
 
 
 ABSENT = InstalledTool(tool=CHROMIUM)
@@ -628,12 +706,13 @@ PRESENT = InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=Fal
 def faked_installer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tuple[list[str], dict[str, str]]]:
     """Stand in for `playwright install` and the ffmpeg download, keeping each installer command and its environment."""
     ran: list[tuple[list[str], dict[str, str]]] = []
+    installer = FakeInstaller()
 
-    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        ran.append((list(cmd), dict(env)))
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+    def start(cmd: list[str], **kwargs: Any) -> FakeProcess:
+        ran.append((list(cmd), dict(kwargs["env"])))
+        return installer(cmd, **kwargs)
 
-    monkeypatch.setattr(machine_module.chromium_fetch.subprocess, "run", run)
+    monkeypatch.setattr(machine_module.chromium_fetch.subprocess, "Popen", start)
     monkeypatch.setattr(
         machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
     )
@@ -729,6 +808,11 @@ def test_init_writes_a_project_and_says_what_it_wrote(tmp_path: Path) -> None:
     assert result.name == "demo" and result.example == "starter" and not result.skills_written
     assert Path("decktalk.toml") in result.written
     assert (tmp_path / "demo" / "decktalk.toml").exists()
+
+
+def test_init_says_which_voices_the_project_declares(tmp_path: Path) -> None:
+    result = init(tmp_path / "demo", machine=a_machine(tmp_path), skills=False)
+    assert result.voices == ("narrator",)
 
 
 def test_a_run_binds_the_toolchain_and_the_download_listener_for_its_own_length(tmp_path: Path) -> None:

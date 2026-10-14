@@ -3,7 +3,7 @@
     build/narrate/      the take index, the joined narration and every placeholder take,
                         while every take a voice spoke sits in the takes directory
     build/cue-times.json  every cue resolved against those words
-    build/recordings/   one webm and one recording log per page section
+    build/recordings/   one mp4 and one recording log per page section
     build/score/        the music joined from the parts the score bought,
                         while every bought sound and its ledger sit in the score directory
     build/sections/     one mp4 per section, cut to its span, and the key it was cut from
@@ -12,7 +12,8 @@
                         and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, placements,
-                        transcript page and poster
+                        transcript page, poster and words, and the captioned copy when it is
+                        asked for
     build/events/       one JSON lines file per run, which is what a run says it is doing
     build/kept.json     what the last build's assemble and verify read, wrote and found
     build/.lock         the lock a writing run holds, and `.lock.owner` beside it naming who
@@ -29,7 +30,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import take_file
+from decktalk.artifacts import WORDS_SUFFIX, words_beside
 from decktalk.inputs.paths import confined
 from decktalk.pipeline import Artifact
 
@@ -62,8 +63,6 @@ class Workspace:
     root: Path
     build: Path
     name: str
-    suffix: str
-    """What a voiced take is written under, which the voice's adapter declares for the format it asks for."""
     takes: Path
     """The project's takes directory, which `[narration] takes_dir` names inside the project."""
     score_dir: Path
@@ -93,9 +92,27 @@ class Workspace:
         """The joined narration and every placeholder take, which a build makes again for nothing."""
         return self.build / "narrate"
 
-    def take_file(self, digest: str) -> str:
-        """The name a take of this digest is written under, which is the suffix of the voice's own format."""
-        return take_file(digest, self.suffix)
+    @property
+    def aligned_dir(self) -> Path:
+        """The folder inside the takes directory that aligned words are kept in, beside the takes they time.
+
+        They are committed with the takes, so a clean machine with no aligner plays the words an aligner
+        measured on another.
+        """
+        return self.takes / "aligned"
+
+    @property
+    def rejected_dir(self) -> Path:
+        """The folder inside the takes directory that a voiced take bought again on request is set aside in.
+
+        Each rejected take keeps its words file beside it, both named `<digest>.<n>`, so moving the pair
+        back under `<digest>` plays it again.
+        """
+        return self.takes / "rejected"
+
+    def aligned_words(self, key: str) -> Path:
+        """Where the aligned words kept under `key` are, which names the take they time and the aligner that did."""
+        return self.aligned_dir / f"{key}{WORDS_SUFFIX}"
 
     @property
     def takes_path(self) -> Path:
@@ -182,6 +199,11 @@ class Workspace:
     def film(self) -> Path:
         return self.final_dir / f"{self.name}.mp4"
 
+    @property
+    def captioned_film(self) -> Path:
+        """The film with its captions drawn into the picture, which `[output] captioned` asks for."""
+        return self.final_dir / f"{self.name}-captioned.mp4"
+
     def stamped_film(self, stamp: str) -> Path:
         """A copy of the film named with when it was made, which `[output] timestamped_copy` asks for."""
         return self.final_dir / f"{self.name}-{stamp}.mp4"
@@ -208,6 +230,7 @@ class Workspace:
             "placements": self.placements_path,
             "transcript": self.final_dir / f"{self.name}-transcript.html",
             "poster": self.final_dir / f"{self.name}-poster.png",
+            "words": words_beside(self.film),
         }
 
     def events_path(self, run: str) -> Path:
@@ -215,7 +238,11 @@ class Workspace:
         return self.events_dir / f"{run}{EVENTS_SUFFIX}"
 
     def recording(self, key: str) -> Path:
-        return self.recordings_dir / f"{key}.webm"
+        return self.recordings_dir / f"{key}.mp4"
+
+    def render_dir(self, key: str) -> Path:
+        """Where a rendered section's motion document and landings are written, one directory per section."""
+        return self.recordings_dir / "render" / key
 
     def recording_log(self, key: str) -> Path:
         return self.recordings_dir / f"{key}.json"

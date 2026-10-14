@@ -25,6 +25,7 @@ rather than by a hand-written strip in every test.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable
 from datetime import datetime
@@ -181,11 +182,10 @@ class Source(Enum):
 
 
 class ApiKeyState(Enum):
-    """Whether the API key a voiced run would use is in reach, which is asked and never revealed."""
+    """Whether the API key a provider's voiced run would use is in reach, which is asked and never revealed."""
 
     SET = "set"
     MISSING = "missing"
-    NOT_NEEDED = "not_needed"
 
 
 class TakeOutcome(Enum):
@@ -243,6 +243,8 @@ class SkipReason(Enum):
     NO_CUES = "no_cues"
     NO_ONSET = "no_onset"
     NO_SLIDE = "no_slide"
+    MOTION_LANDING = "motion_landing"
+    RENDERED = "rendered"
     NOT_ASSEMBLED = "not_assembled"
     OPTED_OUT = "opted_out"
     TOO_CLOSE_TO_END = "too_close_to_end"
@@ -304,9 +306,9 @@ class _Priced(Model):
 
     @property
     def free(self) -> bool:
-        """True when the voice declares that it bills nothing, so the command line buys without asking.
+        """True when the provider declares that it bills nothing, so the command line buys without asking.
 
-        Free is what the adapter declares and never a rate of zero, because a zero rate on a voice
+        Free is what the adapter declares and never a rate of zero, because a zero rate on a provider
         that bills is somebody's statement about their plan, and a cap or a question still guards it.
         """
         return self.billing is BillingBasis.FREE
@@ -390,6 +392,9 @@ class StageCost(_Priced):
     """What one stage that buys costs, at its own provider's bill, in its own state: charged when the stage had leave
     to buy."""
 
+    provider: str = Field(
+        description="The provider this row pays, which for the narration is one row per provider its voices name."
+    )
     stage: Stage = Field(description="The stage this row is about.")
 
     @property
@@ -398,21 +403,22 @@ class StageCost(_Priced):
         billed = not self.free and self.billing is not BillingBasis.UNDECLARED
         return billed and (self.dollars > 0 or self.ceiling_dollars == 0)
 
-    @property
-    def clause(self) -> str:
+    def clause(self, *, named: bool = False) -> str:
         """This row as one clause of the whole run's sentence, which names the stage it prices.
 
         A row stated as money names its figure, what it pays for and its rate. A free row and a row
         nobody can price say what the run does for nothing or cannot price. A row that is a ceiling
-        alone has no clause of its own, because the run's ceiling is said with `up_to`.
+        alone has no clause of its own, because the run's ceiling is said with `up_to`. `named` is
+        given when another row of the same stage is in the price, so each says the provider it pays.
         """
+        amount = f"{self.amount} on {self.provider}" if named else self.amount
         if self.priced:
             preposition = "on" if self.state is CostState.CHARGED else "for"
-            return f"{money(self.dollars)} {preposition} {STAGE_OWNER[self.stage]} {self.amount} at {self.rate}"
+            return f"{money(self.dollars)} {preposition} {STAGE_OWNER[self.stage]} {amount} at {self.rate}"
         if self.free:
-            return f"{self._made} {self.amount} for nothing, because the provider is free"
+            return f"{self._made} {amount} for nothing, because the provider is free"
         if self.billing is BillingBasis.UNDECLARED:
-            return f"{self._made} {self.amount} on a provider that declares no bill, so DeckTalk cannot price it"
+            return f"{self._made} {amount} on a provider that declares no bill, so DeckTalk cannot price it"
         return ""
 
     def up_to(self, ceiling: float) -> str:
@@ -456,11 +462,14 @@ class Cost(_Priced):
         if len(rows) < 2:
             return super().sentence
         verb = "spent" if self.state is CostState.CHARGED else "costs"
-        priced = [row.clause for row in rows if row.priced]
+        stages = [row.stage for row in rows]
+        named = {row.stage: stages.count(row.stage) > 1 for row in rows}
+        priced = [row.clause(named=named[row.stage]) for row in rows if row.priced]
         others: list[str] = []
         for row in rows:
-            if not row.priced and row.clause:
-                others.append(row.clause)
+            if not row.priced and row.clause(named=named[row.stage]):
+                others.append(row.clause(named=named[row.stage]))
+
             if row.ceiling_dollars > row.dollars:
                 others.append(row.up_to(self.ceiling_dollars))
         if len(priced) > 1:
@@ -553,6 +562,19 @@ class Word(Model):
     )
 
 
+class Program(Model):
+    """One program a project names, which `[record] programs` decides whether `record` starts."""
+
+    named_by: str = Field(description="What names the program, such as section 3's render_command.")
+    command: tuple[str, ...] = Field(description="The words as decktalk.toml writes them, placeholders and all.")
+    section: int = Field(ge=0, description="The section whose render_command it is.")
+
+    @property
+    def shown(self) -> str:
+        """The words as the TOML array that names them, so a reader sees the exact argv, one string per word."""
+        return json.dumps(self.command, ensure_ascii=False)
+
+
 class Result(Model):
     """What every call returns, with the four keys every result reserves.
 
@@ -600,6 +622,17 @@ class InstalledTool(Model):
     fetched: bool = Field(False, description="True when this run downloaded it rather than finding it.")
 
 
+class TurnStatus(Model):
+    """One turn of a spoken section: the voice that reads it and what the disk holds for it."""
+
+    turn: int = Field(ge=1, description="The turn of its section, counted from one.")
+    voice: str = Field(description="The voice that reads this turn, by its name in decktalk.toml.")
+    take_state: TakeState = Field(description="What the disk holds for this turn.")
+    take_reason: str = Field(
+        description="The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state."
+    )
+
+
 class SectionStatus(Model):
     """What one section has and what it still needs, as `status` reads it off disk."""
 
@@ -613,7 +646,15 @@ class SectionStatus(Model):
         )
     )
     take_reason: str | None = Field(
-        description="The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state."
+        description="The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state. "
+        "A section of several turns names the turn its worst state is in and the voice that reads it."
+    )
+    turns: tuple[TurnStatus, ...] = Field(
+        description="Every turn of this spoken section in order, or none for a clip or when the take states could "
+        "not be read."
+    )
+    voices: tuple[str, ...] = Field(
+        description="The voices that read this section, in the order its turns name them, each once."
     )
     recorded: bool = Field(description="True when a recording of this section is on disk.")
     assembled: bool = Field(description="True when this section has been assembled into the film.")
@@ -632,14 +673,20 @@ class LiveRun(Model):
 
 
 BYTES_PER_MB = 1_000_000
-"""How many bytes a megabyte is in a sentence that sizes files, which is the decimal unit a file browser shows."""
+"""Truth: how many bytes a megabyte is in a sentence that sizes files, which is the decimal unit a file
+browser shows."""
+
+
+MB_SHOWN_FROM = 0.1
+"""Truth: the smallest share of a megabyte that a size written to one place shows as more than nothing, so a
+smaller size is written in kilobytes."""
 
 
 def sized(count: int) -> str:
     """A number of bytes as a file browser shows it: megabytes to one place, then kilobytes, then bytes."""
     if count < 1000:
         return counted(count, "byte")
-    if count * 10 < BYTES_PER_MB:
+    if count < MB_SHOWN_FROM * BYTES_PER_MB:
         return f"{count / 1000:.0f} KB"
     return f"{count / BYTES_PER_MB:.1f} MB"
 
@@ -674,10 +721,13 @@ class UnplayedTakes(Model):
 
 
 class SectionTake(Model):
-    """One section's take: what it cost, how long it runs and what the run did about it."""
+    """One turn's take: what it cost, how long it runs and what the run did about it."""
 
     section: SectionNumber
     key: SectionKey
+    turn: int = Field(ge=1, description="The turn of its section this take reads, counted from one.")
+    voice: str = Field(description="The voice that reads this turn, by its name in decktalk.toml.")
+
     outcome: TakeOutcome = Field(description="What this run did about this section's take.")
     characters: int = Field(ge=0, description="How many characters of script this take speaks.")
     seconds: float | None = Field(None, ge=0, description="How long the take runs, or null before it exists.")
@@ -782,6 +832,20 @@ class CueCheck(Model):
     offset_seconds: float | None = Field(None, description="How far the change is from its word, in seconds.")
     change_percent: float | None = Field(None, ge=0, description="How much of the picture changed, as a percent.")
     skipped: SkipReason | None = Field(None, description="Why this cue was not measured, or null when it was.")
+    masked_percent: float | None = Field(
+        None, ge=0, description="How much of the frame declared motion masked out of this cue, or null when none did."
+    )
+
+
+class MotionCheck(Model):
+    """One landing of a declared motion, measured on its own lane against the word it was promised to."""
+
+    section: SectionNumber
+    cue: str = Field(description="The cue id the motion lands on.")
+    kind: Literal["depart", "arrive"] = Field(description="Whether the motion departs or arrives at this cue.")
+    spoken: float = Field(ge=0, description="When the cue's word is spoken in the film, in seconds.")
+    shown: float | None = Field(None, ge=0, description="The frame the motion was first or last seen moving, or null.")
+    offset_seconds: float | None = Field(None, description="How far the landing is from its word, in seconds.")
 
 
 class StageRun(Model):
@@ -809,6 +873,11 @@ class LayerValue(Model):
     value: JsonValue = Field(description="The value this layer states, or the default when it is the default.")
     file: ProjectPath | None = Field(None, description="The file this layer read, or null when it is not a file.")
     line: int | None = Field(None, ge=1, description="The line in that file, or null.")
+    key: str | None = Field(
+        None,
+        description="The key this row was stated under, when the key it explains inherits it, such as "
+        "elevenlabs.stability for a voice's stability.",
+    )
 
 
 class NumberView(Model):
@@ -833,6 +902,15 @@ class FixOutcome(Model):
     files: tuple[ProjectPath, ...] = Field((), description="Every file the fix changed, project-relative.")
 
 
+class SectionTurn(Model):
+    """One turn of a section's words: the voice that reads it and how many of the section's words are its own."""
+
+    turn: int = Field(ge=1, description="The turn of its section, counted from one.")
+    voice: str = Field(description="The voice that reads this turn, by its name in decktalk.toml.")
+    estimated: bool = Field(description="True when this turn's words are estimates, as a placeholder's are.")
+    word_count: int = Field(ge=0, description="How many of the section's words, in order, this turn speaks.")
+
+
 class SectionWords(Model):
     """One section's spoken words, in seconds after that section starts."""
 
@@ -840,6 +918,9 @@ class SectionWords(Model):
     key: SectionKey
     estimated: bool = Field(description="True when the words come from a build with placeholder narration.")
     words: tuple[Word, ...] = Field(description="Every word this section speaks, in the order it speaks them.")
+    turns: tuple[SectionTurn, ...] = Field(
+        description="Every turn of the section in order, whose word counts divide `words` among them."
+    )
 
 
 class Panel(Model):
@@ -861,6 +942,13 @@ class InitResult(Result):
     name: str = Field(description="The project's name, which its film is named after.")
     example: str = Field(description="The packaged example this project was written from.")
     skills_written: bool = Field(description="True when the packaged skills were written into the project.")
+    voices: tuple[str, ...] = Field(
+        description="The voices the project's decktalk.toml declares, the default first, read with no machine "
+        "setting or variable."
+    )
+    programs: tuple[Program, ...] = Field(
+        description="Every program the project names, which a build starts only where record.programs allows it."
+    )
 
 
 class InstallResult(Result):
@@ -869,6 +957,24 @@ class InstallResult(Result):
     run: RunId
     tools: tuple[InstalledTool, ...] = Field(description="Every tool this machine needs, in the order it checks them.")
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
+
+
+class ProviderKey(Model):
+    """Whether the key one shipped provider is bought with is set on this machine, asked and never revealed."""
+
+    provider: str = Field(description="The speech provider DeckTalk ships that the key buys from.")
+    variable: str = Field(description="The variable the key is read from.")
+    state: ApiKeyState = Field(description="Whether that variable is set.")
+
+
+class VoiceStatus(Model):
+    """One voice the project declares: its provider, whether it is the default, whether it is named, and its bill."""
+
+    name: str = Field(description="The voice's name in decktalk.toml, which a voice direction spells.")
+    provider: str = Field(description="The speech provider that reads it.")
+    default: bool = Field(description="True for the voice [narration] voice names, which reads every unmarked turn.")
+    named: bool = Field(description="True when a voice id names it, without which no take can be matched to it.")
+    billing: BillingBasis = Field(description="How its provider bills its takes.")
 
 
 class DoctorResult(Result):
@@ -881,13 +987,10 @@ class DoctorResult(Result):
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")
     platform: str = Field(description="The operating system and processor this machine reports.")
-    api_key_state: ApiKeyState = Field(
-        alias="api_key",
-        description=(
-            "Whether the API key a voiced run would use is set, missing, or not needed because its voice takes none."
-        ),
+    api_keys: tuple[ProviderKey, ...] = Field(
+        description="Every key a shipped provider is bought with, and whether it is set. A machine has no project, "
+        "so it names every provider's that needs one."
     )
-    bias_ms: float | None = Field(None, description="This host's measured presentation bias, or null when unmeasured.")
 
 
 class StatusResult(Result):
@@ -898,7 +1001,11 @@ class StatusResult(Result):
     script: ProjectPath = Field(description="The script this project speaks, project-relative.")
     cues_file: ProjectPath = Field(description="The cue file this project resolves, project-relative.")
     sections: tuple[SectionStatus, ...] = Field(description="Every section, in script order.")
+    voices: tuple[VoiceStatus, ...] = Field(
+        description="Every voice the project declares, the default first, which reads no key."
+    )
     film: ProjectPath | None = Field(None, description="The built film, or null when none is built.")
+
     film_seconds: float | None = Field(None, ge=0, description="How long the built film runs, or null.")
     runs: tuple[LiveRun, ...] = Field((), description="Every run whose events file is still open.")
     unplayed: UnplayedTakes | None = Field(
@@ -1105,6 +1212,9 @@ class VerifyResult(Result):
     cuts: tuple[CutCheck, ...] = Field((), description="Every cut between two sections, in film order.")
     seams: tuple[SeamCheck, ...] = Field((), description="Every seamless cut, in film order.")
     cues: tuple[CueCheck, ...] = Field((), description="Every cue measured against its word, in film order.")
+    motions: tuple[MotionCheck, ...] = Field(
+        (), description="Every landing of every declared motion, measured on its own lane, in film order."
+    )
     elapsed_seconds: Elapsed
 
 
@@ -1163,6 +1273,7 @@ module loads, so a result declared anywhere else never joins it.
 
 
 __all__ = [
+    "Program",
     "ApiKeyState",
     "ApplyResult",
     "AssembleResult",
@@ -1175,6 +1286,8 @@ __all__ = [
     "ConfigListResult",
     "ConfigSetResult",
     "ConfigUnsetResult",
+    "Cost",
+    "CostState",
     "CueCheck",
     "CueResult",
     "CueTime",
@@ -1190,21 +1303,25 @@ __all__ = [
     "LayerValue",
     "LiveRun",
     "Loudness",
+    "MotionCheck",
     "NarrateResult",
     "Nature",
     "NumberView",
     "Outcome",
     "Panel",
+    "ProviderKey",
     "RecordResult",
     "RenderedSection",
     "Result",
     "Scope",
+    "ScoreResult",
     "SeamCheck",
     "SectionCues",
     "SectionKind",
     "SectionRecording",
     "SectionStatus",
     "SectionTake",
+    "SectionTurn",
     "SectionWords",
     "ServeResult",
     "SettingValue",
@@ -1214,19 +1331,18 @@ __all__ = [
     "SoundOutcome",
     "Source",
     "StageCost",
-    "ScoreResult",
-    "Cost",
-    "CostState",
     "StageRun",
     "StartCheck",
     "StatusResult",
     "StoryboardResult",
     "Substitute",
-    "TakeState",
     "TakeOutcome",
+    "TakeState",
+    "TurnStatus",
     "UNPRICED",
     "UnplayedTakes",
     "VerifyResult",
+    "VoiceStatus",
     "Word",
     "WordsResult",
 ]

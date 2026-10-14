@@ -11,9 +11,9 @@ printed a code at you, [Troubleshooting](/help/troubleshooting) takes that code 
 A build without a voice costs nothing at all. Two stages spend money, and both of them tell you the
 price before they start.
 
-- `narrate` sends each section's text to ElevenLabs and is billed by the character. A section whose
-  text has not changed is served from the take on disk, so an edit to one sentence pays for one
-  section.
+- `narrate` sends each turn's text to ElevenLabs and is billed by the character. A turn whose text
+  has not changed is served from the take on disk, so an edit to one sentence pays for the whole turn
+  it is in, which is the whole section when one voice reads it.
 - `score` generates the music, the ambience bed and the effects the project describes, and is
   billed by the second of audio. It runs after `record`, so a run that stops at the recorder never
   reaches it.
@@ -30,22 +30,22 @@ price before they start.
 ## Do I need an account to try it?
 
 No. `decktalk init my-deck` and then `decktalk build --no-spend` writes a complete film with
-placeholder narration that carries real word times, so the pacing, the cues and the cuts are all
-real. Nothing contacts a paid speech service, and no key is read. `--no-spend` gates money only, so a
+placeholder narration whose words are timed by estimate, so every cue lands somewhere and the cues
+and the cuts are real. Nothing contacts a paid speech service, and no key is read. `--no-spend` gates money only, so a
 project whose voice is the free local `dtsp` is still voiced by it.
 
-A build voiced by ElevenLabs needs an ElevenLabs API key in `.env` and a voice id as `[voice] id`
+A build voiced by ElevenLabs needs an ElevenLabs API key in `.env` and a voice id as `[voices.narrator] id`
 in `decktalk.toml`. The voice id is a published name rather than a credential: it says which voice reads
 the script, the way a model name says which model answers, and a cloned voice is usable only with its
 own account's key, so the id is committed with the project.
 
 ## Can I use a voice other than ElevenLabs?
 
-Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
+Not yet. Today every voice is ElevenLabs. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
 the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
-repository. Set `provider = "dtsp"` under `[voice]`. It needs no key and costs nothing, so it makes
+repository and is in development, not yet public. Once it is available, set `provider = "dtsp"` under the voice's `[voices.NAME]` table. It needs no key and costs nothing, so it makes
 its takes with or without `--spend`, `--no-spend` included. The server's address is
-`[dtsp] base_url`, `http://127.0.0.1:8765` by default, and only this machine sets it, so a project
+`[dtsp] base_url`, `http://127.0.0.1:9361` by default, and only this machine sets it, so a project
 someone else wrote cannot send its script anywhere else. When the server is not running, each missing take plays a placeholder with a
 `TAKE_MISSING` finding that says to start it, and the build still exits 0.
 
@@ -57,12 +57,20 @@ pages name no service, and a build with `--no-spend` needs none, so the files ou
 The one thing DeckTalk asks of any voice is a start and an end time for every word, because the cut
 is made on words, and that requirement is what a second provider would have to meet.
 
+## Can two voices read one film?
+
+Yes. Declare each voice as its own `[voices.NAME]` table, and a line holding only `[voice NAME]` in
+`script.md` hands the turns after it to that voice until the next such line or the next section. The
+voices may be on different providers, and `decktalk check` prices each provider's turns on a row of
+its own. [Write a dialogue](/guides/dialogue) shows the whole task, and
+`decktalk init --example interview` writes a project that does it.
+
 ## How does the voice sound?
 
 It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own.
 
 `[elevenlabs]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style` and `speaker_boost`,
-and `[voice] speed` sets the pace. DeckTalk also sends up to `[narration] context_characters` of the text before and after each
+and `[voices.NAME] speed` sets the pace. DeckTalk also sends up to `[narration] context_characters` of the text before and after each
 section with the request, so the rhythm and the tone stay even across a cut that the listener never
 hears as one.
 
@@ -112,6 +120,8 @@ Every build writes the deliverables beside the film in `build/final/`.
 | `<name>.chapters.txt` | An ffmetadata chapters file. Consecutive sections with the same chapter share one entry. |
 | `<name>-transcript.html` | The whole film as a page: one heading per chapter, the speech, and what each reveal showed. |
 | `<name>-poster.png` | A still frame for a player or a thumbnail. |
+| `<name>.words.json` | Every word the film says, on the film's clock. |
+| `<name>-captioned.mp4` | The film with its captions drawn into the picture, when `[output] captioned` is true. |
 
 `decktalk status` reports where the film is and what is stale.
 [Build artifacts](/reference/artifacts) gives every format.

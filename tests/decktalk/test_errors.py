@@ -133,3 +133,17 @@ def test_anything_else_ends_a_run_as_a_bug_named_by_its_type_and_message() -> No
     info = ErrorInfo.of_failure(KeyError("page"))
     assert (info.code, info.message) == (ErrorCode.INTERNAL, "KeyError: 'page'")
     assert info.docs == ErrorCode.INTERNAL.url
+
+
+@pytest.mark.parametrize(
+    ("code", "cases"),
+    [
+        (ErrorCode.APPROVAL, ("spend", "--max-cost", "holds files", "password", "untrusted page")),
+        (ErrorCode.TOOL, ("ffmpeg", "Chromium", "page", "program the project names", "install", "preview server")),
+    ],
+    ids=str,
+)
+def test_a_code_sentence_names_every_case_that_raises_it(code: ErrorCode, cases: tuple[str, ...]) -> None:
+    """A code's sentence is its page's description, so it names every refusal that carries the code."""
+    for case in cases:
+        assert case in code.sentence, case

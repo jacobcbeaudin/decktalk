@@ -45,30 +45,36 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from decktalk.artifacts import WORDS_SUFFIX, UnreadableCache, UnreadablePaidRecord, is_placeholder
+from decktalk.artifacts import (
+    WORDS_SUFFIX,
+    ProviderWords,
+    TimedBy,
+    UnreadableCache,
+    UnreadablePaidRecord,
+    alignment_match,
+    is_placeholder,
+)
 from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
 from decktalk.events import AnyEvent, Level, StageStart
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import ClipSection, Inputs, PageSection, Section
+from decktalk.inputs import ClipSection, Inputs, PageSection, RecordedSection, RenderSection, Section
 from decktalk.inputs.paths import at
+from decktalk.inputs.script import spoken_words
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Stage
-from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, UnplayedTakes
+from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, TurnStatus, UnplayedTakes, VoiceStatus
 from decktalk.stages.kept import BUILT, assembled, read_kept, verify_digest
-from decktalk.stages.narrate import TakeStates, take_states
-from decktalk.stages.record import stale_recording
+from decktalk.stages.narrate import SectionTakeState, TakeStates, before_narrate, take_states
+from decktalk.stages.record import TurnText, stale_recording
 
 log = logging.getLogger(__name__)
 
 LINE = TypeAdapter(AnyEvent)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
-
-ALIGNED_DIR = "aligned"
-"""The folder inside the takes directory that aligned words are kept in, beside the takes they time."""
 
 BUILD = "build"
 """The command a stale project runs, which redoes what moved and keeps every stage whose inputs did not."""
@@ -120,6 +126,8 @@ def source_of(section: Section) -> str:
     else, and the word for that is the query key the runtime publishes rather than a second spelling
     of it here.
     """
+    if isinstance(section, RenderSection):
+        return " ".join(section.render_command)
     if isinstance(section, PageSection):
         return f"{section.page}?{Q.SCENE.value}={section.scene}"
     return section.clip
@@ -165,7 +173,7 @@ def section_rows(
     rows: list[SectionStatus] = []
     for section in inputs.document.sections:
         state = states.get(section.number) if states is not None else None
-        recorded = isinstance(section, PageSection) and inputs.workspace.recording(section.key).is_file()
+        recorded = isinstance(section, RecordedSection) and inputs.workspace.recording(section.key).is_file()
         rows.append(
             SectionStatus(
                 section=section.number,
@@ -174,26 +182,43 @@ def section_rows(
                 source=source_of(section),
                 take_state=state.state if state is not None else None,
                 take_reason=state.reason if state is not None else None,
+                turns=tuple(
+                    TurnStatus(turn=one.turn.number, voice=one.voice.name, take_state=one.state, take_reason=one.reason)
+                    for one in (state.turns if state is not None else ())
+                ),
+                voices=tuple(dict.fromkeys(one.voice.name for one in state.turns)) if state is not None else (),
                 recorded=recorded,
                 assembled=inputs.workspace.section_video(section.key).is_file(),
-                recording_stale=_stale(inputs, run, section, recorded=recorded, said=section.number in refused),
+                recording_stale=_stale(inputs, run, section, state, recorded=recorded, said=section.number in refused),
             )
         )
     return tuple(rows)
 
 
-def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: bool = False) -> bool:
-    """Whether this section's recording no longer matches the project, with the reason as a line.
+def _stale(
+    inputs: Inputs, run: Run, section: Section, state: SectionTakeState | None, *, recorded: bool, said: bool = False
+) -> bool:
+    """Whether the next build records this section again, with the parts that moved as one line.
+
+    The turns are judged as the script has them, which is what `state` read, because the build
+    narrates before it records: a turn whose words were edited since its take was made is named now,
+    and not only after narrate has made its new take. A section with no take state is judged against
+    its takes.
 
     A section whose words do not read, the provider's or the ones DeckTalk estimated for a placeholder,
     cannot be judged, so the refusal is one error line, with its own sentence and hint, and the row
     says nothing stale rather than ending the report. `said` is true when the take's own refusal is
     already a line, which then stands for this one.
     """
-    if not recorded or not isinstance(section, PageSection):
+    if not recorded or not isinstance(section, RecordedSection):
         return False
+    script = (
+        [TurnText(one.turn.number, one.turn.spoken, one.voice.name) for one in state.turns]
+        if state is not None
+        else None
+    )
     try:
-        why = stale_recording(inputs, section)
+        why = stale_recording(inputs, section, script)
     except (UnreadablePaidRecord, UnreadableCache) as unread:
         if not said:
             hint = f" {unread.hint}" if unread.hint else ""
@@ -201,7 +226,7 @@ def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: 
         return False
     if why is None:
         return False
-    run.note(f"{why[0].upper()}{why[1:]}, so it would be recorded again.", level=Level.WARNING)
+    run.note(f"{why}, so it would be recorded again.", level=Level.WARNING)
     return True
 
 
@@ -215,6 +240,8 @@ def judgements(inputs: Inputs, run: Run) -> None:
     _judge_input(inputs, run, inputs.script_path, inputs.script, missing=True)
     _judge_input(inputs, run, inputs.cues_path, inputs.cues, missing=False)
     for section in inputs.document.sections:
+        if isinstance(section, RenderSection):
+            continue
         named = section.page if isinstance(section, PageSection) else section.clip
         optional = isinstance(section, ClipSection) and section.optional
         path = inputs.path(named)
@@ -300,12 +327,14 @@ def played_takes(inputs: Inputs, states: TakeStates | None) -> set[str] | None:
 
     A take is played when the take index names it, since the film plays that take until narrate runs
     again, or when a section's current text, voice and settings name it, since the next narrate plays
-    that one. Both are counted, so no take the film still needs is ever called unplayed. With no voice
-    named, or no take states read, the script's own takes have no digest, so nothing is claimed.
+    that one. Both are counted, so no take the film still needs is ever called unplayed. While a voice
+    that reads a selected turn has no id, or with no take states read, the script's own takes have no
+    digest, so nothing is claimed.
     """
-    if states is None or not inputs.voice.id:
+    turns = [one for state in states.values() for one in state.turns] if states is not None else []
+    if states is None or not all(inputs.voice_of(one.turn).named for one in turns):
         return None
-    named = {state.digest for state in states.values() if state.digest is not None}
+    named = {one.digest for one in turns if one.digest is not None}
     index = inputs.takes()
     return named | ({row.digest for row in index.sections} if index is not None else set())
 
@@ -322,13 +351,39 @@ def _take_of(name: str) -> str | None:
     return digest if rest == WORDS_SUFFIX.removeprefix(".") or rest.isalnum() else None
 
 
+def _played_matches(inputs: Inputs, states: TakeStates | None, played: set[str]) -> set[str]:
+    """The match of every played take whose voice sent no word times, which names every alignment of it.
+
+    A take's words are its index row's spoken text when the index names it, and its section's otherwise.
+    """
+    index = inputs.takes()
+    spoken = {
+        one.digest: one.turn.spoken
+        for state in (states or {}).values()
+        for one in state.turns
+        if one.digest is not None
+    }
+    spoken |= {row.digest: row.spoken for row in index.sections} if index is not None else {}
+    matches: set[str] = set()
+    for digest in played & spoken.keys():
+        try:
+            said = inputs.take_words(digest)
+        except (UnreadableCache, UnreadablePaidRecord):
+            # silent: a words file that does not read is reported by the section's own row, and times nothing.
+            continue
+        if isinstance(said, ProviderWords) and not said.timed:
+            matches.add(alignment_match(said.audio.blake3, spoken_words(spoken[digest])))
+    return matches
+
+
 def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes | None:
     """The takes and aligned words in the takes directory that no section plays, read and never touched.
 
     Each is a paid record or the measured timing of one, so DeckTalk lists them for their author to
-    remove with `git rm` and deletes none of them. No stage of this version reads aligned words, so
-    every file under `aligned/` is one no section plays. A file that is not named like a take, such
-    as a damaged copy set aside as `.unreadable`, is not a take and is left out.
+    remove with `git rm` and deletes none of them. Aligned words are played when they time a take a
+    section plays, whatever aligner measured them, because with the aligner down an older one's words
+    are what the take plays. A file that is not named like a take, such as a damaged copy set aside as
+    `.unreadable`, is not a take and is left out.
     """
     played = played_takes(inputs, states)
     if played is None:
@@ -338,9 +393,10 @@ def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes |
     pairs = [(path, digest) for path, digest in named if digest is not None and path.is_file()]
     gone = {digest for _path, digest in pairs if digest not in played}
     unplayed = [path for path, digest in pairs if digest in gone]
-    aligned_dir = takes / ALIGNED_DIR
+    aligned_dir = inputs.workspace.aligned_dir
+    matches = _played_matches(inputs, states, played)
     aligned = sorted(aligned_dir.glob(f"*{WORDS_SUFFIX}")) if aligned_dir.is_dir() else []
-    aligned = [path for path in aligned if path.is_file()]
+    aligned = [path for path in aligned if path.is_file() and path.name.partition("-")[0] not in matches]
     files = sorted([*unplayed, *aligned])
     return UnplayedTakes(
         directory=inputs.relative(takes),
@@ -348,6 +404,27 @@ def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes |
         aligned=len(aligned),
         bytes=sum(path.stat().st_size for path in files),
         files=tuple(inputs.relative(path) for path in files),
+    )
+
+
+def _note_estimated(inputs: Inputs, run: Run) -> None:
+    """Warn when a voiced take plays estimated words because no aligner timed it, naming every such section.
+
+    The reason and what mends it are narrate's own, told without asking any aligner: each waits on the
+    aligner this machine answers for.
+    """
+    index = inputs.takes()
+    numbers: list[int] = []
+    for row in index.sections if index is not None else ():
+        if row.voiced and row.timed_by is TimedBy.ESTIMATED and row.section not in numbers:
+            numbers.append(row.section)
+    if not numbers:
+        return
+    reason = before_narrate(run.machine.aligners)
+    run.note(
+        f"Section(s) {numbers} play estimated words over a take that came with no word times, and {reason.why}. "
+        f"{reason.action(','.join(map(str, numbers)))}",
+        level=Level.WARNING,
     )
 
 
@@ -368,6 +445,7 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
             "Point [narration] takes_dir at the folder that holds them.",
             level=Level.WARNING,
         )
+    _note_estimated(inputs, run)
     film = inputs.workspace.film
     built = film.is_file()
     return run.result(
@@ -376,6 +454,16 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
         script=inputs.relative(inputs.script_path),
         cues_file=inputs.relative(inputs.cues_path),
         sections=rows,
+        voices=tuple(
+            VoiceStatus(
+                name=voice.name,
+                provider=voice.provider,
+                default=voice.name == inputs.default_voice,
+                named=voice.named,
+                billing=voice.billing,
+            )
+            for voice in inputs.voices.values()
+        ),
         film=inputs.relative(film) if built else None,
         film_seconds=ffmpeg.probe_duration(film) if built else None,
         runs=live_runs(inputs, run),

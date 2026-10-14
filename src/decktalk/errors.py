@@ -17,6 +17,7 @@ than a table beside the list that a new code can miss.
 
 from __future__ import annotations
 
+import signal
 import threading
 from enum import Enum, IntEnum
 from typing import Any, ClassVar
@@ -25,6 +26,12 @@ from pydantic import Field, model_validator
 
 from decktalk.findings import DOCS, Location, Model
 from decktalk.secret import redact, redacted
+
+SIGNALLED_BASE = 128
+"""Truth: a shell reports a process a signal stopped as this plus the signal's number."""
+
+BROKEN_CODE = 3
+"""Truth: the first code past the three a finished or refused run takes, which every other failure shares."""
 
 
 class Exit(IntEnum):
@@ -56,8 +63,8 @@ class Exit(IntEnum):
         "found something at it",
     )
     REFUSED = 2, "The command line was refused, which is USAGE or APPROVAL.", "refused the command line"
-    BROKEN = 3, "The command could not run, which is every other error code.", "could not run"
-    INTERRUPTED = 130, "The caller stopped the run.", "interrupted"
+    BROKEN = BROKEN_CODE, "The command could not run, which is every other error code.", "could not run"
+    INTERRUPTED = SIGNALLED_BASE + signal.SIGINT, "The caller stopped the run.", "interrupted"
 
 
 class ErrorCode(Enum):
@@ -68,13 +75,16 @@ class ErrorCode(Enum):
     """
 
     sentence: str
+    remedy: str
+    """What to do about the refusal, which the code's docs page says under What to do."""
     exit_code: Exit
 
-    def __new__(cls, code: str, exit_code: Exit, sentence: str) -> ErrorCode:
+    def __new__(cls, code: str, exit_code: Exit, sentence: str, remedy: str) -> ErrorCode:
         member = object.__new__(cls)
         member._value_ = code
         member.exit_code = exit_code
         member.sentence = sentence
+        member.remedy = remedy
         return member
 
     def __repr__(self) -> str:
@@ -85,15 +95,76 @@ class ErrorCode(Enum):
         """The docs page for this code, which every printed error block carries."""
         return f"{DOCS}/errors/{self.name}"
 
-    INPUT = "INPUT", Exit.BROKEN, "An input is missing, unreadable or malformed."
-    NOT_BUILT = "NOT_BUILT", Exit.BROKEN, "A file a stage needs was never built."
-    PROVIDER = "PROVIDER", Exit.BROKEN, "A provider could not be reached, refused the request, or failed it."
-    TOOL = "TOOL", Exit.BROKEN, "ffmpeg or Chromium is missing, or one of them failed."
-    LOCKED = "LOCKED", Exit.BROKEN, "Another writer holds this project's build directory."
-    APPROVAL = "APPROVAL", Exit.REFUSED, "A spend needed an approval that no flag and no terminal gave."
-    CANCELLED = "CANCELLED", Exit.INTERRUPTED, "The caller stopped the run."
-    USAGE = "USAGE", Exit.REFUSED, "The command line was refused, and a retry as written fails again."
-    INTERNAL = "INTERNAL", Exit.BROKEN, "A bug in DeckTalk, with a traceback under -v."
+    INPUT = (
+        "INPUT",
+        Exit.BROKEN,
+        "An input is missing, unreadable or malformed.",
+        "Correct the file, the key or the argument the message names, then run the command again. The hint says "
+        "where to look. A key that belongs to the machine is moved with the `decktalk config set` line the hint "
+        "names, and a program this machine does not allow is allowed with `record.programs`.",
+    )
+    NOT_BUILT = (
+        "NOT_BUILT",
+        Exit.BROKEN,
+        "A file a stage needs was never built.",
+        "Run the command the hint names, or `decktalk build`, which runs every stage in order. `decktalk status` "
+        "names the next command to run.",
+    )
+    PROVIDER = (
+        "PROVIDER",
+        Exit.BROKEN,
+        "A provider could not be reached, refused the request, or failed it.",
+        "Read the HTTP status in the message: a 401 is a key the provider does not accept, and a 429 or a 5xx usually "
+        "passes on a later run. Run the command again, and only the turns not on disk are bought.",
+    )
+    TOOL = (
+        "TOOL",
+        Exit.BROKEN,
+        "A tool DeckTalk runs is missing or failed: ffmpeg, Chromium, a page that stopped answering or ran past its "
+        "deadline, a program the project names, a fix install runs, the preview server's address, or the mix of a "
+        "strict assemble that missed its loudness.",
+        "Run `decktalk doctor` to see what is missing and `decktalk install` to fetch it. A page that stopped "
+        "answering or ran past its deadline is found with `decktalk serve`, and `record.page_deadline_seconds` gives "
+        "a slow machine longer.",
+    )
+    LOCKED = (
+        "LOCKED",
+        Exit.BROKEN,
+        "Another writer holds this project's build directory.",
+        "Let the run the message names finish, or stop it. The lock belongs to that process, so deleting a file is "
+        "never needed.",
+    )
+    APPROVAL = (
+        "APPROVAL",
+        Exit.REFUSED,
+        "A step was not approved, by a flag or by a person at a terminal: a spend, a spend --max-cost refuses or "
+        "cannot price, an init into a directory that holds files, a password install asks for, or an untrusted page "
+        "in a run that may spend.",
+        "Pass `--spend` to approve a spend, with `--max-cost N` beside it to refuse a run whose most is over N US "
+        "dollars, or `--no-spend` to buy nothing. For any other step, follow the hint, which names the command that "
+        "approves it.",
+    )
+    CANCELLED = (
+        "CANCELLED",
+        Exit.INTERRUPTED,
+        "The caller stopped the run.",
+        "Run the command again when you mean to. Every turn voiced before the stop is on disk, so it is not bought "
+        "again.",
+    )
+    USAGE = (
+        "USAGE",
+        Exit.REFUSED,
+        "The command line was refused, and a retry as written fails again.",
+        "Correct the line with `decktalk COMMAND --help`. `decktalk schema` prints every command and flag as one JSON "
+        "object.",
+    )
+    INTERNAL = (
+        "INTERNAL",
+        Exit.BROKEN,
+        "A bug in DeckTalk, with a traceback under -v.",
+        "Run the command again with `-v`, which prints the traceback, and report it as a bug with the command line "
+        "that raised it.",
+    )
 
 
 class DeckTalkError(Exception):
@@ -148,8 +219,11 @@ class ProviderError(DeckTalkError):
         retryable: bool = False,
         reached: bool = True,
         possibly_charged: bool = False,
+        status: int | None = None,
     ) -> None:
         super().__init__(message, hint=hint, location=location)
+        self.status = status
+        """The HTTP status the provider answered with, or None when no status came back."""
         self.retryable = retryable
         """True when the same request may succeed later, which is what decides whether a caller waits."""
         self.reached = reached
@@ -159,7 +233,7 @@ class ProviderError(DeckTalkError):
 
 
 class ToolError(DeckTalkError):
-    """ffmpeg, ffprobe or Chromium is unavailable, or one of them failed a call."""
+    """A tool DeckTalk runs is unavailable or failed a call, which `ErrorCode.TOOL` lists in full."""
 
     code = ErrorCode.TOOL
 
@@ -171,7 +245,7 @@ class ProjectLocked(DeckTalkError):
 
 
 class ApprovalRequired(DeckTalkError):
-    """A run that spends money was not approved, by a flag or by a person at a terminal.
+    """A step was not approved, by a flag or by a person at a terminal, which `ErrorCode.APPROVAL` lists in full.
 
     This is a library class and not a command-line concept, because a future service refuses the
     same spend for the same reason and must carry the same price with its refusal.

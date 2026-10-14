@@ -16,7 +16,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from decktalk.artifacts import Takes
-from decktalk.inputs.document import PageSection, Section
+from decktalk.inputs.document import RecordedSection, Section
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ def narration_runs(sections: Sequence[Section], takes: Takes, starts: Mapping[in
             groups.append([])
             open_run = True
         groups[-1].append(section.number)
-        if isinstance(section, PageSection) and section.hold_seconds > 0:
+        if isinstance(section, RecordedSection) and section.hold_seconds > 0:
             open_run = False
     last = len(groups) - 1
     placed = takes.placed

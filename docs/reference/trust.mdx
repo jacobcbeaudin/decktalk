@@ -1,0 +1,120 @@
+---
+title: Pages and programs you did not write
+description: How far a recording trusts a page, which programs a project may start, and the sandbox an untrusted page runs in.
+---
+
+Read this before you build a project someone else wrote, and before you run DeckTalk as a service
+that renders other people's decks.
+
+## What runs when you build a project
+
+A build runs two kinds of code that come with the project. Every page section is a web page, and its
+script runs in the Chromium that records it. A render section names a program in `render_command`,
+and `record` starts it to draw the section's picture. Both run as your user. On your own work that is
+what you want, and on someone else's it means their code reaches what you can reach.
+
+Two machine keys decide how far each is trusted: `record.page_policy` for the pages and
+`record.programs` for the programs. A project file that names either is refused, so a project cannot
+trust itself, and both are set with `decktalk config set KEY VALUE --scope machine`.
+
+## A page someone else wrote
+
+On your own machine a deck is your own work, so by default its page is trusted: it reaches the
+network the way it would in your browser, and a font or a library it loads from another origin is
+reported as [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) rather than stopped.
+
+A service that renders pages other people wrote cannot extend that trust, because a trusted page
+reaches anything the machine can reach, a cloud metadata endpoint included. `record.page_policy`
+says how far a page is trusted.
+
+| Value | What the page may do |
+|---|---|
+| `trusted` | The default. The page reaches the network as a browser would, through the machine's own proxy. |
+| `untrusted` | Chromium runs with its sandbox on, and every request that is not for the project's own origin is refused, through every channel a page can open. |
+
+```console
+decktalk config set record.page_policy untrusted --scope machine
+```
+
+Under `untrusted`, three things hold at once.
+
+- **The sandbox is on, or nothing runs.** A Chromium that cannot start its sandbox is refused with a
+  `TOOL` error. The run never falls back to a browser without one.
+- **No request leaves the origin.** The page is served at the project's own origin, and a request for
+  any other one is aborted before it reaches the network, whatever its scheme. The browser is also
+  pointed at a proxy that answers nothing, and WebRTC may not send UDP past it, which closes the
+  channels request routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. The recording
+  still names every host the page reached for, as `PAGE_CDN_ASSET`.
+- **The browser environment is scrubbed.** Chromium is handed only the variables that say where a
+  file, a display, a locale or a proxy is, so a key the host holds never reaches the process that runs
+  a page's script. ffmpeg and ffprobe are handed the same set. This holds under `trusted` too.
+
+The policy is read by every launch that opens a project's page, which is `record`, `check`,
+`storyboard`, `cue` when a section's recording no longer stands, and every picture `assemble` draws.
+
+A run that may spend never opens an untrusted page, because the API key is within its reach whether
+or not it finds anything to buy, so it is refused with `APPROVAL` before any browser starts. Voice in
+a run of its own with `decktalk narrate --spend`, then
+render in a run without `--spend`.
+
+## Programs a project names
+
+A project can name programs as well as pages: a render section's `render_command` draws its picture.
+A program runs with your user's rights and can read every file you can, the project's `.env`
+included. So cloning someone else's deck and building it would run their code as you, and
+`record.programs` decides whether it does.
+
+| Value | What `record` and `build` do with a project's programs |
+|---|---|
+| `refuse` | The default. Nothing runs, and the run stops with an `INPUT` error that names each program, the key and how to allow it. |
+| `ask` | On a terminal the run lists every program it would start, word for word, and asks once. A yes runs them for that run alone. Without a terminal, under `--no-input` or under `--json`, the run refuses. |
+| `run` | Every program runs without asking. |
+
+`untrusted` refuses every program whatever `programs` says. A refusal comes before any program
+starts and, in a build, before the first stage. The build below passes `--no-spend` because a build
+with no terminal to ask is otherwise refused with `APPROVAL` for the narration it would buy.
+
+```console
+decktalk check                                          # lists every program as PROGRAM_NAMED
+decktalk build --no-spend --set record.programs=run     # allow them for this one run
+decktalk config set record.programs ask --scope machine # ask on every run on this machine
+```
+
+`DECKTALK_RECORD_PROGRAMS=run` allows them for every command a job runs. Read the programs that
+[`PROGRAM_NAMED`](/reference/findings/PROGRAM_NAMED) lists before you allow them.
+
+A program runs in an empty scratch folder rather than in the project, and a word of its command that
+names a project file by a relative path is handed over as that file's absolute path. It gets the
+scrubbed environment with no proxy variable, because a proxy URL can carry a password. None of that
+keeps it from a file: DeckTalk hides no file from a program on any platform, `.env` included, so a
+machine that allows a project's programs trusts that project's author with every file the user can
+read.
+
+## The sandbox in a Linux container
+
+Chromium's sandbox needs user namespaces. In a Linux container that takes two things, and a container
+missing either one refuses an untrusted run.
+
+- **A user other than root.** Chromium refuses its sandbox to root, so run the render as an ordinary
+  user.
+- **A seccomp profile that allows user namespaces.** Docker's default profile blocks the calls the
+  sandbox makes. A render running as an ordinary user under the default profile is still refused, and
+  the same render under a profile that allows those calls launches.
+
+The refusal names both:
+
+```text
+error[TOOL]: could not launch Chromium with its sandbox on (...).
+  hint: An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than root and a seccomp profile that allows user namespaces.
+  docs: https://docs.decktalk.ai/reference/errors/TOOL
+```
+
+The engine's refusal is defence in depth. A service that renders strangers' pages still runs each
+render in a network namespace with no egress of its own, because the machine is where the boundary
+belongs.
+
+## Related
+
+- **Every host DeckTalk and a page contact:** [What leaves your machine](/reference/what-leaves-your-machine)
+- **The machine keys and their layers:** [Configuration](/reference/configuration#record)
+- **Render sections and the programs that draw them:** [Things that move](/guides/motion)

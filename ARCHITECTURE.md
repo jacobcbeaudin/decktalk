@@ -52,7 +52,7 @@ one table.
 |---|---|---|
 | `narrate` | Voice each section and get a time for every word. | one take and one words file per section, a voiced take in `takes/` and a placeholder in `build/narrate/`, and `build/narrate/takes.json` |
 | `cue` | Turn each cue phrase into a second on that section's clock. | `build/cue-times.json` |
-| `record` | Record each page section in headless Chromium and find where the section clock starts in the frames. | `build/recordings/` |
+| `record` | Record each page section in headless Chromium by stepping its section clock one frame at a time. | `build/recordings/` |
 | `score` | Compose the music, the ambience bed and the effects. | `score/`, the bought sounds and their ledger, and `build/score/` |
 | `assemble` | Cut each section to its span, join them, mix the sound and publish. | `build/final/<name>.mp4`, captions, chapters, transcript, poster |
 | `verify` | Measure the finished film against what it was supposed to be. | nothing |
@@ -69,8 +69,8 @@ would cost, so an author sees the findings and the money before a single second 
 at before anything is bought.
 
 A take is named by a digest of its text, its voice, its model and its settings, so an edit voices only
-the sections whose words changed. A recording is kept when its page, its words, its cues and every
-local file it loads are unchanged, and when the motion settings that shaped it have not moved. Paid
+the turns whose words changed. A recording is kept when its page, its words, its cues and every
+local file it loads are unchanged, and when the motion settings that shaped it have not moved. Voiced
 takes are the only expensive thing in the tree, and caching them by content is what makes the tenth
 edit cheap.
 
@@ -191,10 +191,11 @@ check runs on three platforms.
 
 ## Why the cuts land
 
-Chromium begins recording at a moment nobody can predict. The recorder covers the page in magenta
-until the page says it is ready, and the section clock starts on the first frame after the cover. The cover
-holds something that always moves, so frames keep coming while a still page waits. Everything after
-that is arithmetic on frames, and no part of it reads a wall clock.
+The recorder owns time. It holds the page's clock still and, for each frame `k`, moves the page's
+timers on by one frame, steps the section clock to `k / fps`, captures what the page shows and pipes
+it into one lossless encode. Frame `k` of a recording is the page at second `k / fps` by
+construction, so there is no start to find in it and nothing in it can stall. Everything after that
+is arithmetic on frames, and no part of it reads a wall clock.
 
 ## A host that runs other people's projects
 

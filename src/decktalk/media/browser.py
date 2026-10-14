@@ -2,8 +2,12 @@
 
 This is the only module that launches a browser, and therefore the one place that fetches one: a
 machine without Chromium gets it here, the first time a command needs it, the way `ffmpeg.py` gets
-ffmpeg. `pages.py` drives a page in the browser this launches, and `recording.py` records one, so a
+ffmpeg. `pages.py` drives a page in the browser this launches, and `stepping.py` records one, so a
 stage above asks for a recording or a frame and never for a browser.
+
+Every Chromium is launched with the capture switches, which stop it holding its frames to the
+display's refresh rate. A recording made with them decodes to the frames of one made without them,
+so they make a recording faster and never different, and no launch has a reason to go without them.
 
 `[record] page_policy` decides how far the page itself is trusted, and every launch reads it, so
 `check`, `storyboard` and the poster follow the same policy as `record`. A trusted page is the
@@ -66,6 +70,24 @@ reached only by what routing cannot stop, which is every channel an untrusted pa
 EVERY_HOST = "<-loopback>"
 """Truth: Chromium's word for taking loopback off its implicit bypass list, so no host skips the proxy."""
 
+RASTER_ARGS = ("--disable-partial-raster",)
+"""Truth: what every Chromium is started with, so a tile the compositor draws again is drawn whole.
+
+Partial raster draws only the changed rectangle of a tile over the pixels the tile held before, and
+the anti-aliased edge it draws inside that rectangle is not the edge a whole tile draws. A frame would
+then carry which states the page painted before it, so a frame reached by its index and the same frame
+reached by stepping every frame before it would differ. Drawing every changed tile whole makes the
+picture a function of the page as it stands.
+"""
+
+CAPTURE_ARGS = ("--disable-frame-rate-limit", "--disable-gpu-vsync")
+"""Truth: what every Chromium is started with last, so no frame waits for a display refresh.
+
+Without them the compositor holds each frame to the display's rate, so a recorded frame took about
+twice as long. The recorder steps the clock and captures a frame once the page has drawn it, so the
+switches change how long a frame takes and never which pixels it holds.
+"""
+
 UNTRUSTED_ARGS = ("--force-webrtc-ip-handling-policy=disable_non_proxied_udp",)
 """What an untrusted page's Chromium is started with, which keeps WebRTC from sending UDP past the proxy."""
 
@@ -112,17 +134,18 @@ def admitted(policy: str, *, spend: bool) -> PagePolicy:
 def launch_options(policy: PagePolicy) -> dict[str, Any]:
     """The keyword arguments a launch under `policy` passes to Playwright, beyond the executable.
 
-    The environment is scrubbed under both policies. The sandbox, the proxy and the WebRTC switch are
-    the untrusted policy's alone, because a trusted page is a deck on its author's own machine and
-    the machine's own proxy is the one it should use.
+    The environment is scrubbed and the raster and capture switches are passed under both policies.
+    The sandbox, the proxy and the WebRTC switch are the untrusted policy's alone, because a trusted
+    page is a deck on its author's own machine and the machine's own proxy is the one it should use.
     """
     options: dict[str, Any] = {"env": child_environment()}
     if policy == UNTRUSTED:
         options |= {
             "chromium_sandbox": True,
             "proxy": {"server": DEAD_PROXY, "bypass": EVERY_HOST},
-            "args": list(UNTRUSTED_ARGS),
         }
+    sealing = UNTRUSTED_ARGS if policy == UNTRUSTED else ()
+    options["args"] = [*RASTER_ARGS, *sealing, *CAPTURE_ARGS]
     return options
 
 

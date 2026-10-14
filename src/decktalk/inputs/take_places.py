@@ -19,25 +19,32 @@ A voiced take is written to the take store first and the takes directory second,
 store that holds a good copy keeps it, so a take voiced again on request changes this project's
 takes directory and never the take another project plays. Voicing holds the store's lock on that
 take, the operating system's own through `filelock`, so two runs on one machine voice one take once:
-the second waits up to `[narration] store_wait_seconds` for the lock and keeps the copy the first
-left, and it is refused when the wait runs out. Before the voice is asked, each place the take will
+the second waits for the lock as long as one whole take request can run, every attempt
+`[narration] timeout_seconds` long and `[narration] retries` waits between them, and keeps the copy
+the first left, and it is refused when the wait runs out. Before the voice is asked, each place the take will
 be written is made and proved writable, so a place that cannot hold it is refused before anything is
 paid.
 
-Nothing damaged is ever deleted. A damaged copy is moved aside as `<name>.unreadable`, or as
+Nothing is ever deleted. A damaged copy is moved aside as `<name>.unreadable`, or as
 `<name>.<n>.unreadable` with the first number free for both files, in the same step that a good copy
-replaces it, and it is put back when that write fails. When no place holds a good copy and one holds
-a damaged copy, the take is refused with the sentence a paid record is refused with, because the next
-step would voice it again.
+replaces it, and it is put back when that write fails. A good copy in the takes directory that a run
+was told to replace is a rejected take: it is moved into the takes directory's `rejected/` folder as
+`<digest>.<n>`, with the first number from 1 free for both files, in the same step that the take
+voiced again replaces it, so moving the pair back under its digest plays it again. When no place holds
+a good copy and one holds a damaged copy, the take is refused with the sentence a paid record is
+refused with, because the next step would voice it again. A pair whose words file records no audio
+print was written before the print and can never be told good, so it counts as no copy: its take is
+bought again as one no place holds is, and the old pair is moved aside when the new one is written.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,6 +53,8 @@ from typing import Protocol
 from filelock import FileLock, Timeout
 
 from decktalk.artifacts import (
+    PLACEHOLDER_SUFFIX,
+    VOICED_SUFFIX,
     AudioPrint,
     ProviderWords,
     Unreadable,
@@ -59,7 +68,8 @@ from decktalk.events import Level
 from decktalk.files import DRAFT_TOKEN_BYTES, replace_all
 from decktalk.inputs.paths import at, relative
 from decktalk.inputs.workspace import Workspace
-from decktalk.results import TakeOutcome, Word
+from decktalk.results import TakeOutcome
+from decktalk.speech import Speech
 
 STORE_LOCK_SUFFIX = ".lock"
 """What the take store's lock on one take is called after its digest, which a voicing holds while it voices."""
@@ -75,6 +85,9 @@ PREFLIGHT_SUFFIX = ".preflight"
 
 HALF_PAIR = "Only one of its two files is there."
 """Why a place holding the audio or the words of a take, and not both, holds a damaged copy."""
+
+UNPRINTED = "Its words file records no audio print, so it cannot be told from a damaged copy."
+"""Why a pair written before the audio print counts as no copy, which its take is bought again for."""
 
 
 class Witness(Protocol):
@@ -106,6 +119,9 @@ class TakeFiles:
     """Some place holds a good copy, by the size its words recorded."""
     in_takes_directory: bool
     """The takes directory holds both files of the take, whatever they hold."""
+    unprinted: bool = False
+    """No place holds a good copy and some place holds a pair whose words record no audio print, so it is bought
+    again."""
     _fault: tuple[Path, str] | None = field(default=None, repr=False, compare=False)
     _workspace: Workspace | None = field(default=None, repr=False, compare=False)
 
@@ -134,6 +150,11 @@ class _Copy:
     def good(self) -> bool:
         return self.pair and self.fault is None
 
+    @property
+    def damaged(self) -> bool:
+        """Some file of the copy is there and it is not good, and it was not written before the audio print."""
+        return self.there and not self.good and self.fault != UNPRINTED
+
     def why(self) -> str:
         return self.fault or HALF_PAIR
 
@@ -147,7 +168,8 @@ class TakePlaces:
 
     def __init__(self, workspace: Workspace, *, wait_seconds: float) -> None:
         self._workspace = workspace
-        self._wait_seconds = wait_seconds
+        self.wait_seconds = wait_seconds
+        """How long a run waits for another run voicing the same take, which is one whole take request."""
         self._judged: dict[tuple[object, ...], str | None] = {}
         self._judging = threading.Lock()
 
@@ -156,14 +178,14 @@ class TakePlaces:
         workspace = self._workspace
         if is_placeholder(digest):
             audio, words = (
-                workspace.narrate_dir / workspace.take_file(digest),
+                workspace.narrate_dir / take_file(digest, PLACEHOLDER_SUFFIX),
                 workspace.narrate_dir / words_file(digest),
             )
             return TakeFiles(digest, audio, words, held=audio.is_file() and words.is_file(), in_takes_directory=False)
         copies = [self._judge(place, digest, whole=False) for place in self._places]
         takes = copies[0]
         good = next((copy for copy in copies if copy.good), None)
-        fault = next(((copy.place, copy.why()) for copy in copies if copy.pair and not copy.good), None)
+        fault = next(((copy.place, copy.why()) for copy in copies if copy.pair and copy.damaged), None)
         shown = good or takes
         return TakeFiles(
             digest,
@@ -171,6 +193,7 @@ class TakePlaces:
             shown.words,
             held=good is not None,
             in_takes_directory=takes.pair,
+            unprinted=good is None and any(copy.fault == UNPRINTED for copy in copies),
             _fault=fault,
             _workspace=workspace,
         )
@@ -189,20 +212,23 @@ class TakePlaces:
     def voice(
         self,
         digest: str,
-        speak: Callable[[], tuple[bytes, Sequence[Word]]],
+        speak: Callable[[], Speech],
         charge: Callable[[], None],
         witness: Witness,
         *,
         section: int,
         replacing: bool,
+        suffix: str,
     ) -> TakeOutcome:
         """Voice this take once on this machine, and write it to every place, or keep the copy another run left.
 
         Under the store's lock, a whole good copy in either place is kept unless `replacing`, which is
-        whether this section's plan was told to replace its voiced take. Otherwise each place is proved
+        whether this turn's plan was told to replace its voiced take. Otherwise each place is proved
         writable, `speak` is asked, `charge` is called, and the pair is written to the store, unless it
-        holds a good copy, then to the takes directory. A charge that raises still leaves the pair, and
-        is raised after it.
+        holds a good copy, then to the takes directory, where a good copy it replaces is set aside as a
+        rejected take first. A charge that raises still leaves the pair, and is raised after it. The
+        audio is written under `suffix`, which the voice that speaks it declares for what it returns, and
+        its words file records it.
         """
         if is_placeholder(digest):
             raise ValueError(
@@ -219,6 +245,8 @@ class TakePlaces:
             writes = store if store is not None and not store.good else None
             try:
                 self._preflight(workspace.takes, digest)
+                if replacing and takes.good:
+                    self._preflight(workspace.rejected_dir, digest)
             except OSError as failed:
                 raise self._takes_unwritable(digest, failed) from failed
             if writes is not None:
@@ -226,12 +254,19 @@ class TakePlaces:
                     self._preflight(writes.place, digest)
                 except OSError as failed:
                     raise self._store_unwritable(digest, failed) from failed
-            audio, words = speak()
+            speech = speak()
             try:
                 charge()
             finally:
                 self._write(
-                    digest, audio, words, witness, section=section, replacing=replacing, takes=takes, store=writes
+                    digest,
+                    speech,
+                    witness,
+                    section=section,
+                    replacing=replacing,
+                    suffix=suffix,
+                    takes=takes,
+                    store=writes,
                 )
         return TakeOutcome.VOICED
 
@@ -249,7 +284,7 @@ class TakePlaces:
     def _judge(self, place: Path, digest: str, *, whole: bool) -> _Copy:
         """This place's copy of a voiced take, judged by its size alone or by its whole BLAKE3."""
         words = place / words_file(digest)
-        audio = place / take_file(digest, _recorded_suffix(words) or self._workspace.suffix)
+        audio = place / take_file(digest, _recorded_suffix(words) or VOICED_SUFFIX)
         audio_there, words_there = audio.is_file(), words.is_file()
         fault: str | None = None
         if audio_there and words_there:
@@ -290,7 +325,7 @@ class TakePlaces:
         if store is not None and store.good:
             self._copy_in(digest, store, takes, witness)
             return
-        damaged = next((copy for copy in (takes, store) if copy is not None and copy.there), None)
+        damaged = next((copy for copy in (takes, store) if copy is not None and copy.damaged), None)
         if damaged is not None:
             raise _damaged(workspace, section, digest, damaged.place, damaged.why())
 
@@ -366,7 +401,7 @@ class TakePlaces:
         except OSError as failed:
             raise self._store_unwritable(digest, failed) from failed
         lock = FileLock(store / f"{digest}{STORE_LOCK_SUFFIX}")
-        deadline = time.monotonic() + self._wait_seconds
+        deadline = time.monotonic() + self.wait_seconds
         while True:
             try:
                 lock.acquire(timeout=STORE_POLL_SECONDS)
@@ -376,8 +411,9 @@ class TakePlaces:
                 if time.monotonic() > deadline:
                     raise ProjectLocked(
                         f"another run has been voicing take {digest} into the take store at {store} for longer "
-                        f"than the {self._wait_seconds:g} seconds [narration] store_wait_seconds allows, so this "
-                        "run voiced nothing.",
+                        f"than the {self.wait_seconds:g} seconds one whole take request can run, every attempt "
+                        "[narration] timeout_seconds long with the waits between [narration] retries, so this run "
+                        "voiced nothing.",
                         hint="Let the other run finish, or stop it, then run this again. If no run is voicing it, "
                         f"delete {store / (digest + STORE_LOCK_SUFFIX)}.",
                     ) from None
@@ -403,19 +439,30 @@ class TakePlaces:
     def _write(
         self,
         digest: str,
-        audio: bytes,
-        words: Sequence[Word],
+        speech: Speech,
         witness: Witness,
         *,
         section: int,
         replacing: bool,
+        suffix: str,
         takes: _Copy,
         store: _Copy | None,
     ) -> None:
-        """Write the voiced pair to the store when `store` is given, then to the takes directory, then say so."""
+        """Write the voiced pair to the store when `store` is given, then to the takes directory, then say so.
+
+        A good copy in the takes directory is there only when `replacing`, and it is set aside as a rejected
+        take before the new pair is written, and put back when that write fails. The words file records
+        whether the voice sent word times and the model it served, so a take that came with none is whole,
+        fingerprinted, and timed by the aligner.
+        """
         workspace = self._workspace
-        audio_name, words_name = workspace.take_file(digest), words_file(digest)
-        text = ProviderWords(words=tuple(words), audio=AudioPrint.of(audio, suffix=workspace.suffix)).text
+        audio, audio_name, words_name = speech.audio, take_file(digest, suffix), words_file(digest)
+        text = ProviderWords(
+            words=speech.words or (),
+            timed=speech.words is not None,
+            model_digest=speech.model_digest,
+            audio=AudioPrint.of(audio, suffix=suffix),
+        ).text
 
         def pair(place: Path) -> dict[Path, str | bytes]:
             # The words come last, so a run stopped while it writes never leaves a words file vouching for audio
@@ -430,10 +477,8 @@ class TakePlaces:
                 stored = True
             except OSError as failed:
                 unstored = failed
-        aside = () if takes.good else _aside_names(takes, audio_name)
-        replaced = (takes.audio,) if takes.good and takes.audio.name != audio_name else ()
         try:
-            in_takes = _replace_pair(pair(workspace.takes), aside, replaced=replaced)
+            in_takes, rejected = _into_takes(pair(workspace.takes), takes, workspace.rejected_dir, digest)
         except OSError as failed:
             raise self._landed(digest, failed, section=section, replacing=replacing, stored=stored, takes=takes) from (
                 failed
@@ -450,6 +495,13 @@ class TakePlaces:
                     f"{_names(moved)} before the take voiced again was written.",
                     level=Level.WARNING,
                 )
+        if rejected:
+            witness.note(
+                f"The take {digest} section {section} played was set aside in "
+                f"{relative(workspace.rejected_dir, workspace.root).as_posix()} as {_names(rejected)}, and the "
+                f"take voiced again plays in its place. Move that pair back as {takes.audio.name} and "
+                f"{takes.words.name} to play it again."
+            )
         if unstored is not None:
             witness.note(
                 f"Take {digest} could not be copied into the take store at {workspace.store} ({_reason(unstored)}). "
@@ -524,7 +576,7 @@ def _damaged(workspace: Workspace, section: int, digest: str, place: Path, fault
     return InputError(
         f"{fault} No place holds a good copy of the take section {section} plays, and only voicing it again "
         "gives it back, so DeckTalk neither buys it again nor deletes it.",
-        hint=f"Put a good copy of {workspace.take_file(digest)} and {words_file(digest)} in {takes}, or run "
+        hint=f"Put a good copy of {take_file(digest, VOICED_SUFFIX)} and {words_file(digest)} in {takes}, or run "
         f"decktalk narrate --section {section} --replace-voiced --spend knowing that it buys the take again.",
         location=at(place / words_file(digest), workspace.root, section=section),
     )
@@ -536,16 +588,16 @@ def _pair_fault(audio: Path, words: Path, *, whole: bool = False) -> str | None:
     The words must read, and the audio must hold the number of bytes they recorded, which is cheap
     enough to ask on every lookup. `whole` also takes the audio's BLAKE3, which is what tells a
     swapped take of the same length, and which a run asks once per take and before every copy. A words
-    file with no fingerprint vouches only that its audio is not empty.
+    file written before the audio print says `UNPRINTED`.
     """
     try:
         said = ProviderWords.parse(words)
     except Unreadable as unread:
-        return str(unread)
+        return UNPRINTED if _unprinted(words) else str(unread)
+    if said is None:
+        return HALF_PAIR
     size = audio.stat().st_size
-    printed = said.audio if said is not None else None
-    if printed is None:
-        return None if size else f"{audio.name} is empty."
+    printed = said.audio
     if size != printed.bytes:
         return f"{audio.name} holds {size} bytes where {words.name} recorded {printed.bytes}."
     if whole and file_digest(audio) != printed.blake3:
@@ -553,17 +605,26 @@ def _pair_fault(audio: Path, words: Path, *, whole: bool = False) -> str | None:
     return None
 
 
+def _unprinted(words: Path) -> bool:
+    """Whether a words file that does not read is one written before the audio print: an object with no `audio`."""
+    try:
+        said = json.loads(words.read_bytes())
+    except (OSError, ValueError):  # silent: _pair_fault says what is wrong with a file that is not JSON
+        return False
+    return isinstance(said, dict) and "audio" not in said
+
+
 def _recorded_suffix(words: Path) -> str | None:
-    """The suffix a take's words file says its audio was written under, or None when it says none or cannot be read.
+    """The suffix a take's words file says its audio was written under, or None when it is not there or cannot be read.
 
     A words file that cannot be read is judged by `_pair_fault`, which says what is wrong with it, so
-    here it only means the take is looked for under the voice's own suffix.
+    here it only means the take is looked for under `VOICED_SUFFIX`, which every shipped voice writes.
     """
     try:
         said = ProviderWords.parse(words)
     except Unreadable:  # silent: _pair_fault reads the same file and says what is wrong with it
         return None
-    return said.audio.suffix if said is not None and said.audio is not None else None
+    return said.audio.suffix if said is not None else None
 
 
 def _stamp(audio: Path, words: Path) -> tuple[object, ...]:
@@ -597,14 +658,11 @@ def _aside_names(copy: _Copy, audio_name: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys((copy.audio.name, audio_name, copy.words.name)))
 
 
-def _replace_pair(
-    pair: dict[Path, str | bytes], aside: tuple[str, ...], *, replaced: tuple[Path, ...] = ()
-) -> list[tuple[Path, Path]]:
+def _replace_pair(pair: dict[Path, str | bytes], aside: tuple[str, ...]) -> list[tuple[Path, Path]]:
     """Move `aside` out of the way, write `pair` with its words last, and give back what was moved where.
 
     A write that fails puts every moved file back under its own name and is raised, so a copy is set
-    aside only when a good copy replaced it. `replaced` is a good copy's audio under another suffix,
-    which the new pair replaces on request and which goes once the write is done.
+    aside only when a good copy replaced it.
     """
     place = next(iter(pair)).parent
     moved = _set_aside(place, aside) if aside else []
@@ -613,9 +671,44 @@ def _replace_pair(
     except OSError:
         _put_back(moved)
         raise
-    for gone in replaced:
-        gone.unlink(missing_ok=True)
     return moved
+
+
+def _into_takes(
+    pair: dict[Path, str | bytes], takes: _Copy, rejected_dir: Path, digest: str
+) -> tuple[list[tuple[Path, Path]], list[tuple[Path, Path]]]:
+    """Write a voiced pair into the takes directory over what `takes` holds there, and give back what moved where.
+
+    A good copy is there only when it is being replaced, and it is set aside as a rejected take, and a damaged
+    one is moved aside as `.unreadable`. A write that fails puts the rejected take back and is raised.
+    The first list is what was moved aside as damaged, the second what was set aside as rejected.
+    """
+    audio_name = next(iter(pair)).name
+    rejected = _reject(takes, rejected_dir, digest) if takes.good else []
+    try:
+        moved = _replace_pair(pair, () if takes.good else _aside_names(takes, audio_name))
+    except OSError:
+        _put_back(rejected)
+        raise
+    return moved, rejected
+
+
+def _reject(copy: _Copy, into: Path, digest: str) -> list[tuple[Path, Path]]:
+    """Move one good pair into `into` as `<digest>.<n>`, for the first `n` from 1 free for both files.
+
+    It never overwrites a file, and a move that fails puts back what it moved and is raised. It gives
+    back each file moved with where it went, audio first.
+    """
+    into.mkdir(parents=True, exist_ok=True)
+    number = 1
+    while True:
+        stem = f"{digest}.{number}"
+        moves = [(copy.audio, into / f"{stem}{copy.audio.suffix}"), (copy.words, into / words_file(stem))]
+        if not any(os.path.lexists(target) for _source, target in moves):
+            moved = _moved_to(moves)
+            if moved is not None:
+                return moved
+        number += 1
 
 
 def _set_aside(place: Path, names: tuple[str, ...]) -> list[tuple[Path, Path]]:
@@ -639,9 +732,17 @@ def _set_aside(place: Path, names: tuple[str, ...]) -> list[tuple[Path, Path]]:
 
 def _moved_under(present: list[Path], tag: str) -> list[tuple[Path, Path]] | None:
     """Move each file onto its name with `tag` added, or None when another file took one of those names first."""
+    return _moved_to([(source, source.with_name(source.name + tag)) for source in present])
+
+
+def _moved_to(moves: list[tuple[Path, Path]]) -> list[tuple[Path, Path]] | None:
+    """Move each file onto its target, or None when another file took one of the targets first.
+
+    Each target is reserved before its file moves onto it, so a file this call did not create is never
+    replaced.
+    """
     moved: list[tuple[Path, Path]] = []
-    for source in present:
-        aside = source.with_name(source.name + tag)
+    for source, aside in moves:
         try:
             os.close(os.open(aside, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
         except FileExistsError:  # silent: that number is taken, so the next one is tried

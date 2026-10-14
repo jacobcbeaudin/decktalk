@@ -14,21 +14,20 @@ import pytest
 from decktalk.artifacts import Luma, RecordingChecks
 from decktalk.findings import Code
 from decktalk.media import ffmpeg, frames
-from decktalk.media.pagereport import FrameGap, PageWarningRow
+from decktalk.media.pagereport import PageWarningRow
 from decktalk.settings import Settings
 from decktalk.stages.record.checks import (
     check_recording,
     frame_findings,
     measure_luma,
     recording_findings,
-    stall_finding,
 )
 from support.pages import a_recording, a_report
 
 PAGE = "deck/index.html"
 """The page every row here is about, as `decktalk.toml` spells it."""
 
-WHERE = Path("build/recordings/01.webm")
+WHERE = Path("build/recordings/01.mp4")
 """The recording every frame judgement here is about, project-relative."""
 
 SECTION = 1
@@ -56,7 +55,7 @@ def test_the_luma_is_read_at_a_tenth_a_half_and_nine_tenths(monkeypatch: pytest.
         return 90.0, 210.0
 
     monkeypatch.setattr(frames, "luma_at", luma_at)
-    measured = measure_luma(tmp_path / "01.webm", 10.0)
+    measured = measure_luma(tmp_path / "01.mp4", 10.0)
     # The middle frame gives its mean and its peak in one read, so it is decoded once.
     assert read == [1.0, 5.0, 9.0]
     assert measured.peak_at_half == 210.0
@@ -67,7 +66,7 @@ def test_the_checks_measure_the_file_against_what_the_recorder_asked_for(
 ) -> None:
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.5)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, 210.0))
-    measured = check_recording(tmp_path / "01.webm", a_recording(report=a_report(), requested_seconds=10.0))
+    measured = check_recording(tmp_path / "01.mp4", a_recording(report=a_report(), requested_seconds=10.0))
     assert (measured.duration_seconds, measured.wanted_seconds) == (9.5, 10.0)
 
 
@@ -83,37 +82,25 @@ def test_a_bright_frame_half_way_through_is_not_black(settings: Settings) -> Non
     assert frame_findings(checks_of(peak=peak), where=WHERE, section=SECTION, settings=settings) == []
 
 
-def test_a_recording_short_of_its_own_length_is_truncated(settings: Settings) -> None:
-    short = 10.0 - settings.record.truncated_slack_seconds - 0.5
+def test_a_recording_two_frames_short_of_its_own_length_is_truncated(settings: Settings) -> None:
+    """The recorder writes the span's own frames, so two frames missing is a recording that stopped early."""
+    short = 10.0 - 2 / settings.video.fps
     found = frame_findings(checks_of(duration=short, wanted=10.0), where=WHERE, section=SECTION, settings=settings)
     assert [row.code for row in found] == [Code.RECORD_TRUNCATED]
     assert "10.00s" in found[0].message
 
 
-def test_a_recording_inside_its_own_slack_is_not_truncated(settings: Settings) -> None:
-    inside = 10.0 - settings.record.truncated_slack_seconds
+def test_a_recording_one_frame_short_is_its_span_rounded_to_a_frame(settings: Settings) -> None:
+    """A span rounds to the nearest whole frame, so a whole recording may sit up to one frame under it."""
+    inside = 10.0 - 1 / settings.video.fps
     assert (
         frame_findings(checks_of(duration=inside, wanted=10.0), where=WHERE, section=SECTION, settings=settings) == []
     )
 
 
-def test_a_stall_over_the_limit_carries_the_measured_gap_and_the_limit(settings: Settings) -> None:
-    limit = settings.record.frame_gap_max_ms
-    found = stall_finding(limit + 40, where=WHERE, section=SECTION, settings=settings)
-    assert found is not None
-    assert found.code is Code.RECORD_STALLED
-    assert f"{limit + 40} ms" in found.message
-    assert f"{limit} ms" in found.message
-
-
-def test_a_gap_inside_the_limit_is_no_stall(settings: Settings) -> None:
-    assert stall_finding(settings.record.frame_gap_max_ms, where=WHERE, section=SECTION, settings=settings) is None
-
-
 def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings) -> None:
     report = a_report(
         warnings=[{"code": "PAGE_KATEX_MISSING", "message": "KaTeX never arrived.", "slide": "1.1"}],
-        frameGaps=[FrameGap(at=2.0, ms=settings.record.frame_gap_max_ms + 100).model_dump()],
     )
     found = recording_findings(
         a_recording(report=report, external=("https://cdn.example.com",), requested_seconds=10.0),
@@ -127,8 +114,16 @@ def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings
         Code.PAGE_KATEX_MISSING,
         Code.RECORD_BLACK,
         Code.PAGE_CDN_ASSET,
-        Code.RECORD_STALLED,
     }
+
+
+def test_a_change_no_declaration_explains_is_judged_once_per_element_with_its_second(settings: Settings) -> None:
+    undeclared = [{"what": "<div#late>", "at": 0.4, "frames": 3}, {"what": "<p.count>", "at": 1.2, "frames": 1}]
+    found = recording_findings(
+        a_recording(undeclared=undeclared), checks_of(), page=PAGE, where=WHERE, section=SECTION, settings=settings
+    )
+    assert [(row.code, row.location.section) for row in found] == [(Code.PAGE_CHANGE_UNDECLARED, SECTION)] * 2
+    assert "<div#late>" in found[0].message and "0.40s" in found[0].message and "3 frames" in found[0].message
 
 
 def test_a_warning_the_page_has_no_business_raising_is_refused_before_it_reaches_a_finding() -> None:

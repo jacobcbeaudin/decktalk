@@ -16,9 +16,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from contract.test_runtime import MARKUP_SCENE, deck
+from contract.test_runtime import MARKUP_SCENE, deck, stepped
+from decktalk.findings import Code
 from decktalk.media.origin import Allowed, page_url, route_pages
-from decktalk.page import REPORT
+from decktalk.media.pages import DEADLINE_SECONDS
+from decktalk.page import ATTENTION, BACK_OPACITY, REPORT
 from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
 from support.browser_pages import Tab, chromium_tab, opened, settled, write_page
 
@@ -91,26 +93,18 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
         bare.close()
 
 
-# ---- the cover and the clock ---------------------------------------------------------------
+# ---- the stepped clock -------------------------------------------------------------------------
 
 
-def test_the_cover_hides_the_page_until_the_clock_starts(page, errors, tmp_path):
-    """The recorder starts capturing before the page settles, so the cover owns every frame until t=0."""
-    page.goto(f"{deck(tmp_path, 'cover.html')}?scene=1&t0=signal")
-    page.evaluate("() => window.__decktalkProbe.cover()")
-    box = page.evaluate("() => document.getElementById('dt-cover').getBoundingClientRect().toJSON()")
-    assert (box["width"], box["height"]) == (1920, 1080)
-    paint = page.evaluate("() => getComputedStyle(document.getElementById('dt-cover')).backgroundColor")
-    assert paint == "rgb(255, 0, 255)"
-    # The keep-alive turns for the whole recording, so the compositor keeps painting frames.
-    alive = "() => document.getElementById('dt-keepalive').getAnimations().length"
-    assert page.evaluate(alive) == 1
-    at = page.evaluate("() => window.__decktalkProbe.lift()")
+def test_a_step_moves_the_section_clock_to_the_second_the_recorder_names(page, errors, tmp_path):
+    """The recorder's one call moves the page, so a recorded frame is the page at the second it asked for."""
+    page.goto(f"{deck(tmp_path, 'step.html')}?scene=1&t0=signal&cues=1.1:ball@0.1")
+    page.wait_for_function("() => window.__decktalk.ready")
+    assert page.evaluate("() => window.__decktalk.started()") is False
+    page.evaluate("(wait) => window.__decktalkProbe.step(0.12, wait)", DEADLINE_SECONDS)
+    assert page.evaluate("() => window.__decktalk.now()") == 0.12
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
     assert page.evaluate("() => document.getElementById('dt-cover')") is None
-    assert at > 0
-    # The clock started on the frame that showed the cover gone, so the page's t=0 is that frame.
-    assert page.evaluate("() => window.__decktalk.now()") >= 0
-    assert page.evaluate(alive) == 1
     assert not errors
 
 
@@ -210,6 +204,41 @@ def test_the_recorder_reads_the_whole_page_back_in_one_call(page, tmp_path):
     assert report["version"] == page.evaluate("() => window.__decktalk.version")
 
 
+TICKS = """
+<div data-scene="5">
+  <template data-slide="5.1">
+    <i class="tick" data-class="a:hit" data-describe-class="a:its tick lights"></i>
+    <i class="tick" data-class="b:hit" data-describe-class="b:its tick lights"></i>
+    <p data-in="b" data-describe="the second line">two</p>
+    <i class="tick" data-class="c:hit" data-describe-class="c:its tick lights"></i>
+  </template>
+  <template data-slide="5.2">
+    <i class="tick" data-class="d:hit" data-describe-class="d:its tick lights"></i>
+  </template>
+</div>
+"""
+
+
+def test_a_slide_writes_each_sentence_once_where_it_first_applies(page, tmp_path):
+    """Forty ticks that each say "its tick lights" read forty times say nothing new after the first.
+
+    The sentence is written at the first cue of a slide that says it, and a later cue of the same slide
+    says only what it adds. The next slide is new to the reader, so it may say the sentence again.
+    """
+    url = write_page(tmp_path, "ticks.html", TICKS)
+    page.goto(f"{url}?scene=5&t0=0&cues=5.1:a@0.1,5.1:b@0.2,5.1:c@0.3,5.2:d@0.5")
+    page.wait_for_function("() => window.__decktalk.fired.length === 4")
+    report = page.evaluate("() => window.__decktalkProbe.report()")
+    assert [row["describe"] for row in report["cues"]] == [
+        "its tick lights",
+        "the second line appears. two",
+        None,
+        "its tick lights",
+    ]
+    # A cue that ran its moments and had nothing new to say is still a cue the slide declares.
+    assert Code.PAGE_CUE_UNKNOWN.value not in [row["code"] for row in report["warnings"]]
+
+
 def test_a_synced_line_reports_itself_through_the_seam(page, tmp_path):
     """One word is far under the change floor, so the only record of it is the row the seam carries."""
     scene = """
@@ -251,6 +280,53 @@ def test_freeze_at_and_before_one_cue(page, errors, tmp_path):
     assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
     assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
     assert not errors
+
+
+RETURNS = """
+<style>
+  .panel { position: absolute; left: 120px; top: 360px; width: 820px; height: 280px; background: #222 }
+  .code { position: absolute; left: 1000px; top: 360px; width: 800px; height: 280px; background: #222 }
+</style>
+<div data-scene="4" data-name="Returns">
+  <template data-slide="4.4">
+    <div class="panel" data-in="formula" data-in-style="fade" data-back="code" data-front="waited"
+         data-describe="the formula"></div>
+    <div class="code" data-in="code" data-in-style="rise" data-describe="the code"></div>
+  </template>
+</div>
+"""
+"""A panel that fades in, steps back when a second arrives beside it, and returns to the front on a cue of its own."""
+
+RETURNS_CUES = "4.4:formula@0.05,4.4:code@0.4,4.4:waited@1.2"
+"""When each cue of the returning panel is due, each a whole attention span after the one before it."""
+
+SETTLED_SECONDS = 0.1
+"""How long past the end of a span a recorded frame is taken, so the frame is the state the span lands in."""
+
+
+@pytest.mark.parametrize(
+    ("cue", "due", "span", "opacity"),
+    [
+        pytest.param("4.4:code", 0.4, ATTENTION["back"].seconds, BACK_OPACITY, id="stepped back"),
+        pytest.param("4.4:waited", 1.2, ATTENTION["front"].seconds, 1.0, id="returned"),
+    ],
+)
+def test_a_still_draws_the_page_as_the_recorded_frame_at_its_second_draws_it(page, tmp_path, cue, due, span, opacity):
+    """A still after a step back or a return shows the panel as the film shows it once the span has landed.
+
+    `check`, `storyboard`, the poster and the caption bands all draw stills, so a return a still never
+    drew would be a cue `check` measured as no change at all while the film played it plainly.
+    """
+    url = write_page(tmp_path, "returns.html", RETURNS)
+    panel = "() => getComputedStyle(document.querySelector('.panel')).opacity"
+    opened(page, f"{url}?scene=4&t0=signal&cues={RETURNS_CUES}")
+    stepped(page, due + span + SETTLED_SECONDS)
+    assert float(page.evaluate(panel)) == pytest.approx(opacity)
+    recorded = page.screenshot()
+
+    settled(page, f"{url}?freeze=4.4&after={cue}")
+    assert float(page.evaluate(panel)) == pytest.approx(opacity)
+    assert page.screenshot() == recorded
 
 
 def starter_deck(page: Page, tmp_path: Path) -> str:

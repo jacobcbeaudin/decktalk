@@ -1,0 +1,186 @@
+---
+title: The recorder steps the clock
+description: Why the recorder owns time and moves the section clock one frame at a time, so frame k of a recording is the page at second k / fps.
+---
+
+## Decision
+
+The recorder owns time. It installs Playwright's clock before the page loads, lets the page load,
+become ready and paint, waits until every animation the page set playing has started, and then
+holds the page clock still. For each frame `k` of the recording it moves the page's timers and
+animation frames on by one frame, calls
+`window.__decktalkProbe.step(k / fps, wait)`, and captures what the page shows over CDP as one
+lossless image once the step answers. Every image goes down one pipe into one lossless encode at `video.fps`.
+
+`step(t)` hands the second to the runtime's `DeckTalk.stepTo(t)`. That runs every cue and task due by
+`t` in the order it was due, calls every frame hook with `t`, and holds every CSS animation, CSS
+transition and Web Animation at the second since its birth. An animation is born at the second its
+cue was due, not at the frame that ran it, so a reveal is in the same place at the same second
+whatever rate the film is recorded at. Every animation is also held at a task's own second just
+before the task runs, so a transition a cue interrupts turns from where it stands at that cue.
+
+`step` answers only once the page has drawn that second. It waits on the browser's own animation
+frame, which Playwright's clock does not hold because the probe takes it before the clock is
+installed, until a whole rendering update has laid out, painted and committed the step, and then
+for every font the page shows and every image on it, rendering again after each arrives. A capture
+taken the moment the runtime returned would race the browser's own rendering, so what a frame
+showed would depend on how busy the machine was. A page that
+has not drawn a step within `record.page_deadline_seconds`, the deadline every call into a page has,
+stops the recording at that frame, so a frame is never captured half drawn. A page that cannot even
+say so, because it spins its main thread, is closed from outside at the same deadline.
+
+Frame `k` of the recording is therefore the page at section second `k / fps` by construction. A
+person's preview in their own browser still plays in real time, and only the recorder steps.
+
+### Still frames
+
+Most frames of a narrated slide are the frame before: in the shipped projects about nine in ten. So
+`step` also answers whether anything the page draws may have changed since the step before, and the
+recorder writes the frame before into the encode again, without a capture, for a frame where no step
+since the last capture said so. The frame written again is the frame a capture would have taken, so
+the recording is the same frames either way and only takes less time.
+
+A step says the picture changed when any of these holds:
+
+- The runtime ran a task, such as a cue, a reveal or a mount.
+- A frame hook drew.
+- An animation's progress moved, or an animation started or left, which the timeline reads from every
+  animation it holds.
+- A declared motion is between its two cues, or a declared loop is on the page.
+- The DOM changed or something scrolled, which a `MutationObserver` the probe starts before the page
+  loads sees, so a plain `setTimeout` that sets a style is seen too. The probe observes every shadow
+  root a script attaches or reaches the same way, open or closed.
+- A script wrote a style sheet through its object model, such as `insertRule`, `replaceSync` or a
+  rule's `style`, or the document or a shadow root adopted other sheets. The probe wraps every writer
+  of the object model before the page loads, and compares each adopted list at every step.
+- The step waited for a font or an image.
+- The page shows a `<canvas>`, a `<video>`, an `<iframe>`, an `<embed>` or an `<object>`, which draw
+  where the observer cannot see, so such a page is captured on every frame. One the page hides, makes
+  transparent, gives no size or places outside the viewport draws no pixel and turns nothing off, and
+  `record` logs a debug line naming the element that does.
+- The page has no runtime.
+
+So anything a page draws outside that list has to be drawn from a frame hook or declared as a loop.
+A DOM change a timer or an animation frame of the page's own makes between two steps is seen, and is
+undeclared change when it sits inside no declared motion, loop or region: the step names the element
+and where every changed element is laid out, and when the frame captured after it differs from the frame before
+inside that box, or anywhere when a changed element is laid out nowhere, `record` reports
+[`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) with the element, the first
+second and the number of frames. A change no pixel shows is not reported, and neither is one beside a cue that drew
+the frame's only difference somewhere else.
+An animated image plays on the browser's own time rather than the section clock, so which of its
+frames a recording shows depends on how long the recording takes, with the skip or without it.
+The test suite's builds step to and capture every fifth skipped frame anyway and stop the section if
+one differs from the frame before, and a golden builds every packaged project with the skip on and
+off and requires the same decoded frames and the same verify numbers.
+
+### Still stretches
+
+A still frame written again still cost a step, and a step waits for a whole rendering update, which
+the browser paces at the display's rate when nothing was captured. So `step` also answers
+`stillUntil`, the earliest second anything the page draws can next change, and the recorder writes
+every frame before that second again without stepping the page to each. It steps the page once
+across the stretch, to the stretch's last frame, which moves the page's timers and its own seconds
+to where the frames are, and then to the frame the change lands on, as before. A stretch is
+crossed in one step however long it is.
+
+The runtime answers the earliest of:
+
+- the second the next task is due
+- the second an animation waiting out its delay starts to move
+- the first cue of a declared motion still to depart
+
+It answers the step's own second, which is no stretch at all, while a frame hook draws, an animation
+plays or runs backwards or cannot be read, or a declared motion or loop is under way. The probe
+ends the stretch sooner when one of the page's own timers is due first, which it reads from
+Playwright's clock, so a plain `setTimeout` lands on its own frame however long the stretch it sits
+in. It answers the step's own second when the page holds something that draws on its own, has no
+runtime, or heard of a font, an image or a DOM change while the step was being drawn, because that
+change came from an event the runtime never ran and may have started something it has not seen.
+It answers its own second, too, when Playwright's clock cannot be read, because nothing the clock
+promises names the next timer.
+
+The recorder leaves nothing of its own on the page's clock: a wait it races inside the page clears
+its timer once it is answered, and the first step cancels the frame the runtime's own loop was
+waiting on.
+
+The frames written again go into the encode from a thread of its own. The pipe keeps them as runs,
+each a frame and how many times in a row it shows, so a repeat costs the stepper a count and the
+encode reads every frame of a stretch while the stepper goes on to the next step.
+
+Frame `k` depends on `k` alone, never on which frames were drawn before it, so the recorder can
+reach it by stepping only the seconds a task is due before it. Three things hold that:
+
+- A task sees every animation at its own second, as above, rather than at whichever second the page
+  showed last.
+- Nothing the runtime draws changes on an animation's end event, because the browser sends that event
+  from a frame it draws on its own wall clock. An entrance comes off its element, and an outgoing
+  slide leaves, at a second owed to the section clock.
+- Every Chromium is started with `--disable-partial-raster`, so a tile the compositor draws again is
+  drawn whole. A partial redraw paints only the changed rectangle over the tile's old pixels, and the
+  anti-aliased edges it draws there differ from a whole tile's, so a frame would carry what the frames
+  before it painted.
+
+Every Chromium is also launched, after `--disable-partial-raster`, with `--disable-frame-rate-limit`
+and `--disable-gpu-vsync`. Without them Chromium holds its frames to the display's refresh rate, so
+the rendering update a step waits for and the capture after it each wait for a refresh. With them
+neither is held to that rate, and a frame takes about half the time. The switches change speed only
+and never pixels, and that is the equivalence they are held to: a recording made with them decodes
+to exactly the frames of a recording made without them, every pixel of every frame.
+`tests/e2e/test_frame_addressing.py` records every page section of every packaged project again in
+pieces in a Chromium launched without them, and fails on one pixel that differs from the build's own
+recording.
+
+## Why
+
+A real-time screencast starts at a moment nobody can predict, and the delay differs by platform by
+hundreds of milliseconds. It stamps each frame by when the compositor swapped it rather than by the
+second the page meant to show, so a busy frame and an idle one land on the grid differently, steady
+motion judders, and two runs of the same page differ. Cutting such a recording against a section
+clock would need a mark in the frames to find the start by, motion to keep frames coming while a
+still page waits, a retry for a section whose frames stall, and a measured bias to correct the
+stamps.
+
+A stepped clock needs none of it. Frame 0 is second 0, so there is no start to find. The recorder
+asks for every frame, so no frame can be late and nothing can stall. Each frame is the exact state
+of the page at its second, so two recordings of one page decode to the same frames on one machine.
+Continuous motion becomes recordable too: a frame hook that draws a canvas, a typed line or a count
+from the second it is handed draws the same picture in a recorded frame as in a preview frame for
+the same second.
+
+The encode is lossless because a recording is an intermediate that `assemble` encodes once more at
+the film's own quality, and a lossy pass here would put the encoder's ringing into every frame
+`verify` compares.
+
+## What it costs
+
+- A frame that changed costs a step, a capture and an encode, and a still stretch costs two steps
+  and an encode of each of its frames, which runs beside the steps. A heavy page records slower than
+  real time rather than wrongly, and a starved machine takes longer rather than dropping a frame.
+- A Worker keeps its own clock, and a `<video>` or an `<audio>` element plays at its own rate. The
+  stepped clock holds neither, so a deck that needs footage uses a clip section or a render section,
+  and a page that holds a video element is `PAGE_REALTIME_MEDIA`.
+- Anything the page moves for longer than a moment is declared as a motion, a loop or a frame hook's
+  region, because verify masks only what it was told moves. [Things that move](/guides/motion) shows
+  each.
+
+## What it rules out
+
+- A page cannot run on the wall clock while it is recorded. Every timer, every animation frame and
+  every animation it starts moves only when the recorder steps, so a page that reads `Date.now()`
+  reads the stepped time. An animation's or a transition's end event is the exception, because the
+  browser sends it from a frame it draws when it likes, so a page that changes what it shows on one
+  records a frame that depends on the frames before it.
+- A recording is never searched for its start and never corrected for a machine's presentation
+  timing. A page that stops answering is stopped at `record.page_deadline_seconds` with a `TOOL`
+  error rather than retried, and only a chunk whose renderer crashed is recorded again in a fresh
+  page, `record.renderer_retries` times, which gives the same frames because a frame is a function
+  of its index. A recording log with no checks is a recording that never
+  finished, and the next run records it again.
+- The rate a section is stepped at is `video.fps`, so every page range is written in frames of the
+  slowest rate a film may use, `SLOWEST_FPS`, which is 25.
+
+## What would change it
+
+A browser that could render a page at a chosen second without running it, faster than one capture
+a frame, would make the step cheaper. The decision that time belongs to the recorder would stand.

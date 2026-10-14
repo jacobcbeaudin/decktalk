@@ -18,9 +18,11 @@ Everything below lands in `build/final/`, beside the film, and `<name>` is `[pro
 | File | What it is |
 |---|---|
 | `<name>.srt` and `<name>.vtt` | The captions, in SubRip and WebVTT, cut from the words the voice really said and lent the script's own punctuation and case. |
+| `<name>.words.json` | Every word the film says, with its voice and its turn, which captions this film when a clip section plays it. |
 | `<name>.chapters.txt` | The chapter markers, one per section, named by the section's `chapter` and falling back to its script heading. |
 | `<name>-transcript.html` | The transcript page, which is the media alternative for a viewer who cannot see the film. |
 | `<name>-poster.png` | The film's opening slide with every one of its reveals fired, drawn by the page rather than taken from the mp4. |
+| `<name>-captioned.mp4` | Only when `[output] captioned` is on: the film with its captions drawn into the picture by your page. See [A captioned copy](#a-captioned-copy-for-a-place-that-cannot-load-a-caption-file). |
 
 The chapters are muxed into the mp4 as well, so a player shows them without the text file, and the
 text file is there for a platform that wants to be handed one.
@@ -59,15 +61,66 @@ player draws overlapping cues twice or drops one of them, so a sound that lands 
 joins that caption as a line of its own and a sound that lands in the short gap before one joins the
 cue after it. Only a sound with a whole second to itself keeps a cue of its own.
 
-A clip section captions its own speech when it names a words file with `words`, and nothing captions
-it otherwise, because the captions are built from the narration's word times and a clip's speech is
-not in the narration. [Add a clip section](/guides/clip-section) has the file's shape.
+A clip section captions its clip's own speech from the words file beside it, `<clip>.words.json`,
+and nothing captions it otherwise, because the captions are built from the narration's word times
+and a clip's speech is not in the narration. Every DeckTalk build writes that file beside its film
+and `decktalk clip` beside every clip it cuts, so a film DeckTalk built is captioned in a clip
+section as it captioned itself. A clip with no words file beside it adds no
+caption. [Play a clip](/guides/clip-section) has the
+file's shape.
+
+In a section spoken in more than one voice, `[output] caption_voices = true` names the voice of every
+caption: a WebVTT voice span such as `<v guest>` in the `.vtt`, and `guest: ` before the line in the
+`.srt`. It is off by default, so the captions carry the words alone, and the transcript names the
+voices of a dialogue either way. [Write a dialogue](/guides/dialogue) has the whole of it.
+
+## A captioned copy, for a place that cannot load a caption file
+
+A social feed, a slide embedded in another deck and a screen in a lobby play an mp4 and nothing
+beside it. Ask for a second film with the captions drawn into its picture:
+
+```toml
+[output]
+captioned = true
+```
+
+`assemble` then writes `<name>-captioned.mp4` beside the film. The film itself is the same frames
+either way, with no caption in it, and it keeps the `.srt`, the `.vtt` and the transcript, so a
+player that can load a caption file still gets captions a viewer can turn off and resize.
+
+Your own page draws each caption, so the copy is set in your deck's fonts. The page is opened with
+`?caption=1`, which clears everything but a band the runtime lays out along the bottom of the frame,
+and is handed one caption at a time. Each caption is a `<p class="dt-caption">` holding one
+`<span class="dt-caption-line">` per line, and every rule the runtime gives them carries no
+specificity, so a rule of your own restyles them:
+
+```css
+.dt-caption { font-family: var(--sans); color: var(--ink); }
+.dt-caption[data-voice="guest"] { text-align: right; }
+```
+
+A caption carries the voice that says it as `data-voice` and the section's turn as `data-turn`, and
+never as text, so a dialogue can set each voice's captions on a side of its own and still name
+nobody. The speech inside a clip carries the clip's own voice and turn the same way, when its words
+file names them. A line that says what is heard, such as `[ball bounces]`, carries `data-sound`. A caption
+shows on the frames from the one its start rounds to up to the one its end rounds to, which are the
+frames a player shows the same caption on from the `.vtt`. A caption over a clip section, or over a
+section a command renders, is drawn by the first page the film plays. A film that plays no page has
+nothing to draw its captions with, so `assemble`, and a build that reaches it, refuses it before
+anything runs.
+
+Each caption is drawn once and kept in `build/stills/` under everything it was drawn from, so a
+rebuild that changed one line draws one caption again. The sound and the chapter markers are copied
+from the film untouched, and only the picture is encoded again.
 
 ## The transcript, and the words a reveal is described in
 
 The transcript page carries, for every chapter in the order it plays: a heading, the span in the
-finished film, the spoken text of each section under it, the speech inside a clip that names a words
-file, and a list of that chapter's described reveals with the second each one fired.
+finished film, the spoken text of each section under it, the speech inside every clip the captions
+carry, and a list of that chapter's described reveals with the
+second each one fired. The paragraphs of a section are in the order the film plays them. A section spoken
+in more than one voice is one paragraph per turn, each opening with the name of its voice, and a clip's
+speech is one paragraph that names nobody.
 
 What it cannot carry on its own is what a reveal meant. Three attributes are where you write that,
 and each one is read by the runtime and reported into the recording log, which is what the transcript
@@ -90,6 +143,11 @@ is built from.
 Describe the reveals that carry meaning. A decorative flourish needs no description, and an empty
 `data-describe` is how you say so on purpose rather than by leaving the attribute off. A description
 of every flourish only makes the transcript harder to read.
+
+A slide writes each sentence once, where it first applies. When a later cue of the same slide would
+write a sentence the slide has already written, such as `its tick lights` on every tick of a row, the
+transcript leaves it out there, so the reader meets it at the first tick and not at every one. The
+next slide starts with nothing said.
 
 The starter writes a description on every cued element, so a first project's transcript already reads end
 to end. [The page contract](/concepts/page-contract) is every attribute in context, and

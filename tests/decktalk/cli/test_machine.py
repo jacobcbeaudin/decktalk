@@ -63,14 +63,8 @@ def test_doctor_reports_the_machine_and_fetches_nothing(run, machine, answers) -
     made = machine(doctor=answers["doctor"])
     ran = run("doctor")
     assert ran.exit_code == 0
-    assert made.called("doctor")["measure"] is False
+    assert "threshold" in made.called("doctor")
     assert "Python" in ran.out
-
-
-def test_doctor_measures_only_when_asked(run, machine, answers) -> None:
-    made = machine(doctor=answers["doctor"])
-    run("doctor", "--measure")
-    assert made.called("doctor")["measure"] is True
 
 
 def test_doctor_is_judged_by_the_threshold_its_flags_name(run, machine) -> None:
@@ -109,3 +103,58 @@ def test_doctor_fix_fetches_under_json_and_no_input_as_its_help_says(run, machin
     made = machine(doctor=MISSING, apply=None)
     run(flag, "doctor", "--fix")
     assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]
+
+
+# ---- the packaged project init writes -------------------------------------------------------------
+
+
+def test_init_on_a_terminal_taking_every_default_writes_the_starter(run, tmp_path) -> None:
+    """The README's second line, run by a person who presses Enter at each prompt, makes a project."""
+    ran = run("init", str(tmp_path / "tty-lesson"), stdin="\n\n\n", tty=True)
+    assert ran.exit_code == 0, ran.err
+    assert "Example (starter, lesson, interview, motion) [starter]" in ran.err
+    assert (tmp_path / "tty-lesson" / "decktalk.toml").is_file()
+    assert "from the starter example" in ran.out
+
+
+def test_init_takes_the_starter_by_name(run, tmp_path) -> None:
+    """The name the report prints is a name the flag takes."""
+    ran = run("--no-input", "init", str(tmp_path / "named"), "--example", "starter", "--no-skills")
+    assert ran.exit_code == 0, ran.err
+    assert "from the starter example" in ran.out
+
+
+def test_init_refuses_an_example_nobody_ships_as_a_refused_command_line(run, tmp_path) -> None:
+    """A wrong flag value is a refused command line, exit 2, naming the examples there are."""
+    ran = run("--no-input", "init", str(tmp_path / "wrong"), "--example", "product")
+    assert ran.exit_code == 2
+    assert "error[USAGE]" in ran.err
+    assert "starter, lesson, interview, motion" in ran.err
+    assert not (tmp_path / "wrong").exists()
+
+
+def test_init_help_names_only_the_examples_that_exist(run) -> None:
+    shown = run("init", "--help").out
+    assert "starter, lesson, interview, motion" in " ".join(shown.split())
+    assert "reserved" not in shown
+    assert "product" not in shown
+
+
+def test_init_on_a_terminal_asks_again_until_the_example_is_one_there_is(run, tmp_path) -> None:
+    ran = run("init", str(tmp_path / "again"), stdin="\nproduct\nlesson\n\n", tty=True)
+    assert ran.exit_code == 0, ran.err
+    assert "from the lesson example" in ran.out
+
+
+@pytest.mark.parametrize(
+    ("name", "next_step"),
+    [
+        ("starter", "decktalk build --no-spend\n"),
+        ("motion", "decktalk build --no-spend --set record.programs=run\n"),
+    ],
+)
+def test_init_names_a_next_step_that_builds_the_project_it_wrote(run, tmp_path, name: str, next_step: str) -> None:
+    """A project that names a program builds only with programs allowed, so its next step says so."""
+    ran = run("--no-input", "init", str(tmp_path / name), "--example", name, "--no-skills")
+    assert ran.exit_code == 0, ran.err
+    assert f"&& {next_step}" in ran.out

@@ -164,7 +164,7 @@ markers = [
     "browser: needs the headless Chromium that `decktalk install` fetches",
     "media: needs the ffmpeg that `decktalk install` fetches",
     "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
-    "scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice, about five minutes",
+    "scaffold: needs Chromium and ffmpeg, and records every packaged project several times over without a voice",
     "platform: needs the machine it runs on, whose filesystem and fetched toolchain are what it asserts",
     "wheel: needs the wheel `uv build` writes into dist/, and is given to tests/contract/test_wheel.py by its path",
 ]

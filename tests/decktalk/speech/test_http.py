@@ -271,7 +271,7 @@ def test_every_call_carries_the_timeout_it_was_given(httpserver, monkeypatch):
         return real(request, timeout=timeout)
 
     monkeypatch.setattr(_http, "urlopen", timed)
-    _http.post_bytes(httpserver.url_for("/plain"), {}, {}, secrets=(), timeout=7, retries=0)
+    _http.send(httpserver.url_for("/plain"), {}, {}, parse=bytes, timeout=7, retries=0)
     assert seen == [7]
 
 
@@ -389,7 +389,7 @@ def counted_opener(monkeypatch: pytest.MonkeyPatch, answer: Callable[[], object]
 def test_a_reply_that_broke_while_it_was_read_is_sent_once_and_said_to_be_possibly_charged(monkeypatch, waits, broken):
     sent = counted_opener(monkeypatch, lambda: Opened(broken))
     with pytest.raises(ProviderError) as caught:
-        _http.post_bytes("https://api.test/v1/sound", {}, {}, secrets=(), timeout=5, retries=3)
+        _http.send("https://api.test/v1/sound", {}, {}, parse=bytes, timeout=5, retries=3)
     assert len(sent) == 1 and waits == []
     assert "possibly charged" in str(caught.value)
     assert caught.value.possibly_charged is True
@@ -410,7 +410,7 @@ def test_a_reply_that_never_began_after_the_request_was_sent_is_sent_once(monkey
 
     sent = counted_opener(monkeypatch, breaks)
     with pytest.raises(ProviderError) as caught:
-        _http.post_bytes("https://api.test/v1/sound", {}, {}, secrets=(), timeout=5, retries=3)
+        _http.send("https://api.test/v1/sound", {}, {}, parse=bytes, timeout=5, retries=3)
     assert len(sent) == 1 and waits == []
     assert "possibly charged" in str(caught.value)
     assert caught.value.possibly_charged is True
@@ -435,7 +435,7 @@ def test_only_a_request_that_never_connected_is_sent_again(monkeypatch, reason, 
 
     sent = counted_opener(monkeypatch, fails)
     with pytest.raises(ProviderError) as caught:
-        _http.post_bytes("https://api.test/v1/sound", {}, {}, secrets=(), timeout=5, retries=2)
+        _http.send("https://api.test/v1/sound", {}, {}, parse=bytes, timeout=5, retries=2)
     assert len(sent) == asked
     assert caught.value.retryable is (asked > 1)
     assert ("possibly charged" in str(caught.value)) is (asked == 1)
@@ -534,3 +534,52 @@ def test_a_wait_worked_out_by_doubling_says_so(httpserver, caplog):
         _http.post_json(_busy(httpserver, 1, 503), {}, {}, secrets=(), timeout=5, retries=1)
     [record] = [record for record in caplog.records if record.name == "decktalk.speech.http"]
     assert data_of(record)["wait_source"] == _http.DOUBLED
+
+
+# ---- a body already encoded, and a GET ---------------------------------------------------------------
+
+
+def test_a_body_already_encoded_is_sent_as_it_is_under_the_type_its_caller_names(httpserver):
+    """A multipart body is built by its caller, so the bytes go out untouched under the caller's own type."""
+    httpserver.expect_request("/bytes", method="POST").respond_with_data(b"answered")
+    body = b"--b\r\nanything at all\r\n--b--\r\n"
+    kind = "multipart/form-data; boundary=b"
+    answered = _http.send(
+        httpserver.url_for("/bytes"),
+        body,
+        {"Content-Type": kind},
+        secrets=(),
+        timeout=5,
+        retries=0,
+        parse=bytes,
+        free=True,
+    )
+    assert answered == b"answered"
+    ((request, _),) = httpserver.log
+    assert request.get_data() == body
+    assert request.headers["Content-Type"] == kind
+
+
+@pytest.mark.parametrize("status", [200, 429, 503])
+def test_a_get_is_asked_once_and_never_again_whatever_it_answers(httpserver, waits, status):
+    """A handshake that is not answered at once is an answer in itself, so nothing waits on a second try."""
+    if status == 200:
+        httpserver.expect_request("/models", method="GET").respond_with_json({"service": "s"})
+        assert _http.get_json(httpserver.url_for("/models"), timeout=5) == {"service": "s"}
+    else:
+        httpserver.expect_request("/models", method="GET").respond_with_data("", status, {"Retry-After": "0"})
+        with pytest.raises(ProviderError, match=f"HTTP {status}"):
+            _http.get_json(httpserver.url_for("/models"), timeout=5)
+    assert len(httpserver.log) == 1 and waits == []
+
+
+def test_a_get_that_reaches_nothing_is_a_provider_error_that_was_not_received(monkeypatch, waits):
+    def refuses() -> NoReturn:
+        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+
+    sent = counted_opener(monkeypatch, refuses)
+    with pytest.raises(ProviderError, match="could not reach") as caught:
+        _http.get_json("http://127.0.0.1:1/v1/models", timeout=1)
+    assert caught.value.reached is False
+    assert caught.value.possibly_charged is False
+    assert len(sent) == 1 and waits == []

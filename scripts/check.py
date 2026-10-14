@@ -53,10 +53,12 @@ PYTEST = (*UV, "pytest", "-q", "-rs")
 """How every suite is run. `-rs` prints the reason of every skip, so a skipped test is never silent in a log."""
 
 PARALLEL = ("-n", "auto")
-"""What a suite adds to run on every core, which pytest-xdist reads and only the unit row passes.
+"""What a suite adds to run on every core, which pytest-xdist reads and the unit and scaffold rows pass.
 
-The suites that drive a real tool stay serial, because a recording shares the machine's compositor
-and two at once is a timing measurement of the runner rather than of the deck.
+The suites that drive a real tool on every pull request stay serial, because a build already records
+its sections across the machine's cores, so two builds at once would only wait on each other. The
+scaffold row is the exception: each of its tests builds and records a whole project, and run one
+after another they outgrow the row's limit, so it spreads them across workers.
 """
 
 MEASURE = ("--cov", "--cov-report=")
@@ -370,41 +372,6 @@ class Group:
         return (*self.preparations, *self.commands)
 
 
-REPORT_TIMING = "--timing=report"
-"""What a leg whose compositor is not trustworthy passes to a suite that measures a cue.
-
-A hosted macOS or Windows runner composites through a stack DeckTalk does not own, and a hosted
-Linux runner that renders in software presents a frame tens of milliseconds after the paint it
-answers. Either way the measurement moves and the deck did not, so these legs report a late reveal
-and Linux is the one meant to gate it, once `LINUX_GATES_TIMING` says it may. This weakens nothing
-else: `tests/support/timing_policy.py` tolerates a late landing alone, and a cue that never changed
-the picture still fails every runner.
-"""
-
-
-def reports_timing(command: tuple[str, ...]) -> tuple[str, ...]:
-    """The same command with cue timing reported, which only a suite has an opinion about.
-
-    The flag is `tests/conftest.py`'s own option, so it is added to the suites and to nothing else.
-    A tool that never collected a test would exit on an argument it has never heard of.
-    """
-    return (*command, REPORT_TIMING) if "pytest" in command and REPORT_TIMING not in command else command
-
-
-LINUX_GATES_TIMING = False
-"""Whether a late reveal fails the Linux e2e row, which is the one row meant to gate cue timing.
-
-It reports until the row's own runs show whether a GitHub Linux runner's compositor is
-trustworthy. When three runs of ci in a row on `main` show the row's log with no late
-reveal, this becomes True and the row gates from then on, as `REPORT_TIMING` describes.
-"""
-
-
-def linux_timing(command: tuple[str, ...]) -> tuple[str, ...]:
-    """The Linux row's suite with cue timing gated or reported, as `LINUX_GATES_TIMING` decides."""
-    return command if LINUX_GATES_TIMING else reports_timing(command)
-
-
 def elsewhere(group: Group) -> Group:
     """The same group on macOS and Windows, gating a merge and a release rather than a pull request.
 
@@ -412,15 +379,11 @@ def elsewhere(group: Group) -> Group:
     happens a few times a year. Running all three on every push would make every change wait for
     three legs to buy one difference, so the Linux leg gates the change and this one gates the merge,
     which is still before a user meets it.
-
-    These two runners are also the ones whose compositor is not trustworthy, so cue timing is
-    reported here, and the Linux row of the same group is the one meant to gate it.
     """
     return replace(
         group,
         name=f"{group.name}-platforms",
         why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
-        commands=tuple(reports_timing(command) for command in group.commands),
         runners=(MACOS, WINDOWS),
         when=("main",),
     )
@@ -452,7 +415,7 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, and the docs samples DeckTalk writes from a real run.",
-        commands=(linux_timing(measuring("e2e", "-m", "e2e")), generator(SAMPLES)),
+        commands=(measuring("e2e", "-m", "e2e"), generator(SAMPLES)),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
@@ -569,7 +532,7 @@ GROUPS: tuple[Group, ...] = (
     ),
     Group(
         name="rehearsal",
-        why="The version bump release-please makes, rehearsed in a copy, then every generator written and checked.",
+        why="The version bump release-please makes, rehearsed in a copy that regenerates, checks and builds its wheel.",
         # The release path otherwise runs only on release-please's own pull request, which is the
         # last place a failure should surface. The script bumps a throwaway copy of
         # the checkout, so a contributor who runs this row locally keeps the tree they had. The next
@@ -618,17 +581,13 @@ GROUPS: tuple[Group, ...] = (
     ),
     Group(
         name="scaffold",
-        why="Every packaged project recorded and verified without a voice, which is the scaffold's promise.",
+        why="Every packaged project recorded again and again, held to the frames one recording of it holds.",
         # The row judges what was already released rather than gating the release: it runs weekly,
-        # because seven minutes on every merge buys one answer that the template's own data tests
-        # give on every pull request. A release is never more than a week from its first scaffold run.
-        #
-        # This row records five projects in one job, so the runner renders in software throughout and
-        # presents a reveal tens of milliseconds after the frame it belongs on. The promise being
-        # judged is that a project out of the wheel builds and verifies, which the cue timing of the
-        # machine it was built on is no part of, so this row reports a late landing and fails on
-        # every other finding exactly as the gated rows do.
-        commands=(reports_timing((*PYTEST, "-m", "scaffold")),),
+        # because it records every packaged project several times over, and `e2e` builds and
+        # verifies each of them once on every pull request. A release is never more than a week from
+        # its first scaffold run. A manual run of ci.yml that chooses the `schedule` moment runs it on
+        # demand. Its tests run on every core, because one after another they outgrow the row's limit.
+        commands=((*PYTEST, *PARALLEL, "-m", "scaffold"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
@@ -664,9 +623,18 @@ DEFAULT_WHEN = "pr"
 """A bare run is the pull request's set, which is every group that gates a change."""
 
 
+def bare(word: str) -> str:
+    """A word as a person reads it: a path into this checkout loses the checkout's own path where the path starts,
+    which is the start of the word or of an option's value after `=`, and nowhere else, because a checkout at `/src`
+    would otherwise clip the `src/` inside `runtime/src/*.test.ts`."""
+    option, equals, value = word.partition("=")
+    checkout = f"{ROOT}/"
+    return f"{option.removeprefix(checkout)}{equals}{value.removeprefix(checkout)}"
+
+
 def shell(command: tuple[str, ...]) -> str:
     """One line a person reads, with this checkout's own path and any embedded script left out."""
-    parts = ["<shell script>" if "\n" in part else part.replace(f"{ROOT}/", "") for part in command]
+    parts = ["<shell script>" if "\n" in part else bare(part) for part in command]
     return " ".join(parts)
 
 
@@ -726,7 +694,7 @@ def run_group(group: Group, mode: str = "") -> bool:
     print(f"\n== {group.name}: uv run scripts/check.py --group {group.name}{mode}", flush=True)
     print(f"   {group.why}", flush=True)
     for name, value in group.env:
-        print(f"   {name}={value.replace(f'{ROOT}/', '')}", flush=True)
+        print(f"   {name}={bare(value)}", flush=True)
     return all(run(command, group.env) for command in group.steps)
 
 

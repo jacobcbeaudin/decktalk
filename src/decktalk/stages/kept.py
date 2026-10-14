@@ -31,7 +31,7 @@ BUILT: dict[Artifact, Callable[[Inputs], bool]] = {
     Artifact.TAKES: lambda inputs: inputs.workspace.takes_path.is_file(),
     Artifact.CUE_TIMES: lambda inputs: inputs.workspace.cue_times_path.is_file(),
     Artifact.RECORDINGS: lambda inputs: all(
-        inputs.workspace.recording(section.key).is_file() for section in inputs.document.page_sections
+        inputs.workspace.recording(section.key).is_file() for section in inputs.document.recorded_sections
     ),
     # A project that describes no score has nothing to generate, so that stage is never next, and one
     # whose bought music is not joined yet has the score next, which joins it for nothing.

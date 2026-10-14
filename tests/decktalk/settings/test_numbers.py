@@ -28,7 +28,7 @@ class TestTheNumbersThatAreNotSettings:
 
     def test_every_derived_relation_holds_at_every_frame_size(self) -> None:
         for width, height in ((1920, 1080), (1280, 720), (3840, 2160)):
-            settings = load(machine={}, project={"video": {"width": width, "height": height}}, environ={}).settings
+            settings = load(machine={}, project={"video": {"size": f"{width}x{height}"}}, environ={}).settings
             assert NUMBERS_BY_ID["verify.block_width"].at(settings) * 8 == width
             assert NUMBERS_BY_ID["verify.block_height"].at(settings) * 8 == height
             assert NUMBERS_BY_ID["verify.probe_width"].at(settings) * 4 == width

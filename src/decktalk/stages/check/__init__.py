@@ -24,26 +24,28 @@ and `cue` still owns `build/cue-times.json`.
 
 from __future__ import annotations
 
+import tomllib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
 from pathlib import Path
 
-from playwright.sync_api import Page
-
-from decktalk.artifacts import EstimatedWords
+from decktalk.artifacts import TurnKey
 from decktalk.errors import InputError
 from decktalk.files import current_text
-from decktalk.findings import Code, Finding, Location, ProjectPath, judge
-from decktalk.inputs import Inputs
+from decktalk.findings import Code, Finding, Location, ProjectPath, Severity, judge
+from decktalk.inputs import Inputs, programs
 from decktalk.inputs.document import PageSection
-from decktalk.inputs.script import ScriptSection
+from decktalk.inputs.script import ScriptSection, Turn
 from decktalk.machine.run import Run
-from decktalk.media.browser import chromium
-from decktalk.media.origin import Assets
+from decktalk.media.browser import UNTRUSTED
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
-from decktalk.results import CheckResult, Panel, SectionCues
+from decktalk.pictures import ProjectPage, pictures
+from decktalk.pictures.sheet import Sheet, section_voices, write_page
+from decktalk.results import BillingBasis, CheckResult, Panel, SectionCues, counted
+from decktalk.settings import PROJECT_FILE, VOICES_TABLE
+from decktalk.speech import VoiceInForce, canonical_text
 from decktalk.stages import selects
 from decktalk.stages.check.scan import (
     judged_pages,
@@ -52,12 +54,18 @@ from decktalk.stages.check.scan import (
     seam_findings,
     static_findings,
 )
-from decktalk.stages.check.script import pause_findings, script_findings
+from decktalk.stages.check.script import (
+    order_findings,
+    pause_findings,
+    script_findings,
+    unused_voices,
+    voice_findings,
+)
+from decktalk.stages.cost import Buy, cost_of
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
-from decktalk.stages.narrate import TakeStates, take_states
-from decktalk.stages.narrate.plan import NO_VOICE_NOTE, dropped_pauses
-from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
+from decktalk.stages.narrate import TakeStates, take_states, turns_to_retake
+from decktalk.stages.narrate.plan import dropped_pauses, no_voice_note
 from decktalk.stages.verify import opted_out
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
@@ -98,20 +106,34 @@ def check(
     only: Sequence[int] | None = None,
     pages: bool = True,
     frames: bool = True,
+    turns: Sequence[tuple[int, int]] = (),
+    takes: Sequence[str] = (),
 ) -> CheckResult:
-    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy."""
+    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy.
+
+    `turns` and `takes` name turns to make again, as `narrate` reads them: the check then judges their
+    sections and prices those turns alone, which is what that `narrate` would buy.
+    """
+    for found in program_findings(inputs):
+        run.found(found)
+    retake = turns_to_retake(inputs, only, replace_voiced=False, turns=turns, takes=takes)
+    if retake:
+        only = sorted({key.section for key in retake})
     wanted = selects(only)
     script = inputs.relative(inputs.script_path)
-    spoken = [
-        one
-        for one in _script_sections(inputs, run)
-        if one.number not in inputs.document.clip_numbers and wanted(one.number)
-    ]
-    for found in script_findings(current_text(inputs.script_path), spoken, script=script):
+    parsed = _script_sections(inputs, run)
+    spoken = [one for one in parsed if one.number not in inputs.document.clip_numbers and wanted(one.number)]
+    markdown = current_text(inputs.script_path)
+    voiced = _voice_findings(inputs, markdown, parsed, script) if parsed else []
+    ordered = order_findings(markdown, parsed, script=script)
+    for found in (*voiced, *ordered, *script_findings(markdown, spoken, script=script)):
         run.found(found)
 
     extra = _named_pages(inputs, paths)
-    states = _states(inputs, run, spoken)
+    if any(found.severity is Severity.ERROR for found in voiced):
+        run.note(UNREAD_VOICES)
+        spoken = []
+    states = _states(inputs, run, spoken, retake)
     cost = states.plan(spend=True).cost
     resolved, times = _resolve(inputs, run, states, wanted)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
@@ -122,7 +144,9 @@ def check(
             run.found(found)
     for found in looked.findings:
         run.found(found)
-    sheet = write_page(inputs.workspace, looked.panels, title=inputs.document.name) if looked.panels else None
+    voices = section_voices(inputs, parsed)
+    title = inputs.document.name
+    sheet = write_page(inputs.workspace, looked.panels, title=title, voices=voices) if looked.panels else None
     if sheet is not None:
         run.wrote(sheet)
     return run.result(
@@ -135,6 +159,38 @@ def check(
     )
 
 
+# ---- the programs the project names --------------------------------------------------------------
+
+DOES = {
+    programs.REFUSE: "so record refuses it",
+    programs.ASK: "so record asks at a terminal before it starts and refuses without one",
+    programs.RUN: "so record starts it",
+}
+"""What `record` does with a program under each answer `[record] programs` takes, as a finding says it."""
+
+
+def program_findings(inputs: Inputs) -> list[Finding]:
+    """One warning per program the project names, said before anything else is judged and before any of them runs.
+
+    Every render section's program is listed whether or not its recording still stands, because a
+    reviewer reads what the project can start rather than what this checkout happens to lack.
+    """
+    record = inputs.settings.record
+    does = "so record refuses it" if record.page_policy == UNTRUSTED else DOES[record.programs]
+    return [
+        judge(
+            code=Code.PROGRAM_NAMED,
+            message=(
+                f"{program.named_by} runs `{program.shown}` with your user's rights, and it can read every file "
+                f"you can, .env included. {programs.KEY} is {record.programs} and record.page_policy is "
+                f"{record.page_policy} on this machine, {does}."
+            ),
+            location=Location(where=program.named_by, file=Path(PROJECT_FILE), section=program.section),
+        )
+        for program in inputs.programs()
+    ]
+
+
 # ---- the files the author writes ---------------------------------------------------------------
 
 
@@ -144,27 +200,71 @@ def _script_sections(inputs: Inputs, run: Run) -> list[ScriptSection]:
         return list(inputs.script())
     except InputError as refused:
         where = inputs.relative(inputs.script_path)
+        reason = str(refused).rstrip(".")
         run.found(
             judge(
                 Code.FILE_MISSING,
-                f"{where.as_posix()} cannot be read as a script, so nothing was planned from it ({refused}).",
+                f"{where.as_posix()} cannot be read as a script, so nothing was planned from it: {reason}.",
                 Location(where=where.as_posix(), file=where),
             )
         )
         return []
 
 
-def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> TakeStates:
-    """The take state of each spoken section, and every timed pause the voice in force would drop."""
+UNREAD_VOICES = "The script names voices this project cannot read, so no take was planned or priced."
+"""What a check says when a voice direction would refuse narrate, which is why it priced nothing."""
+
+
+def _voice_findings(inputs: Inputs, markdown: str, sections: Sequence[ScriptSection], script: Path) -> list[Finding]:
+    """Every voice direction narrate would refuse, then every voice the project declares and no turn is read by.
+
+    A voice is unused only when the project wrote its table, because the default a project declares no
+    table for is never named in `decktalk.toml` to be warned about there.
+    """
+    names = tuple(inputs.voices)
+    found = voice_findings(markdown, names, script=script)
+    text = current_text(inputs.root / PROJECT_FILE)
+    declared = tomllib.loads(text).get(VOICES_TABLE, {}) if text else {}
+    written = tuple(name for name in names if name in declared)
+    project = Path(PROJECT_FILE)
+    return found + unused_voices(sections, written, inputs.default_voice, script=script, project=project, text=text)
+
+
+def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection], retake: Sequence[TurnKey]) -> TakeStates:
+    """The take state of each spoken section, every timed pause a voice would drop, and each voice with no id.
+
+    `retake` is the turns the priced run makes again, which its plan voices alone.
+    """
     if spoken:
-        voice = inputs.voice
-        dropped = dropped_pauses(inputs, list(spoken))
         script = inputs.relative(inputs.script_path)
-        for found in pause_findings(dropped, provider=voice.provider, model=voice.model, script=script):
+        for found in pause_findings(dropped_pauses(inputs, list(spoken)), script=script):
             run.found(found)
-        if not voice.id:
-            run.note(NO_VOICE_NOTE)
-    return take_states(inputs, spoken)
+        reading: dict[str, list[Turn]] = {}
+        for one in spoken:
+            for turn in one.turns:
+                reading.setdefault(inputs.voice_of(turn).name, []).append(turn)
+        for name, turns in reading.items():
+            voice = inputs.voices[name]
+            run.note(_reads(inputs, voice, turns))
+            if not voice.named:
+                run.note(no_voice_note(voice))
+    return take_states(inputs, spoken, retake=retake)
+
+
+def _reads(inputs: Inputs, voice: VoiceInForce, turns: Sequence[Turn]) -> str:
+    """The note that says how much of the script one voice reads, on which provider, and at what bill."""
+    characters = sum(len(canonical_text(turn.pieces)) for turn in turns)
+    if voice.free:
+        bill = "which bills nothing"
+    elif voice.billing is BillingBasis.UNDECLARED:
+        bill = "which declares no bill"
+    else:
+        priced = cost_of(inputs, [Buy(characters=characters, sections=(), voice=voice)])
+        bill = f"at {priced.rate}"
+    return (
+        f"The voice {voice.name} reads {counted(len(turns), 'turn')} of {counted(characters, 'character')} on "
+        f"{voice.provider}, {bill}."
+    )
 
 
 def _resolve(
@@ -178,7 +278,7 @@ def _resolve(
     """
     planned = {number: states.planned_words(number) for number in states}
     words = {number: found.words for number, found in planned.items()}
-    estimated = {number for number, found in planned.items() if isinstance(found, EstimatedWords)}
+    estimated = {number for number, found in planned.items() if found.estimated}
     cued = [block for block in inputs.cues() if wanted(block.number)]
     sections, found, _notes = resolve_sections(
         cued,
@@ -223,7 +323,7 @@ def _unreached(run: Run, *, frames: bool) -> Look:
     missed = ", ".join(code.name for code in (*NEEDS_A_PAGE, *NEEDS_A_FRAME))
     run.note(f"no page was opened, so these judgements were not reached: {missed}.")
     if frames:
-        run.note("frames were asked for and no page was opened, so no frame was frozen either.")
+        run.note("No frame was frozen, because no page was opened.")
     return Look()
 
 
@@ -237,20 +337,19 @@ def _look(
     frames: bool,
 ) -> Look:
     """Open every page once, keep what it published, and judge as much of it as this run asked for."""
-    cfg = inputs.settings.record
     files = judged_pages(sections, extra)
     looked = Look()
     if not files:
         return looked
-    with chromium(inputs.settings.tools.chromium, policy=cfg.page_policy, spend=run.spend) as browser:
-        opened: dict[str, tuple[Page, Assets]] = {}
+    with pictures(inputs, run) as made:
+        opened: dict[str, ProjectPage] = {}
         for page in files:
             if not inputs.path(page).exists():
                 continue
-            drawn, assets = open_project_page(browser, inputs)
-            opened[page] = (drawn, assets)
-            report = reports_of(drawn, inputs, [page]).get(page)
-            looked.findings += _page_judgements(report, assets.external, where=page)
+            drawn = made.page()
+            opened[page] = drawn
+            report = drawn.reports([page]).get(page)
+            looked.findings += _page_judgements(report, drawn.assets.external, where=page)
             if report is not None and report.catalog:
                 looked.catalogs[page] = report.catalog
         _sections(inputs, run, sections, times, looked=looked, opened=opened, frames=frames)
@@ -270,7 +369,7 @@ def _sections(
     times: Mapping[int, Mapping[str, float]],
     *,
     looked: Look,
-    opened: Mapping[str, tuple[Page, Assets]],
+    opened: Mapping[str, ProjectPage],
     frames: bool,
 ) -> None:
     """Judge every named section from the catalog its page published, and freeze its frames when asked."""
@@ -291,8 +390,9 @@ def _sections(
             continue
         slides[section.number] = found
         resolved = times.get(section.number, {})
+        opted = {cue for number, cue in skipped if number == section.number}
         looked.findings += static_findings(
-            entry, resolved, where=section.page, section=section.number, settings=inputs.settings
+            entry, resolved, where=section.page, section=section.number, settings=inputs.settings, opted=opted
         )
         if not frames:
             continue

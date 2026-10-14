@@ -10,10 +10,14 @@ others, and it sends no telemetry, no usage report and no crash report anywhere.
 does not choose is a page's own: a page you record loads what its author wrote it to load, and the
 third table says when that reaches the network and how a machine refuses it.
 
-Hand this page to a reviewer who has to approve DeckTalk on a managed machine. The three facts that
+Hand this page to a reviewer who has to approve DeckTalk on a managed machine. The four facts that
 decide most reviews are that a cloud speech service receives your script, that the first run
-downloads a browser and a media tool, and that a recorded page reaches the network as it would in a
-browser unless the machine sets `record.page_policy = "untrusted"`.
+downloads a browser and a media tool, that a recorded page reaches the network as it would in a
+browser unless the machine sets `record.page_policy = "untrusted"`, and that a program a project
+names runs only when the machine sets `record.programs` to `ask` or `run`. Such a program runs with
+your user's rights and can read every file you can, `.env` included, and it reaches whatever your
+user can reach. The default is `refuse`, and `decktalk check` lists every program a project names, as
+[programs a project names](/reference/trust#programs-a-project-names) says.
 
 ## Requests that carry your content
 
@@ -115,12 +119,13 @@ and none of them is a DeckTalk feature you have to wait for.
   for it.
 - **Refuse what a page reaches for.** Set `record.page_policy` to `untrusted` with
   `decktalk config set record.page_policy untrusted --scope machine` when the machine records pages
-  it should not trust with the network. [A page someone else wrote](/requirements#a-page-someone-else-wrote)
+  it should not trust with the network. [A page someone else wrote](/reference/trust#a-page-someone-else-wrote)
   says what that policy holds.
 
 [Requirements and costs](/requirements) has the full managed-machine section, with the package index
 mirror and the `[tools]` keys.
 
-`decktalk doctor` reports what is installed and which browser and media build a run would use,
-without fetching anything, and `decktalk doctor --json` prints the same reading as one object with
+`decktalk doctor` reports what is installed and which browser and media build a run would use. It
+fetches nothing unless it is on a terminal, where it offers once to fetch what is missing, or `--fix` is
+passed, and `decktalk doctor --json` prints the same reading as one object with
 no credential in it.

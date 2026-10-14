@@ -32,10 +32,8 @@ REPORTED = {
             },
         }
     ],
-    "cues": [{"id": "1.1:expand", "due": 1.5, "ran": 1.52, "frame": 1.5, "describe": None, "next": 1.56, "after": 1.6}],
+    "cues": [{"id": "1.1:expand", "due": 1.5, "ran": 1.52, "frame": 1.5, "describe": None}],
     "words": [{"text": "Halfway there", "cueAt": 1.5, "spokenAt": 1.6, "count": 2, "firstShown": 1.62}],
-    "frameGaps": [{"at": None, "ms": 180}, {"at": 2.0, "ms": 140}],
-    "longFrames": [{"start": 1.4, "ms": 62, "render": 1.44, "presented": None}],
 }
 """One page's answer, in the shape and the spelling `window.__decktalkProbe.report()` uses."""
 
@@ -45,9 +43,7 @@ def test_the_report_reads_into_models_with_the_page_names_on_the_left():
     assert report.version == "0.5.0" and report.mode == "record" and report.slide == "1.1"
     assert report.unreadable == ()
     assert report.words[0].cue_at == 1.5 and report.words[0].first_shown == 1.62
-    assert report.frame_gaps[0].at is None and report.frame_gaps[1].ms == 140
-    assert report.long_frames[0].presented is None
-    assert report.cues[0].id == "1.1:expand" and report.cues[0].after == 1.6
+    assert report.cues[0].id == "1.1:expand" and report.cues[0].frame == 1.5
 
 
 def test_every_warning_the_page_reports_carries_its_code():
@@ -99,12 +95,6 @@ def test_the_catalog_keeps_what_the_recorder_does_not_read():
     assert scene.elements["1.1"][0].moments == {"data-in": "1.1:expand"}
     assert (scene.slides, scene.cues) == (("1.1",), {"1.1": ("1.1:expand",)})
     assert scene.model_dump()["name"] == "Intro"
-
-
-def test_the_worst_stall_counts_only_what_a_viewer_can_see():
-    """A gap under the cover is trimmed out of the cut, so only the part after t=0 is a stall."""
-    report = pagereport.read({**REPORTED, "frameGaps": [{"at": None, "ms": 900}, {"at": 0.05, "ms": 200}]})
-    assert report.worst_gap_ms == 50
 
 
 def test_the_report_names_every_field_the_contract_names():

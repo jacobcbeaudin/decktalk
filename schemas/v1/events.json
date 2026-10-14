@@ -46,6 +46,10 @@
         "PAGE_ENTER_THREW",
         "PAGE_SLIDE_HANDLER_THREW",
         "PAGE_HANDLER_THREW",
+        "PAGE_MOTION_UNDECLARED",
+        "PAGE_MOTION_CUE_UNKNOWN",
+        "PAGE_REALTIME_MEDIA",
+        "PAGE_FRAME_THREW",
         "PAGE_WAIT_REJECTED",
         "PAGE_WAIT_UNSETTLED",
         "PAGE_CLASS_UNDESCRIBED",
@@ -55,15 +59,20 @@
         "PAGE_APPEAR_TOO_LONG",
         "PAGE_STAGGER_EMPTY",
         "PAGE_SPOTLIGHT_EMPTY",
+        "PAGE_MOTION_UNFINISHED",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
         "PAGE_CDN_ASSET",
-        "RECORD_STALLED",
+        "PAGE_CHANGE_UNDECLARED",
         "RECORD_BLACK",
         "RECORD_TRUNCATED",
+        "MOTION_EASE_UNMEASURABLE",
+        "MOTION_OFF",
+        "MOTION_NO_EDGE",
+        "MOTION_MASK_LARGE",
         "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
@@ -76,12 +85,20 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
+        "TAKE_UNALIGNED",
+        "TAKE_WORD_CUT",
+        "TAKE_SILENT",
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
         "SOUND_MISSING",
-        "FILE_MISSING"
+        "FILE_MISSING",
+        "PROGRAM_NAMED"
       ],
       "title": "Code",
       "type": "string"
@@ -975,6 +992,20 @@
           "title": "Section",
           "type": "integer"
         },
+        "turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The turn of the section this line is about, which narrate names, or null.",
+          "title": "Turn"
+        },
         "outcome": {
           "$ref": "#/$defs/Outcome",
           "description": "Whether the section ran, was skipped, kept what an earlier run made, was stopped, or failed."
@@ -1038,6 +1069,20 @@
           "minimum": 0,
           "title": "Section",
           "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The turn of the section this line is about, which narrate names, or null.",
+          "title": "Turn"
         }
       },
       "required": [
@@ -1238,6 +1283,11 @@
           "$ref": "#/$defs/Layer",
           "description": "Which layer set that rate, where default means nobody stated it."
         },
+        "provider": {
+          "description": "The provider this row pays, which for the narration is one row per provider its voices name.",
+          "title": "Provider",
+          "type": "string"
+        },
         "stage": {
           "$ref": "#/$defs/Stage",
           "description": "The stage this row is about."
@@ -1256,6 +1306,7 @@
         "price_key",
         "averaged",
         "price_layer",
+        "provider",
         "stage"
       ],
       "title": "StageCost",
@@ -1496,10 +1547,26 @@
           "title": "Section",
           "type": "integer"
         },
+        "turn": {
+          "description": "The turn of its section this take reads, counted from one.",
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
         "digest": {
           "description": "The take's digest, which names its files.",
           "pattern": "^[0-9a-f]+$",
           "title": "Digest",
+          "type": "string"
+        },
+        "voice": {
+          "description": "The voice that read this take, by its name in decktalk.toml.",
+          "title": "Voice",
+          "type": "string"
+        },
+        "provider": {
+          "description": "The speech provider that was paid for this take, which that voice names.",
+          "title": "Provider",
           "type": "string"
         },
         "characters": {
@@ -1509,7 +1576,7 @@
           "type": "integer"
         },
         "dollars": {
-          "description": "What this take cost at the price in force, in US dollars.",
+          "description": "What this take cost at its voice's bill, in US dollars.",
           "minimum": 0,
           "title": "Dollars",
           "type": "number"
@@ -1526,7 +1593,10 @@
         "seq",
         "run",
         "section",
+        "turn",
         "digest",
+        "voice",
+        "provider",
         "characters",
         "dollars"
       ],

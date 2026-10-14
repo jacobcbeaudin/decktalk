@@ -35,7 +35,7 @@ from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
-from decktalk.project import Origin, Project, section_numbers
+from decktalk.project import Origin, Project, section_numbers, turn_numbers
 from decktalk.results import (
     BillingBasis,
     BuildResult,
@@ -49,10 +49,10 @@ from decktalk.results import (
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
 from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders
-from decktalk.speech.sound import SoundProviders
+from decktalk.speech.sound import SoundProviders, SoundRequest
 from decktalk.stages.table import CALLS
 from support.costs import a_cost
-from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
+from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice, stand_in, stand_in_sounds
 from support.links import link
 from support.projects import MINIMAL_TOML, load_project, write_project
 from support.runs import a_machine
@@ -120,7 +120,13 @@ def _filler(name: str) -> dict[str, Any]:
         "cue": {"sections": (), "elapsed_seconds": 0.0},
         "record": {"sections": (), "elapsed_seconds": 0.0},
         "build": {"stages": (), "spend": False, "cost": priced, "elapsed_seconds": 0.0},
-        "status": {"name": "t", "script": Path("script.md"), "cues_file": Path("cues.json"), "sections": ()},
+        "status": {
+            "name": "t",
+            "script": Path("script.md"),
+            "cues_file": Path("cues.json"),
+            "sections": (),
+            "voices": (),
+        },
         "check": {"judged": (), "pages_opened": True, "frames_compared": True, "cost": priced},
     }[name]
 
@@ -265,6 +271,22 @@ def test_a_run_written_backwards_is_refused_rather_than_selecting_nothing() -> N
     assert refused.value.hint == "Write the lower number first, as in 7-9."
 
 
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [("4.2", ((4, 2),)), ("1.2,4.2", ((1, 2), (4, 2))), ("4.2, 4.2", ((4, 2),)), ("10.12", ((10, 12),))],
+)
+def test_a_turn_selection_is_parsed_once_at_the_edge(written: str, expected: tuple[tuple[int, int], ...]) -> None:
+    assert turn_numbers(written) == expected
+
+
+@pytest.mark.parametrize("written", ["4", "4.", ".2", "4.2.1", "4-5.1", "four.two"])
+def test_a_turn_selection_that_names_no_turn_is_refused_with_what_one_looks_like(written: str) -> None:
+    with pytest.raises(InputError, match="does not name a turn") as refused:
+        turn_numbers(written)
+    assert refused.value.hint is not None
+    assert "such as 4.2" in refused.value.hint
+
+
 SELECTING: dict[str, Callable[[Project, tuple[int, ...]], object]] = {
     "narrate": lambda project, only: project.narrate(only=only),
     "cue": lambda project, only: project.cue(only=only),
@@ -366,14 +388,14 @@ class Bought:
 
     name: str = "house"
     voice: FakeVoice = field(default_factory=FakeVoice)
-    sounds: list[dict[str, object]] = field(default_factory=list)
+    sounds: list[SoundRequest] = field(default_factory=list)
 
-    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def effect(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"sound"
 
-    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(dict(body))
+    def music(self, request: SoundRequest, *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(request)
         return b"music"
 
     @property
@@ -393,14 +415,18 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
     """
     load_project(tmp_path, PAYING_TOML, script="## 1. Open\n\nA bowl.\n")
     bought = Bought()
+    voices = stand_in(monkeypatch)
+    voices[FAKE_VOICE_NAME] = lambda _context: bought.voice
+    sounds = stand_in_sounds(monkeypatch)
+    sounds["elevenlabs"] = lambda _context: bought
     machine = Machine(
-        environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+        environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
         tables={},
         machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-        speech_providers=SpeechProviders(factories={FAKE_VOICE_NAME: lambda _context: bought.voice}),
-        sound_providers=SoundProviders(factories={"elevenlabs": lambda _context: bought}),
+        speech_providers=SpeechProviders(factories=voices.table),
+        sound_providers=SoundProviders(factories=sounds.table),
     )
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
     project = decktalk.open(tmp_path, machine=machine, threshold=Threshold(stop_on=None))
@@ -426,7 +452,7 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    answer = {"name": "t", "script": Path("s"), "cues_file": Path("c"), "sections": ()}
+    answer = {"name": "t", "script": Path("s"), "cues_file": Path("c"), "sections": (), "voices": ()}
     a_stage(monkeypatch, "cue", lambda _inputs, run, **_options: run.result(StatusResult, **answer))
     with pytest.raises(TypeError, match="cue answered with StatusResult"):
         a_project(tmp_path).cue()
@@ -806,7 +832,7 @@ def test_a_hosts_voice_table_never_changes_the_voice_a_project_is_read_in(tmp_pa
     voices, prices = [], []
     for factories in tables:
         machine = Machine(
-            environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+            environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
             tables={},
             machine_file=tmp_path / "config.toml",
             cwd=tmp_path,
@@ -814,7 +840,7 @@ def test_a_hosts_voice_table_never_changes_the_voice_a_project_is_read_in(tmp_pa
             speech_providers=SpeechProviders(factories=factories),
         )
         project = decktalk.open(tmp_path, machine=machine)
-        voices.append(project._inputs.voice)
+        voices.append(project._inputs.voices[project._inputs.default_voice])
         prices.append(project.price())
     assert voices[0] == voices[1] == voices[2]
     assert prices[0] == prices[1] == prices[2]

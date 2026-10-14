@@ -20,11 +20,9 @@ Every action is pinned to a commit SHA with its version in a comment, every work
 `lint` group. The name `release.yml` and the environment name `pypi` are registered with PyPI's
 trusted publisher, so neither may be renamed.
 
-A leg on a hosted runner whose compositor presents frames late passes `--timing=report`, which is
-the three `-platforms` rows and the weekly `scaffold` row. The Linux `e2e` row passes it too, until
-its own runs show the runner can be trusted, which `LINUX_GATES_TIMING` in `scripts/check.py` holds. Such a
-leg still measures and prints what it tolerated, and any finding that is not a late landing fails
-it. `tests/support/timing_policy.py` holds the slack.
+Every leg holds a reveal to its own frame, the hosted macOS and Windows rows and the weekly
+`scaffold` row as much as the Linux ones, because the recorder steps the section clock and a slower
+runner records the same frames. `tests/support/timing_policy.py` holds that rule and the time budgets.
 
 Coverage has one floor, measured on Linux and written by `uv run scripts/check_coverage.py --write`
 rather than typed. The record only rises, and a run is held to it less a point of margin. Every

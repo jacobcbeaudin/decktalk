@@ -1,40 +1,47 @@
-"""How many page sections record at once, which is the size of the pool `record` hands them to.
+"""How many recorders work at once, which is the size of the pool `record` hands chunks to, and the chunks.
 
-A recording waits for its section's whole span in real time, so recording one section at a time would
-take as long as the film, and the sections of one film share nothing but the project they read. Several of them are
-therefore recorded at once, each by a worker of `decktalk.stages.pool` with a Chromium of its own.
-
-A recording is also the one stage that needs its CPU on time. A reveal that lands a frame late is a
-finding, so the number at once is chosen from the CPU this process may really use, which inside a
-container is its quota and not the host's core count. `[record] concurrency` names the number, and
-zero chooses it here.
+Frame `k` of a section is the page at second `k / fps` however it was reached, so a section's frames
+split into chunks that several recorders record at once, each a worker of `decktalk.stages.pool`
+with a Chromium of its own. A recorder keeps several cores busy, so the number at once is chosen from
+the CPU this process may really use, which inside a container is its quota and not the host's core
+count. A recorder that gets fewer cores than it would keep busy records slower and never differently.
+`[record] concurrency` names the number, and zero chooses it here.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import os
-import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
+
+from decktalk.media.stepping import expected_seconds
+from decktalk.settings import RecordConfig
 
 log = logging.getLogger(__name__)
 
-CPUS_PER_RECORDING = 2
-"""Calibration: the CPUs one recording keeps busy while it presents its frames on time.
+CPUS_PER_RECORDING = 3
+"""Calibration: the CPUs one recorder keeps busy, rounded up so recorders at once do not starve each other.
 
-The page, the compositor and the encoder of one Chromium kept about two cores of a Linux container
-busy, and three recordings at once in four CPUs still landed every reveal inside the offset limit.
+With the capture switches every Chromium is launched with, no frame waits for a display refresh, so
+the page, the compositor and the encoder of one recording rarely rest. Recording the lesson's 114
+second section on an 18 core Mac took 124 CPU seconds in 53 seconds, about 2.3 cores, where the same
+recording without the switches took 79 CPU seconds in 97 seconds. A recording that has fewer cores
+than it would keep busy records slower and never differently, because the recorder steps the clock.
 """
 
 MOST_AT_ONCE = 4
-"""Calibration: the most sections an automatic choice records at once, because each one is a Chromium in memory.
+"""Calibration: the most recorders an automatic choice runs at once, because each one is a Chromium in memory.
 
-Four recordings held about 900 MB beside each other, which is what a small render worker can spare,
-and a machine with more to give says so through `[record] concurrency`.
+Each recorder is a Chromium, its Playwright driver and a lossless encode. Four recordings of the
+lesson with x264 choosing its own threads peaked at 4.4 GB beside each other on an 18 core Mac at a
+load of 12, 2.3 GB of it the encodes, and one such encode of 120 frames took 605 MB where the same
+encode on four threads took 253 MB with the same frames. `[record] encode_threads` gives each encode
+its share of the CPUs for that reason, and a machine with more memory to give says so through
+`[record] concurrency`.
 """
-
-WINDOWS_AT_ONCE = 1
-"""Calibration: Windows records one section at a time until its capture is measured under load."""
 
 CGROUP_V2_MAX = Path("/sys/fs/cgroup/cpu.max")
 """Truth: where a cgroup v2 container states its CPU quota and period, or `max` for none."""
@@ -81,35 +88,126 @@ def available_cpus() -> float:
     return min(cores, stated) if stated is not None else cores
 
 
-def at_once(requested: int, jobs: int, *, cpus: float, windows: bool) -> int:
-    """How many sections to record at once: what the machine asked for, or one per two CPUs, never more than the jobs.
+def at_once(requested: int, *, cpus: float) -> int:
+    """How many recorders to run at once: what the machine asked for, or one per `CPUS_PER_RECORDING`, at least one.
 
     `requested` is `[record] concurrency`, and zero asks this function to choose.
     """
-    if requested:
-        chosen = requested
-    elif windows:
-        chosen = WINDOWS_AT_ONCE
-    else:
-        chosen = min(MOST_AT_ONCE, int(cpus // CPUS_PER_RECORDING))
-    return max(1, min(chosen, jobs))
+    return max(1, requested or min(MOST_AT_ONCE, int(cpus // CPUS_PER_RECORDING)))
 
 
-def automatic(requested: int, jobs: int) -> int:
-    """`at_once` for this machine, which reads its own CPUs and platform, and records what it chose.
+def encode_threads(requested: int, *, cpus: float, workers: int) -> int:
+    """How many threads each recorder's lossless encode runs on: what the machine asked for, or its share of the CPUs.
+
+    `requested` is `[record] encode_threads`, and zero asks for this process's CPUs shared among the
+    `workers` recorders at once, at least one each. The answer is the same for every piece of a run,
+    so the pieces of a section are written with the same parameters and join without an encode.
+    """
+    return requested or max(1, int(cpus // workers))
+
+
+def automatic(requested: int) -> int:
+    """`at_once` for this machine, which reads its own CPUs, and records what it chose.
 
     How many recorders ran is the first thing an operator asks about a slow container, so the choice
     is recorded beside the CPUs it was made from.
     """
     cpus = available_cpus()
-    chosen = at_once(requested, jobs, cpus=cpus, windows=sys.platform == "win32")
+    chosen = at_once(requested, cpus=cpus)
     log.debug(
-        "%d sections are recorded on %d workers.",
-        jobs,
+        "%d recorders run at once.",
         chosen,
-        extra={"data": {"workers": chosen, "jobs": jobs, "cpus": cpus, "requested": requested}},
+        extra={"data": {"workers": chosen, "cpus": cpus, "requested": requested}},
     )
     return chosen
 
 
-__all__ = ["at_once", "automatic", "available_cpus"]
+@dataclass(frozen=True)
+class Span:
+    """One section a run records: its frames, the steps recording it is expected to take, and whether it splits.
+
+    A page steps once a frame, except across a still stretch, which it crosses in one step, so a
+    slide that mostly holds still costs far fewer steps than frames. A page section may be split
+    across recorders. A section a command draws is one run of that command, so it is one chunk.
+    """
+
+    section: int
+    frames: int
+    steps: int
+    splits: bool
+
+    @property
+    def steps_a_frame(self) -> float:
+        """How many steps each frame is expected to cost, which is one where every frame is a step."""
+        return self.steps / self.frames if self.frames else 1.0
+
+
+@dataclass(frozen=True)
+class Chunk:
+    """Frames `first` up to `stop` of one section, which one recorder records into one piece."""
+
+    section: int
+    first: int
+    stop: int
+    steps: float
+    """The steps this chunk is expected to take, which is its share of its section's."""
+
+    @property
+    def frames(self) -> range:
+        """The frames of the section this chunk records, in order."""
+        return range(self.first, self.stop)
+
+
+def chunk_count(span: Span, workers: int, record: RecordConfig) -> int:
+    """How many chunks a section is split into on `workers` recorders.
+
+    `sqrt(c*W*N/s)` rounded, where `W` is the steps the section is expected to take and `c` and `s`
+    are the machine's `[record] step_seconds` and `chunk_startup_seconds`, never more than the
+    recorders, never so many that a chunk holds fewer than `chunk_frames_min` frames, and never fewer
+    than one.
+    """
+    best = round(math.sqrt(record.step_seconds * span.steps * workers / record.chunk_startup_seconds))
+    return max(1, min(best, workers, span.frames // record.chunk_frames_min))
+
+
+def chunked(spans: Sequence[Span], workers: int, record: RecordConfig) -> list[Chunk]:
+    """Every chunk of every section, in the order recorders are handed them: the dearest first.
+
+    A section is cut into nearly equal ranges of frames, each expected to cost its share of the
+    section's steps. Chunks are handed out by that cost, the longest processing time first, and
+    chunks of equal cost go in section order and then frame order.
+    """
+    chunks: list[Chunk] = []
+    for span in spans:
+        count = chunk_count(span, workers, record) if span.splits else 1
+        bounds = [round(span.frames * at / count) for at in range(count + 1)]
+        chunks += [
+            Chunk(span.section, first, stop, (stop - first) * span.steps_a_frame)
+            for first, stop in zip(bounds, bounds[1:], strict=False)
+        ]
+    return sorted(chunks, key=lambda chunk: (-chunk.steps, chunk.section, chunk.first))
+
+
+def run_deadline(chunks: Sequence[Chunk], workers: int, record: RecordConfig) -> float:
+    """The longest a whole `record` run of `chunks` on `workers` recorders may take before it is stopped.
+
+    Handed out longest first, the chunks finish within their expected time spread over the recorders
+    plus the longest of them, and the run may take `[record] deadline_slowdown` times that, plus one
+    page deadline for the call in flight when it runs out.
+    """
+    costs = [expected_seconds(record, chunk.stop - chunk.first) for chunk in chunks]
+    spread = sum(costs) / max(1, workers) + max(costs, default=0.0)
+    return record.page_deadline_seconds + record.deadline_slowdown * spread
+
+
+__all__ = [
+    "Chunk",
+    "Span",
+    "at_once",
+    "automatic",
+    "available_cpus",
+    "chunk_count",
+    "chunked",
+    "encode_threads",
+    "run_deadline",
+]

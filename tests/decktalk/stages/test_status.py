@@ -8,23 +8,36 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, file_digest, take_file, words_file
+from decktalk.artifacts import (
+    AlignedWords,
+    AlignmentInputs,
+    AudioPrint,
+    ProviderWords,
+    Take,
+    TimedBy,
+    file_digest,
+    take_file,
+    words_file,
+)
 from decktalk.events import Level, RunLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
+from decktalk.inputs.script import spoken_words
 from decktalk.page import Q
 from decktalk.pipeline import Stage
-from decktalk.results import SectionKind, StatusResult, TakeState
+from decktalk.results import BillingBasis, SectionKind, StatusResult, TakeState, Word
+from decktalk.speech import ALIGNER, ALIGNERS
+from decktalk.speech import http as speech_http
 from decktalk.stages import kept
 from decktalk.stages import status as stage
 from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
-from decktalk.stages.narrate.state import CHANGED, UNINDEXED, WITHOUT_A_VOICE, take_states
+from decktalk.stages.narrate.state import CHANGED, UNINDEXED, take_states, without_a_voice
 from decktalk.stages.status import next_command, source_of, status
 from support.fakes import FREE_VOICE_NAME, FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import TAKE_SUFFIX, a_take, damage_take, write_takes
+from support.takes import TAKE_SUFFIX, a_take, damage_take, hold_take, write_takes
 
 TOML = """
 [project]
@@ -59,7 +72,8 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     write_takes(inputs, take)
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
     (inputs.workspace.takes / take_file(take.digest, TAKE_SUFFIX)).write_bytes(b"audio")
-    (inputs.workspace.takes / words_file(take.digest)).write_text("{}", encoding="utf-8")
+    said = ProviderWords(audio=AudioPrint.of(b"audio", suffix=TAKE_SUFFIX))
+    said.write(inputs.workspace.takes / words_file(take.digest))
     return take
 
 
@@ -113,7 +127,7 @@ def measured(inputs: Inputs) -> None:
 def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """After a build that verified, there is nothing to do, and saying verify again would be false."""
     # The recording here has no log beside it, so the recorder's own rule is told it still stands.
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: None)
     inputs = a_project(tmp_path)
     built_up_to(inputs, 4)
     measured(inputs)
@@ -213,14 +227,14 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     inputs = a_project(tmp_path)
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.recording("01").write_bytes(b"")
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: "section 1: its page changed")
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: "section 1: the markup of its scene changed")
     run = a_run(tmp_path)
     said: list[RunLog] = []
     run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
     result = status(inputs, run)
     assert result.sections[0].recording_stale is True
     # A reading a reader may act on is a warning, because it is not what the author asked for.
-    assert any("its page changed" in line.message and line.level is Level.WARNING for line in said)
+    assert any("the markup of its scene changed" in line.message and line.level is Level.WARNING for line in said)
 
 
 @pytest.mark.parametrize(
@@ -383,17 +397,28 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
 
 # ---- takes no section plays --------------------------------------------------------------------
 
-VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[section]]', 1)
+VOICED = TOML.replace("[[section]]", '[voices.narrator]\nid = "voice-under-test"\n\n[[section]]', 1)
 """The demo project with its voice named, which is what lets the report name the take each section plays."""
 
-FREE_VOICED = VOICED.replace("[voice]\n", f'[voice]\nprovider = "{FREE_VOICE_NAME}"\n', 1)
+FREE_VOICED = VOICED.replace("[voices.narrator]\n", f'[voices.narrator]\nprovider = "{FREE_VOICE_NAME}"\n', 1)
 """The demo project with its voice named and read by the voice DeckTalk ships that bills nothing."""
 
 
 def test_no_take_is_claimed_played_when_the_voice_in_force_names_none(tmp_path: Path) -> None:
     """Without a voice in force the script's own takes have no digest, so status claims nothing played."""
     inputs = a_project(tmp_path, toml=VOICED)
-    assert stage.played_takes(replace(inputs, voice=replace(inputs.voice, id="")), take_states(inputs)) is None
+    unnamed = {"narrator": replace(inputs.voices["narrator"], id="")}
+    assert stage.played_takes(replace(inputs, voices=unnamed), take_states(inputs)) is None
+
+
+def test_status_claims_no_unplayed_take_while_a_voice_that_reads_a_turn_has_no_id(tmp_path: Path) -> None:
+    """A guest whose id is an override not exported here names no digest, so a take it would play is never unplayed."""
+    toml = VOICED + "\n[voices.guest]\n"
+    script = SCRIPT.replace("## 1. One\n", "## 1. One\n\n[voice guest]\n")
+    inputs = a_project(tmp_path, toml=toml, script=script)
+    assert stage.played_takes(inputs, take_states(inputs)) is None
+    quiet = a_project(tmp_path / "quiet", toml=toml)
+    assert stage.played_takes(quiet, take_states(quiet)) is not None, "a voice no turn reads names no take to miss"
 
 
 def played_digest(inputs: Inputs) -> str:
@@ -404,16 +429,19 @@ def played_digest(inputs: Inputs) -> str:
 def played_digest_of(inputs: Inputs, number: int) -> str:
     """The digest of the take this section plays, taken the one way narrate takes it."""
     section = next(section for section in inputs.spoken() if section.number == number)
-    voice = inputs.voice
-    return take_inputs(inputs, section, provider=voice.provider, voice_id=voice.id, model=voice.model).digest
+    return take_inputs(section, inputs.voice_of(section.turns[0])).digest
 
 
-def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes = b"{}") -> list[Path]:
-    """One take and its words file in the takes directory, which is all the listing reads of them."""
+def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes | None = None) -> list[Path]:
+    """One take and its words file in the takes directory, which is all the listing reads of them.
+
+    The words file records the audio's print unless `words` names other bytes.
+    """
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
     pair = [inputs.workspace.takes / take_file(digest, TAKE_SUFFIX), inputs.workspace.takes / words_file(digest)]
     pair[0].write_bytes(audio)
-    pair[1].write_bytes(words)
+    printed = ProviderWords(audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX)).text.encode("utf-8")
+    pair[1].write_bytes(printed if words is None else words)
     return pair
 
 
@@ -503,7 +531,7 @@ def finished(inputs: Inputs, *rows: Take) -> None:
 @pytest.fixture
 def recordings_stand(monkeypatch: pytest.MonkeyPatch) -> None:
     """The recording here has no log beside it, so the recorder's own rule is told it still stands."""
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
+    monkeypatch.setattr(stage, "stale_recording", lambda *_args: None)
 
 
 @pytest.mark.usefixtures("recordings_stand")
@@ -541,7 +569,7 @@ def test_with_no_voice_named_a_held_take_is_unchecked_and_names_no_build(tmp_pat
     finished(inputs, played)
     result = status(inputs, a_run(tmp_path))
     assert result.sections[0].take_state is TakeState.UNCHECKED
-    assert result.sections[0].take_reason == WITHOUT_A_VOICE
+    assert result.sections[0].take_reason == without_a_voice(inputs.voices["narrator"])
     assert result.next is None
 
 
@@ -607,3 +635,141 @@ def test_a_clip_row_has_no_take_state(tmp_path: Path) -> None:
     result = status(a_project(tmp_path), a_run(tmp_path))
     assert result.sections[1].kind is SectionKind.CLIP
     assert (result.sections[1].take_state, result.sections[1].take_reason) == (None, None)
+
+
+# ---- a take no aligner timed -------------------------------------------------------------------
+
+
+def aligned_of(inputs: Inputs, audio_print: str, words: tuple[str, ...], aligner: str) -> Path:
+    """Aligned words of this audio and these words by `aligner`, kept where the takes directory keeps them."""
+    keyed = AlignmentInputs(audio=audio_print, words=words, aligner=aligner, revision="1", model_digest="m")
+    timed = tuple(Word(word=word, start=float(i), end=float(i) + 0.5) for i, word in enumerate(words))
+    inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
+    return AlignedWords(words=timed, inputs=keyed, generation=1).write(inputs.workspace.aligned_words(keyed.key))
+
+
+def held_without_times(inputs: Inputs) -> str:
+    """Hold the take section one plays, as a voice that sent no word times leaves it, and give back its print."""
+    digest = played_digest(inputs)
+    hold_take(inputs, digest)
+    said = inputs.take_words(digest)
+    assert isinstance(said, ProviderWords) and said.timed is False
+    return said.audio.blake3
+
+
+def test_aligned_words_of_a_played_take_are_not_unplayed_with_no_take_index(tmp_path: Path) -> None:
+    """A fresh clone has no build, and the aligned words its takes play are the ones a clean machine needs."""
+    inputs = a_project(tmp_path, toml=VOICED)
+    audio_print = held_without_times(inputs)
+    words = spoken_words("Hello there again.")
+    aligned_of(inputs, audio_print, words, "a")
+    aligned_of(inputs, audio_print, words, "b")
+    assert inputs.takes() is None
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert (unplayed.takes, unplayed.aligned) == (0, 0)
+
+
+def test_aligned_words_of_audio_no_section_plays_are_listed(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    audio_print = held_without_times(inputs)
+    aligned_of(inputs, audio_print, spoken_words("Hello there again."), "a")
+    gone = aligned_of(inputs, "f" * 16, ("Older", "words"), "a")
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert unplayed.aligned == 1
+    assert unplayed.files == (inputs.relative(gone),)
+
+
+def estimated(tmp_path: Path) -> Inputs:
+    """A project whose one voiced take plays estimated words."""
+    inputs = a_project(tmp_path)
+    built_up_to(inputs, 1)
+    index = inputs.takes()
+    assert index is not None
+    rows = tuple(row.model_copy(update={"timed_by": TimedBy.ESTIMATED}) for row in index.sections)
+    write_takes(inputs, *rows)
+    untimed = ProviderWords(timed=False, audio=AudioPrint.of(b"audio", suffix=TAKE_SUFFIX))
+    untimed.write(inputs.workspace.takes / words_file(rows[0].digest))
+    return inputs
+
+
+def test_a_take_playing_estimated_words_warns_and_leaves_the_next_step_to_the_pipeline(tmp_path: Path) -> None:
+    """Where no aligner ever runs that state is for good, so it is a warning and never a step that loops."""
+    timed = a_project(tmp_path / "timed")
+    built_up_to(timed, 1)
+    pipeline = status(timed, a_run(tmp_path / "timed")).next
+    inputs = estimated(tmp_path / "untimed")
+    # The aligner DeckTalk ships, which status never builds, so no socket is opened.
+    run = a_run(tmp_path / "untimed", aligners=dict(ALIGNERS))
+    said = notes(run)
+    assert status(inputs, run).next == pipeline
+    assert (
+        "Section(s) [1] play estimated words over a take that came with no word times, and no aligner has timed it. "
+        "Start decktalk-voice at the address [dtsp] base_url names, then run decktalk narrate --section 1." in said
+    )
+
+
+@pytest.mark.parametrize("host", ["its own aligner", "no aligner"])
+def test_a_host_is_never_told_to_start_the_aligner_decktalk_ships(tmp_path: Path, host: str) -> None:
+    """A host's machine answers with its own aligner or with none, and decktalk-voice is neither."""
+    inputs = estimated(tmp_path)
+    aligners = {ALIGNER: lambda _context: pytest.fail("status opens no socket")} if host == "its own aligner" else {}
+    run = a_run(tmp_path, aligners=aligners)
+    said = notes(run)
+    status(inputs, run)
+    (line,) = [line for line in said if "estimated words" in line]
+    assert line.startswith("Section(s) [1] play estimated words over a take")
+    assert "decktalk-voice" not in line
+
+
+def test_status_opens_no_socket_on_an_aligned_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    audio_print = held_without_times(inputs)
+    aligned = aligned_of(inputs, audio_print, spoken_words("Hello there again."), "a")
+    key = aligned.name.removesuffix(".words.json")
+    write_takes(
+        inputs,
+        a_take(1, digest=played_digest(inputs), spoken="Hello there again.", timed_by=TimedBy.ALIGNED, alignment=key),
+    )
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("status opened a socket")
+
+    monkeypatch.setattr(speech_http, "urlopen", refused)
+    assert status(inputs, a_run(tmp_path)).ok
+
+
+# ---- voices and turns ----------------------------------------------------------------------------
+
+DIALOGUE_TOML = (
+    TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nprovider = "dtsp"\n\n[voices.aside]\nid = "a"\n'
+)
+"""The demo project with a narrator, a free guest with no id, and a voice no turn reads."""
+
+DIALOGUE_SCRIPT = "# Demo\n\n## 1. One\n\n[voice narrator]\n\nHello there.\n\n[voice guest]\n\nAgain.\n"
+"""Section one as a dialogue: the narrator, then the guest."""
+
+
+def test_status_reports_every_turn_with_its_voice_and_its_state(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=DIALOGUE_TOML, script=DIALOGUE_SCRIPT)
+    result = status(inputs, a_run(tmp_path))
+    one, clip = result.sections
+    assert one.voices == ("narrator", "guest")
+    assert [(turn.turn, turn.voice, turn.take_state) for turn in one.turns] == [
+        (1, "narrator", TakeState.MISSING),
+        (2, "guest", TakeState.MISSING),
+    ]
+    assert one.turns[1].take_reason.startswith("it has no voiced take yet")
+    assert one.take_reason == f"{one.turns[0].take_reason}, in turn 1, which narrator reads"
+    assert (clip.turns, clip.voices) == ((), ())
+
+
+def test_status_names_every_voice_its_provider_and_whether_it_has_an_id(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=DIALOGUE_TOML, script=DIALOGUE_SCRIPT)
+    result = status(inputs, a_run(tmp_path))
+    assert [(voice.name, voice.provider, voice.default, voice.named, voice.billing) for voice in result.voices] == [
+        ("narrator", "elevenlabs", True, True, BillingBasis.PER_CHARACTER),
+        ("aside", "elevenlabs", False, True, BillingBasis.PER_CHARACTER),
+        ("guest", "dtsp", False, False, BillingBasis.FREE),
+    ]

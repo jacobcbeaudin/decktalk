@@ -34,6 +34,10 @@
         "PAGE_ENTER_THREW",
         "PAGE_SLIDE_HANDLER_THREW",
         "PAGE_HANDLER_THREW",
+        "PAGE_MOTION_UNDECLARED",
+        "PAGE_MOTION_CUE_UNKNOWN",
+        "PAGE_REALTIME_MEDIA",
+        "PAGE_FRAME_THREW",
         "PAGE_WAIT_REJECTED",
         "PAGE_WAIT_UNSETTLED",
         "PAGE_CLASS_UNDESCRIBED",
@@ -43,15 +47,20 @@
         "PAGE_APPEAR_TOO_LONG",
         "PAGE_STAGGER_EMPTY",
         "PAGE_SPOTLIGHT_EMPTY",
+        "PAGE_MOTION_UNFINISHED",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
         "PAGE_CDN_ASSET",
-        "RECORD_STALLED",
+        "PAGE_CHANGE_UNDECLARED",
         "RECORD_BLACK",
         "RECORD_TRUNCATED",
+        "MOTION_EASE_UNMEASURABLE",
+        "MOTION_OFF",
+        "MOTION_NO_EDGE",
+        "MOTION_MASK_LARGE",
         "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
@@ -64,12 +73,20 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
+        "TAKE_UNALIGNED",
+        "TAKE_WORD_CUT",
+        "TAKE_SILENT",
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
         "SOUND_MISSING",
-        "FILE_MISSING"
+        "FILE_MISSING",
+        "PROGRAM_NAMED"
       ],
       "title": "Code",
       "type": "string"
@@ -184,6 +201,20 @@
           ],
           "default": null,
           "description": "Why this cue was not measured, or null when it was."
+        },
+        "masked_percent": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How much of the frame declared motion masked out of this cue, or null when none did.",
+          "title": "Masked Percent"
         }
       },
       "required": [
@@ -558,6 +589,73 @@
       "title": "Location",
       "type": "object"
     },
+    "MotionCheck": {
+      "additionalProperties": false,
+      "description": "One landing of a declared motion, measured on its own lane against the word it was promised to.",
+      "properties": {
+        "section": {
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
+          "title": "Section",
+          "type": "integer"
+        },
+        "cue": {
+          "description": "The cue id the motion lands on.",
+          "title": "Cue",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Whether the motion departs or arrives at this cue.",
+          "enum": [
+            "depart",
+            "arrive"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "spoken": {
+          "description": "When the cue's word is spoken in the film, in seconds.",
+          "minimum": 0,
+          "title": "Spoken",
+          "type": "number"
+        },
+        "shown": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The frame the motion was first or last seen moving, or null.",
+          "title": "Shown"
+        },
+        "offset_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How far the landing is from its word, in seconds.",
+          "title": "Offset Seconds"
+        }
+      },
+      "required": [
+        "section",
+        "cue",
+        "kind",
+        "spoken"
+      ],
+      "title": "MotionCheck",
+      "type": "object"
+    },
     "SeamCheck": {
       "additionalProperties": false,
       "description": "One seamless cut: whether the incoming section opens on the picture the outgoing one ended on.",
@@ -604,6 +702,8 @@
         "no_cues",
         "no_onset",
         "no_slide",
+        "motion_landing",
+        "rendered",
         "not_assembled",
         "opted_out",
         "too_close_to_end"
@@ -744,6 +844,15 @@
         "$ref": "#/$defs/CueCheck"
       },
       "title": "Cues",
+      "type": "array"
+    },
+    "motions": {
+      "default": [],
+      "description": "Every landing of every declared motion, measured on its own lane, in film order.",
+      "items": {
+        "$ref": "#/$defs/MotionCheck"
+      },
+      "title": "Motions",
       "type": "array"
     },
     "elapsed_seconds": {

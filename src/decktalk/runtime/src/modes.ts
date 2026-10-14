@@ -13,6 +13,7 @@
 import {
   build,
   CLASS,
+  captioning,
   frame,
   hide,
   pan,
@@ -29,6 +30,7 @@ import { frameAt, now, round, run, schedule, start } from "./clock.ts";
 import {
   cueId,
   DONE_ATTR,
+  DUE_SLACK_SECONDS,
   FRAME_STEP_MS,
   LIST_SEPARATOR,
   MILLISECONDS,
@@ -39,6 +41,7 @@ import {
   TIME_MARK,
 } from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
+import { undeclaredIn } from "./motion.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
 import {
   all,
@@ -55,7 +58,7 @@ import {
   type Slide,
 } from "./scene.ts";
 import { type CatalogEntry, type Mode, type Probe, recorder } from "./telemetry.ts";
-import { key, type Spoken } from "./text.ts";
+import { parseWords, type Spoken } from "./text.ts";
 import { warn } from "./warn.ts";
 
 /** Every query key this page reads, typed against the contract so a misspelling will not compile. */
@@ -63,14 +66,16 @@ const SCENE: Q = "scene";
 const FREEZE: Q = "freeze";
 const CUES: Q = "cues";
 const WORDS: Q = "words";
+const TURNS: Q = "turns";
 const T0: Q = "t0";
 const SPEED: Q = "speed";
 const HUD: Q = "hud";
+const CAPTION: Q = "caption";
 
 /** What `?hud=` says when a page is asked to draw its own clock, which a recording never is. */
 const ON = "1";
 
-/** The slowest a preview may be played, which is slow enough to read a cue and fast enough to end. */
+/** Calibration: the slowest a preview may be played, which is slow enough to read a cue and fast enough to end. */
 const SLOWEST = 0.05;
 
 /** How long a preview without cue times rests before its first cue, and between two of them. */
@@ -120,6 +125,12 @@ function done(): void {
   document.body.toggleAttribute(DONE_ATTR, true);
 }
 
+/** The second on the section clock a cue id is due, from the times this page plays, or null when it has none. */
+export function cueAt(cue: string): number | null {
+  const found = state.cues.find((one) => one.id === cue);
+  return found ? origin + found.at : null;
+}
+
 // ---- building and mounting ---------------------------------------------------------------------------
 
 /**
@@ -149,12 +160,13 @@ export function buildSlide(scene: Scene, slide: Slide): HTMLElement {
  *
  * The outgoing slide keeps full opacity underneath the incoming one for the whole crossfade, so the
  * composite of the two is opaque throughout and never shows the page's own background through the
- * pair of them, and it is removed on the animation's own end rather than on a length written twice.
+ * pair of them, and it is removed once the crossfade the stylesheet plays has ended.
  */
 function mount(scene: Scene, slide: Slide, held: ReadonlySet<string> | null, at: number | null): HTMLElement {
   const old = pan().querySelector(`.${CLASS.slide}:not(.${CLASS.leaving})`);
   const el = buildSlide(scene, slide);
-  const mounted = prepare(el, slide, { frozen, held, words: state.words });
+  const opens = at === null ? NOTHING : opening();
+  const mounted = prepare(el, slide, { frozen, held, opens, words: state.words, at: cueAt });
   typeset(el, slide.id);
   state.slide = slide;
   state.mounted = mounted;
@@ -178,21 +190,32 @@ function mount(scene: Scene, slide: Slide, held: ReadonlySet<string> | null, at:
   return el;
 }
 
+/** No cue at all, which is what a slide mounted after the section's start opens on. */
+const NOTHING: ReadonlySet<string> = new Set();
+
+/**
+ * The cues this page plays at the section's start, which the slide mounted there opens on.
+ *
+ * A cue is at the start when nothing comes before it on the section clock, which is the cue
+ * resolution's own clamp for a phrase that has no onset of its own.
+ */
+function opening(): ReadonlySet<string> {
+  return new Set(state.cues.filter((cue) => cue.at <= DUE_SLACK_SECONDS).map((cue) => cue.id));
+}
+
 /** Take the outgoing slide off once the incoming one has finished arriving, and never before. */
 function retire(incoming: HTMLElement, outgoing: HTMLElement, entrance: keyof typeof SLIDE_ENTRANCES): void {
   const leaving = state.mounted;
   outgoing.classList.add(CLASS.leaving);
-  let gone = false;
   const go = () => {
-    if (gone) return;
-    gone = true;
     if (leaving && leaving.el === outgoing) leaving.stop();
     outgoing.remove();
   };
-  incoming.addEventListener("animationend", go, { once: true });
-  // The fallback is the crossfade the stylesheet is really playing plus one captured frame, so a
-  // page that never fires the event still loses its outgoing slide at the right moment.
-  setTimeout(go, (slideSeconds(entrance) + FRAME_STEP_MS / MILLISECONDS) * MILLISECONDS);
+  // The removal is the crossfade the stylesheet is really playing plus one captured frame, owed to the
+  // section clock and never to the animation's end event, which the browser sends from a frame it
+  // draws on its own wall clock. A recorder stepping the clock then removes the outgoing slide on the
+  // same frame however it reached that frame.
+  schedule(now() + slideSeconds(entrance) + FRAME_STEP_MS / MILLISECONDS, "retire", incoming.className, go);
 }
 
 /** What a handler is told about where it is running, which is the same for every kind of handler. */
@@ -230,10 +253,11 @@ function fireCue(cue: string, due: number): void {
       warn("PAGE_HANDLER_THREW", slide?.id ?? null, cue, { value: String(err) });
     }
   }
-  if (sentence === null && !own && !handled(cue) && !findSlide(cue)) {
+  // A cue a slide declares is known even when nothing draws at it, which is what a motion's arrival is.
+  if (sentence === undefined && !own && !handled(cue) && !findSlide(cue) && !ownerOf(cue)) {
     warn("PAGE_CUE_UNKNOWN", slide?.id ?? null, cue);
   }
-  recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence });
+  recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence ?? null });
 }
 
 // ---- the modes ---------------------------------------------------------------------------------------
@@ -252,21 +276,10 @@ function parseCues(raw: string): { id: string; at: number }[] {
     .sort((a, b) => a.at - b.at);
 }
 
-/** `?words=` as the recorder writes it, which is every spoken word and the second the voice reaches it. */
-function parseWords(raw: string): Spoken[] {
-  return raw
-    .split(LIST_SEPARATOR)
-    .map((item) => {
-      const mark = item.lastIndexOf(TIME_MARK);
-      return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
-    })
-    .filter((word) => word.key && !Number.isNaN(word.at));
-}
-
 /**
  * Play one scene against the section clock, which is the mode every recording is made in.
  *
- * The first cued slide is mounted before the clock starts and before the recorder's cover comes off,
+ * The first cued slide is mounted before the clock starts and before the recorder's first step,
  * so no frame of a recording is ever drawn on an empty canvas, and its own reveals still wait for
  * their own cues.
  */
@@ -324,6 +337,10 @@ function preview(scene: Scene): void {
   scene.slides.forEach((slide, index) => {
     const mountAt = at;
     const cues = cueOrder(slide);
+    // The preview's own times are the times its motions are timed by, so they join the page's list.
+    cues.forEach((cue, order) => {
+      state.cues.push({ id: cue, at: mountAt - origin + ((order + 1) * PREVIEW_STEP_SECONDS) / speed });
+    });
     const start = () => {
       mount(scene, slide, null, index === 0 ? origin : null);
       cues.forEach((cue, order) => {
@@ -458,13 +475,17 @@ export function begin(probe: Probe | null): Promise<void> {
   if (!signalled) start();
   build(params.get(HUD) === ON);
   const wordsRaw = params.get(WORDS);
-  state.words = wordsRaw ? parseWords(wordsRaw) : null;
+  state.words = wordsRaw ? parseWords(wordsRaw, params.get(TURNS)) : null;
   const cuesRaw = params.get(CUES);
   const cues = cuesRaw ? parseCues(cuesRaw) : [];
   const chosen = params.get(SCENE);
   let listing = false;
   let waiting: Promise<void> = Promise.resolve();
-  if (frozen) {
+  if (params.get(CAPTION) === ON) {
+    // The captioned copy is drawn one caption at a time over a clear frame, so no scene is mounted.
+    state.mode = "caption";
+    captioning();
+  } else if (frozen) {
     stop(params.get(FREEZE) ?? "", (order, slide) => probe?.freezeCues(order, slide, warn) ?? order);
   } else if (chosen !== null || cues.length) {
     const scene =
@@ -515,6 +536,7 @@ function measure(probe: Probe | null): void {
       const el = buildSlide(scene, slide);
       layer.appendChild(el);
       measureClassSpans(el, slide, entry.spans, dim);
+      undeclaredIn(el, slide.id);
       layer.removeChild(el);
     }
   }

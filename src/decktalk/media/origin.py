@@ -71,6 +71,8 @@ UNDECLARED = "that path is not in the deck directory and the project declares no
 RESERVED = f"that path is the engine's own, and the engine serves only its runtime and KaTeX under {ENGINE_PATH}"
 ENGINE_DIR = ENGINE_PATH.strip("/")
 """The first name of every path the engine answers itself, which no project file is ever served under."""
+BROKEN = "the origin could not answer"
+"""What a request that raised is answered with, because the page must learn it failed rather than wait for it."""
 TEXT = "text/plain; charset=utf-8"
 """What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 
@@ -343,7 +345,8 @@ def route_pages(
     def handler(route: Route, request: Request) -> None:
         try:
             asked = unquote(urlsplit(request.url).path)
-            if asked in answered and urlsplit(request.url).netloc == urlsplit(ORIGIN).netloc:
+            mine = urlsplit(request.url).netloc == urlsplit(ORIGIN).netloc
+            if asked in answered and mine:
                 route.fulfill(status=HTTPStatus.OK, content_type=EXTRA_TYPES[".json"], body=answered[asked])
                 return
             wanted = local_target(allowed, request.url)
@@ -372,7 +375,7 @@ def route_pages(
             shown = request.url.split("?", 1)[0]
             log.warning("The origin could not answer %s.", shown, exc_info=exc, extra={"data": {"url": shown}})
             broke = HTTPStatus.INTERNAL_SERVER_ERROR
-            route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
+            route.fulfill(status=broke, content_type=TEXT, body=BROKEN)
 
     target.route("**/*", handler)
     return assets
@@ -422,6 +425,21 @@ class _Handler(SimpleHTTPRequestHandler):
         return None
 
     def send_head(self) -> io.BytesIO | BinaryIO | None:
+        """Answer one request, or a 500 the log explains when answering it raised.
+
+        A request that raised would otherwise close the connection with no answer at all, which a page
+        reads as a missing picture and an author reads as nothing. The query is left out of the log,
+        because it is where a page puts what it means to send somewhere.
+        """
+        try:
+            return self._head()
+        except Exception as exc:  # the page must learn its request failed rather than lose the connection
+            shown = urlsplit(self.path).path
+            log.error("The preview server could not answer %s.", shown, exc_info=exc, extra={"data": {"path": shown}})
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, BROKEN)
+            return None
+
+    def _head(self) -> io.BytesIO | BinaryIO | None:
         """Answer only what the one rule allows, so both halves of this module refuse the same file.
 
         The base class opens the file a second time below, so a name swapped for a link between the
@@ -449,7 +467,10 @@ class _Handler(SimpleHTTPRequestHandler):
 
 
 def open_server(
-    allowed: Allowed, host: str, port: int, documents: Mapping[str, bytes] | None = None
+    allowed: Allowed,
+    host: str,
+    port: int,
+    documents: Mapping[str, bytes] | None = None,
 ) -> ThreadingHTTPServer:
     """A stopped-in-a-context HTTP server for the project directory, bound to `host` and `port`.
 

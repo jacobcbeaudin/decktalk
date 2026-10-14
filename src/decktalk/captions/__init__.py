@@ -22,6 +22,7 @@ from .files import (
     ffmetadata_escape,
     srt_text,
     transcript_html,
+    voice_label,
     vtt_text,
 )
 from .layout import CAPTION_MAX_CHARS, CaptionCue, caption_cues, display_words
@@ -39,5 +40,6 @@ __all__ = [
     "chapters_text",
     "srt_text",
     "transcript_html",
+    "voice_label",
     "vtt_text",
 ]

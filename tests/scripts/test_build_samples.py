@@ -6,21 +6,18 @@ in the e2e row, and these tests cover what it does around a run.
 
 from __future__ import annotations
 
+import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
 
 import build_samples
-from decktalk.findings import Code
 from support.paths import REPO
 
-CUE_OFF = Code.CUE_OFF.value
-"""A finding a slower machine can add to a verified run, which a measured row leaves out."""
-
-TAKE_MISSING = Code.TAKE_MISSING.value
-"""A finding every run without spend reports, which a measured row keeps."""
-
 PAGE = REPO / "docs" / "page.mdx"
+README = REPO / "README.md"
 
 
 def test_a_sample_comment_and_its_block_are_written_and_every_other_line_is_left_alone() -> None:
@@ -39,9 +36,31 @@ def test_a_sample_comment_inside_a_step_keeps_its_indent() -> None:
     assert written.startswith("  {/* sample: one, a run */}\n")
 
 
-def test_a_comment_no_row_names_is_left_as_it_is() -> None:
-    page = "{/* sample: decktalk status, on a fresh starter */}\n```text\nold\n```\n"
-    assert build_samples.spliced(page, {}, where=PAGE) == page
+def test_a_comment_that_names_no_row_is_refused() -> None:
+    """A block marked as a sample that no row writes looks checked and is not, so the marker is refused."""
+    page = "Prose.\n{/* sample: decktalk status, on a fresh starter */}\n```text\nold\n```\n"
+    readme = "<!-- sample: one, a run -->\n```text\nold\n```\n"
+    found = build_samples.unbacked({PAGE: page, README: readme}, ids={"two"})
+    assert len(found) == 2
+    assert "page.mdx:2" in found[0] and "decktalk status" in found[0]
+    assert "README.md:1" in found[1] and "one" in found[1]
+    assert build_samples.unbacked({README: readme}, ids={"one"}) == []
+
+
+def test_every_sample_comment_in_the_readme_and_the_docs_names_a_row() -> None:
+    ids = {row.id for row in build_samples.rows()}
+    pages = {page: page.read_text(encoding="utf-8") for page in build_samples.pages()}
+    assert REPO / "README.md" in pages
+    assert build_samples.unbacked(pages, ids=ids) == []
+
+
+def test_a_markdown_page_marks_a_sample_with_an_html_comment() -> None:
+    """The README is Markdown, where `{/* */}` would print, so its samples sit under an HTML comment."""
+    assert build_samples.comment(README, "one", "a run") == "<!-- sample: one, a run -->"
+    assert build_samples.comment(PAGE, "one", "a run") == "{/* sample: one, a run */}"
+    page = "Prose.\n<!-- sample: one, an old sentence -->\n```text\nold\n```\n"
+    written = build_samples.spliced(page, {"one": ("<!-- sample: one, a run -->", "```text\nnew\n```\n")}, where=README)
+    assert written == "Prose.\n<!-- sample: one, a run -->\n```text\nnew\n```\n"
 
 
 @pytest.mark.parametrize(
@@ -88,34 +107,6 @@ def test_a_verdict_the_run_decides_is_held_by_its_key_alone() -> None:
     assert build_samples.masked(one, ("ok",)) == build_samples.masked(other, ("ok",))
 
 
-SLOW_BUILD = """\
-      Verify    0:06
-       Built build/final/my-lesson.mp4, $0.00, 2 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet.
-build/final/my-lesson.mp4: CUE_OFF the reveal at 1.2:script first changed +163 ms from the word it lands on.
-Found 2 findings, 1 error."""
-
-
-def test_a_measured_finding_a_slower_machine_adds_is_left_out_of_the_block() -> None:
-    """A recording is made in real time, so a starved machine can land a reveal late where the docs machine did not."""
-    shown = build_samples.unmeasured(SLOW_BUILD, (CUE_OFF,))
-    assert CUE_OFF not in shown
-    assert TAKE_MISSING in shown
-    assert build_samples.unmeasured(SLOW_BUILD, ()) == SLOW_BUILD
-
-
-def test_a_measured_finding_is_left_out_of_a_json_result_and_every_other_finding_stays() -> None:
-    result = {"ok": False, "findings": [{"code": CUE_OFF}, {"code": TAKE_MISSING}]}
-    assert build_samples.unmeasured_value(result, (CUE_OFF,)) == {"ok": False, "findings": [{"code": TAKE_MISSING}]}
-
-
-def test_a_findings_exit_is_a_measured_one_only_when_every_error_it_names_is_measured() -> None:
-    assert build_samples.only_measured(SLOW_BUILD, (CUE_OFF,))
-    assert not build_samples.only_measured(SLOW_BUILD, ())
-    assert not build_samples.only_measured(SLOW_BUILD + "\nscript.md: SCRIPT_UNFINISHED a placeholder.", (CUE_OFF,))
-    assert not build_samples.only_measured("Found 1 finding, 0 errors.", (CUE_OFF,)), "an exit names its error"
-
-
 def test_the_fake_voice_times_every_word_at_its_pace_with_each_pause_after_its_piece() -> None:
     words, seconds = build_samples.timed([{"text": "A bowl.", "pause": 0.5}, {"text": "It rolls.", "pause": None}])
     step = build_samples.WORD_SECONDS
@@ -128,7 +119,9 @@ def test_every_row_names_a_page_that_marks_it() -> None:
     for row in build_samples.rows():
         assert isinstance(row.page, Path) and row.page.is_file(), row.page
         marked = row.page.read_text(encoding="utf-8")
-        assert f"{{/* sample: {row.id}, {row.what} */}}" in marked, f"{row.page.name} has no comment for {row.id}"
+        assert build_samples.comment(row.page, row.id, row.what) in marked, (
+            f"{row.page.name} has no comment for {row.id}"
+        )
 
 
 def test_a_block_under_an_indented_comment_is_indented_with_it() -> None:
@@ -202,3 +195,129 @@ def test_a_row_masks_only_its_own_block() -> None:
     assert build_samples.masked_page(other, masks) == held
     assert build_samples.masked_page(page.replace("Record 0:22 in", "Record 0:23 in"), masks) != held
     assert build_samples.masked_page(page.replace('"seq": 0', '"seq": 1'), masks) != held
+
+
+BUILT = """\
+run fc3e5b583fcd, events build/events/fc3e5b583fcd.jsonl
+     Narrate    0:00
+         Cue    0:00
+      Record    0:22
+       Built build/final/my-lesson.mp4, $0.00, 3 findings"""
+
+
+def test_a_stage_duration_is_held_by_its_place_in_every_block() -> None:
+    """How long a stage takes is the machine's, so a row holds the stage and not its seconds without asking."""
+    page = f"{{/* sample: one, a build */}}\n```text\n{BUILT}\n```\n"
+    slower = page.replace("Narrate    0:00", "Narrate    0:01").replace("Record    0:22", "Record    1:05")
+    masks: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {"one": ((), ())}
+    assert build_samples.masked_page(slower, masks) == build_samples.masked_page(page, masks)
+    renamed = page.replace("Record    0:22", "Recorded    0:22")
+    assert build_samples.masked_page(renamed, masks) != build_samples.masked_page(page, masks)
+
+
+STATUS_FRESH = next(row for row in build_samples.rows() if row.id == "status-fresh")
+
+
+def committed_block(row: build_samples.Row) -> str:
+    """The block a page holds under a row's comment, fences included."""
+    lines = row.page.read_text(encoding="utf-8").splitlines(keepends=True)
+    at = next(i for i, line in enumerate(lines) if build_samples.COMMENT.match(line.strip()) and f" {row.id}," in line)
+    end = next(i for i in range(at + 2, len(lines)) if lines[i].strip() == build_samples.FENCE)
+    return "".join(lines[at + 1 : end + 1])
+
+
+@pytest.mark.parametrize(
+    "parent",
+    [{"COLUMNS": "40"}, {"COLUMNS": "200"}, {"PYTHONIOENCODING": "cp1252"}],
+    ids=["a narrower terminal", "a wider terminal", "a console that is not UTF-8"],
+)
+def test_a_table_is_laid_out_the_same_whatever_terminal_runs_the_generator(
+    parent: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run is given its width and its encoding, so a table's columns are the docs machine's on every platform."""
+    for name, value in parent.items():
+        monkeypatch.setenv(name, value)
+    runs = build_samples.Runs(tmp_path)
+    assert build_samples.block(STATUS_FRESH, runs.reach(STATUS_FRESH)) == committed_block(STATUS_FRESH)
+
+
+def test_a_page_checked_out_with_crlf_and_trailing_space_is_not_stale() -> None:
+    committed = "Prose.  \r\n{/* sample: one, a run */}\r\n```text\r\n Section   Key\r\n```\r\n\r\n"
+    written = "Prose.\n{/* sample: one, a run */}\n```text\n Section   Key\n```\n"
+    assert build_samples.why_differs(committed, written, {}) is None
+
+
+def test_which_worker_starts_first_is_held_by_its_place_in_the_events_sample() -> None:
+    """Two narrate workers start at once, so the run decides which section's start is written first."""
+    row = next(row for row in build_samples.rows() if row.id == "build-events")
+    page = row.page.read_text(encoding="utf-8")
+    raced = page.replace('"section":1,"turn"', '"section":@,"turn"').replace('"section":2,"turn"', '"section":1,"turn"')
+    raced = raced.replace('"section":@,"turn"', '"section":2,"turn"')
+    assert raced != page
+    masks = {one.id: (one.varies, one.masks) for one in build_samples.rows() if one.page == row.page}
+    assert build_samples.why_differs(page, raced, masks) is None
+
+
+def test_the_events_sample_stops_at_the_first_line_a_narrate_worker_writes() -> None:
+    """Two narrate workers start at once, so the line after the first start is whichever worker writes next.
+
+    That is the other worker's start or the first worker's own next line, and only `seq` and `section` say
+    which. The block shows the lines the run writes before its workers and the first start, and none after.
+    """
+    row = next(row for row in build_samples.rows() if row.id == "build-events")
+    events = [json.loads(line)["event"] for line in committed_block(row).splitlines()[1:-1]]
+    assert events.count("section.start") == 1
+    assert events[-1] == "section.start"
+
+
+def test_a_stale_line_is_named_with_what_the_page_says_and_what_a_run_wrote() -> None:
+    committed = "{/* sample: one, a run */}\n```text\n Section   Key\n```\n"
+    written = "{/* sample: one, a run */}\n```text\n+--------+\n```\n"
+    reason = build_samples.why_differs(committed, written, {})
+    assert reason is not None
+    assert "line 3" in reason and "' Section   Key'" in reason and "'+--------+'" in reason
+    shorter = build_samples.why_differs(committed, committed + "more\n", {})
+    assert shorter is not None and "line 5" in shorter and "'more'" in shorter
+
+
+def test_a_listing_names_what_ls_prints_one_to_a_line(tmp_path: Path) -> None:
+    for name in ("my-lesson.mp4", "my-lesson-poster.png", "placements.json", ".my-lesson.picture.mp4"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    (tmp_path / "sub").mkdir()
+    assert build_samples.listed(tmp_path) == "my-lesson-poster.png\nmy-lesson.mp4\nplacements.json\nsub"
+
+
+def test_a_hidden_pattern_is_written_as_dots_so_a_block_names_no_path_of_this_machine() -> None:
+    printed = " ffmpeg   8.1.2   /Users/someone/Library/Caches/ffmpeg\nAPI key   missing\n"
+    assert build_samples.shown_text(printed, head=None, grep=None, hide=(r"/Users/\S+",)) == (
+        " ffmpeg   8.1.2   ...\nAPI key   missing"
+    )
+
+
+def test_a_command_that_serves_until_stopped_gives_its_first_lines_and_is_stopped(tmp_path: Path) -> None:
+    script = "import sys, time\nprint('one', flush=True)\nprint('two', flush=True)\ntime.sleep(600)\n"
+    printed, process = build_samples.first_lines(
+        [sys.executable, "-c", script], cwd=tmp_path, environ=dict(os.environ), stream="stdout", lines=2
+    )
+    assert printed == "one\ntwo\n"
+    assert process.poll() is not None
+
+
+def test_a_row_shows_one_file_one_stream_or_one_listing() -> None:
+    for row in build_samples.rows():
+        assert [row.file, row.stream, row.listing].count(None) == 2, row.id
+        assert row.lines is None or row.stream in ("stdout", "stderr"), row.id
+
+
+@pytest.mark.parametrize("parent", [None, "1", "0"], ids=["unset", "one recorder", "automatic"])
+def test_every_run_records_with_the_same_recorders_whatever_machine_runs_the_generator(
+    parent: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recorders split a recording into its pieces and steps, so a run is given their number, not the host's."""
+    variable = build_samples.BY_ID["record.concurrency"].environment
+    if parent is None:
+        monkeypatch.delenv(variable, raising=False)
+    else:
+        monkeypatch.setenv(variable, parent)
+    assert build_samples.SAMPLE_RECORDERS > 0
+    assert build_samples.environment(tmp_path)[variable] == str(build_samples.SAMPLE_RECORDERS)

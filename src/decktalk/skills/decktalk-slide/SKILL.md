@@ -43,7 +43,8 @@ finding it raises. Read it rather than guessing, and read
    colour change of the same brightness counts as nothing.
 6. **Keep a slide to four reveals.** Start a new slide for the next part of a derivation.
 7. **Keep the picture inside the frame.** The canvas is 1920 by 1080. Body text is 36 pixels or
-   larger. The bottom fifteen percent is the caption band, so keep every cued element out of it.
+   larger. The bottom 192 pixels are the caption band, two lines of caption above a margin, so keep
+   every cued element out of them.
    Scope every class name to its scene so two scenes cannot collide.
 8. **Write a readable fallback under every equation.** The element's own text is what shows if the
    typesetter never loads, so it is correct mathematics with its own brackets, and it reads well out

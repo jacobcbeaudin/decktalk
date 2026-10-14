@@ -219,7 +219,10 @@ SHUTDOWN_POLL_SECONDS = 0.01
 
 
 @contextlib.contextmanager
-def serving(allowed: Allowed, documents: dict[str, bytes] | None = None) -> Iterator[str]:
+def serving(
+    allowed: Allowed,
+    documents: dict[str, bytes] | None = None,
+) -> Iterator[str]:
     """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
     server = open_server(allowed, "127.0.0.1", 0, documents)
     with server:
@@ -597,3 +600,51 @@ def test_a_page_with_no_copy_of_the_runtime_gets_the_engines(tmp_path):
         assert page.evaluate("() => typeof window.katex.render") == "function"
         assert assets.paths == ["deck/index.html"] and assets.refused == []
     assert sorted(p.name for p in (tmp_path / "deck").iterdir()) == ["index.html"]
+
+
+# ---- a path no clip frame is answered under ---------------------------------------------------------
+
+
+def clip_project(tmp_path: Path) -> Allowed:
+    clips = tmp_path / "deck" / "clips"
+    clips.mkdir(parents=True)
+    (clips / "film.mp4").write_bytes(b"film")
+    return Allowed.of(tmp_path, ["deck"])
+
+
+CLIP_PATH = f"{ENGINE_PATH}clip/0.5/deck/clips/film.mp4"
+"""Where a page once asked for one frame of a clip, which is a name under the engine's path like any other."""
+
+
+def test_the_router_refuses_a_clip_frame_as_a_path_the_engine_does_not_serve(tmp_path):
+    """No page plays a clip frame by frame, so the engine's path answers its runtime and KaTeX and nothing else."""
+    target = FakeRouter()
+    assets = route_pages(target.page(), clip_project(tmp_path), trusted=True)
+    refused = target.request(f"{ORIGIN}{CLIP_PATH}")
+    assert refused.answer == {"status": 403, "content_type": origin.TEXT, "body": RESERVED}
+    assert assets.paths == [] and assets.refused == [f"{CLIP_PATH.lstrip('/')} ({RESERVED})"]
+
+
+def test_the_preview_server_refuses_a_clip_frame_as_a_path_the_engine_does_not_serve(tmp_path):
+    with serving(clip_project(tmp_path)) as base:
+        status, body = _get(f"{base}{CLIP_PATH}")
+        assert status == 403 and RESERVED.encode() in body
+        assert _get(f"{base}/deck/clips/film.mp4")[0] == 200, "the clip is a file of the deck like any other"
+
+
+def test_a_request_that_raises_is_a_logged_500_and_never_a_dropped_connection(tmp_path, caplog, monkeypatch):
+    """A request that fails must say so to the page and to the log, rather than close the socket on it."""
+
+    def broken(_handler: object) -> None:
+        raise RuntimeError("the handler broke")
+
+    with serving(clip_project(tmp_path)) as base:
+        monkeypatch.setattr(origin._Handler, "_head", broken)
+        with caplog.at_level("ERROR", logger=origin.log.name):
+            status, body = _get(f"{base}/deck/clips/film.mp4?secret=1")
+        assert status == 500 and origin.BROKEN.encode() in body
+        monkeypatch.undo()
+        assert _get(f"{base}/deck/clips/film.mp4")[0] == 200, "the server goes on answering"
+    failed = [record for record in caplog.records if record.levelname == "ERROR"]
+    assert failed and failed[0].exc_info is not None
+    assert "secret" not in failed[0].getMessage()

@@ -25,10 +25,9 @@ import os
 import platform
 import sys
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +49,7 @@ from decktalk.findings import (
     Threshold,
     judge,
 )
+from decktalk.inputs import Inputs
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -66,6 +66,7 @@ from decktalk.results import (
     InitResult,
     InstalledTool,
     InstallResult,
+    ProviderKey,
     Scope,
 )
 from decktalk.secret import register_environment
@@ -81,7 +82,15 @@ from decktalk.settings.layers import (
     route,
     scoped,
 )
-from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders, VoiceInForce
+from decktalk.speech import (
+    ALIGNERS,
+    DECLARED,
+    PROVIDERS,
+    Aligner,
+    AlignerContext,
+    SpeechFactory,
+    SpeechProviders,
+)
 from decktalk.speech.sound import SOUNDS, SoundFactory, SoundProviders
 from decktalk.toolchain import assets, chromium_fetch
 from decktalk.toolchain.announce import announcing
@@ -226,7 +235,8 @@ class Machine:
     `Machine.of` resolves it from the table a host handed in, or the closed set DeckTalk ships, at the
     retries this machine's own layers name. A host's table is code the host wrote and imported itself,
     and it replaces the shipped one rather than sitting over it, so a machine built with a fake voice
-    can reach no real one by a name the host left out.
+    can reach no real one by a name the host left out. A name DeckTalk ships holds only its shipped
+    adapter, because a voice is billed by its name, so a host's own factory under one is refused.
     """
     sound_providers: SoundProviders = field(
         default_factory=lambda: _sounds(None, None, NarrationConfig().retries), repr=False, compare=False
@@ -236,6 +246,14 @@ class Machine:
     A machine whose host gave neither table answers with the sound providers DeckTalk ships. A host
     that gave a voice table and no sound table gets none, so a machine built with a fake voice can
     reach no real sound provider either.
+    """
+    aligners: Mapping[str, Callable[[AlignerContext], Aligner]] = field(
+        default_factory=lambda: _aligners(None, None), repr=False, compare=False
+    )
+    """The aligners this machine answers with by name, which time a take whose voice sent no word times.
+
+    A machine whose host gave neither table answers with the aligner DeckTalk ships. A host that gave a
+    voice table and no aligners gets none, so a machine built with a fake voice reaches no local server.
     """
     dotenv: bool = True
     """Whether a project's `.env` is read, which is true for the author's own machine and false for a host's."""
@@ -274,6 +292,7 @@ class Machine:
         store_dir: Path | None = None,
         speech_providers: Mapping[str, SpeechFactory] | None = None,
         sound_providers: Mapping[str, SoundFactory] | None = None,
+        aligners: Mapping[str, Callable[[AlignerContext], Aligner]] | None = None,
         overrides: Iterable[str] = (),
         dotenv: bool = False,
     ) -> Machine:
@@ -282,10 +301,12 @@ class Machine:
         Nothing here reads the process. `environ` is every variable a run on this machine may see,
         which for a render job is none and for a voice job is the key and the voice id. The machine
         file at `machine_file` is read when it is there and is where a machine-scope fix lands.
-        `speech_providers` replaces the shipped voices by name, and `sound_providers` the shipped sound
-        providers. A project's `.env` is left unread unless `dotenv` says otherwise, because it is what
-        a tenant's upload would reach for, and every base URL a request goes to is a machine-scoped key,
-        so no project can send the key or the script anywhere this machine did not name.
+        `speech_providers` replaces the shipped voices by name, and raises `ValueError` for a host's own
+        factory under a name DeckTalk ships, `sound_providers` replaces the shipped sound providers, and
+        `aligners` the shipped aligner. A project's `.env` is left unread unless `dotenv`
+        says otherwise, because it is what a tenant's upload would reach for, and every base URL a
+        request goes to is a machine-scoped key, so no project can send the key or the script anywhere
+        this machine did not name.
         """
         register_environment(environ)
         tables = read_machine_toml(machine_file)
@@ -316,6 +337,7 @@ class Machine:
             overrides=pairs,
             speech_providers=_speech(speech_providers, retries),
             sound_providers=_sounds(sound_providers, speech_providers, retries),
+            aligners=_aligners(aligners, speech_providers),
             dotenv=dotenv,
             notes=(*env_warnings(environ), *key_warnings(tables, machine_file.name), *refused),
             store=store_dir,
@@ -339,20 +361,21 @@ class Machine:
         return child
 
     @property
-    def api_key_state(self) -> ApiKeyState:
-        """Whether the API key a voiced run would use is set, which is asked and never revealed.
+    def api_keys(self) -> tuple[ProviderKey, ...]:
+        """Whether the key of every shipped provider that is bought with one is set, asked and never revealed.
 
-        The variable is the one the voice `[voice] provider` names declares, and a voice that declares
-        none needs none. A machine has no project, so the provider is the one its own layers name.
+        A machine has no project, so it cannot know which voices a run will read, and it names the key
+        of every provider DeckTalk ships that declares one.
         """
-        mine = _machine_overrides(self.overrides)
-        settings = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
-        # The machine's default voice, which no project names: doctor runs with no project open.
-        default_voice = VoiceInForce.of(settings)
-        variable = default_voice.key_variable
-        if variable is None:
-            return ApiKeyState.NOT_NEEDED
-        return ApiKeyState.SET if self.environ.get(variable) else ApiKeyState.MISSING
+        return tuple(
+            ProviderKey(
+                provider=name,
+                variable=declared.key_variable,
+                state=ApiKeyState.SET if self.environ.get(declared.key_variable) else ApiKeyState.MISSING,
+            )
+            for name, declared in DECLARED.items()
+            if declared.key_variable is not None
+        )
 
     # ---- opening a run ------------------------------------------------------------------
 
@@ -451,20 +474,18 @@ class Machine:
             # Whether the browser already launches is the one answer that decides the fetch, the
             # system libraries and the row's `fetched`: a browser that launches has its libraries, so
             # a second `install` fetches nothing and names what was already there.
-            browser = self._browser_row()
+            browser = self._browser_row(installing=True)
             if browser.version is None:
                 chromium_fetch.fetch_chromium(env=child_environment(), with_deps=installs_system_libraries())
                 # The row is asked again the way `doctor` asks for it, by launching what was just
                 # fetched, so `install` cannot print the browser as missing a second after it
                 # downloaded one.
-                browser = self._browser_row().model_copy(update={"fetched": True})
+                browser = self._browser_row(installing=True).model_copy(update={"fetched": True})
             held = self.toolchain.complete
             tools = (browser, *_encoder_rows(self.toolchain.fetch(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
-    def doctor(
-        self, *, measure: bool = False, threshold: Threshold = ERRORS_FAIL, cancel: Cancel | None = None
-    ) -> DoctorResult:
+    def doctor(self, *, threshold: Threshold = ERRORS_FAIL, cancel: Cancel | None = None) -> DoctorResult:
         """Report what this machine holds and what a run on it would use, fetching nothing.
 
         The encoder row looks for executables already on disk, because asking for them would
@@ -482,8 +503,7 @@ class Machine:
                 cache=self.cache_dir,
                 python=f"{sys.version.split()[0]} ({sys.executable})",
                 platform=f"{platform.platform()} ({sys.platform})",
-                api_key_state=self.api_key_state,
-                bias_ms=self._bias(measure=measure),
+                api_keys=self.api_keys,
             )
 
     def apply(self, findings: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
@@ -493,7 +513,7 @@ class Machine:
 
     # ---- the rows `doctor` reports ---------------------------------------------------------
 
-    def _browser_row(self) -> InstalledTool:
+    def _browser_row(self, *, installing: bool = False) -> InstalledTool:
         """What browser this machine can launch, asked by launching it rather than by looking for a file.
 
         The row also names where that browser lives, because a person told the browser is there
@@ -502,8 +522,8 @@ class Machine:
         headless launch runs Playwright's headless shell, not the full browser `installed_chromium`
         finds, so the launch is the answer: a shell that launches is a browser, named with no path
         when the full browser is not beside it. A launch refused because a file is not on disk says
-        what is not installed and names the command that fetches it, and any other refusal says the
-        browser did not launch, with the reason.
+        what is not installed and names the command that fetches it, unless the run `installing` is
+        that command, and any other refusal says the browser did not launch, with the reason.
         """
         with chromium_fetch.driver(chromium_fetch.browsers_in(self.cache_dir)) as playwright:
             where = chromium_fetch.installed_chromium(playwright)
@@ -515,8 +535,10 @@ class Machine:
                 # The row says only that there is no browser, so the reason goes on the run's stream.
                 reason = str(failed).splitlines()[0]
                 if NOT_ON_DISK in reason:
+                    # `install` is the command this line names, and its own fetch announces itself.
                     missing = "Chromium" if where is None else "Chromium's headless shell"
-                    log.warning(f"{missing} is not installed. Run decktalk install to fetch it.")
+                    if not installing:
+                        log.warning(f"{missing} is not installed. Run decktalk install to fetch it.")
                 else:
                     log.warning("Chromium did not launch.", extra={"data": {"reason": reason}})
                 return InstalledTool(tool=CHROMIUM)
@@ -528,19 +550,6 @@ class Machine:
         if missing:
             return InstalledTool(tool=KATEX)
         return InstalledTool(tool=KATEX, version=assets.KATEX_VERSION, path=assets.katex_dir())
-
-    @staticmethod
-    def _bias(*, measure: bool) -> float | None:
-        """This host's presentation bias, measured only when asked, because measuring drives a browser.
-
-        It is reported and never kept, because no stage reads it: an author reads what `verify` measures
-        against it, to tell a machine that presents late from a deck that cues late.
-        """
-        if not measure:
-            return None
-        # Measuring drives a browser, so the layer that owns the browser owns the measurement, and
-        # the module is loaded by the one caller that asks for it rather than by every report.
-        return float(import_module("decktalk.media.bias").measure_presentation_bias())
 
 
 def _encoder_rows(toolchain: Toolchain, *, fetched: bool = False) -> tuple[InstalledTool, ...]:
@@ -574,12 +583,15 @@ def init(
         written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=overwrite)
         for wrote in written:
             run.wrote(wrote)
+        written_inputs = Inputs.load(root, environ={}, machine={})
         return run.result(
             InitResult,
             root=relative(root, here.cwd),
             name=name or root.name,
             example=example or STARTER,
             skills_written=skills,
+            voices=tuple(written_inputs.voices),
+            programs=written_inputs.programs(),
         )
 
 
@@ -613,6 +625,15 @@ def _sounds(
     if given is not None:
         return SoundProviders(factories=given, retries=retries)
     return SoundProviders(factories=SOUNDS if voices is None else {}, retries=retries)
+
+
+def _aligners(
+    given: Mapping[str, Callable[[AlignerContext], Aligner]] | None, voices: Mapping[str, SpeechFactory] | None
+) -> Mapping[str, Callable[[AlignerContext], Aligner]]:
+    """The aligners a machine answers with, which are none when its host gave voices and no aligners."""
+    if given is not None:
+        return given
+    return ALIGNERS if voices is None else {}
 
 
 def _machine_overrides(overrides: tuple[str, ...]) -> tuple[str, ...]:

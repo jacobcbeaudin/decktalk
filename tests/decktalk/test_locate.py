@@ -60,3 +60,9 @@ def test_the_line_a_parser_refused_reaches_the_reader() -> None:
     with pytest.raises(tomllib.TOMLDecodeError) as caught:
         tomllib.loads('[video]\nwidth = 1920\npreset = "open\n')
     assert refused_line(caught.value) == 3
+
+
+def test_a_table_is_found_on_its_header() -> None:
+    text = '[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n'
+    assert locate(text, "voices.guest") == 4
+    assert locate(text, "voices.guest.id") == 5

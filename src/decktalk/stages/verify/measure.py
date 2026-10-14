@@ -10,23 +10,26 @@ frames are read.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import CueTimes
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, RenderSection
 from decktalk.inputs.document import frame_dip
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.media.audio import FULL_SCALE, gain
-from decktalk.media.frames import Decoded, Size, Wanted
+from decktalk.media.frames import Decoded, Mask, Size, Wanted
 from decktalk.pagescan import measured_rows, scene_entry
+from decktalk.pagescan import revealing_cues as entry_reveals
 from decktalk.pipeline import Stage
-from decktalk.results import CueCheck, SkipReason, section_key
+from decktalk.results import CueCheck, MotionCheck, SkipReason, section_key
 from decktalk.settings import CLICK_LEVEL_DBFS
 from decktalk.settings.numbers import reference_lead_seconds
+from decktalk.stages.verify import motion
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
     Neighbour,
@@ -34,6 +37,7 @@ from decktalk.stages.verify.plan import (
     control_spans,
     frame_size,
     onset_offset_seconds,
+    opted_out,
     probe_plan,
     reference_time,
     thin_change,
@@ -88,20 +92,27 @@ def neighbours_of(times: dict[str, float], spans: dict[str, float], sec_start: f
 
 
 def best_probe(
-    film: Decoded, before: float, floor: float, cue_at: float, delays: list[float], inputs: Inputs
+    film: Decoded,
+    before: float,
+    floor: float,
+    cue_at: float,
+    delays: list[float],
+    inputs: Inputs,
+    mask: Mask | None = None,
 ) -> tuple[float, float, float, float] | None:
     """(margin, changed, control, probe time) of the probe with the largest margin, the earlier on a tie.
 
     Each probe after the cue is compared with the reference, and the control is the quieter of two
     spans of the same length that end at the reference. Motion that is always there shows in both,
-    while an earlier reveal still settling shows in one.
+    while an earlier reveal still settling shows in one. Declared motion is masked out of all of them.
     """
     level, size = inputs.settings.verify.probe_diff_luma, frame_size(inputs.settings)
     best: tuple[float, float, float, float] | None = None
     for delay in delays:
         after = cue_at + delay
-        changed = film.changed(before, after, level=level, size=size)
-        controls = [film.changed(a, b, level=level, size=size) for a, b in control_spans(before, after - before, floor)]
+        changed = film.changed(before, after, level=level, size=size, mask=mask)
+        spans = control_spans(before, after - before, floor)
+        controls = [film.changed(a, b, level=level, size=size, mask=mask) for a, b in spans]
         control = min(controls) if controls else 0.0
         margin = changed - control
         if best is None or margin > best[0]:
@@ -109,7 +120,9 @@ def best_probe(
     return best
 
 
-def first_change_seconds(film: Decoded, before: float, after: float, cue_at: float, inputs: Inputs) -> float | None:
+def first_change_seconds(
+    film: Decoded, before: float, after: float, cue_at: float, inputs: Inputs, mask: Mask | None = None
+) -> float | None:
     """Seconds from the cue to the first frame past the reference where the reveal begins.
 
     The frames up to the cue set a noise floor, so an earlier reveal still settling does not count as
@@ -119,7 +132,7 @@ def first_change_seconds(film: Decoded, before: float, after: float, cue_at: flo
     verify = inputs.settings.verify
     fps = inputs.settings.video.fps
     series, blocks = (
-        film.series(before, before, after, level=verify.onset_diff_luma, size=size)
+        film.series(before, before, after, level=verify.onset_diff_luma, size=size, mask=mask)
         for size in (frame_size(inputs.settings), block_size(inputs.settings))
     )
     return onset_offset_seconds(
@@ -182,6 +195,7 @@ class Probed:
     before: float  # the reference frame's second in the film
     floor: float  # the earliest second a control span may reach back to
     delays: tuple[float, ...]
+    mask: Mask | None = None  # every declared lane alive while this cue is read, left out of every share
 
     def want(self, wanted: Wanted, probe: Size, blocks: Size) -> None:
         """Add every frame this cue's probes, controls and onset scan could read to the film's one plan."""
@@ -205,10 +219,18 @@ def planned_cues(
     total: float,
     checks: list[tuple[int, str]],
     opted: set[tuple[int, str]],
+    lanes: Mapping[int, list[motion.Lane]],
 ) -> list[CueCheck | Probed]:
-    """For each named cue, the row it is skipped with, or the probes it will be measured by."""
+    """For each named cue, the row it is skipped with, or the probes it will be measured by.
+
+    `lanes` is every section's lanes, read once for the whole film, so a section with many cues reads
+    its recording log once rather than once a cue.
+    """
     cue_times = inputs.cue_times()
-    return [_planned(inputs, run, starts, total, cue_times, section, cue, opted) for section, cue in checks]
+    return [
+        _planned(inputs, run, starts, total, cue_times, section, cue, opted, lanes.get(section, []))
+        for section, cue in checks
+    ]
 
 
 def fitted_note(section: int, cue: str, delays: list[float]) -> str:
@@ -258,8 +280,9 @@ def _planned(
     section: int,
     cue: str,
     opted: set[tuple[int, str]],
+    lanes: list[motion.Lane],
 ) -> CueCheck | Probed:
-    """One cue's probes, or the one reason it cannot be measured."""
+    """One cue's probes, or the one reason it cannot be measured, among its section's `lanes`."""
     at = None if cue_times is None else cue_times.at(section, cue)
     sec_start = starts.get(section, 0.0)
     spoken = round(sec_start + (at or 0.0), 3)
@@ -269,6 +292,10 @@ def _planned(
         return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.NO_CUES)
     if section not in starts:
         return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.NOT_ASSEMBLED)
+    if unmeasured_render(inputs, section):
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.RENDERED)
+    if cue in motion.landing_cues(lanes) and cue not in revealing_cues(inputs, section):
+        return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.MOTION_LANDING)
     verify = inputs.settings.verify
     fps = inputs.settings.video.fps
     flags = inputs.document.fade_flags
@@ -289,18 +316,71 @@ def _planned(
     )  # fmt: skip
     if fitted:
         run.note(fitted_note(section, cue, delays), level=Level.DEBUG)
+    reach = max(delays, default=0.0)
+    controls = max(floor, before - 2 * (spoken + reach - before))
+    mask = motion.mask_over(lanes, controls, spoken + reach, frame_size(inputs.settings))
     return Probed(
         section=section, cue=cue, at=at, sec_start=sec_start, sec_end=sec_end, spoken=spoken, before=before,
-        floor=floor, delays=tuple(delays),
+        floor=floor, delays=tuple(delays), mask=mask,
     )  # fmt: skip
+
+
+def unmeasured_render(inputs: Inputs, section: int) -> bool:
+    """Whether a section's picture came from a command that said nothing about what it drew.
+
+    Such a picture was not made by a page, so nothing declared what moves in it and a frame difference
+    could read its own motion as a reveal. Its cues are left unmeasured and said so, never passed.
+    """
+    found = inputs.document.section(section)
+    if not isinstance(found, RenderSection):
+        return False
+    log = inputs.recording_log(section_key(section))
+    return log is None or not log.recording.report.motions
+
+
+def section_lanes(inputs: Inputs, section: int, sec_start: float) -> list[motion.Lane]:
+    """Every lane one section's recording reported, on the film's clock at the probe's size."""
+    log = inputs.recording_log(section_key(section))
+    if log is None:
+        return []
+    video = inputs.settings.video
+    recorded = Size(video.width, video.height)
+    return motion.lanes_of(
+        log.recording.report.motions, start=sec_start, recorded=recorded, probe=frame_size(inputs.settings)
+    )
+
+
+def revealing_cues(inputs: Inputs, section: int) -> set[str]:
+    """Every cue of a section the page reveals something at, which is a moment or a class change.
+
+    A cue that is only a motion's departure or arrival, or one only a handler serves, reveals nothing
+    a frame difference can read, so a landing among them is measured on its own lane rather than as a
+    step in the frame.
+    """
+    found = inputs.document.section(section)
+    log = inputs.recording_log(section_key(section))
+    scene = getattr(found, "scene", None)
+    if log is None or scene is None:
+        return set()
+    entry = scene_entry(log.recording.report.catalog, scene)
+    return set() if entry is None else entry_reveals(entry)
 
 
 def _measured(inputs: Inputs, run: Run, film: Path, decoded: Decoded, cue: Probed, *, clicks: bool) -> CueCheck:
     """One planned cue measured on the decoded film, or the row that says no probe fit."""
-    best = best_probe(decoded, cue.before, cue.floor, cue.spoken, list(cue.delays), inputs)
+    best = best_probe(decoded, cue.before, cue.floor, cue.spoken, list(cue.delays), inputs, cue.mask)
     if best is None:
         return CueCheck(section=cue.section, cue=cue.cue, spoken=cue.spoken, skipped=SkipReason.TOO_CLOSE_TO_END)
-    return _judge(inputs, run, film, decoded, cue, best, clicks=clicks)
+    row = _judge(inputs, run, film, decoded, cue, best, clicks=clicks)
+    if cue.mask is None:
+        return row
+    size = frame_size(inputs.settings)
+    large = motion.mask_finding(
+        cue.mask, size=size, settings=inputs.settings, cue=cue.cue, section=cue.section, film=inputs.relative(film)
+    )
+    if large is not None:
+        run.found(large)
+    return row.model_copy(update={"masked_percent": round(cue.mask.share(size), 2)})
 
 
 def _judge(
@@ -342,14 +422,14 @@ def _judge(
                 stage=Stage.VERIFY,
             )
         )
-    offset = first_change_seconds(decoded, probed.before, after, at, inputs)
+    offset = first_change_seconds(decoded, probed.before, after, at, inputs, probed.mask)
     if offset is None:
         run.found(
             judge(
                 Code.CUE_NO_ONSET,
                 f"{changed:.2f} percent of the picture changed at {cue} and no frame rose by the "
-                f"{verify.onset_rise_points:.3f} percentage points an onset must, so its second is the "
-                "section's start rather than its word's.",
+                f"{verify.onset_rise_points:.3f} percentage points an onset must, so the reveal has no second "
+                "to compare with the word.",
                 where,
                 stage=Stage.VERIFY,
             )
@@ -390,6 +470,51 @@ def _judge(
     )
 
 
+def want_landings(inputs: Inputs, lanes: dict[int, list[motion.Lane]], wanted: Wanted) -> dict[int, list[motion.Lane]]:
+    """These sections' lanes, with every frame their landings could be measured on added to the film's one plan."""
+    for found in lanes.values():
+        motion.want(found, wanted, frame_size(inputs.settings), inputs.settings, inputs.settings.video.fps)
+    return lanes
+
+
+def landing_checks(
+    inputs: Inputs, run: Run, film: Path, lanes: dict[int, list[motion.Lane]], decoded: Decoded
+) -> tuple[MotionCheck, ...]:
+    """One row per landing of every declared motion, each measured on its own lane, in film order.
+
+    A landing on a cue `cues.json` marks `"verify": false` is the author's own call, which is how a
+    motion that eases to rest arrives, so it is left out as such a cue's reveal is.
+    """
+    settings = inputs.settings
+    skipped = opted_out(inputs)
+    rows: list[MotionCheck] = []
+    for section, found in sorted(lanes.items()):
+        for one in found:
+            measured = motion.measure(
+                decoded, one, level=settings.verify.onset_diff_luma, floor=settings.verify.motion_floor_percent,
+                size=frame_size(settings), settings=settings,
+            )  # fmt: skip
+            for landed in measured:
+                if (section, landed.cue) in skipped:
+                    continue
+                judged = motion.finding(
+                    landed, settings=settings, fps=settings.video.fps, film=inputs.relative(film), section=section
+                )
+                if judged is not None:
+                    run.found(judged)
+                rows.append(
+                    MotionCheck(
+                        section=section,
+                        cue=landed.cue,
+                        kind=landed.kind,
+                        spoken=landed.spoken,
+                        shown=landed.shown,
+                        offset_seconds=landed.offset_seconds,
+                    )  # fmt: skip
+                )
+    return tuple(sorted(rows, key=lambda row: row.spoken))
+
+
 def _judge_click(inputs: Inputs, run: Run, cue: str, where: Location, *, promised: float, heard: float) -> None:
     """Report a click that sounds further from the second the cue was promised than the a/v limit allows.
 
@@ -421,7 +546,12 @@ __all__ = [
     "film_starts",
     "first_change_seconds",
     "fitted_note",
+    "landing_checks",
     "neighbours_of",
     "planned_cues",
+    "revealing_cues",
+    "unmeasured_render",
+    "section_lanes",
     "want_cues",
+    "want_landings",
 ]

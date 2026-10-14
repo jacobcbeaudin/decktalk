@@ -11,7 +11,7 @@
       "x-kind": "tuning",
       "properties": {
         "concurrency": {
-          "description": "How many sections `narrate` voices at once.",
+          "description": "How many turns `narrate` voices at once.",
           "type": "integer",
           "default": 2,
           "minimum": 1,
@@ -24,7 +24,7 @@
           "x-environment": "DECKTALK_NARRATION_CONCURRENCY"
         },
         "retries": {
-          "description": "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+          "description": "How many more times `narrate` asks again when the voice provider or the aligner answers that it is busy or failed.",
           "type": "integer",
           "default": 3,
           "minimum": 0,
@@ -50,32 +50,13 @@
             "tools.cache_dir"
           ],
           "x-environment": "DECKTALK_NARRATION_STORE_DIR"
-        },
-        "store_wait_seconds": {
-          "description": "Seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus one, with the waits between them. The default covers that at the default `timeout_seconds` and `retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
-          "type": "integer",
-          "default": 900,
-          "minimum": 1,
-          "maximum": 36000,
-          "x-range": "must be between 1 and 36000",
-          "x-unit": "seconds",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-hazard": "Below the length of one take request, a run is refused while another run's healthy request is still being answered.",
-          "x-see-also": [
-            "narration.store_dir",
-            "narration.timeout_seconds",
-            "narration.retries"
-          ],
-          "x-environment": "DECKTALK_NARRATION_STORE_WAIT_SECONDS"
         }
       },
       "additionalProperties": false
     },
     "record": {
       "type": "object",
-      "description": "These keys tune the headless Chromium recording and how the start of the section clock is found in it.",
+      "description": "These keys tune how `record` opens each page section in headless Chromium and steps it frame by frame.",
       "x-kind": "tuning",
       "properties": {
         "page_policy": {
@@ -93,8 +74,27 @@
           "x-hazard": "A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.",
           "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
         },
+        "programs": {
+          "description": "Whether `record` runs the programs a project names, which are its render sections' `render_command`. A program runs with your user's rights and can read every file you can, the project's `.env` included. `refuse` runs none of them. `ask` lists every program the run would start and runs them only when a person at a terminal answers yes, and refuses without a terminal, under `--no-input` and under `--json`. `run` runs them without asking. Under the `untrusted` page policy no program runs whatever this says. It is the machine's to set, so a project cannot allow its own programs.",
+          "type": "string",
+          "default": "refuse",
+          "enum": [
+            "refuse",
+            "ask",
+            "run"
+          ],
+          "x-range": "must be one of refuse, ask, run",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "`run` executes whatever a project's decktalk.toml names as soon as `record` or `build` reaches it, so set it only on a machine that builds projects whose programs you have read.",
+          "x-see-also": [
+            "record.page_policy"
+          ],
+          "x-environment": "DECKTALK_RECORD_PROGRAMS"
+        },
         "concurrency": {
-          "description": "How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
+          "description": "How many recorders `record` runs at once, each a Chromium of its own that records one chunk of a section after another. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
           "type": "integer",
           "default": 0,
           "minimum": 0,
@@ -103,8 +103,127 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.",
+          "x-hazard": "Each recorder steps its own Chromium and its own encode, so a number above the machine's share makes every chunk wait on the others and the run slower rather than faster.",
+          "x-see-also": [
+            "record.chunk_frames_min"
+          ],
           "x-environment": "DECKTALK_RECORD_CONCURRENCY"
+        },
+        "chunk_frames_min": {
+          "description": "Fewest frames `record` puts in one chunk when it splits a section across its recorders. A section shorter than two chunks of this length is recorded whole by one recorder.",
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 100000,
+          "x-range": "must be between 1 and 100000",
+          "x-unit": "frames",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Every chunk loads the page again, so chunks much shorter than a page load spend the machine on loading rather than on frames.",
+          "x-see-also": [
+            "record.chunk_startup_seconds",
+            "record.step_seconds"
+          ],
+          "x-environment": "DECKTALK_RECORD_CHUNK_FRAMES_MIN"
+        },
+        "chunk_startup_seconds": {
+          "description": "How long one chunk takes to start on this machine: a page opened and loaded in a recorder's Chromium and stepped to the chunk's first frame. `record` splits a section into about sqrt(step_seconds * steps * recorders / chunk_startup_seconds) chunks, never more than the recorders, where steps are what its last recording took.",
+          "type": "number",
+          "default": 0.2,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "x-range": "must be above 0 and must be at most 60",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A start-up stated far too low splits short sections into chunks that each spend more loading the page than recording it.",
+          "x-see-also": [
+            "record.step_seconds",
+            "record.chunk_frames_min"
+          ],
+          "x-environment": "DECKTALK_RECORD_CHUNK_STARTUP_SECONDS"
+        },
+        "step_seconds": {
+          "description": "How long one recorder takes to step its page once on this machine, the capture of the frame it lands on included, which `record` weighs against `chunk_startup_seconds` when it splits a section.",
+          "type": "number",
+          "default": 0.014,
+          "exclusiveMinimum": 0,
+          "maximum": 10,
+          "x-range": "must be above 0 and must be at most 10",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "record.chunk_startup_seconds",
+            "record.chunk_frames_min"
+          ],
+          "x-environment": "DECKTALK_RECORD_STEP_SECONDS"
+        },
+        "page_deadline_seconds": {
+          "description": "Longest one call into a page may take before DeckTalk closes the page and stops with a TOOL error naming where it was stuck: a load, a step, a capture, a still or a report. `record` names the section and the frame, and `check`, `storyboard`, `cue` and `assemble` hold the pages they open to it too. It is many times the longest a step measures, so only a page that stopped answering reaches it, such as one that spins its main thread or waits on a font or an image that never arrives.",
+          "type": "number",
+          "default": 15.0,
+          "minimum": 1,
+          "maximum": 600,
+          "x-range": "must be between 1 and 600",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A deadline set near the time a frame takes stops healthy recordings on a busy machine.",
+          "x-see-also": [
+            "record.deadline_slowdown"
+          ],
+          "x-environment": "DECKTALK_RECORD_PAGE_DEADLINE_SECONDS"
+        },
+        "deadline_slowdown": {
+          "description": "How many times slower than this machine's `chunk_startup_seconds` and `step_seconds` a recording may run before `record` stops it. A chunk may take `page_deadline_seconds` plus this many times chunk_startup_seconds + step_seconds * frames, and the whole run this many times the time its chunks take spread over the recorders, plus its longest chunk, so a page that answers every call and never gets on still ends with a TOOL error.",
+          "type": "number",
+          "default": 30.0,
+          "minimum": 1,
+          "maximum": 10000,
+          "x-range": "must be between 1 and 10000",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A value near one stops a recording that a loaded machine is merely slow to make, because the two calibrations are this machine's speed when it is idle.",
+          "x-see-also": [
+            "record.page_deadline_seconds",
+            "record.step_seconds",
+            "record.chunk_startup_seconds"
+          ],
+          "x-environment": "DECKTALK_RECORD_DEADLINE_SLOWDOWN"
+        },
+        "renderer_retries": {
+          "description": "How many more times `record` records a chunk, in a fresh page, when the page's renderer crashed or its page was closed under it. A frame is a function of its index, so a chunk recorded again is the same frames.",
+          "type": "integer",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 5,
+          "x-range": "must be between 0 and 5",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_RECORD_RENDERER_RETRIES"
+        },
+        "encode_threads": {
+          "description": "Threads each recorder's lossless encode runs on. Zero shares this process's CPUs among the recorders at once, at least one each. Every piece of a run is encoded with the same number, and the frames are the same whatever it is.",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 64,
+          "x-range": "must be between 0 and 64",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "x264 buffers frames for every thread it runs, so a large number costs each recorder hundreds of megabytes and buys no speed, because the encode is never what a recording waits on.",
+          "x-see-also": [
+            "record.concurrency"
+          ],
+          "x-environment": "DECKTALK_RECORD_ENCODE_THREADS"
         }
       },
       "additionalProperties": false
@@ -130,19 +249,36 @@
     },
     "dtsp": {
       "type": "object",
-      "description": "These keys are the `dtsp` provider's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
+      "description": "These keys are the `dtsp` provider's own: where its local server listens, the model it reads with, and how long the server has to say which aligner it serves. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository and is not yet public. The same server times the words of a take whose voice sent none. It needs no key, bills nothing, and `base_url` is the machine's to set.",
       "x-kind": "tuning",
       "properties": {
         "base_url": {
-          "description": "Base URL of the local speech server, which the script is sent to.",
+          "description": "Base URL of decktalk-voice, the local server that reads the script for `dtsp` and times the words of a take that came without them. Port 9361 is assigned to nothing at IANA and listed in no /etc/services, so no other service is expected to answer there.",
           "type": "string",
-          "default": "http://127.0.0.1:8765",
+          "default": "http://127.0.0.1:9361",
           "x-range": "takes any value of its type",
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-hazard": "The script, and for a provider that bills the API key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
           "x-environment": "DECKTALK_DTSP_BASE_URL"
+        },
+        "handshake_seconds": {
+          "description": "Seconds the local server has to say which aligner it serves, asked at most once per run and only when a take has no aligned words kept. It is short because a server that is up answers at once, so a port held by a process that never answers costs this wait and not `[narration] timeout_seconds`.",
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "x-range": "must be between 1 and 60",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "dtsp.base_url",
+            "narration.timeout_seconds"
+          ],
+          "x-environment": "DECKTALK_DTSP_HANDSHAKE_SECONDS"
         }
       },
       "additionalProperties": false
@@ -222,6 +358,20 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
+        },
+        "fix_timeout_seconds": {
+          "description": "Longest one DeckTalk command a fix runs, such as the fetch of a browser and an encoder, may run before it is stopped.",
+          "type": "number",
+          "default": 1800.0,
+          "minimum": 60,
+          "maximum": 7200,
+          "x-range": "must be between 60 and 7200",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A fix that fetches a browser and an encoder downloads a few hundred megabytes, so under a minute a slow link stops it part way every time.",
+          "x-environment": "DECKTALK_TOOLS_FIX_TIMEOUT_SECONDS"
         },
         "cache_dir": {
           "description": "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache.",

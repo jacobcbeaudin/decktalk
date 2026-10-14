@@ -7,9 +7,10 @@ the same way on every platform, and two runs voicing one take are two threads me
 
 from __future__ import annotations
 
+import json
 import os
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ from decktalk.inputs.paths import at
 from decktalk.inputs.take_places import TakeFiles, TakePlaces, Witness
 from decktalk.inputs.workspace import Workspace
 from decktalk.results import TakeOutcome, Word
+from decktalk.speech import Speech
 from support.takes import TAKE_SUFFIX
 
 DIGEST = "00000000000000af"
@@ -90,15 +92,17 @@ class Voice:
     speaking: threading.Event = field(default_factory=threading.Event)
     fails: Exception | None = None
     bill_fails: Exception | None = None
+    words: tuple[Word, ...] | None = WORDS
+    model_digest: str | None = None
 
-    def speak(self) -> tuple[bytes, Sequence[Word]]:
+    def speak(self) -> Speech:
         self.spoken += 1
         self.speaking.set()
         if self.gate is not None:
             assert self.gate.wait(timeout=MEET)
         if self.fails is not None:
             raise self.fails
-        return self.audio, WORDS
+        return Speech(self.audio, self.words, self.model_digest)
 
     def charge(self) -> None:
         self.charged += 1
@@ -114,7 +118,6 @@ def a_workspace(root: Path, *, store: Path | None) -> Workspace:
         root=root,
         build=root / "build",
         name="demo",
-        suffix=TAKE_SUFFIX,
         takes=root / "takes",
         score_dir=root / "score",
         store=store,
@@ -158,9 +161,17 @@ def unreadable(place: Path) -> set[str]:
 
 
 def voice(
-    take_places: TakePlaces, spoken: Voice, witness: Witness, *, replacing: bool = False, section: int = 1
+    take_places: TakePlaces,
+    spoken: Voice,
+    witness: Witness,
+    *,
+    replacing: bool = False,
+    section: int = 1,
+    suffix: str = TAKE_SUFFIX,
 ) -> TakeOutcome:
-    return take_places.voice(DIGEST, spoken.speak, spoken.charge, witness, section=section, replacing=replacing)
+    return take_places.voice(
+        DIGEST, spoken.speak, spoken.charge, witness, section=section, replacing=replacing, suffix=suffix
+    )
 
 
 @pytest.fixture
@@ -525,13 +536,30 @@ def test_voice_while_replacing_speaks_over_a_good_copy_and_moves_a_damaged_one_a
 def test_voice_while_replacing_a_good_copy_under_another_suffix_leaves_the_new_take_alone(
     no_store: Workspace,
 ) -> None:
-    """A good copy replaced on request is replaced whole, so its audio under the old suffix goes with its words."""
+    """A good copy replaced on request is set aside whole, so its audio under the old suffix goes with its words."""
     _pair(no_store.takes, DIGEST, b"FIRST", suffix=".wav")
     assert voice(places(no_store), Voice(audio=b"SECOND"), Witnessed(), replacing=True) is TakeOutcome.VOICED
-    assert sorted(path.name for path in no_store.takes.iterdir()) == sorted(
-        [take_file(DIGEST, TAKE_SUFFIX), words_file(DIGEST)]
-    )
+    files = sorted(path.name for path in no_store.takes.iterdir() if path.is_file())
+    assert files == sorted([take_file(DIGEST, TAKE_SUFFIX), words_file(DIGEST)])
     assert places(no_store).find(DIGEST).audio == no_store.takes / take_file(DIGEST, TAKE_SUFFIX)
+    assert (no_store.rejected_dir / f"{DIGEST}.1.wav").read_bytes() == b"FIRST"
+
+
+def test_voice_while_replacing_sets_the_good_copy_aside_as_a_rejected_take_under_the_first_free_number(
+    no_store: Workspace,
+) -> None:
+    """A rejected take is a paid record, so it is moved rather than overwritten, and never onto another."""
+    _pair(no_store.takes, DIGEST, b"FIRST")
+    words = (no_store.takes / words_file(DIGEST)).read_text(encoding="utf-8")
+    no_store.rejected_dir.mkdir(parents=True)
+    (no_store.rejected_dir / take_file(f"{DIGEST}.1", TAKE_SUFFIX)).write_bytes(b"OLDER")
+    witness = Witnessed()
+    assert voice(places(no_store), Voice(audio=b"SECOND"), witness, replacing=True) is TakeOutcome.VOICED
+    assert (no_store.rejected_dir / take_file(f"{DIGEST}.1", TAKE_SUFFIX)).read_bytes() == b"OLDER"
+    assert (no_store.rejected_dir / take_file(f"{DIGEST}.2", TAKE_SUFFIX)).read_bytes() == b"FIRST"
+    assert (no_store.rejected_dir / words_file(f"{DIGEST}.2")).read_text(encoding="utf-8") == words
+    assert (no_store.takes / take_file(DIGEST, TAKE_SUFFIX)).read_bytes() == b"SECOND"
+    assert f"was set aside in takes/rejected as {DIGEST}.2.mp3, {DIGEST}.2.words.json" in witness.said()
 
 
 def test_voice_replaces_a_store_copy_damaged_under_the_whole_hash_and_moves_it_aside(workspace: Workspace) -> None:
@@ -565,7 +593,7 @@ def test_a_second_voicing_of_one_take_waits_its_turn_and_keeps_the_first_ones_co
     assert (b.takes / take_file(DIGEST, TAKE_SUFFIX)).read_bytes() == b"FIRST"
 
 
-def test_voice_refuses_after_the_wait_naming_store_wait_seconds_and_never_speaks(
+def test_voice_refuses_after_the_wait_naming_the_request_settings_and_never_speaks(
     tmp_path: Path, pool: ThreadPoolExecutor
 ) -> None:
     store = tmp_path / "store"
@@ -575,7 +603,7 @@ def test_voice_refuses_after_the_wait_naming_store_wait_seconds_and_never_speaks
     voicing = pool.submit(voice, places(a), first, Witnessed())
     try:
         assert first.speaking.wait(timeout=MEET)
-        with pytest.raises(ProjectLocked, match=r"\[narration\] store_wait_seconds") as refused:
+        with pytest.raises(ProjectLocked, match=r"\[narration\] timeout_seconds") as refused:
             voice(places(b, wait_seconds=SHORT_WAIT), second, Witnessed())
         assert refused.value.hint is not None
         assert str(store / f"{DIGEST}.lock") in refused.value.hint
@@ -760,5 +788,71 @@ def test_the_take_stores_files_are_never_recorded_as_written(tmp_path: Path) -> 
 def test_a_placeholder_is_never_voiced(workspace: Workspace) -> None:
     spoken = Voice()
     with pytest.raises(ValueError, match="is a placeholder"):
-        places(workspace).voice(PLACEHOLDER, spoken.speak, spoken.charge, Witnessed(), section=1, replacing=False)
+        places(workspace).voice(
+            PLACEHOLDER, spoken.speak, spoken.charge, Witnessed(), section=1, replacing=False, suffix=TAKE_SUFFIX
+        )
     assert spoken.spoken == 0
+
+
+def test_a_take_whose_voice_sent_no_words_is_kept_as_a_whole_fingerprinted_pair_that_says_so(
+    workspace: Workspace,
+) -> None:
+    """The aligner times it later, so the pair is whole, holds no words, and records that none were sent."""
+    spoken = Voice(words=None)
+    assert voice(places(workspace), spoken, Witnessed()) is TakeOutcome.VOICED
+    said = ProviderWords.read(workspace.takes / words_file(DIGEST))
+    assert said == ProviderWords(words=(), timed=False, audio=AudioPrint.of(b"VOICED", suffix=TAKE_SUFFIX))
+    assert places(workspace).find(DIGEST).held
+
+
+def test_the_model_a_voice_served_is_kept_with_its_words(workspace: Workspace) -> None:
+    voice(places(workspace), Voice(model_digest="sha256:5eed"), Witnessed())
+    said = ProviderWords.read(workspace.takes / words_file(DIGEST))
+    assert said is not None
+    assert said.model_digest == "sha256:5eed"
+    assert said.timed is True
+
+
+# ---- the suffix a take is written under ---------------------------------------------------------
+
+
+def test_a_take_is_written_under_its_own_voices_suffix(no_store: Workspace) -> None:
+    """Each voice declares the suffix of what it returns, so two voices' takes are each named by what they hold."""
+    take_places = places(no_store)
+    assert voice(take_places, Voice(), Witnessed(), suffix=".wav") is TakeOutcome.VOICED
+    assert (no_store.takes / take_file(DIGEST, ".wav")).read_bytes() == Voice().audio
+    said = ProviderWords.read(no_store.takes / words_file(DIGEST))
+    assert said is not None and said.audio.suffix == ".wav"
+    assert take_places.find(DIGEST).audio == no_store.takes / take_file(DIGEST, ".wav")
+    assert take_places.find(DIGEST).held
+
+
+# ---- a pair written before the audio print ------------------------------------------------------
+
+
+def _unprinted(place: Path, digest: str) -> None:
+    """Strip the audio print from one place's words file, as a take written before the print has it."""
+    words = place / words_file(digest)
+    said = json.loads(words.read_text(encoding="utf-8"))
+    del said["audio"]
+    words.write_text(json.dumps(said), encoding="utf-8")
+
+
+def test_a_pair_whose_words_record_no_audio_print_is_no_copy_and_refuses_nothing(no_store: Workspace) -> None:
+    """It can never be told good, so its take is bought again as one no place holds is, and never refused."""
+    _pair(no_store.takes, DIGEST, b"OLD")
+    _unprinted(no_store.takes, DIGEST)
+    found = places(no_store).find(DIGEST)
+    assert not found.held and found.unprinted and found.in_takes_directory
+    assert found.refusal(1) is None
+    places(no_store).keep(DIGEST, Witnessed(), section=1)
+    assert unreadable(no_store.takes) == set()
+
+
+def test_a_take_bought_again_over_a_pair_with_no_audio_print_moves_that_pair_aside(no_store: Workspace) -> None:
+    _pair(no_store.takes, DIGEST, b"OLD")
+    _unprinted(no_store.takes, DIGEST)
+    assert voice(places(no_store), Voice(), Witnessed()) is TakeOutcome.VOICED
+    assert places(no_store).find(DIGEST).held
+    aside = {f"{take_file(DIGEST, TAKE_SUFFIX)}.unreadable", f"{words_file(DIGEST)}.unreadable"}
+    assert unreadable(no_store.takes) == aside

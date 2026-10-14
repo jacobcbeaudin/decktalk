@@ -22,7 +22,7 @@ object as a frozen model.
 | `schema` | The shape version of the object, which is `1`. A reader checks it before it reads anything else. |
 | `ok` | True exactly when the command exits 0, under the threshold `--fail-on` and `--allow` set. |
 | `findings` | Every judgement the command made, in the order it made them. |
-| `error` | Filled only when the command could not run, with `code`, `message`, `hint` and `docs`. |
+| `error` | Filled when the command could not run, or when a run stopped or was refused after it made something, with `code`, `message`, `hint`, `location` and `docs`. |
 | `run` | The id of the run the command opened, on every command that opens one. It names the events file. |
 | `written` | Every file the run wrote, project-relative, on every command that writes one. |
 
@@ -58,7 +58,12 @@ The deliverables, named after `[project] name`, which is `<name>` below.
 | `<name>.chapters.txt` | The chapter markers, as ffmetadata. |
 | `<name>-transcript.html` | The whole film as one page, which is the media alternative. |
 | `<name>-poster.png` | The opening slide, as a lossless PNG. |
+| `<name>-captioned.mp4` | The film with its captions drawn into the picture, only when `[output] captioned` is on. |
+| `<name>.words.json` | Every word the film says, on the film's own clock, each with its voice and its turn, which a clip section that plays the film in another film captions. |
 | `placements.json` | Where every section sits in the finished film. |
+
+When `[output] timestamped_copy` is on, a build also keeps a copy of the film named with the minute
+it was taken, `<name>-<YYYYMMDD-HHMM>.mp4`, beside these.
 
 ## Exit codes
 

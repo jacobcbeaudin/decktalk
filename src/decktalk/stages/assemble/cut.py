@@ -1,10 +1,11 @@
 """Every section becomes one silent mp4, and the placements record where each one plays.
 
-A page section is cut to its exact span in the narration, rounded on cumulative frame boundaries so
-the picture never drifts, with the recorder's lead-in trimmed off the head and the last frame cloned
-to fill. A clip section plays its own file, or a titled slate when that file is missing. A page
-section with no recording plays black. No intermediate carries audio, so the concatenation cannot
-reintroduce AAC priming and the picture starts at pts 0 as the sound does.
+A page section is cut to its exact span in the narration and its hold, rounded on cumulative frame
+boundaries so the picture never drifts. The recorder stepped the page through both, so the hold is
+recorded picture, and the last frame is cloned only over the slack a recording may fall short by.
+A clip section plays its own file, or a titled slate when that file is missing. A page section with
+no recording plays black. No intermediate carries audio, so the concatenation cannot reintroduce
+AAC priming and the picture starts at pts 0 as the sound does.
 
 `placements.json` is written from the same rows, so where a section plays, what it was made from and
 whether a slate or a black frame stands in for it are all recorded once.
@@ -23,22 +24,23 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import Placement, Placements, RecordingLog, Takes
+from decktalk.artifacts import Placement, Placements, Takes
 from decktalk.artifacts.placements import SectionVideoKey
 from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
-from decktalk.inputs import ClipSection, Inputs, PageSection, Section
+from decktalk.inputs import ClipSection, Inputs, RecordedSection, Section
 from decktalk.inputs.document import frame_dip
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
+from decktalk.pictures import pictures
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
-from decktalk.stages import selects
+from decktalk.stages import page_seconds, selects
 from decktalk.stages.assemble import slate
 
 log = logging.getLogger(__name__)
@@ -125,7 +127,7 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
     video, policy = inputs.settings.video, inputs.settings.record.page_policy
     title, sub = inputs.chapters()[section.number], "Your clip goes here"
     eyebrow = f"section {section.number}: slate"
-    foot = f"drop it at {section.clip} and run `decktalk assemble`"
+    foot = f"drop it at {section.clip} and run decktalk assemble"
     shown = json.dumps([title, sub, eyebrow, foot, video.width, video.height, video.slate_color])
     # The key begins with the substitute's own name, so a slate never shares a name with a frame of a page.
     key = still_key((Substitute.SLATE.value, f"policy:{policy}", shown))
@@ -135,19 +137,10 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
         return kept
     drawing = stills.directory / f".{key}{DRAWING_SUFFIX}"
     try:
-        slate.render_slate(
-            drawing,
-            title=title,
-            sub=sub,
-            eyebrow=eyebrow,
-            foot=foot,
-            width=video.width,
-            height=video.height,
-            background=video.slate_color,
-            executable=inputs.settings.tools.chromium,
-            policy=policy,
-            spend=run.spend,
-        )
+        with pictures(inputs, run) as made:
+            slate.render_slate(
+                made, drawing, title=title, sub=sub, eyebrow=eyebrow, foot=foot, background=video.slate_color
+            )
         return stills.keep(key, drawing, ())
     except ToolError as refused:
         run.note(f"A slate could not be drawn ({refused}), so section {section.number} plays a plain frame.",
@@ -202,13 +195,13 @@ def _render_slate_section(
     )
 
 
-def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, out: Path, dip: float, total: float, *,
-                strict: bool) -> Rendered:  # fmt: skip
+def render_page(inputs: Inputs, run: Run, enc: Encoder, section: RecordedSection, out: Path, dip: float,
+                total: float, *, strict: bool) -> Rendered:  # fmt: skip
     """One page section cut to its span in the narration, from its recording or from black."""
-    webm = inputs.workspace.recording(section.key)
-    source = inputs.relative(webm)
+    video = inputs.workspace.recording(section.key)
+    source = inputs.relative(video)
     fades = inputs.document.fade_flags[section.key]
-    if not webm.exists():
+    if not video.exists():
         if strict:
             raise NotBuiltError(
                 f"section {section.number} has no recording at {source}.", hint=Artifact.RECORDINGS.next_step
@@ -217,25 +210,21 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
         chain = f"{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
         _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
         return Rendered(section, out, ffmpeg.probe_duration(out), source, substitute=Substitute.BLACK)
-    # The recorder covers the page until it starts the section clock, so the head of the webm is
-    # trimmed at the moment its own log recorded as the start of the section clock.
-    log = RecordingLog.read(inputs.workspace.recording_log(section.key))
-    lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
+    # The recorder stepped the section clock from its first frame, so the recording starts at the
+    # section's second zero and is cut from its head.
     chain = (
-        f"{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
-        f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
+        f"{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
     )
-    _cut(out, enc, ffmpeg.source(webm), chain, (webm,), seconds=total)
+    _cut(out, enc, ffmpeg.source(video), chain, (video,), seconds=total)
     return Rendered(section, out, ffmpeg.probe_duration(out), source)
 
 
-def page_target(takes: Takes, section: PageSection, fps: int) -> float:
-    """How long one page section runs in the film, which is its span in the narration plus its hold."""
-    span = section_targets(takes, fps).get(section.number, 0.0)
-    if span <= 0:
+def page_target(takes: Takes, section: RecordedSection, fps: int) -> float:
+    """How long one page section runs in the film, refused when the take index gives it no span."""
+    seconds = page_seconds(takes, section, fps)
+    if not seconds:
         raise NotBuiltError(f"section {section.number} has no span in the take index.", hint=Artifact.TAKES.next_step)
-    # The narration pauses for a hold exactly as it pauses for a clip, so the hold is picture alone.
-    return round(span + section.hold_seconds, SECOND_DIGITS)
+    return seconds
 
 
 def render_sections(
@@ -347,15 +336,6 @@ def concat(files: list[Path], out: Path) -> None:
         listing.unlink(missing_ok=True)
 
 
-def section_targets(takes: Takes, fps: int) -> dict[int, float]:
-    """Frame-exact video length per spoken section, from cumulative frame boundaries.
-
-    Each length is the difference between two rounded cumulative boundaries rather than one rounded
-    length, so the sections add up to the narration exactly and the picture never drifts off it.
-    """
-    return {section: (round(at.end * fps) - round(at.start * fps)) / fps for section, at in takes.placed.items()}
-
-
 def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     """The fade filters one section carries, which is what a dip to black at a cut is made of."""
     filters = ""
@@ -384,7 +364,6 @@ __all__ = [
     "render_sections",
     "rendered_starts",
     "section_slate",
-    "section_targets",
     "remove_stray_videos",
     "vfades",
 ]

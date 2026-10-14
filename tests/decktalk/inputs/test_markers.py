@@ -58,6 +58,23 @@ def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_p
     with pytest.raises(InputError) as info:
         load_markers(path, tmp_path)
     # A machine-readable payload carries no path from outside the project, so the line goes in its own slot.
-    assert str(info.value).startswith("markers.json is not valid JSON:")
+    assert str(info.value).startswith("markers.json is not valid JSON on line 1:")
     assert info.value.location is not None
     assert info.value.location.file == Path(path.name) and info.value.location.line == 1
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"boost_db": 40, "markers": []},
+        {"boost_seconds": -1, "markers": []},
+        {"markers": [{"name": "turn", "section": 1, "mute_seconds": -0.4}]},
+    ],
+)
+def test_a_marker_number_outside_its_range_is_refused_with_its_file(tmp_path, data: dict[str, object]) -> None:
+    """A swell louder than the voice, or a mute that ends before it starts, would reach ffmpeg unchecked."""
+    path = tmp_path / "markers.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(InputError, match="must be") as refused:
+        load_markers(path, tmp_path)
+    assert refused.value.location is not None and refused.value.location.file == Path(path.name)

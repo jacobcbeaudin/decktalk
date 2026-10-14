@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import difflib
-import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -62,7 +61,7 @@ def _leaves(table: Mapping[str, Any], prefix: str = "") -> list[str]:
 
 
 NAMED_PART_MIN = 3
-"""How long the last part of a mistyped key must be before a key whose own last part holds it is offered.
+"""Calibration: how long the last part of a mistyped key must be before a key whose own last part holds it is offered.
 
 A shorter part, such as `db` or `a`, sits inside too many names to say which one was meant.
 """
@@ -91,24 +90,16 @@ def nearest(key: str, known: Iterable[str]) -> str | None:
 
 
 def named_key(key: str, known: Iterable[str]) -> str | None:
-    """The closest key whose last part holds the typed last part, or whose whole name holds each of its words.
+    """The closest key whose last part holds the typed last part.
 
-    Either is a key the typed one names rather than one spelled like it, which is what lets a key
+    That is a key the typed one names rather than one spelled like it, which is what lets a key
     written under the wrong table find the table it lives in.
     """
     names = sorted(known)
     part = key.rsplit(".", 1)[-1]
     holding = [name for name in names if len(part) >= NAMED_PART_MIN and part in name.rsplit(".", 1)[-1]]
-    holding = holding or [name for name in names if _covers(name, part)]
     close = difflib.get_close_matches(key, holding, n=1, cutoff=0) if holding else []
     return close[0] if close else None
-
-
-def _covers(name: str, part: str) -> bool:
-    """Whether every word of `part` opens a word of the dotted key `name`, so `effect_seconds` finds `effects`."""
-    words = [word for word in part.split("_") if len(word) >= NAMED_PART_MIN]
-    held = re.split(r"[._]", name)
-    return len(words) > 1 and all(any(word.startswith(typed) for word in held) for typed in words)
 
 
 def did_you_mean(key: str, known: Iterable[str]) -> str:

@@ -4,9 +4,10 @@ description: Learn the four moments an element declares, the cue id that joins a
 ---
 
 The page contract is the whole vocabulary a deck page may write. An element on a slide has four
-moments, and each of them is a cue name. Everything else is either how a moment looks,
-which is a closed word the contract owns, or what a moment means, which is a sentence for the
-transcript. Seconds are never written on the page, because `cues.json` owns them.
+moments, and each of them is a cue name. An element that travels for longer than a moment declares
+a motion instead, which names two cues. Everything else is either how a moment or a motion looks,
+which is a closed word the contract owns, or what it means, which is a sentence for the
+transcript. The second a thing happens is never written on the page, because `cues.json` owns it.
 
 1. `decktalk-runtime.js` implements the contract. DeckTalk serves it at
    `/__decktalk/decktalk-runtime.js` on the origin it opens the page at, and a page that would rather
@@ -94,6 +95,12 @@ that never moves a pixel and `from the page` is a span read off the page or off 
 | `data-out-style` | element, container | `fade`, `fall` | `fade` |  | 0.2 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How the element leaves. |
 | `data-swaps` | element | written bare |  |  | from the page | [`PAGE_SWAP_AMBIGUOUS`](/reference/findings/PAGE_SWAP_AMBIGUOUS) | The element takes the place of whatever leaves on its own arrival cue, in a held swap. |
 | `data-describe-out` | element | a description |  |  | 0 | none | Overrides the departure sentence when leaving means something of its own. |
+| `data-motion` | element | an `@keyframes` name |  |  | 0 | [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | The element moves through these `@keyframes` from one cue to another, masked from every reveal check and landing on its cues. |
+| `data-motion-from` | element | a local cue name |  |  | 0 | [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | The motion departs at this cue. |
+| `data-motion-to` | element | a local cue name |  |  | 0 | [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | The motion arrives at this cue, so its length is the two cues' seconds apart. |
+| `data-motion-ease` | element | `firm`, `glide`, `settle`, `spring` | `firm` |  | 0 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How the motion moves. Settle and spring ease to rest, so their arrival cue must opt out of verify. |
+| `data-loop` | element | an `@keyframes` name |  |  | 0 | [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | The element turns through these `@keyframes` for as long as its slide is on screen, masked and never a landing. |
+| `data-loop-seconds` | element | seconds | `1` | 0.2 to 60 in steps of 0.04 | 0 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How long one turn of the loop takes. |
 | `data-scene` | scene | an id |  |  | 0 | [`PAGE_SCENE_EMPTY`](/reference/findings/PAGE_SCENE_EMPTY) | Declares the scene a section names, on the wrapper that holds its slides. |
 | `data-name` | scene | a description |  |  | 0 | none | The scene's name in the index and in the catalog. |
 | `data-slide` | slide | an id |  |  | 0 | [`PAGE_SLIDE_NO_ID`](/reference/findings/PAGE_SLIDE_NO_ID) | Declares a slide on a template. Its id qualifies every moment written inside it. |
@@ -107,7 +114,8 @@ drawn, so a misspelling is a finding rather than an attribute nothing reads.
 
 `decktalk schema page` prints this same table as JSON, with each row's `on`, `kind`, `values`,
 `default`, `range`, `code`, `span`, `affects` and `summary`, and beside it the entrance, exit, word,
-count, attention and slide word sets with their lengths, `measurable_span_seconds` and `capture_fps`.
+count, attention and slide word sets with their lengths, the `query` keys, the `t0_signal` value,
+`measurable_span_seconds` and `slowest_fps`.
 The table above and the schema are written from one registry, so the page cannot say something the
 registry does not.
 
@@ -147,8 +155,8 @@ from, so it marks its own cue unmeasurable. No span a page can declare may reach
 | Counts, `data-count` | `last` 0.44, `first` 0.44 |
 | Attention, `data-back` and `data-front` | `back` 0.28, `front` 0.2 |
 
-`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at the 25
-frames a second the recorder captures at. `data-stagger` runs from 0.04 to 0.2 in the same steps,
+`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at 25
+frames a second, the slowest rate a film is recorded at. `data-stagger` runs from 0.04 to 0.2 in the same steps,
 which is one to five frames.
 
 A staggered container's total is exact arithmetic, and that is why its overrun is an error.
@@ -180,6 +188,88 @@ Reduced motion has two switches, and neither is a flag. `motion.reduce` asks Chr
 [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED), against the stylesheet that
 owes the reduction.
 
+The frame reaches the page the same way. `[video] size` names the frame, `wide`, `square`, `vertical`
+or a width and a height in pixels, and the page is laid out on a canvas of that shape whose short side
+is 1080 CSS pixels. The runtime puts the canvas's size on `:root` as `--dt-width` and `--dt-height` and
+its shape as `data-dt-shape`, so a stylesheet that reads them lays one page out for any frame. One
+project makes one video: a square cut is the project copied with its size changed.
+
+## Motion
+
+A moment is a reveal of at most 0.46 seconds, measured as one step in the picture at its cue. A
+**motion** is the other noun. It may run for any length, it is declared on the element it moves, and
+its length is the seconds between the cue it departs on and the cue it arrives on. No length is ever
+written in the markup, so a line voiced again times the motion again, as it times every reveal.
+
+```html deck/index.html
+<div class="packet" data-motion="travel" data-motion-from="go" data-motion-to="now" data-describe=""></div>
+```
+
+`data-motion` names the `@keyframes` the element moves through, and `data-motion-from` and
+`data-motion-to` are cue names local to the slide, which join the slide's cues as a moment's do.
+`data-motion-ease` is one of `firm`, `glide`, `settle` and `spring`, and `firm` is the default
+because it keeps a little speed into its last frame, so its arrival stops on a frame edge that
+verify can measure. `settle` and `spring` ease to rest, so an arrival on either is allowed only on a
+cue `cues.json` marks `"verify": false`, and anywhere else is
+[`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE).
+
+Three more things on a page may move for longer than a moment, and each is declared too.
+
+| Declaration | What moves | Where it is written |
+|---|---|---|
+| A loop | An element that turns for as long as its slide is on screen. | `data-loop` names its `@keyframes` and `data-loop-seconds` one turn's length. |
+| A script motion | Whatever `draw(progress, seconds)` draws on each frame between two cue ids, and nothing after the arrival. | `DeckTalk.motion(el, { from, to, ease, draw })`. |
+| A region | Whatever a frame hook draws on each frame from the section second. | `DeckTalk.frame(fn, { region })`. |
+
+[Things that move](/guides/motion) shows each of them in a working deck.
+
+### Undeclared motion is refused
+
+Verify reads a reveal as a rise in how much of the frame changed, and anything else moving at the
+same time rises with it, so an undeclared animation makes a cue read early or makes a control span
+dishonest. So anything that still moves 0.46 seconds after it starts, and is not inside a declared
+motion, loop or region, is [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED).
+
+The rule is held in two places. The index page reads the computed style of every element of every
+slide, so `check` names a long or endless CSS animation the markup forgot before a frame is recorded.
+The recorder meets every animation as the stepped clock first sees it, so `record` names one a script
+starts. A frame hook with no region is undeclared from the call that registers it.
+
+A script can also change the picture in one step, with no animation at all, such as a `setTimeout`
+that shows an element. Verify reads that as a reveal nobody cued, or a mask hides it. So the recorder
+watches what the page changes between two frames, outside every cue, frame hook and animation the
+runtime ran, and a change that sits inside no declared motion, loop or region and shows in the frame
+is [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED). Make the change in a cue's
+handler, draw it from a frame hook with a region, or declare it as a motion.
+
+A `<video>` or an `<audio>` element is refused outright as
+[`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA), because it plays at its own rate
+and not on the stepped clock. Footage plays in a clip section, and a picture another program draws
+plays in a render section.
+
+On a still, which has no clock, a loop rests in its own style and a motion whose departure has fired
+is drawn where it ends.
+
+### The lane report
+
+While the recorder steps a section, the runtime samples every declared motion, loop and region on
+each frame and keeps one **lane** for each. The recording log carries the lanes as
+`recording.report.motions`, and verify masks and measures from them rather than from any file kept
+by hand.
+
+| Field | What it holds |
+|---|---|
+| `id` | The lane's own name, such as `motion-1`, which no cue shares. |
+| `kind` | `motion`, `loop` or `region`. |
+| `box` | The union of every box the element filled on every frame it was alive, in the recording's pixels, or null when it was never seen. |
+| `size` | The element's own width and height, which is the area a landing is measured against. |
+| `departs` and `arrives` | The first and the last second the lane was alive on the section clock. |
+| `landings` | Each cue a motion lands on, as its cue id, `depart` or `arrive`, and the second the cue was due. A loop and a region have none. |
+
+A render section's command writes its lanes in this same shape, so verify reads one shape whoever
+drew the picture. [Verify](/reference/verify#motions) says how a cue is measured with the lanes masked
+and how each landing is measured on its own lane.
+
 ## Cue ownership
 
 Ownership is declared and never inferred. A slide owns exactly the cues it names, which is the whole
@@ -189,6 +279,7 @@ rule:
 2. Every moment named on the left of a `data-class` pair, qualified the same way.
 3. Every cue name in the slide's `data-owns`, which is for a cue that only a handler serves.
 4. Every key of a slide's own `on` object, for a slide a script declares.
+5. Every cue a motion written in its markup departs or arrives on.
 
 There is no prefix rule and no guessing, so a cue id may carry any characters an author likes. Two
 templates claiming one slide id would give every moment inside either of them two owners, which is
@@ -197,8 +288,11 @@ templates claiming one slide id would give every moment inside either of them tw
 In record mode, ownership decides when each slide mounts.
 
 - A slide mounts at the earliest cue time it owns.
-- The first slide to mount is on the stage before the clock starts and before the cover comes off, so
-  no frame of a recording is ever drawn on an empty stage.
+- The first slide to mount is on the stage before the recorder's first step, so no frame of a
+  recording is ever drawn on an empty stage.
+- An element that arrives on a cue due at the section's start arrives as a cut, as the first slide
+  does, so the section's first frame shows it. An entrance starts on its cue's own frame and draws
+  nothing there, and the section's start has no frame before it to begin on.
 - A slide that owns no cue in `?cues=` never mounts, which is
   [`PAGE_SLIDE_UNUSED`](/reference/findings/PAGE_SLIDE_UNUSED).
 - A cue that no slide of the playing scene owns, and that no handler serves, is
@@ -264,32 +358,44 @@ To open a page in your own browser the same way, run `decktalk serve` and follow
 sequenceDiagram
     participant R as Recorder
     participant P as Page
-    R->>P: add the probe and the magenta cover as init scripts
+    R->>P: install Playwright's clock and add the probe as an init script
     R->>P: open page.html?scene=N&cues=…&words=…&t0=signal
     Note over P: the runtime picks its mode and mounts the first cued slide
-    R->>P: await document.fonts.ready, then window.__decktalk.ready
-    Note over R: recorder wait
-    R->>P: remove the cover, then start the clock on the next animation frame
-    Note over P: the section clock starts, and every cue fires from here
-    Note over R: record the section span plus record_margin_seconds
+    R->>P: await document.fonts.ready and window.__decktalk.ready
+    R->>P: await window.__decktalkProbe.started(deadline), every animation started
+    R->>P: hold the page clock still
+    loop for each frame k of the section's frames in the film, its hold included
+        R->>P: run the page's timers and animation frames on to frame k
+        R->>P: window.__decktalkProbe.step(k / fps, deadline)
+        Note over P: every cue due by k / fps fires, every frame hook draws, every animation is held
+        P-->>R: answer once the step is laid out, painted and committed, with its fonts and images in
+        alt a step since the last capture changed the picture
+            R->>P: capture the frame and pipe it into the encode
+        else nothing changed
+            Note over R: pipe the frame before into the encode again
+        end
+        opt nothing can change before a later frame
+            Note over R: pipe the frame again for every frame before the stretch's last, and step next to that last frame
+        end
+    end
     R->>P: read the page's one report back
 ```
 
-With `t0=signal` in the URL the page starts its clock only when the recorder says so. A browser
-preview has no `t0=signal`, so its clock starts when the page loads. A page that starts a clock of
-its own at load fires every cue early, by the whole time between load and the start of the section clock, and every reveal in
-the film then comes before its word.
+`deadline` is `record.page_deadline_seconds`, 15 by default, the seconds the page has to answer each
+call before the recorder stops it.
 
-The recorder wait sits between readiness and the cover coming off, and two settings decide it.
+With `t0=signal` in the URL the page's section clock moves only when the recorder steps it. A
+browser preview has no `t0=signal`, so its clock starts when the page loads and plays in real time.
+A page that starts a clock of its own at load fires every cue early, by the whole time between load
+and the recorder's first step, and every reveal in the film then comes before its word. A page that
+animates something itself draws it from [`DeckTalk.frame`](/reference/runtime#the-decktalk-object),
+which hands it the second each frame shows, and names the region it draws in, as
+[Motion](#motion) says.
 
-```text
-recorder wait = max(record.settle_seconds, record.cover_min_seconds - elapsed)
-elapsed       = seconds since the recorder opened its browser context
-```
-
-The defaults are 0.5 and 1.5 seconds, and the cover hides the page throughout.
-[How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains why the section clock
-starts on the first clean frame after the cover.
+The recorder waits on readiness and two painted frames and on nothing else, so no fixed settle is
+added on top. Frame 0 is the page at second 0, and
+[How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains why every frame after it is
+the page at its own second.
 
 The probe reads the whole page back in one call, and the recording log keeps what it answered.
 [One `report()` call](/reference/runtime#one-report-call) lists its fields.

@@ -6,6 +6,11 @@ paragraph is worse than read out, because the parser turns it into a silent paus
 `narrate` refuses each of those with the line it sits on, before it plans anything, because a run
 that has already paid cannot take the money back.
 
+A voice direction narrate cannot read is refused the same way and first: a line that opens with the
+word voice and is no direction, a direction naming a voice the project does not declare, and the
+first turn of a section that names a voice when no direction names that turn. Any of them would buy
+a take in a voice nobody chose.
+
 `narrate` judges nothing beyond that refusal. A digit or a symbol the voice may misread, and an unfilled
 blank a voiced run would read out, are findings rather than refusals, and they are raised by
 `check`, which is the command that reports what a build would cost and show. This module is
@@ -15,12 +20,24 @@ therefore the one home of both rules, and `stages/check/script.py` reads them fr
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
+from enum import StrEnum
 from itertools import pairwise
 
 from decktalk.errors import InputError
-from decktalk.inputs.script import SECTION_RE, ScriptSection
+from decktalk.findings import Code
+from decktalk.inputs.script import (
+    SECTION_RE,
+    VOICE_HINT,
+    WHOLE_BRACKET_RE,
+    ScriptSection,
+    claimed,
+    directed,
+    parse_script,
+)
 from decktalk.results import counted
+from decktalk.tomlmap.suggest import did_you_mean
 
 INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNORECASE)
 """The two directions a paragraph may hold, which the parser turns into a pause the author asked for.
@@ -44,6 +61,9 @@ COMMENT_RE = re.compile(r"<!--")
 
 SYMBOL_RE = re.compile(r"[0-9$€£%&@#*/+=<>~^|]")
 """A character a reader turns into a word of its own, where a voice may say something else."""
+
+TRAILING_PUNCTUATION = ",.;:!?)\"'"
+"""What ends a word in a sentence rather than belonging to it, which a finding leaves off the word it names."""
 
 SHOWN_TOKENS = 5
 """Calibration: five words are enough to recognise the line, where the whole list would be a wall of text."""
@@ -83,12 +103,98 @@ def script_refusals(markdown: str) -> list[tuple[int, str]]:
     return out
 
 
-def check_script(where: str, markdown: str) -> None:
-    """Refuse a script whose spoken text holds something the voice would read out or swallow.
+class Misread(StrEnum):
+    """How one line of a script fails the voice rule, which narrate and check each word their own way."""
+
+    NOT_A_DIRECTION = "not-a-direction"
+    UNKNOWN = "unknown"
+    UNMARKED = "unmarked"
+    BARE = "bare"
+
+
+MISREAD_CODES = {
+    Misread.NOT_A_DIRECTION: Code.SCRIPT_VOICE_UNKNOWN,
+    Misread.UNKNOWN: Code.SCRIPT_VOICE_UNKNOWN,
+    Misread.UNMARKED: Code.SCRIPT_VOICE_UNMARKED,
+    Misread.BARE: Code.SCRIPT_VOICE_BARE,
+}
+"""The code each way of failing the voice rule is judged under."""
+
+
+@dataclass(frozen=True)
+class VoiceLine:
+    """One line of a script the voice rule judges: where it sits, how it fails, and the bracket it holds."""
+
+    line: int
+    section: int
+    misread: Misread
+    inner: str
+    """The text inside the bracket, or the voice a direction names, or nothing for an unmarked turn."""
+
+    @property
+    def code(self) -> Code:
+        return MISREAD_CODES[self.misread]
+
+
+def voice_lines(markdown: str, sections: Sequence[ScriptSection], names: Sequence[str]) -> list[VoiceLine]:
+    """Every line of the spoken text that fails the voice rule, in line order, judged against the declared names.
+
+    A claimed line that is no direction, a direction naming no declared voice, and the first turn of
+    a section that holds a direction when no direction names that turn are what narrate refuses. A
+    note that is exactly a declared voice's name is a slip check warns about, because it plays as a
+    beat rather than handing the turns to that voice.
+    """
+    found: list[VoiceLine] = []
+    directing: set[int] = set()
+    for number, section, line in spoken_lines(markdown):
+        stripped = line.strip()
+        if claimed(line):
+            name = directed(line)
+            if name is None:
+                found.append(VoiceLine(number, section, Misread.NOT_A_DIRECTION, stripped[1:-1].strip()))
+                continue
+            directing.add(section)
+            if name not in names:
+                found.append(VoiceLine(number, section, Misread.UNKNOWN, name))
+        elif WHOLE_BRACKET_RE.fullmatch(stripped) and stripped[1:-1].strip() in names:
+            found.append(VoiceLine(number, section, Misread.BARE, stripped[1:-1].strip()))
+    for section in sections:
+        first = section.turns[0]
+        if section.number in directing and first.voice is None and first.pieces:
+            found.append(VoiceLine(first.line, section.number, Misread.UNMARKED, ""))
+    return sorted(found, key=lambda one: one.line)
+
+
+def voice_refusals(markdown: str, names: Sequence[str]) -> list[tuple[int, Code, str]]:
+    """(line, code, what) for every voice direction narrate cannot read, judged against the declared names."""
+    listed = ", ".join(names)
+    rows: list[tuple[int, Code, str]] = []
+    for one in voice_lines(markdown, parse_script(markdown), names):
+        if one.misread is Misread.NOT_A_DIRECTION:
+            rows.append((one.line, one.code, f"[{one.inner}] is not a voice direction, which is written [voice NAME]"))
+        elif one.misread is Misread.UNKNOWN:
+            near = did_you_mean(one.inner, names)
+            rows.append((one.line, one.code, f"[voice {one.inner}] names no voice, and the voices are {listed}.{near}"))
+        elif one.misread is Misread.UNMARKED:
+            what = f"section {one.section} names a voice, and the turn that starts here names none"
+            rows.append((one.line, one.code, what))
+    return rows
+
+
+def check_script(where: str, markdown: str, names: Sequence[str]) -> None:
+    """Refuse a script whose voice directions narrate cannot read, or whose spoken text holds something the voice
+    would read out or swallow.
 
     `where` is the script's path as the reader sees it, which the caller has already made relative
-    to the project root.
+    to the project root, and `names` is every voice the project declares, the default first.
     """
+    voices = voice_refusals(markdown, names)
+    if voices:
+        rows = "\n  ".join(f"line {number}: {what}" for number, _code, what in voices)
+        raise InputError(
+            f"{where} has {counted(len(voices), 'voice direction')} narrate cannot read:\n  {rows}",
+            hint=VOICE_HINT,
+        )
     refusals = script_refusals(markdown)
     if not refusals:
         return
@@ -105,7 +211,8 @@ def symbol_tokens(section: ScriptSection) -> tuple[str, ...]:
     The scan lives here beside the refusals because both read the same spoken text, and `check`
     raises the finding from it, so the rule has one home and the judgement has one raiser.
     """
-    return tuple(sorted({token for token in section.spoken.split() if SYMBOL_RE.search(token)}))
+    words = (token.rstrip(TRAILING_PUNCTUATION) for token in section.spoken.split())
+    return tuple(sorted({word for word in words if SYMBOL_RE.search(word)}))
 
 
 def shown(tokens: Iterable[str]) -> str:
@@ -114,21 +221,60 @@ def shown(tokens: Iterable[str]) -> str:
     return ", ".join(listed[:SHOWN_TOKENS])
 
 
-def ascending(sections: Iterable[ScriptSection]) -> tuple[ScriptSection, ScriptSection] | None:
-    """The first pair of headings whose numbers do not ascend, or None when the whole script does.
+@dataclass(frozen=True)
+class OutOfOrder:
+    """The first two headings whose numbers do not ascend, and the one sentence narrate and check say about them.
 
     The take index is the one order the narration is joined in, so a script that counts backwards
     would place its takes in an order no other reading of the project agrees with.
     """
-    return next(((first, second) for first, second in pairwise(sections) if second.number <= first.number), None)
+
+    first: ScriptSection
+    second: ScriptSection
+
+    @property
+    def what(self) -> str:
+        return (
+            f"the script heading for section {self.second.number} comes after section {self.first.number}, so the "
+            "sections do not ascend and the narration would be joined in an order nothing else agrees with"
+        )
+
+    @property
+    def hint(self) -> str:
+        first, second = self.first, self.second
+        return f"Move '## {second.number}. {second.title}' after '## {first.number}. {first.title}'."
+
+
+def ascending(sections: Iterable[ScriptSection]) -> OutOfOrder | None:
+    """The first pair of headings whose numbers do not ascend, or None when the whole script does."""
+    return next(
+        (OutOfOrder(first, second) for first, second in pairwise(sections) if second.number <= first.number), None
+    )
+
+
+def heading_line(markdown: str, section: ScriptSection) -> int:
+    """The line one section's heading sits on, which is the last heading of its number at or before its first turn."""
+    lines = [
+        number
+        for number, line in enumerate(markdown.splitlines(), start=1)
+        if (match := SECTION_RE.match(line)) and int(match.group("num")) == section.number
+        and number <= section.turns[0].line
+    ]  # fmt: skip
+    return lines[-1] if lines else section.turns[0].line
 
 
 __all__ = [
     "SYMBOL_RE",
+    "Misread",
+    "OutOfOrder",
+    "VoiceLine",
     "ascending",
     "check_script",
+    "heading_line",
     "script_refusals",
     "shown",
     "spoken_lines",
     "symbol_tokens",
+    "voice_lines",
+    "voice_refusals",
 ]

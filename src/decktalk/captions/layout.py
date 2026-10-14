@@ -38,13 +38,34 @@ _CLAUSE_END_RE = re.compile(r"[,;:—–-]$")
 
 @dataclass(frozen=True)
 class CaptionCue:
+    """One caption: when it shows, its lines, the voice and the turn that speak them, and whether the files name it.
+
+    `voice` and `turn` say who speaks a caption of the narration, and are None for a sound and for
+    the speech inside a clip. A page that draws the captioned copy places a caption by them, and
+    nothing it draws names the voice. `named` is whether the caption files name the voice, which
+    `[output] caption_voices` asks for in a section spoken in more than one.
+
+    `spoken` is the first line the voice speaks and the line after its last, which is every line
+    unless a sound's caption joined the cue before or after the speech, so a file that names the
+    voice names it where the speech starts and never on a sound.
+    """
+
     start: float
     end: float
     lines: tuple[str, ...]
+    voice: str | None = None
+    turn: int | None = None
+    named: bool = False
+    spoken: tuple[int, int] | None = None
 
     @property
     def text(self) -> str:
         return "\n".join(self.lines)
+
+    @property
+    def speech(self) -> tuple[int, int]:
+        """The first line the voice speaks and the line after its last."""
+        return self.spoken if self.spoken is not None else (0, len(self.lines))
 
 
 def _ends_sentence(token: str) -> bool:

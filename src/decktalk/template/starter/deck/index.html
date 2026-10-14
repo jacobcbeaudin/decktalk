@@ -25,38 +25,79 @@
   body { width: 100vw; height: 100vh; overflow: hidden; }
   #dt-canvas { background: var(--ground); }
 
-  /* Every element is placed absolutely on the 1920 by 1080 canvas, so a reveal moves nothing else. */
+  /* Every element is placed absolutely on the canvas, so a reveal moves nothing else. The runtime
+     hands the page its canvas as --dt-width and --dt-height, 1920 by 1080 for a wide project, and
+     names its shape on the root as data-dt-shape, so the rules below lay the slides out across the
+     canvas's own width and the shape rules further down stack them for a square or vertical frame. */
+  :root { --margin: 120px; --span: calc(var(--dt-width) - 2 * var(--margin)); }
   .eyebrow, .title, .card, .strip, .stat { position: absolute; margin: 0; box-sizing: border-box; }
-  .eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
+  .eyebrow { left: var(--margin); top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
 
   /* A reveal has to change about 0.3 percent of the frame, compared on luma alone, or `decktalk
      check` reads it as CUE_NO_CHANGE or CUE_THIN_CHANGE. That is roughly an 80 by 80 solid block.
      Every card and strip below is a filled shape for that reason, and not text on white. */
-  .title { left: 120px; width: 1680px; font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
+  .title { left: var(--margin); top: 190px; width: var(--span); font: 700 96px/1.06 var(--sans); letter-spacing: -.03em; }
   .title h1 { margin: 0; font: inherit; letter-spacing: inherit; }
-  .title .rule { margin-top: 28px; width: 1000px; height: 12px; background: var(--accent); }
+  .title .rule { margin-top: 28px; width: min(1000px, var(--span)); height: 12px; background: var(--accent); }
+  .title.small { top: 170px; font-size: 76px; }
+  .title.small .rule { width: 760px; }
 
-  .stat { left: 120px; top: 620px; width: 1120px; padding: 34px 48px; border-radius: 20px; background: var(--accent); color: #fff; font: 700 76px/1.1 var(--sans); letter-spacing: -.02em; }
+  .stat { left: var(--margin); top: 620px; width: min(1120px, var(--span)); padding: 34px 48px; border-radius: 20px; background: var(--accent); color: #fff; font: 700 76px/1.1 var(--sans); letter-spacing: -.02em; }
 
-  .card { width: 760px; height: 220px; padding: 34px 40px; border-radius: 20px; background: var(--ink); color: #fff; }
+  .card { top: 300px; width: 760px; height: 220px; padding: 34px 40px; border-radius: 20px; background: var(--ink); color: #fff; }
   .card .k { font: 600 28px/36px var(--mono); color: #a9a9ff; }
   .card .v { margin-top: 18px; font: 500 44px/54px var(--sans); }
+  .card.first { left: var(--margin); }
+  .card.second { left: calc(var(--dt-width) - var(--margin) - 760px); }
 
-  .strip { left: 120px; width: 1680px; padding: 28px 40px; border-radius: 18px; background: var(--accent); color: #fff; font: 600 52px/62px var(--sans); }
-  .strip.dark { background: var(--ink); }
+  .strip { left: var(--margin); top: 720px; width: var(--span); padding: 28px 40px; border-radius: 18px; background: var(--accent); color: #fff; font: 600 52px/62px var(--sans); }
+  .strip.dark { top: 440px; width: min(1440px, var(--span)); background: var(--ink); }
 
   /* Scene 2: the formula beside the code that computes it. */
-  .formula { position: absolute; left: 120px; top: 360px; width: 820px; height: 280px; box-sizing: border-box;
+  .formula { position: absolute; left: var(--margin); top: 360px; width: 820px; height: 280px; box-sizing: border-box;
              display: flex; align-items: center; justify-content: center; border: 10px solid var(--ink); border-radius: 20px; }
   .formula .katex { font-size: 58px; }
-  .code { position: absolute; left: 1000px; top: 360px; width: 800px; height: 280px; box-sizing: border-box;
+  .code { position: absolute; left: calc(var(--dt-width) - var(--margin) - 800px); top: 360px; width: 800px; height: 280px; box-sizing: border-box;
           padding: 36px 40px; border-radius: 20px; background: var(--ink); color: #fff;
           font: 500 32px/52px var(--mono); white-space: pre; }
   .code .kw { color: #a9a9ff; }
 
-  .end { position: absolute; left: 120px; top: 620px; width: 980px; height: 240px; box-sizing: border-box;
+  .end { position: absolute; left: var(--margin); top: 620px; width: min(980px, var(--span)); height: 240px; box-sizing: border-box;
          display: flex; align-items: center; padding: 0 56px; border-radius: 24px; background: var(--accent);
          color: #fff; font: 700 92px/1 var(--sans); letter-spacing: -.02em; }
+
+  /* A square or vertical canvas is too narrow for two things side by side, so each slide stacks, in
+     type a size smaller, every box as wide as the canvas allows. A vertical canvas has the room to
+     space the stack out further. The bottom 192 px stay clear for the captions at every shape. */
+  :root:not([data-dt-shape="wide"]) {
+    .title { top: 170px; font-size: 72px; }
+    .title.small { font-size: 56px; }
+    .title .rule, .title.small .rule { margin-top: 20px; width: var(--span); }
+    .stat { top: 560px; width: var(--span); font-size: 64px; }
+    .card { width: var(--span); height: 190px; padding: 28px 40px; }
+    .card .v { margin-top: 12px; font-size: 40px; line-height: 50px; }
+    .card.first { left: var(--margin); top: 190px; }
+    .card.second { left: var(--margin); top: 410px; }
+    .strip { top: 630px; font-size: 40px; line-height: 50px; }
+    .strip.dark { top: 380px; width: var(--span); }
+    .formula { top: 300px; width: var(--span); height: 200px; }
+    .formula .katex { font-size: 48px; }
+    .code { left: var(--margin); top: 520px; width: var(--span); height: 180px; padding: 24px 40px; font-size: 28px; line-height: 44px; }
+    .strip.waited { top: 720px; }
+    .end { top: 600px; width: var(--span); height: 200px; font-size: 80px; }
+  }
+  :root[data-dt-shape="vertical"] {
+    .title { top: 260px; }
+    .stat { top: 760px; }
+    .card.first { top: 360px; }
+    .card.second { top: 620px; }
+    .strip { top: 900px; }
+    .strip.dark { top: 620px; }
+    .formula { top: 460px; height: 260px; }
+    .code { top: 780px; }
+    .strip.waited { top: 1020px; }
+    .end { top: 900px; }
+  }
 </style>
 </head>
 
@@ -73,7 +114,7 @@
   <template data-slide="1.1" data-preview-seconds="10" data-describe="the opening title and the count of files">
     <p class="eyebrow">DeckTalk</p>
 
-    <div class="title" style="top: 190px" data-in="title" data-describe="the title, This is DeckTalk">
+    <div class="title" data-in="title" data-describe="the title, This is DeckTalk">
       <h1>This is DeckTalk.</h1>
       <div class="rule"></div>
     </div>
@@ -88,13 +129,13 @@
   <template data-slide="1.2" data-preview-seconds="12" data-describe="the two files you write, and the promise">
     <p class="eyebrow">DeckTalk</p>
 
-    <div class="card" style="left: 120px; top: 300px" data-in="script"
+    <div class="card first" data-in="script"
          data-describe="a card for script.md, the file that holds what you say">
       <div class="k">script.md</div>
       <div class="v">what you will say</div>
     </div>
 
-    <div class="card" style="left: 1040px; top: 300px" data-in="deck"
+    <div class="card second" data-in="deck"
          data-describe="a card for deck/index.html, the file that holds the slides">
       <div class="k">deck/index.html</div>
       <div class="v">the slides that go with it</div>
@@ -102,7 +143,7 @@
 
     <!-- data-words shows the line one word at a time on the voice, so its text has to be the words
          the narration really says. -->
-    <p class="strip" style="top: 720px" data-in="word" data-in-style="fade" data-words
+    <p class="strip" data-in="word" data-in-style="fade" data-words
        data-describe="a band that fills in on the voice">
       every picture waits for its own word
     </p>
@@ -113,10 +154,10 @@
   <template data-slide="2.1" data-preview-seconds="16" data-describe="the average of n numbers, as a formula and as code">
     <p class="eyebrow">How it works</p>
 
-    <div class="title" style="top: 170px; font-size: 76px" data-in="average"
+    <div class="title small" data-in="average"
          data-describe="the heading, the average of n numbers">
       <h1>The average of n numbers.</h1>
-      <div class="rule" style="width: 760px"></div>
+      <div class="rule"></div>
     </div>
 
     <!-- One equation, written three ways, and the three traps it has.
@@ -138,7 +179,7 @@
 <span class="kw">def</span> average(xs):
     <span class="kw">return</span> sum(xs) / len(xs)</div>
 
-    <p class="strip" style="top: 720px" data-in="waited"
+    <p class="strip waited" data-in="waited"
        data-describe="a band reading: each one waited for the words I just said">
       Each one waited for the words I just said.
     </p>
@@ -149,12 +190,12 @@
   <template data-slide="3.1" data-preview-seconds="12" data-describe="the closing idea and the end card">
     <p class="eyebrow">Close</p>
 
-    <div class="title" style="top: 190px" data-in="idea" data-describe="the heading, change one word">
+    <div class="title" data-in="idea" data-describe="the heading, change one word">
       <h1>Change one word.</h1>
       <div class="rule"></div>
     </div>
 
-    <p class="strip dark" style="top: 440px; width: 1440px" data-in="again"
+    <p class="strip dark" data-in="again"
        data-describe="a band reading: only that part is made again">
       Only that part is made again.
     </p>

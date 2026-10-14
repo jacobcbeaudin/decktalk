@@ -1,9 +1,10 @@
 """What one finished recording is judged on, before anything is assembled from it.
 
 The frames say how long the recording ran and how bright it is, so a black or truncated section is
-caught while the page is still on screen rather than in the final mp4. The page says what it could
-not honour, and every one of those arrives as a code the media layer already validated, so nothing
-here reads a sentence to work out what happened.
+caught while the page is still on screen rather than in the final mp4. The steps say where a script
+changed the picture with nothing declared to explain it. The page says what it could not honour,
+and every one of those arrives as a code the media layer already validated, so nothing here reads a
+sentence to work out what happened.
 """
 
 from __future__ import annotations
@@ -17,34 +18,35 @@ from decktalk.media.pagereport import Recording
 from decktalk.pagescan import asset_findings, page_findings
 from decktalk.pipeline import Stage
 from decktalk.settings import Settings
+from decktalk.settings.numbers import truncated_slack_seconds
 
 LUMA_POINTS = (0.1, 0.5, 0.9)
 """Derived: a tenth, a half and nine tenths of a recording, which is where its brightness is read."""
 
 
-def measure_luma(webm: Path, duration: float) -> Luma:
+def measure_luma(video: Path, duration: float) -> Luma:
     """The recording's brightness at a tenth, a half and nine tenths of its length.
 
     One read of each frame gives both its mean and its peak, so the middle frame is decoded once.
     """
-    (tenth, _), (half, peak), (nine_tenths, _) = (frames.luma_at(webm, duration * point) for point in LUMA_POINTS)
+    (tenth, _), (half, peak), (nine_tenths, _) = (frames.luma_at(video, duration * point) for point in LUMA_POINTS)
     return Luma(at_tenth=tenth, at_half=half, at_nine_tenths=nine_tenths, peak_at_half=peak)
 
 
-def check_recording(webm: Path, recording: Recording) -> RecordingChecks:
+def check_recording(video: Path, recording: Recording) -> RecordingChecks:
     """What the frames of one finished recording measure, against what the recorder asked for."""
-    duration = ffmpeg.probe_duration(webm)
+    duration = ffmpeg.probe_duration(video)
     return RecordingChecks(
         duration_seconds=duration,
         wanted_seconds=recording.requested_seconds,
-        luma=measure_luma(webm, duration),
+        luma=measure_luma(video, duration),
     )
 
 
 def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settings: Settings) -> list[Finding]:
     """One judgement per way the frames of a recording fall short of what the recorder asked for."""
     black = settings.verify.black_max_luma
-    slack = settings.record.truncated_slack_seconds
+    slack = truncated_slack_seconds(settings)
     found: list[Finding] = []
     if checks.luma.peak_at_half <= black:
         found.append(
@@ -71,18 +73,24 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
     return found
 
 
-def stall_finding(gap_ms: int, *, where: Path, section: int, settings: Settings) -> Finding | None:
-    """The judgement a recording whose frames froze carries, or None when none of them did."""
-    limit = settings.record.frame_gap_max_ms
-    if gap_ms <= limit:
-        return None
-    return judge(
-        Code.RECORD_STALLED,
-        f"the picture held still for {gap_ms} ms after the section clock started, which is over the {limit} ms "
-        "a recorded section may ever stall for.",
-        Location(where=where.as_posix(), file=where, section=section),
-        stage=Stage.RECORD,
-    )
+def change_findings(recording: Recording, *, page: str, section: int) -> list[Finding]:
+    """One judgement per element a script changed the picture in with nothing declared to explain it.
+
+    Verify masks what the page declared and reads every other change as a reveal, so a change the
+    page made outside every cue, motion, loop and frame hook is either hidden by a mask or read as a
+    reveal nobody cued.
+    """
+    return [
+        judge(
+            Code.PAGE_CHANGE_UNDECLARED,
+            f"{row.what} changed the picture at {row.at:.2f}s, on {row.frames} "
+            f"{'frame' if row.frames == 1 else 'frames'} in all, with no cue, motion, loop or frame hook to "
+            "explain it.",
+            Location(where=page, file=Path(page), section=section),
+            stage=Stage.RECORD,
+        )
+        for row in recording.undeclared
+    ]
 
 
 def recording_findings(
@@ -94,27 +102,24 @@ def recording_findings(
     section: int,
     settings: Settings,
 ) -> tuple[Finding, ...]:
-    """Every judgement one finished recording carries, from the page, the frames and the network.
+    """Every judgement one finished recording carries, from the page, the frames, the steps and the network.
 
     They are one list rather than three, so a reader of the log dispatches on a code and never on
     which of three places a sentence came from.
     """
-    found = [
+    return (
         *page_findings(recording.report, page=page, section=section, stage=Stage.RECORD),
         *frame_findings(checks, where=where, section=section, settings=settings),
+        *change_findings(recording, page=page, section=section),
         *asset_findings(recording.external, where=page, section=section),
-    ]
-    stalled = stall_finding(recording.report.worst_gap_ms, where=where, section=section, settings=settings)
-    if stalled is not None:
-        found.append(stalled)
-    return tuple(found)
+    )
 
 
 __all__ = [
     "LUMA_POINTS",
+    "change_findings",
     "check_recording",
     "frame_findings",
     "measure_luma",
     "recording_findings",
-    "stall_finding",
 ]

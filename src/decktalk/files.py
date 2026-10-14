@@ -9,19 +9,25 @@ half changed.
 This module sits below every layer, because the settings file and the files a fix edits are
 replaced by the same rule and the settings layer cannot reach up into the machine. It also holds the
 one way DeckTalk writes JSON text that no digest is taken over, which every layer shares.
+
+A file a program writes, such as a recording, a clip or a section's picture, is replaced by the
+same rule one file at a time: `drafted` names a hidden draft beside it for the program to write,
+and the draft is moved onto the file only once the program has finished, so the file is the last
+whole one or the new whole one and a failure never deletes what was there.
 """
 
 from __future__ import annotations
 
 import secrets
 import shutil
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic_core import to_json
 
 DRAFT_TOKEN_BYTES = 8
-"""The random bytes in a draft's name, which is enough that no file already in the project carries it."""
+"""Calibration: the random bytes in a draft's name, which is enough that no file already in the project carries it."""
 
 
 def replace_all(texts: Mapping[Path, str | bytes]) -> None:
@@ -68,6 +74,28 @@ def _move_over(drafts: Mapping[Path, Path]) -> None:
         raise
 
 
+@contextmanager
+def drafted(final: Path) -> Iterator[Path]:
+    """The hidden draft a program writes `final` under, moved onto `final` once the block finishes.
+
+    The draft's name opens with a dot, which the local origin never serves and a listing of the
+    directory hides, and keeps the file's suffix, which is how ffmpeg picks the container it writes.
+    A draft a stopped run left is deleted first. When the block raises, the draft is deleted and
+    `final` is left as it was, and a block that wrote no draft leaves `final` as it was too, so
+    the caller says what a missing file means.
+    """
+    draft = final.with_name(f".{final.stem}.part{final.suffix}")
+    final.parent.mkdir(parents=True, exist_ok=True)
+    draft.unlink(missing_ok=True)
+    try:
+        yield draft
+    except BaseException:
+        draft.unlink(missing_ok=True)
+        raise
+    if draft.exists():
+        draft.replace(final)
+
+
 def current_text(path: Path) -> str:
     """The text a file holds, which is empty when there is no file there, as before a change creates it."""
     return path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -84,4 +112,4 @@ def json_text(value: object, *, indent: int | None = None) -> str:
     return to_json(value, indent=indent, fallback=str).decode("utf-8")
 
 
-__all__ = ["current_text", "json_text", "replace_all"]
+__all__ = ["current_text", "drafted", "json_text", "replace_all"]

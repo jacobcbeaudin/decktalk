@@ -12,7 +12,7 @@ from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hin
 from decktalk.errors import InputError
 from decktalk.findings import Location
 from decktalk.locate import locate
-from decktalk.tomlmap import Bounds, variable
+from decktalk.tomlmap import FAMILY, Bounds, variable
 from decktalk.tomlmap.suggest import unknown_key_warnings
 
 
@@ -27,6 +27,7 @@ class Table:
         *,
         text: str = "",
         table: str = "",
+        item: int | None = None,
     ) -> None:
         self.data = data
         self.where = where
@@ -39,12 +40,32 @@ class Table:
         # The dotted name of this table inside the file, which a key's own name is not enough to
         # find, because the same key name sits in several tables.
         self.table = table
+        # Which table of an array of tables this is, counting from one, because every one of them
+        # writes the same keys and the line of a refusal is the line in this one.
+        self.item = item
+
+    def inner(self, data: Mapping[str, Any], where: str, *, table: str = "", item: int | None = None) -> Table:
+        """A table read out of this one's file, which keeps the file and its text so its refusals name the line."""
+        return Table(data, where, self.path, text=self.text, table=table, item=item)
 
     def _refuse(self, message: str, key: str, hint: str | None = None) -> InputError:
         dotted = f"{self.table}.{key}" if self.table else key
-        line = locate(self.text, dotted) if self.text else None
+        line = locate(self.text, dotted, item=self.item) if self.text else None
         location = Location(where=f"{self.where} {key}", file=self.path, line=line) if self.path else None
         return InputError(message, hint=hint, location=location)
+
+    def held(self, key: str, value: Any, bounds: Bounds | None, *, hazard: str | None = None) -> Any:
+        """`value` when it is finite and sits inside `bounds`, or the refusal at the line that wrote it.
+
+        A NaN compares false against both ends of a range and TOML spells one, so a value that is not
+        finite is refused whatever its range. The hint is the key's hazard, which says what a value
+        past the edge would break.
+        """
+        if not finite(value):
+            raise self._refuse(f"{self.where}: '{key}' must be a finite number, got {value!r}", key, hazard)
+        if bounds is not None and value is not None and not bounds.holds(value):
+            raise self._refuse(f"{self.where}: '{key}' {bounds.sentence}, got {value!r}", key, hazard)
+        return value
 
     def _get(self, key: str, kind: type | tuple[type, ...], default: Any, required: bool) -> Any:
         if key not in self.data:
@@ -180,13 +201,16 @@ def from_mapping[T](
     `environ` that `variable` names for the field's dotted key. `environ` is
     required and never the process's own, because the machine is the one reader of the process.
     `said` names the layer a key's value came from, given its dotted key and whether `environ`
-    carried it, which is what a refusal ends on.
+    carried it, which is what a refusal ends on. A field that names a `family` is left at its
+    default, because its tables are named by the author and its owner reads them.
     """
     table = base or {}
     env = environ
     hints = get_type_hints(cls)
     args: dict[str, Any] = {}
     for f in fields(cast("Any", cls)):
+        if FAMILY in f.metadata:
+            continue
         annotation = hints.get(f.name, f.type)
         if is_dataclass(annotation):
             nested = table.get(f.name)
@@ -238,15 +262,15 @@ def read_value(
 
     A number that is not finite is refused before any range is, whatever the key's range, because
     NaN compares false against both ends of a range and an infinity is no amount at all. TOML spells
-    both and a float reads both from a string, so every layer can carry one. Both refusals are
-    `out_of_range`'s, so each names the layer `said` gives and a reader knows which file, variable
-    or flag to correct.
+    both and a float reads both from a string, so every layer can carry one. Every refusal here, of
+    a value of the wrong type, one that is not finite or one out of range, is `out_of_range`'s, so
+    each names the layer `said` gives and a reader knows which file, variable or flag to correct.
     """
     try:
         value = _coerce(annotation, raw) if from_env else _as_written(annotation, raw)
     except (TypeError, ValueError) as exc:
         wanted = getattr(annotation, "__name__", str(annotation))
-        raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc}).") from exc
+        raise out_of_range(where, f"expected {wanted} ({exc})", raw, said=said, hazard=hazard) from exc
     if not finite(value):
         raise out_of_range(where, "must be a finite number", value, said=said, hazard=hazard)
     if bounds is not None and not bounds.holds(value):
@@ -256,6 +280,8 @@ def read_value(
 
 def out_of_range(where: str, wanted: str, value: Any, *, said: str, hazard: str | None) -> InputError:
     """The refusal of a value its key does not take: the key, what it takes, the value and the layer it came from.
+
+    It is the one rule for a value of the wrong type, one that is not finite and one out of range.
 
     The hint is the key's hazard, which says what a value past the edge would break.
     """
@@ -279,6 +305,8 @@ def _coerce(annotation: Any, raw: str) -> Any:
     An environment variable carries a string and nothing else, so every value here is converted.
     A mapping's value goes through `_as_written` instead, which refuses a value of another type,
     and that is how one key answers the same way whether it was written in a file or exported.
+    An array is its items separated by commas, and an empty string is the empty array, which a
+    variable or a `--set` has no other way to write.
     """
     if annotation is bool:
         return raw.lower() not in SWITCHED_OFF
@@ -286,7 +314,7 @@ def _coerce(annotation: Any, raw: str) -> Any:
         return _coerce(get_args(annotation)[0], raw)
     if get_origin(annotation) is tuple:
         inner = get_args(annotation)[0] if get_args(annotation) else str
-        return tuple(_coerce(inner, x.strip()) for x in raw.split(","))
+        return tuple(_coerce(inner, x.strip()) for x in raw.split(",")) if raw.strip() else ()
     if annotation is int:
         return int(raw)
     if annotation is float:

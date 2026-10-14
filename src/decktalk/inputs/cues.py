@@ -63,6 +63,13 @@ READ_HERE = frozenset({"occurrence_set", "line"})
 # `_comment`, the one key a row may carry that DeckTalk reads nothing from.
 CUE_KEYS = {f.name for f in fields(Cue) if f.name not in READ_HERE} | {"_comment"}
 
+TOP_KEYS = frozenset({"sections", "_comment"})
+"""Every key the file may hold at its top level: the sections it is read for, and a comment it is not.
+
+Any other key is refused rather than read by nothing, because the usual one is a section block pasted
+one brace too late, whose cues would never fire and whose rows a fix would keep offering.
+"""
+
 PHRASE_KEY = re.compile(r'"phrase"\s*:\s*("(?:[^"\\]|\\.)*")')
 """Where a row writes its phrase in the file's own text, which is how the line of each row is found.
 
@@ -86,8 +93,8 @@ def json_of(text: str, path: Path, root: Path) -> object:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         raise InputError(
-            f"{path.name} is not valid JSON: {exc.msg}.",
-            hint="Check the brackets and the commas on the line named here.",
+            f"{path.name} is not valid JSON on line {exc.lineno}: {exc.msg}.",
+            hint=f"Check the brackets and the commas on line {exc.lineno} and the line before it.",
             location=at(path, root, line=exc.lineno),
         ) from exc
 
@@ -107,6 +114,13 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
         raise InputError(
             f"{path.name} has no top-level 'sections' object.",
             hint='Wrap the sections in {"sections": {...}}.',
+            location=at(path, root),
+        )
+    stray = sorted(set(data) - TOP_KEYS) if isinstance(data, dict) else []
+    if stray:
+        raise InputError(
+            f"{path.name} has the key {stray[0]!r} outside 'sections', where nothing reads it.",
+            hint="Move it inside the 'sections' object, or drop it. Beside 'sections' only '_comment' may stand.",
             location=at(path, root),
         )
     out: list[CuedSection] = []

@@ -22,7 +22,7 @@ import pytest
 import build_runtime
 from decktalk import page
 from decktalk.findings import CONTRACT_SUBJECTS, Code, Severity
-from decktalk.page import ATTRS, CAPTURE_FPS, EXEMPT, FRAME_STEP_MS, Attr, Subject
+from decktalk.page import ATTRS, EXEMPT, FRAME_STEP_MS, SLOWEST_FPS, Attr, Subject
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 CONTRACT_JSON = ROOT / "src" / "decktalk" / "runtime" / "contract.json"
@@ -34,7 +34,7 @@ ESBUILD = ROOT / "node_modules" / ".bin" / "esbuild"
 # deliberate change to this count. An element and a container are one subject
 # here, because both are rows an author writes many times a deck.
 ROWS_PER_SUBJECT: dict[tuple[Subject, ...], int] = {
-    (Subject.ELEMENT, Subject.CONTAINER): 18,
+    (Subject.ELEMENT, Subject.CONTAINER): 24,
     (Subject.SLIDE,): 5,
     (Subject.SCENE,): 2,
 }
@@ -64,7 +64,8 @@ def test_no_span_an_author_can_declare_reaches_the_ceiling():
     for name, row in ATTRS.items():
         if row.span is not None:
             assert page.measurable(row.span), f"{name} declares a span at or above the ceiling"
-        if row.range is not None and name is not Attr.PREVIEW_SECONDS:
+        # A preview's rest is recorded by nothing and a loop's turn is masked motion, so neither is a span after a cue.
+        if row.range is not None and name not in (Attr.PREVIEW_SECONDS, Attr.LOOP_SECONDS):
             assert page.measurable(row.range.max), f"{name} publishes a range whose top is unmeasurable"
     for effect in page.ENTRANCES.values():
         assert page.measurable(effect.seconds)
@@ -74,7 +75,7 @@ def test_no_span_an_author_can_declare_reaches_the_ceiling():
 
 def test_the_frame_step_is_the_capture_rate_written_the_other_way_round():
     """Every range on the page is written in whole frames, so the two numbers may never drift."""
-    assert 1000 / CAPTURE_FPS == FRAME_STEP_MS
+    assert 1000 / SLOWEST_FPS == FRAME_STEP_MS
 
 
 def test_a_staggers_whole_span_is_its_step_per_earlier_child_plus_one_entrance():
@@ -90,7 +91,7 @@ def test_an_element_has_four_moments_in_the_order_it_meets_them():
 
 
 def test_the_table_holds_the_rows_the_design_froze():
-    """Eighteen rows on an element or a container, five on a slide and two on a scene."""
+    """Twenty-four rows on an element or a container, five on a slide and two on a scene."""
     for subjects, count in ROWS_PER_SUBJECT.items():
         rows = [name for name, row in ATTRS.items() if set(subjects) & set(row.on)]
         assert len(rows) == count, f"{subjects} has {len(rows)} rows and the design froze {count}"

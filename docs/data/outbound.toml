@@ -18,17 +18,25 @@
 host = "api.elevenlabs.io"
 name = "Narration"
 sent_by = "`decktalk narrate`, and `decktalk build` on a voiced run"
-body = "The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_characters` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_characters = 0` keeps the neighbouring sections on your machine."
+body = "Each turn's spoken text, the voice id, the model name, the voice settings and the audio format, together with up to `narration.context_characters` characters of the turn before and of the turn after that the same voice reads among the turns this run selects, as speaking context. The default is 1500 characters."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header, to the host `[elevenlabs] base_url` names. Only this machine's own file, environment or `--set` can name it, and a project file that sets it is refused, because the key goes wherever it points."
-note = "Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all."
+note = "The context is drawn only from the sections a run selects, so a run narrowed with `--section` to one section read by one voice sends no neighbouring text. A run with `--no-spend` sends nothing at all."
 
 [[service]]
-host = "127.0.0.1:8765"
+host = "127.0.0.1:9361"
 name = "Narration by the local voice"
-sent_by = "`decktalk narrate` and `decktalk build`, when `[voice] provider = \"dtsp\"`"
-body = "The section's spoken text, the voice id, the model name, the speed and the audio format."
-credential = "No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:8765` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused."
+sent_by = "`decktalk narrate` and `decktalk build`, when `[voices.NAME] provider = \"dtsp\"`"
+body = "Each turn's spoken text, the voice id, the model name, the speed and the audio format, one request per turn."
+credential = "No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:9361` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused."
 note = "The local voice bills nothing, so a run with `--no-spend` still sends the text. At the default address the text never leaves the machine."
+
+[[service]]
+host = "127.0.0.1:9361"
+name = "Word timing by the local aligner"
+sent_by = "`decktalk narrate` and `decktalk build`, when a take came with no word times and no aligned words are kept for it, or under `--force`"
+body = "One `GET /v1/models` per run, which sends nothing, then one `POST /v1/align` per take to time: the take's audio as a WAV and the words it should hold."
+credential = "No key is sent. The host is the one `[dtsp] base_url` names, the same server the local voice speaks to, and only this machine's own file, environment or `--set` can name another."
+note = "The aligner bills nothing. A take whose aligned words are kept in `takes/aligned/` plays them without asking it, so a build of a project that commits them sends nothing."
 
 [[service]]
 host = "api.elevenlabs.io"
@@ -77,7 +85,7 @@ note = "The archives are checked against pinned SHA-256 digests and discarded wh
 [[page]]
 host = "Any host the page names"
 name = "A page's own requests"
-sent_by = "`decktalk record`, `decktalk check` and `decktalk storyboard`, and `decktalk assemble` when it draws the poster, so `decktalk build` too"
+sent_by = "`decktalk record`, `decktalk check`, `decktalk storyboard`, `decktalk cue` when a section's recording no longer stands, and `decktalk assemble` when it draws the poster or the captioned copy's captions, so `decktalk build` too"
 body = "Whatever the page asks for, such as a font, a script, an image or a call to an API its author wrote. DeckTalk adds nothing to the request. The browser that makes it is started with paths, locale and proxy settings alone, so `ELEVENLABS_API_KEY` and every other key the process holds are not in its environment."
 policy = "Under the default `record.page_policy = \"trusted\"` the request goes to the network the way it would in the author's browser, through the machine's own proxy. Under `untrusted` it is refused before it leaves the browser, whatever its scheme."
 note = "Either way the run names every other origin the page reached for, as [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET), so a reviewer reads which hosts a deck depends on from `decktalk check --json` before anything is recorded."

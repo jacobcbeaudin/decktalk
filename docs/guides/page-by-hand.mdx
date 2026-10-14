@@ -30,6 +30,8 @@ cue name. No attribute says when a cue fires, because `cues.json` owns that.
   html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); }
   body { width: 100vw; height: 100vh; overflow: hidden; }
   #dt-canvas { background: var(--ground); }
+  h1 { position: absolute; left: 120px; top: 190px; margin: 0; padding: 24px 40px; border-radius: 18px;
+       background: var(--accent); color: #fff; font: 700 96px/1.1 var(--sans); }
 </style>
 </head>
 
@@ -67,8 +69,10 @@ what the lesson example does with its bundled OFL fonts.</Warning>
 
 ### The canvas
 
-The runtime builds a canvas element, `#dt-canvas`, that is 1920 by 1080 CSS pixels, and scales it to
-fit the window. A page that declares its own `<div id="dt-canvas">` keeps that element and the runtime
+The runtime builds a canvas element, `#dt-canvas`, of the frame's shape with a short side of 1080 CSS
+pixels, 1920 by 1080 for a wide project, and scales it to fit the window. It puts the canvas's size on
+`:root` as `--dt-width` and `--dt-height` and its shape as `data-dt-shape`, so a stylesheet that reads
+them lays the page out for a square or vertical frame as well. A page that declares its own `<div id="dt-canvas">` keeps that element and the runtime
 builds around it, which is how a deck puts one background under all of its slides. Style it, and do
 not size it.
 
@@ -132,7 +136,11 @@ only in markup calls none of it.
 | `DeckTalk.on(cue, fn)` | Runs `fn` at one cue, wherever in the deck that cue belongs. Returns `DeckTalk`. |
 | `DeckTalk.waitFor(promise)` | Holds the page's readiness until a promise of your own has settled. |
 | `DeckTalk.start()` | Reads the page and starts it, which a page that loads the runtime late may have to call itself. |
-| `DeckTalk.startClock()` | Starts the section clock. The recorder sends this once its cover has come off, and a page has no reason to call it. |
+| `DeckTalk.frame(fn, { region })` | Calls `fn(t)` every frame with the section second, so something that moves is drawn from the second rather than from the wall clock. `region` is the element or selector it draws inside, which verify masks, and a hook with none is `PAGE_MOTION_UNDECLARED`. Returns `DeckTalk`. |
+| `DeckTalk.motion(el, { from, to, ease, draw })` | Calls `draw(progress, seconds)` every frame between two cue ids, with the progress eased, and never after the arrival, so a `draw` still changing `el` then is `PAGE_MOTION_UNFINISHED`. Returns `DeckTalk`. |
+| `DeckTalk.cues` | Every cue the page plays, keyed by cue id, against its second on the section clock. |
+| `DeckTalk.words` | Every word the section speaks, as `{ word, at, voice, turn }`: the second it is said, the voice that says it and the turn it is said in. |
+| `DeckTalk.stepTo(t)` | Moves the section clock to second `t` and shows it. The recorder calls this once a frame, and a page has no reason to call it. |
 | `DeckTalk.scenes` | Every scene the page declared, as a Map keyed by scene id. |
 | `DeckTalk.params` | The page's own query, as `URLSearchParams`. |
 | `DeckTalk.findSlide(id)` | The scene and slide one slide id names, or null. |
@@ -225,7 +233,8 @@ plays one against the section clock, or it freezes one slide.
 `after` and `before` are answered by the probe that `decktalk check` and `decktalk storyboard` inject
 into the page. A page you open yourself with `?freeze=1.1` freezes that slide with every one of its
 cues fired, and a cue those two keys name that the slide does not declare is
-[`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN).
+[`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) on the page's own console.
+No command reports it, because `storyboard` draws a panel only for a cue the slide declares.
 
 ## Open the page yourself
 
@@ -253,14 +262,14 @@ request for `Media/Intro.mp4` is refused when the project declared `media/intro.
 platform alike. The recorder opens the page under the same rule, so a page that previews cleanly
 records cleanly.
 
-From the URL it prints:
+Open the page by its path under that origin, such as `http://127.0.0.1:56257/deck/mine.html`:
 
 - The page with no query lists every scene and every slide, and links a preview and a still of each.
-- `?scene=1` previews that scene. Once `decktalk cue` has run, the preview asks the origin for the
+- `deck/mine.html?scene=1` previews that scene. Once `decktalk cue` has run, the preview asks the origin for the
   cue times that run resolved and plays the film's own timing. With none to find, it fires each cue
   a second apart so a deck whose cues have never been resolved still shows its whole self.
-- `?scene=1&speed=4&hud=1` reviews a long scene quickly with the clock and the cue list on screen.
-- `?freeze=1.1` freezes one slide with its cues fired.
+- `deck/mine.html?scene=1&speed=4&hud=1` reviews a long scene quickly with the clock and the cue list on screen.
+- `deck/mine.html?freeze=1.1` freezes one slide with its cues fired.
 
 ## Put the page in the project
 

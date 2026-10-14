@@ -54,9 +54,11 @@ a phrase. `decktalk schema page` prints every attribute with their values and ra
     does the same reading with no browser at all and names the judgements it could not reach.
   </Step>
   <Step title="Draft it with no voice">
-    `decktalk build --no-spend` runs the whole pipeline on placeholder narration that still carries
-    real word times. It spends nothing and needs no key, so the pacing is settled before anything
-    is bought. `decktalk build --no-spend --to record` stops before the stage that generates audio.
+    `decktalk build --no-spend` runs the whole pipeline on placeholder narration, whose words are
+    timed by estimate at `narration.placeholder_words_per_minute`, so every cue still lands somewhere.
+    It spends nothing and needs no key, so the pacing is settled before anything is bought.
+    `decktalk build --no-spend --to record` stops once the pages are recorded, before the score and
+    the cut.
   </Step>
   <Step title="Look at the storyboard, then buy the voice">
     `decktalk storyboard` freezes every slide at every cue onto `build/storyboard.html`, which is
@@ -77,15 +79,16 @@ script, and the first run that needs them downloads Chromium and ffmpeg.
 [What leaves your machine](/reference/what-leaves-your-machine) names every host and every request
 body, and [Requirements and costs](/requirements) covers the package index mirror, the browser path
 and the cache directory a managed machine needs. `decktalk install` fetches the toolchain up front
-rather than in the middle of a build, and a build with `--no-spend` contacts no speech service at
-all, so a finished video can exist before any approval does.
+rather than in the middle of a build, and a build with `--no-spend` sends nothing to a paid speech
+service, so a finished video can exist before any approval does.
 
 ## Where to start
 
 Read [Quickstart](/quickstart) for the first build and [Your first deck](/guides/first-deck) for one
 section written end to end. [Slide recipes](/guides/slide-recipes) has the slides a tutorial needs
 most, and [Rebuild one section](/guides/rebuild-one-section) is the loop the whole use case rests
-on.
+on. [Examples](/examples) lists the finished projects `decktalk init` writes, and `--example motion`
+shows a section that moves.
 
 ## Also fits
 

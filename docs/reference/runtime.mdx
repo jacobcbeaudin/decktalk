@@ -15,14 +15,17 @@ each element arrive on the second its cue was given.
 ## Where a page gets it
 
 DeckTalk opens every page at a local origin, and the engine answers every path under `/__decktalk/`
-on that origin itself, from the installed package. Two things live there:
+on that origin itself, from the installed package. Four things live there:
 
 | Path | What it is |
 |---|---|
 | `/__decktalk/decktalk-runtime.js` | The runtime of the engine that opened the page. |
 | `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js` | The pinned KaTeX release, with the fonts its stylesheet loads under `/__decktalk/katex/fonts/`. |
+| `/__decktalk/cue-times.json` | The cue times of the last run, which a previewed page reads. |
+| `/__decktalk/canvas.json` | The canvas the project lays its page out on, which a previewed page reads. |
 
-`record`, `check`, `storyboard`, the poster `assemble` draws and `decktalk serve` all open the page
+`record`, `check`, `storyboard`, `cue` when a section's recording no longer stands, the poster and
+the captioned copy's captions `assemble` draws, and `decktalk serve` all open the page
 at that origin, so every one of them plays the runtime of the engine that is running, and a project
 holds no copy that could fall behind it. A build needs no network to draw a page.
 
@@ -40,23 +43,25 @@ same contract, so what an author may write is one list rather than two that can 
 
 ## The modules
 
-Eleven modules make the runtime. Each owns one thing, and nothing imports the facade.
+Thirteen modules make the runtime. Each owns one thing, and nothing imports the facade.
 
 | Module | What it owns |
 |---|---|
 | `contract.ts` | The grammar: every attribute, every page code, every query key, the report field list and the two units. Nothing here touches the DOM. |
 | `index.ts` | The facade. It reads the probe's telemetry sink once, hands it to the seam, and publishes `window.DeckTalk` and `window.__decktalk`. |
 | `scene.ts` | Scenes, slides, the markup reader and the cue order every check is written against. It is the only module that reads markup. |
-| `modes.ts` | The four things a page can be doing, and the one URL that decides which. It is the only module that touches the URL. |
+| `modes.ts` | The five things a page can be doing, and the one URL that decides which. It is the only module that touches the URL. |
 | `reveal.ts` | The four moments, the class moment, the swap, and the sentence each of them writes into the transcript. |
 | `canvas.ts` | The canvas a deck is drawn on, the fit into the window, the heads-up display and the one generated stylesheet. |
 | `clock.ts` | The section clock's origin, the queue of work sorted by the second it is due, and the animation frame loop that drains it. It holds no DOM. |
+| `timeline.ts` | Every animation on the page, given a birth second the first time the stepped clock meets it and held at the second since that birth on every step. |
+| `motion.ts` | The declared motions, loops and regions: the four eases, the lanes the recorder samples, and the rule that reports undeclared motion. |
 | `text.ts` | The two effects that rewrite an element's own text, which are the count up and the line shown on the voice. |
 | `katex.ts` | Typesetting, the wait for the typesetter, and the readable text an equation falls back to. |
 | `telemetry.ts` | The seam between the page and the recorder, which is one interface, one no-op default and one setter. |
 | `warn.ts` | Everything the page could not honour, recorded once each and echoed to the console. |
 
-A twelfth file, `src/decktalk/runtime/src/probe/probe.ts`, is a bundle of its own. It imports the
+A fourteenth file, `src/decktalk/runtime/src/probe/probe.ts`, is a bundle of its own. It imports the
 contract and the telemetry seam and nothing else, which is what keeps the runtime free of everything
 only a command needs.
 
@@ -139,7 +144,7 @@ and its motion span. Read that and write from it.
 
 | Written on | Attributes |
 |---|---|
-| An element or a container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-spotlight`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
+| An element or a container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-spotlight`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out`, `data-motion`, `data-motion-from`, `data-motion-to`, `data-motion-ease`, `data-loop`, `data-loop-seconds` |
 | The scene wrapper | `data-scene`, `data-name` |
 | A slide template | `data-slide`, `data-preview-seconds`, `data-owns`, `data-enter`, `data-describe` |
 
@@ -148,11 +153,23 @@ Three numbers bound every span a page may declare.
 | Number | Value | What it is |
 |---|---|---|
 | `MEASURABLE_SPAN_SECONDS` | 0.5 | The one ceiling above which a cue cannot be measured, which is also the reduced-motion clamp and the stagger ceiling. |
-| `CAPTURE_FPS` | 25 | The rate the recorder captures at, which is the rate Chromium paints a deck at. |
-| `FRAME_STEP_MS` | 40 | One captured frame, which is the finest interval any range may name. |
+| `SLOWEST_FPS` | 25 | The slowest rate a film is recorded at, which is the lowest `video.fps` admits. |
+| `FRAME_STEP_MS` | 40 | One frame at the slowest rate, which is the finest interval any range may name. |
 
 [How long a moment may move](/concepts/page-contract#how-long-a-moment-may-move) gives the range of
 each attribute in those frames, and the stagger's arithmetic.
+
+A motion is not bounded by them, because its length is the seconds between its two cues. Two
+constants say how it moves.
+
+| Constant | Value | What it is |
+|---|---|---|
+| `MOTION_EASES` | `firm` is `cubic-bezier(0.25, 0.8, 0.5, 0.95)`, `glide` is `cubic-bezier(0, 0, 1, 1)`, `settle` is `cubic-bezier(0.16, 1, 0.3, 1)`, and `spring` is a spring with no curve | Each ease's curve and whether its arrival is an `edge` verify can measure or comes to `rest`. `firm` and `glide` arrive on an edge, and `settle` and `spring` come to rest. |
+| `SPRING_SETTLE_RADIANS` | 9.23 | How far a critically damped spring runs over the length of its motion, which leaves it within a thousandth of rest on the last frame and with no bounce. |
+
+A motion in markup plays its `@keyframes` with the CSS timing function of its ease, and a script
+motion is handed the same curve's progress, so the two arrive alike. The spring reaches CSS as a
+`linear()` curve through 33 points.
 
 ## The query keys
 
@@ -169,11 +186,13 @@ uv run python -c "from decktalk import page; print(page.QUERY)"
 | `freeze` | Freeze this slide with its cues already fired, which is what a still opens. |
 | `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
 | `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
+| `turns` | Each turn of the section as `voice@seconds` pairs in turn order, the second each turn begins. A word belongs to the last turn that began at or before it, and the turns are counted from one in the order they are listed. |
 | `t0` | The second on the section clock the page starts at, or the word `signal` when the recorder starts the clock. |
 | `speed` | Multiply the preview clock, so a long section is reviewed quickly. |
 | `hud` | Set to `1`, draws the on-page clock and cue list, which is for an author and never for a recording. |
 | `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
 | `before` | Freeze just before this cue, so it and every later cue stay hidden. |
+| `caption` | Set to `1`, draws the caption band alone over a clear frame, one caption at a time, which is what the captioned copy is drawn from. |
 
 `after` and `before` are read by the probe alone, so a page opened by hand at `?freeze=2.1` shows
 every reveal and ignores both.
@@ -188,10 +207,11 @@ The URL picks one, and `window.__decktalk.mode` reports it.
 | `preview` | `?scene=N` | The scene plays at the speed a person reads it. The page asks the origin for the cue times the last run resolved and uses them, and falls back to one second per cue when there are none. |
 | `record` | `?cues=…` | The scene plays against the section clock, which is the mode a recording is made in. |
 | `freeze` | `?freeze=ID` | One slide is drawn with its cues already fired and nothing in motion, which is what makes two frozen frames comparable. |
+| `caption` | `?caption=1` | No scene is mounted. The root takes the class `dt-captioning`, which clears the page's background and hides everything but the caption band `#dt-captions` at the bottom of the canvas, and `assemble` hands the page one caption at a time through `window.__decktalk.caption()` to draw the captioned copy. |
 
-`freeze` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
-cue plays. `speed` divides preview time and its floor is 0.05. With `t0=signal` the clock waits for
-`DeckTalk.startClock()`, which is what the recorder calls once its cover has come off.
+`caption` wins over every other key, and `freeze` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
+cue plays. `speed` divides preview time and its floor is 0.05. With `t0=signal` the clock waits for the
+recorder, which moves it one frame at a time through `DeckTalk.stepTo(t)`.
 
 ## The `DeckTalk` object
 
@@ -204,7 +224,11 @@ behaviour of its own drives this object.
 | `DeckTalk.scene(id, input)` | Declare one scene from script, for a deck that would rather build its slides than write them. It returns `DeckTalk`. |
 | `DeckTalk.on(cue, fn)` | Run a function at one cue, wherever in the deck that cue belongs. It returns `DeckTalk`. |
 | `DeckTalk.start()` | Read the page and start it, which a page that loads the runtime late may need to call itself. |
-| `DeckTalk.startClock()` | Start the section clock, which is what the recorder sends once its cover has come off. |
+| `DeckTalk.stepTo(t)` | Move the section clock to second `t` and show it: every cue and task due by `t` runs in the order it was due, each with every animation held at its own second, every frame hook draws, and every animation is held at `t`. It answers `{ due, changed, stillUntil }`: the second the next task is due, or null when nothing is owed, whether anything the runtime knows of changed the picture since the step before, and the earliest second anything it knows of can next change, which is `t` itself while a frame hook draws, an animation plays or a declared motion or loop is under way, and otherwise the earliest of the next task, the end of an animation's delay and a declared motion's departure, or null when none is to come. A change is a task that ran, a frame hook that drew, an animation whose progress moved, or a declared motion or loop under way. The recorder calls it through the probe, and a page has no reason to. |
+| `DeckTalk.frame(fn, { region })` | Call `fn(t)` every frame with the section second, to draw a canvas, a typed line or anything else that moves. `region` is the element, or a selector for it, that the hook draws inside, which verify masks. A hook with no region raises `PAGE_MOTION_UNDECLARED`, and a hook that throws is reported once as `PAGE_FRAME_THREW` and stops. It returns `DeckTalk`. |
+| `DeckTalk.motion(el, { from, to, ease, draw })` | Draw a motion from script between two cue ids. `draw(progress, seconds)` is called every frame from the departure, with the progress eased by `ease`, which is `firm` when it is left out, and the last call is exactly at the arrival with progress 1. Nothing is drawn after the arrival: just before that last call `draw` is called once with progress 1 at half a second past the arrival, and an element that shows something different there raises `PAGE_MOTION_UNFINISHED` at the arrival's cue. `el` is the element, or a selector for it, the motion draws inside. A cue the page does not play raises `PAGE_MOTION_CUE_UNKNOWN`. It returns `DeckTalk`. |
+| `DeckTalk.cues` | Every cue this page plays, keyed by cue id, against the second on the section clock it is due, which a composition page keys its drawing on. |
+| `DeckTalk.words` | Every word the section speaks as `{ word, at, voice, turn }`, with the word lower case and its punctuation taken out, the second the voice reaches it, the voice that says it and the turn of the section it is said in, counted from one. A page places what it draws by `voice` or `turn` without showing a name. `voice` and `turn` are null on a page handed no turns, and a preview carries no words, so it is empty there. |
 | `DeckTalk.waitFor(promise)` | Hold readiness until a promise of the page's own has settled. It returns `DeckTalk`. |
 | `DeckTalk.scenes` | Every scene the page declared, which a deck reads to walk its own slides. |
 | `DeckTalk.params` | The page's own query, for anything the contract does not answer. |
@@ -224,14 +248,22 @@ than save one.
 
 `window.__decktalk` is the live view whoever is reading the page back uses. Every field is a getter,
 so a reader sees the page as it stands: `version`, `ready`, `mode`, `scene`, `slide`, `cues`,
-`fired`, `warnings`, `catalog`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
+`fired`, `warnings`, `catalog`, `motions`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
 two functions, which say the second on the section clock and whether the clock has begun.
+`undeclared(nodes)` answers `{ what, box }` for those of some nodes the page changed that sit inside
+nothing declared as moving: `what` names the first, and `box` is where all of them are laid out, in
+viewport pixels, or null when one is laid out nowhere. It answers null when every node is declared,
+which is how the probe asks about a change it saw between two steps.
+`caption({ lines, voice, turn, spoken })` draws one caption in the band of a page opened with
+`?caption=1`, or none when it is handed null, and answers once the caption's fonts have loaded and
+two frames have painted. `spoken` is the first line the voice speaks and the line after its last,
+and every other line is a sound, which takes `data-sound`.
 
 ## The probe
 
 `decktalk-probe.js` is the instrumentation every command that opens a page needs and no deck
-carries: a cover over the first paint so a recording starts on a known frame, a helper that says
-when the page has settled, a measured catalog that says where every reveal sits, a freeze that stops
+carries: a step that moves the section clock to one recorded frame, a helper that says when the
+page has settled, a measured catalog that says where every reveal sits, a freeze that stops
 at one cue, and a record of how the page behaved while it was captured.
 
 Playwright adds it with an init script, so it runs before the page's own scripts and no page ever
@@ -243,14 +275,15 @@ The recorder holds it as `window.__decktalkProbe`.
 
 | Call | What it does |
 |---|---|
-| `cover()` | Draw the magenta cover and the keep-alive from the first paint. |
-| `lift()` | Remove the cover and start the page clock on the next animation frame, resolving to the moment of that frame, which is where the recording's section clock starts. |
+| `step(t, wait)` | Move the section clock to second `t` through `DeckTalk.stepTo(t)`, which is everything one recorded frame is, and answer `{ due, changed, stillUntil, undeclared }` once the page has drawn `t`: a whole rendering update has laid out, painted and committed the step, every font the page shows has loaded and every image has decoded. A page that has not drawn `t` within `wait` seconds is refused, and the recording stops at that frame. The recorder calls it once a frame, after it has moved the page's timers on by one frame, and captures only once it answers. When a task falls due between two frames, the recorder steps to that task's own second first, so a timer a cue sets runs from the cue and not from the frame after it. `due` is the runtime's, and `changed` is the runtime's answer joined with what only the browser knows: the DOM changed or scrolled, a font or an image arrived, or the page holds a `<canvas>`, `<video>`, `<iframe>`, `<embed>` or `<object>`, which always counts as changed. A page with no runtime always changed. `stillUntil` is the runtime's, or the second the page's own next timer is due if that is sooner, and `t` itself when the page holds one of those elements, has no runtime, or heard of a font, an image or a DOM change while the step was drawn. `undeclared` is `undeclared(nodes)`'s answer for what the page changed since the step before, by a timer or an animation frame of its own rather than anything the step ran, outside every declared motion, loop or region: the first element named and where they all lie, or null. [Still frames](/decisions/the-recorder-steps-the-clock#still-frames) says what the recorder does with both. |
+| `started(wait)` | Answer once no animation on the page is still waiting for the browser to start it, which the recorder waits on before it holds the clock, so a loop the first slide set turning is paused at second zero rather than where the browser was about to start it. A page whose animations have not started within `wait` seconds is refused. |
 | `ready()` | The page's fonts and `window.__decktalk.ready`, whichever exist. |
 | `report()` | Everything the recorder reads back off the page, in one call. |
+| `within(p, s)` | What the promise `p` settles with, or a refusal once `s` seconds pass on the browser's own timer, which the probe took before Playwright's clock or the page could replace it. Every other call the recorder makes into the page is raced through it, so its deadline fires on a page whose clock the recorder holds. |
 
 Three more are read by the runtime, and only when the probe is there: `recorder` is the telemetry
 sink, read once at startup, `freezeCues(order, slide, warn)` narrows a frozen slide's cues to the
-stop the URL names, and `measure(catalog, stage)` adds one measured box per element onto the
+stop the URL names, and `measure(catalog, canvas)` adds one measured box per element onto the
 catalog.
 
 ### One `report()` call
@@ -266,23 +299,19 @@ uv run python -c "from decktalk import page; print(page.REPORT)"
 | Field | What it carries |
 |---|---|
 | `version` | The runtime version the page carries. |
-| `mode` | Which of index, preview, record and freeze the page is in. |
+| `mode` | Which of index, preview, record, freeze and caption the page is in. |
 | `scene` | The scene the page is playing, or null on the index page. |
 | `slide` | The slide on screen, or null when none is mounted. |
 | `warnings` | Every distinct warning the page reported, as code, message, slide, cue and attr. |
 | `catalog` | One entry per scene, with its slides, its cues and the measured box of every element. |
-| `cues` | When each cue was due, when it ran, and when the frames around it began. |
+| `cues` | When each cue was due, when it ran, and the second of the frame that showed it. |
 | `words` | Each synced line, when its cue ran, when the voice reaches it and when its first word showed. |
-| `frameGaps` | Every gap between two animation frames longer than the recorder can absorb. |
-| `longFrames` | Every animation frame that took longer than a captured frame, with when it was presented. |
+| `motions` | Every declared motion, loop and region, the box it swept, when it moved and the cues it lands on. |
 
 The telemetry the probe keeps is what only the runtime can describe. A cue row carries the second it
-was due, the second it ran, the frame that ran it and the sentence its reveals describe themselves
-as, and it grows two more stamps afterwards, the frame after the one that ran the cue and the one
-after that, because a cue that ran on time but whose next frame began late was held up by the frame
-that drew it rather than before it. A word row carries the line, the second its cue ran, the second
-the voice reaches it and the second its first word was drawn, which the debug log prints. Frame gaps and long frames say how well the compositor kept up, because a recording is
-only as good as the frames it was given. Each list is capped at five thousand rows, so a long
+was due, the second it ran, the second of the frame that showed it and the sentence its reveals
+describe themselves as, leaving out any sentence an earlier cue of the same slide already wrote. A word row carries the line, the second its cue ran, the second
+the voice reaches it and the second its first word was drawn, which the debug log prints. Each list is capped at five thousand rows, so a long
 recording cannot grow without a bound.
 
 A deck in a browser tab pays nothing for any of this. The runtime reports through the seam in
@@ -334,6 +363,10 @@ belong to Python, and a page that reported one of those would be a deck judging 
 | `PAGE_ENTER_THREW` | A slide's enter threw, so its opening moment never ran. |
 | `PAGE_SLIDE_HANDLER_THREW` | A slide's own moment handler threw, so that moment did not play. |
 | `PAGE_HANDLER_THREW` | A moment handler threw, so the change it was to make never happened. |
+| `PAGE_MOTION_UNDECLARED` | Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it. |
+| `PAGE_MOTION_CUE_UNKNOWN` | A motion names a cue no slide declares, so it never starts or never lands. |
+| `PAGE_REALTIME_MEDIA` | A page holds a video or an audio element, which plays at its own rate and not on the stepped clock. |
+| `PAGE_FRAME_THREW` | A frame hook threw, so whatever it drew stopped moving from that frame on. |
 | `PAGE_WAIT_REJECTED` | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
 | `PAGE_WAIT_UNSETTLED` | A wait the page declared never settled inside its budget, so the runtime carried on without it. |
 | `PAGE_CLASS_UNDESCRIBED` | An element changes class with no description, so the transcript cannot say what changed. |
@@ -343,6 +376,7 @@ belong to Python, and a page that reported one of those would be a deck judging 
 | `PAGE_APPEAR_TOO_LONG` | A line shown with data-words=appear holds more words than one cue can carry one at a time. |
 | `PAGE_STAGGER_EMPTY` | An element staggers its children and has none, so the stagger plays nothing. |
 | `PAGE_SPOTLIGHT_EMPTY` | A spotlight container has no child with a cue, so nothing comes to the front. |
+| `PAGE_MOTION_UNFINISHED` | A script motion still changes its picture after it arrives, and nothing draws it past its arrival, so the picture stops where the arrival left it. |
 
 {/* end page codes */}
 
@@ -380,8 +414,11 @@ The runtime prepends one generated stylesheet as `#dt-style`, before anything th
 Every selector in it sits inside `:where()`, which gives it no specificity at all, so a page rule of
 equal weight wins on document order and an author never reaches for `!important`.
 
-A deck is drawn into a stage of 1920 by 1080, scaled and centred in whatever window the page is
-opened in, so an element measured on a laptop is at the pixel a recording will put it at.
+A deck is drawn into a canvas of the project's frame shape with a short side of 1080 CSS pixels, 1920
+by 1080 for `[video] size = "wide"`, scaled and centred in whatever window the page is opened in, so
+an element measured on a laptop is at the pixel a recording will put it at. The recorder tells a page
+its canvas before any script of it runs, and a page previewed in a browser asks its origin for
+`/__decktalk/canvas.json` and lays itself out again on the answer.
 
 | Selector | What it is |
 |---|---|
@@ -390,11 +427,15 @@ opened in, so an element measured on a laptop is at the pixel a recording will p
 | `#dt-pan` | The layer slides are mounted into, which is where every reveal is drawn. |
 | `#dt-hud` | The heads-up display, drawn only under `?hud=1`. |
 | `#dt-style` | The runtime's own stylesheet. |
+| `#dt-captions` | The band the captions of the captioned copy are drawn in, inside the canvas. |
+| `--dt-width`, `--dt-height` | The custom properties on `:root` that hold the canvas's size in CSS pixels, which a stylesheet lays the page out by. |
+| `data-dt-shape` | The attribute on `:root` naming the canvas's shape: `wide`, `square` or `vertical`. |
 | `--dt-motion-scale` | The custom property on `:root` that slows every length down. |
 | `--dt-span` | The custom property each element's own motion length is written into. |
 
 The classes the runtime puts on what it draws are `dt-slide`, `dt-leaving`, `dt-arriving`,
-`dt-hidden`, `dt-shown`, `dt-back`, `dt-front`, `dt-word`, `dt-frozen` and `dt-reduced`.
+`dt-hidden`, `dt-shown`, `dt-back`, `dt-front`, `dt-word`, `dt-frozen`, `dt-reduced`, `dt-captioning`,
+`dt-caption` and `dt-caption-line`.
 
 ## Related
 

@@ -30,11 +30,12 @@ import logging
 import queue
 import threading
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from concurrent.futures import Future
 from contextlib import ExitStack
 from dataclasses import dataclass
 
+from decktalk.artifacts import TurnKey
 from decktalk.errors import Cancel, Cancelled
 
 log = logging.getLogger(__name__)
@@ -96,8 +97,10 @@ def nothing_to_open(_stack: ExitStack) -> None:
     return
 
 
-class Pool[W, R]:
+class Pool[J: Hashable, W, R]:
     """`jobs` made on at most `workers` threads, with each job's row waited for in the order the caller asks.
+
+    A job is a section's number, or a `TurnKey` for a stage that works one turn of a section at a time.
 
     The caller's thread hands each worker its next job while it waits for a row, and only while no
     halt is set. A worker opens its tool with `opening` the first time it needs one and keeps it for
@@ -113,26 +116,26 @@ class Pool[W, R]:
 
     def __init__(
         self,
-        jobs: Sequence[int],
+        jobs: Sequence[J],
         workers: int,
         opening: Callable[[ExitStack], W],
-        one: Callable[[W, int, Halt], R],
+        one: Callable[[W, J, Halt], R],
         cancel: Cancel,
     ) -> None:
         self.halt = Halt(cancel)
-        self.rows: dict[int, Future[R]] = {job: Future() for job in jobs}
+        self.rows: dict[J, Future[R]] = {job: Future() for job in jobs}
         self.queue = deque(jobs)
         """The jobs not yet handed to a worker, which only the caller's thread hands out."""
-        self.handed: queue.SimpleQueue[int | None] = queue.SimpleQueue()
+        self.handed: queue.SimpleQueue[J | None] = queue.SimpleQueue()
         """The jobs handed to the workers, each taken by the first worker free, then one `None` per worker to end."""
-        self.out: set[int] = set()
+        self.out: set[J] = set()
         """Every job the caller's thread handed out, so it hands out no more than there are workers to make them."""
-        self.taken: set[int] = set()
+        self.taken: set[J] = set()
         """The jobs a worker took from `handed`, whose rows only that worker settles."""
         self.lock = threading.Lock()
         self.changed = threading.Condition()
         """Notified each time a worker settles a row, which is when the caller's thread may hand out the next job."""
-        self.first: tuple[int, BaseException] | None = None
+        self.first: tuple[J, BaseException] | None = None
         self.opening = opening
         self.one = one
         self.interrupts: list[BaseException] = []
@@ -146,7 +149,7 @@ class Pool[W, R]:
             for _ in range(min(workers, len(self.rows)))
         ]
 
-    def __enter__(self) -> Pool[W, R]:
+    def __enter__(self) -> Pool[J, W, R]:
         """Start every worker, and stop them again if the caller is interrupted while they start."""
         try:
             for thread in self.threads:
@@ -178,7 +181,7 @@ class Pool[W, R]:
             self.out.add(job)
             self.handed.put(job)
 
-    def _take(self) -> int | None:
+    def _take(self) -> J | None:
         """The next job handed to this worker, or None once the pool is ending.
 
         A job the halt already settled is passed over, so it never starts and its row is settled once.
@@ -208,7 +211,7 @@ class Pool[W, R]:
                     if later and not isinstance(exc, Cancelled):
                         # Only the first failure is raised, and a section stopped by the halt has nothing to
                         # say, but a second section that failed on its own is recorded rather than lost.
-                        _unraised(job, exc, "also failed while the first failure was being raised")
+                        _unraised(job, exc, f"failed too, for a reason of its own: {str(exc).rstrip('.')}")
                     self.halt.stop(FAILED)
                     row.set_exception(exc)
                 with self.changed:
@@ -223,7 +226,7 @@ class Pool[W, R]:
                     return
                 self.changed.wait(WAKE_SECONDS)
 
-    def result(self, job: int) -> R:
+    def result(self, job: J) -> R:
         """The row of one job, once it is made, or the first failure of the whole pool.
 
         An interrupt that reaches the caller while it waits here halts the pool and waits for the
@@ -336,9 +339,19 @@ class Pool[W, R]:
             raise interrupted
 
 
-def _unraised(job: int, failure: BaseException, said: str) -> None:
-    """Record a section's failure that the caller is not given, with its traceback."""
-    log.warning("Section %d %s.", job, said, exc_info=failure, extra={"data": {"section": job}})
+def _unraised(job: object, failure: BaseException, said: str) -> None:
+    """Record a section's failure that the caller is not given, with its traceback, naming its turn when it has one."""
+    if isinstance(job, TurnKey):
+        log.warning(
+            "Section %d, turn %d %s.",
+            job.section,
+            job.turn,
+            said,
+            exc_info=failure,
+            extra={"data": {"section": job.section, "turn": job.turn}},
+        )
+        return
+    log.warning("Section %s %s.", job, said, exc_info=failure, extra={"data": {"section": job}})
 
 
 __all__ = ["CALLER_FAILED", "FAILED", "INTERRUPTED", "Halt", "Pool", "Why", "nothing_to_open"]

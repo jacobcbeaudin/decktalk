@@ -48,9 +48,9 @@ made. A finding is the other thing entirely, which is a judgement about a film t
 | [`INPUT`](/reference/errors/INPUT) | 3 | An input is missing, unreadable or malformed. |
 | [`NOT_BUILT`](/reference/errors/NOT_BUILT) | 3 | A file a stage needs was never built. |
 | [`PROVIDER`](/reference/errors/PROVIDER) | 3 | A provider could not be reached, refused the request, or failed it. |
-| [`TOOL`](/reference/errors/TOOL) | 3 | ffmpeg or Chromium is missing, or one of them failed. |
+| [`TOOL`](/reference/errors/TOOL) | 3 | A tool DeckTalk runs is missing or failed: ffmpeg, Chromium, a page that stopped answering or ran past its deadline, a program the project names, a fix install runs, the preview server's address, or the mix of a strict assemble that missed its loudness. |
 | [`LOCKED`](/reference/errors/LOCKED) | 3 | Another writer holds this project's build directory. |
-| [`APPROVAL`](/reference/errors/APPROVAL) | 2 | A spend needed an approval that no flag and no terminal gave. |
+| [`APPROVAL`](/reference/errors/APPROVAL) | 2 | A step was not approved, by a flag or by a person at a terminal: a spend, a spend --max-cost refuses or cannot price, an init into a directory that holds files, a password install asks for, or an untrusted page in a run that may spend. |
 | [`CANCELLED`](/reference/errors/CANCELLED) | 130 | The caller stopped the run. |
 | [`USAGE`](/reference/errors/USAGE) | 2 | The command line was refused, and a retry as written fails again. |
 | [`INTERNAL`](/reference/errors/INTERNAL) | 3 | A bug in DeckTalk, with a traceback under -v. |
@@ -81,6 +81,10 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`PAGE_ENTER_THREW`](/reference/findings/PAGE_ENTER_THREW) | error | A slide's enter threw, so its opening moment never ran. |
 | [`PAGE_SLIDE_HANDLER_THREW`](/reference/findings/PAGE_SLIDE_HANDLER_THREW) | error | A slide's own moment handler threw, so that moment did not play. |
 | [`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW) | error | A moment handler threw, so the change it was to make never happened. |
+| [`PAGE_MOTION_UNDECLARED`](/reference/findings/PAGE_MOTION_UNDECLARED) | error | Something on the page keeps moving and declares no motion, loop or region, so verify cannot mask it. |
+| [`PAGE_MOTION_CUE_UNKNOWN`](/reference/findings/PAGE_MOTION_CUE_UNKNOWN) | error | A motion names a cue no slide declares, so it never starts or never lands. |
+| [`PAGE_REALTIME_MEDIA`](/reference/findings/PAGE_REALTIME_MEDIA) | error | A page holds a video or an audio element, which plays at its own rate and not on the stepped clock. |
+| [`PAGE_FRAME_THREW`](/reference/findings/PAGE_FRAME_THREW) | error | A frame hook threw, so whatever it drew stopped moving from that frame on. |
 | [`PAGE_WAIT_REJECTED`](/reference/findings/PAGE_WAIT_REJECTED) | error | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
 | [`PAGE_WAIT_UNSETTLED`](/reference/findings/PAGE_WAIT_UNSETTLED) | error | A wait the page declared never settled inside its budget, so the runtime carried on without it. |
 | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | error | An element changes class with no description, so the transcript cannot say what changed. |
@@ -90,33 +94,46 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`PAGE_APPEAR_TOO_LONG`](/reference/findings/PAGE_APPEAR_TOO_LONG) | error | A line shown with data-words=appear holds more words than one cue can carry one at a time. |
 | [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY) | error | An element staggers its children and has none, so the stagger plays nothing. |
 | [`PAGE_SPOTLIGHT_EMPTY`](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | error | A spotlight container has no child with a cue, so nothing comes to the front. |
+| [`PAGE_MOTION_UNFINISHED`](/reference/findings/PAGE_MOTION_UNFINISHED) | error | A script motion still changes its picture after it arrives, and nothing draws it past its arrival, so the picture stops where the arrival left it. |
 | [`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN) | error | A motion span runs past the measurable ceiling, so the cue it carries cannot be verified. |
 | [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) | error | A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact. |
 | [`PAGE_THIN_DRAW`](/reference/findings/PAGE_THIN_DRAW) | warning | A frozen slide draws less of the picture than a change must cross to be seen. |
 | [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | error | An element changes the picture and describes nothing, so the transcript loses the change. |
 | [`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) | warning | A swap's two halves land far enough apart that a viewer sees the gap between them. |
 | [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) | error | The page loads an asset from a network origin, so the film depends on somebody else's server. |
-| [`RECORD_STALLED`](/reference/findings/RECORD_STALLED) | error | The picture held still for longer than a recorded section ever should. |
+| [`PAGE_CHANGE_UNDECLARED`](/reference/findings/PAGE_CHANGE_UNDECLARED) | error | A script changed the picture outside every cue, motion, loop and frame hook, so verify cannot mask it and may read it as a reveal. |
 | [`RECORD_BLACK`](/reference/findings/RECORD_BLACK) | error | A recorded frame is black, so the film shows nothing at that moment. |
 | [`RECORD_TRUNCATED`](/reference/findings/RECORD_TRUNCATED) | error | A recording stopped before its section's clock ran out, so the film is short of picture. |
+| [`MOTION_EASE_UNMEASURABLE`](/reference/findings/MOTION_EASE_UNMEASURABLE) | error | A motion eases to rest on an arrival verify would measure, and an ease to rest has no edge to measure. |
+| [`MOTION_OFF`](/reference/findings/MOTION_OFF) | error | A declared motion departed or arrived outside the offset limit of the word it was promised to. |
+| [`MOTION_NO_EDGE`](/reference/findings/MOTION_NO_EDGE) | error | A declared motion came to rest before its word, so it has no edge on its cue a viewer sees it land on. |
+| [`MOTION_MASK_LARGE`](/reference/findings/MOTION_MASK_LARGE) | warning | Declared motion covered so much of the frame at a cue that verify measured less of the picture than usual. |
 | [`CUE_UNLISTED`](/reference/findings/CUE_UNLISTED) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. |
 | [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. |
 | [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. |
 | [`CUE_STALE`](/reference/findings/CUE_STALE) | error | The cue times on disk were placed from a different cues.json than the project's, so the film is judged against moments nobody asked for until the project is built again. |
 | [`CUE_OFF`](/reference/findings/CUE_OFF) | error | The change lands further from its word than verify.cue_offset_max_ms allows. |
-| [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | warning | The cue resolved with no measured onset, so its second is the section's start and not its word's. |
+| [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | warning | A cue has no onset DeckTalk can measure: its phrase resolved to its section's start rather than to a word, or the picture changed at it and no frame rose as far as an onset must. |
 | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | error | Nothing in the picture changed at the cue's second, so the reveal never happened. |
 | [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE) | warning | Less of the picture changed at the cue than a visible reveal must cross. |
 | [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP) | warning | Two cues resolve close enough together that a viewer cannot tell them apart. |
 | [`SCRIPT_UNFINISHED`](/reference/findings/SCRIPT_UNFINISHED) | error | The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out. |
 | [`SCRIPT_SPOKEN_SYMBOL`](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | The script holds a symbol the voice reads as its name rather than as the thing it means. |
 | [`SCRIPT_PAUSE_DROPPED`](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | The script asks for a timed pause the voice's model does not render, so a voiced run would drop it. |
+| [`SCRIPT_VOICE_UNKNOWN`](/reference/findings/SCRIPT_VOICE_UNKNOWN) | error | A voice direction names no voice the project declares, or a line opens with the word voice and is not a voice direction. |
+| [`SCRIPT_VOICE_UNMARKED`](/reference/findings/SCRIPT_VOICE_UNMARKED) | error | A section that names a voice starts a turn no voice direction names. |
+| [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE) | warning | A note is exactly the name of a voice the project declares, so it plays as a beat rather than handing the turns after it to that voice. |
+| [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED) | warning | The project declares a voice no turn of the script is read by. |
 | [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
+| [`TAKE_UNALIGNED`](/reference/findings/TAKE_UNALIGNED) | warning | A take came with no word times and no aligner timed them, so its section plays estimated words. Only narrate raises it. |
+| [`TAKE_WORD_CUT`](/reference/findings/TAKE_WORD_CUT) | warning | A take's words place a word after the take's sound ends, where the narration cuts the take, so the word is never heard. Only narrate raises it. |
+| [`TAKE_SILENT`](/reference/findings/TAKE_SILENT) | warning | A voiced take holds no sound above the level its sound end is measured at, so its turn plays silence. Only narrate raises it, on the run that makes the take. |
 | [`CUT_SPEECH`](/reference/findings/CUT_SPEECH) | error | Speech is still sounding at a section cut, so the film slices a word in two. |
 | [`CUT_POP`](/reference/findings/CUT_POP) | error | The picture steps at a section cut, so the film pops on the seam. |
 | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | warning | The mixed film misses the loudness it was mastered to. |
 | [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) | warning | A sound the `[score]` table declares has not been bought, so silence plays where it would until a run with --spend buys it. |
 | [`FILE_MISSING`](/reference/findings/FILE_MISSING) | error | A file the project names is not on disk. |
+| [`PROGRAM_NAMED`](/reference/findings/PROGRAM_NAMED) | warning | The project names a program that recording starts with your user's rights, so it can read every file you can, .env included. |
 
 ## Commands
 
@@ -135,7 +152,7 @@ It answers with the `init` result: `decktalk schema init`.
 | Option | Meaning |
 |---|---|
 | `--name` `NAME` | The project's name. |
-| `--example` `NAME` | The packaged example to write: lesson, product (reserved), tutorial (reserved). |
+| `--example` `NAME` | The packaged project to write, starter by default: starter, lesson, interview, motion. |
 | `--no-skills` | Leave the packaged skills out. |
 | `--overwrite` | Write into a directory that already holds files. |
 
@@ -161,7 +178,6 @@ It answers with the `doctor` result: `decktalk schema doctor`.
 
 | Option | Meaning |
 |---|---|
-| `--measure` | Measure this host's presentation bias, which drives a browser. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -198,6 +214,8 @@ It answers with the `check` result: `decktalk schema check`.
 | `--pages`, `--no-pages` | Open the pages in a browser, or judge the written files alone and say what was not reached. |
 | `--frames`, `--no-frames` | Freeze and compare the slides, or keep the browser and drop that. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
+| `--turn` `N.T` | Price voicing this turn again, such as 4.2, and judge its section. Repeats. |
+| `--take` `DIGEST` | Price voicing again the turn that plays this take, by its digest or its start. Repeats. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -344,7 +362,7 @@ It answers with the `config-explain` result: `decktalk schema config-explain`.
 
 #### `decktalk narrate`
 
-Voice each section of script.md and time every word.
+Voice each turn of script.md and time every word.
 
 ```text
 decktalk narrate [OPTIONS]
@@ -355,8 +373,10 @@ It answers with the `narrate` result: `decktalk schema narrate`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--force` | Build again from nothing, keeping every voiced take. |
+| `--force` | Build every placeholder again, keep every voiced take, and ask the aligner again for every take whose voice sent no word times. |
 | `--replace-voiced` | Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend. |
+| `--turn` `N.T` | Voice this turn again as a new take and nothing else, such as 4.2 for section 4's second turn. Repeats. |
+| `--take` `DIGEST` | Voice again the turn that plays this take, named by its digest or enough of its start. Repeats. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
@@ -382,7 +402,7 @@ It answers with the `cue` result: `decktalk schema cue`.
 
 #### `decktalk record`
 
-Record each page section in headless Chromium.
+Record each page in headless Chromium and run each render program.
 
 ```text
 decktalk record [OPTIONS]
@@ -496,7 +516,7 @@ It answers with the `clip` result: `decktalk schema clip`.
 |---|---|
 | `--section` `N` | The one section to cut the clip from, such as 3. |
 | `--start` `SECONDS` | Where the clip starts. |
-| `--end` `SECONDS` | Where the clip ends. |
+| `--end` `SECONDS` | Where the clip ends, after --start. Required. |
 | `--out` `FILE` | Where to write the clip. Default: clip-N.mp4, for section N. |
 | `--gain-db` `DB` | Lift or cut the clip's audio. |
 | `--hold-seconds` `SECONDS` | Hold the last frame this long. |

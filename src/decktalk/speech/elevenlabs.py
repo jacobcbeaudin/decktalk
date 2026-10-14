@@ -22,7 +22,7 @@ from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
 from ..settings import ElevenLabsConfig
-from . import DECLARED, PUNCT, Output, SpeechContext, SpeechRequest, canonical_text
+from . import DECLARED, PUNCT, Output, Speech, SpeechContext, SpeechRequest, canonical_text
 from .http import post_json
 
 NAME = "elevenlabs"
@@ -45,7 +45,7 @@ refused a timed pause rather than trusted with one.
 
 
 def voice_settings(table: ElevenLabsConfig, speed: float) -> dict[str, Any]:
-    """What `[elevenlabs]` and `[voice] speed` ask the service for, under the service's own names.
+    """What a voice's `[elevenlabs]` values and its speed ask the service for, under the service's own names.
 
     The names differ in one place, because the service calls the speaker boost `use_speaker_boost`
     while the key an author writes is `speaker_boost`. These five values are sent with every request
@@ -129,12 +129,12 @@ class ElevenLabs:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
         return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         """One section read aloud, as the mp3 bytes and a start and an end time per word.
 
         The neighbouring sections travel with the request so the voice carries its prosody across a
-        cut, trimmed to the characters the tuning allows, and the alignment that comes back is what
-        every later stage measures against.
+        cut, trimmed to the characters the tuning allows and left out when it allows none, and the
+        alignment that comes back is what every later stage measures against.
         """
         if not renders_pauses(request.model) and any(piece.timed for piece in request.pieces):
             # A pause this model would drop is refused before anything is sent, so nothing is bought.
@@ -149,10 +149,12 @@ class ElevenLabs:
             "model_id": request.model,
             "voice_settings": request.voice_settings,
         }
-        if request.previous_text:
-            payload["previous_text"] = request.previous_text[-self.context.context_characters :]
-        if request.next_text:
-            payload["next_text"] = request.next_text[: self.context.context_characters]
+        kept = self.context.context_characters
+        # At zero no neighbour travels at all: `text[-0:]` is the whole text, so zero is never a slice bound.
+        if kept and request.previous_text:
+            payload["previous_text"] = request.previous_text[-kept:]
+        if kept and request.next_text:
+            payload["next_text"] = request.next_text[:kept]
         reply = post_json(
             f"{url}?output_format={request.output_format}" if request.output_format else url,
             payload,
@@ -161,7 +163,7 @@ class ElevenLabs:
             timeout=self.context.speech_timeout_seconds,
             retries=self.context.retries,
         )
-        return self._audio(reply), self._words(reply)
+        return Speech(self._audio(reply), tuple(self._words(reply)) or None)
 
     def _audio(self, reply: Mapping[str, Any]) -> bytes:
         """The mp3 the reply carries, refused as a provider failure when it carries none.
@@ -180,7 +182,8 @@ class ElevenLabs:
         """The word times the reply carries, which is what the whole cut is measured against.
 
         The normalised alignment is the fallback, because a service that could not align the text as
-        written still aligned what it spoke.
+        written still aligned what it spoke. A reply with neither, or one whose characters give no word,
+        gives none, and the take is then timed by the aligner.
         """
         alignment = reply.get("alignment") or reply.get("normalized_alignment") or {}
         return words_from_alignment(

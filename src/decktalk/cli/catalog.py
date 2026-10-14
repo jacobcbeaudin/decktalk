@@ -33,7 +33,7 @@ from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import PUBLISHED, Key
 
 PURPOSE_LIMIT = 120
-"""How much of a command's own sentence a row carries, which is more than any of them is long."""
+"""Calibration: how much of a command's own sentence a row carries, which is more than any of them is long."""
 
 SETTINGS_KEYSPACE = "setting"
 """What the `--set` parameter points a reader at, which is the key space rather than a copy of it."""
@@ -77,11 +77,12 @@ def error_codes() -> list[dict[str, Any]]:
 
 
 def stages() -> list[dict[str, Any]]:
-    """Every stage as a row, with what it reads and writes under the build directory and why it runs where it does."""
+    """Every stage as a row: what it reads, what it reads when it is there, what it writes, and why it runs there."""
     return [
         {
             "stage": spec.stage.value,
             "reads": [artifact.value for artifact in spec.reads],
+            "reads_when_there": [artifact.value for artifact in spec.optional_reads],
             "writes": [artifact.value for artifact in spec.writes],
             "why": spec.why,
         }
@@ -186,10 +187,18 @@ def document() -> dict[str, Any]:
 def settings_schema(*, scope: Scope | None = None) -> dict[str, Any]:
     """Every setting with its type, default, safe range, unit, hazard and the findings it decides.
 
+    `content` is every number the project file's own tables hold, with its default, its range and its
+    hazard, because the loader refuses one outside its range just as it refuses a setting. A content
+    key has no variable and no override, so its row carries no scope and no environment.
+
     It is rendered from the key records rather than read from a committed file, because the file is
     a repository artifact and a wheel carries the records. A test holds the two to the same key set.
     A scope keeps the keys of one file alone, which for the machine is what its file may hold.
     """
+    # The content keys are declared by the document parser, an input rather than the library's own record,
+    # so it is imported where it is read, as the cue row is below.
+    from decktalk.inputs.document import content_keys  # noqa: PLC0415
+
     wanted = [key for key in settings.KEYS if scope is None or key.scope is scope]
     return {
         "keys": [{name: json_value(_published(key, name)) for name in PUBLISHED} for key in wanted],
@@ -205,7 +214,16 @@ def settings_schema(*, scope: Scope | None = None) -> dict[str, Any]:
             }
             for number in NUMBERS
         ],
+        "content": [
+            {name: json_value(_published(key, name)) for name in CONTENT_ROW_KEYS}
+            for key in content_keys()
+            if scope in (None, Scope.PROJECT)
+        ],
     }
+
+
+CONTENT_ROW_KEYS = ("id", "description", "default", "bounds", "unit", "hazard", "see_also")
+"""The fields of a content key that reach a reader, which are a setting's less the ones only a layer gives."""
 
 
 def _published(key: Key, name: str) -> object:
@@ -231,7 +249,7 @@ def page_schema() -> dict[str, Any]:
         "query": {key.value: meaning for key, meaning in page.QUERY.items()},
         "t0_signal": page.T0_SIGNAL,
         "measurable_span_seconds": page.MEASURABLE_SPAN_SECONDS,
-        "capture_fps": page.CAPTURE_FPS,
+        "slowest_fps": page.SLOWEST_FPS,
     }
 
 

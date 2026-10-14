@@ -19,6 +19,7 @@ import {
   COUNTS,
   type Count,
   cueId,
+  type Ease,
   ENTRANCES,
   type Entrance,
   EXITS,
@@ -27,6 +28,7 @@ import {
   MILLISECONDS,
   MOMENT_SELECTOR,
   MOMENTS,
+  MOTION_EASES,
   pairs,
   refuse,
   SECOND_DIGITS,
@@ -36,7 +38,7 @@ import {
   WORD_STYLES,
   type WordStyle,
 } from "./contract.ts";
-import type { CatalogEntry } from "./telemetry.ts";
+import type { CatalogEntry, MotionRow } from "./telemetry.ts";
 import { warn } from "./warn.ts";
 
 /**
@@ -80,7 +82,19 @@ export const ATTR = {
   describeOut: named("describe-out"),
   tex: named("tex"),
   texDisplay: named("tex-display"),
+  motion: named("motion"),
+  motionFrom: named("motion-from"),
+  motionTo: named("motion-to"),
+  motionEase: named("motion-ease"),
+  loop: named("loop"),
+  loopSeconds: named("loop-seconds"),
 } as const satisfies Record<string, Attr>;
+
+/** The selector that finds every element declaring a motion or a loop, built from the registry. */
+export const MOVING_SELECTOR = `[${ATTR.motion}],[${ATTR.loop}]`;
+
+/** The elements no stepped clock can hold, because each plays at its own rate. */
+const REALTIME_MEDIA = ["video", "audio"];
 
 /** What a slide handler receives beside the mounted element, which says where in the deck it ran. */
 export type Context = {
@@ -94,7 +108,7 @@ export type Context = {
 export type Handler = (slide: HTMLElement | null, ctx: Context) => void;
 
 /** A slide that builds its own markup in script rather than declaring a template. */
-export type Render = (ctx: { scene: Scene; slide: Slide; frozen: boolean }) => string;
+type Render = (ctx: { scene: Scene; slide: Slide; frozen: boolean }) => string;
 
 /** One slide, as the markup declared it or as a script registered it. */
 export type Slide = {
@@ -232,7 +246,7 @@ function previewSeconds(el: Element): number {
 // ---- moments -------------------------------------------------------------------------------------
 
 /** One moment an element declares, as the author wrote it and as its cue id spells it. */
-export type Moment = { readonly attr: Attr; readonly local: string; readonly cue: string };
+type Moment = { readonly attr: Attr; readonly local: string; readonly cue: string };
 
 /**
  * Every moment one element declares, in the order the registry lists the moment attributes.
@@ -264,6 +278,51 @@ export function classDescriptionOf(el: Element, local: string): string | null {
   return found ? found.value : null;
 }
 
+// ---- the declared motions --------------------------------------------------------------------------
+
+/**
+ * Every motion and loop one element declares, as the catalog publishes it.
+ *
+ * A motion names its two cues in its slide, so the row carries their cue ids. A loop names no cue,
+ * because it turns for as long as its slide is on screen.
+ */
+function motionOf(el: Element, slideId: string): MotionRow | null {
+  const name = written(el, ATTR.motion);
+  if (name) {
+    const from = written(el, ATTR.motionFrom);
+    const to = written(el, ATTR.motionTo);
+    return {
+      kind: "motion",
+      name,
+      from: from ? cueId(slideId, from) : null,
+      to: to ? cueId(slideId, to) : null,
+      ease: easeOf(el),
+      seconds: null,
+    };
+  }
+  const loop = written(el, ATTR.loop);
+  if (!loop) return null;
+  return { kind: "loop", name: loop, from: null, to: null, ease: null, seconds: loopSeconds(el) };
+}
+
+/** Every motion and loop a slide's markup declares, in document order. */
+function motionsOf(slide: Slide): MotionRow[] {
+  if (!slide.markup) return [];
+  return [...slide.markup.content.querySelectorAll(MOVING_SELECTOR)]
+    .map((el) => motionOf(el, slide.id))
+    .filter((row): row is MotionRow => row !== null);
+}
+
+/** How a motion moves, which is its own word or the registry's default. */
+export function easeOf(el: Element): Ease {
+  return word<Ease>(el, ATTR.motionEase, MOTION_EASES);
+}
+
+/** How long one turn of a loop takes, from its own attribute or the registry's default. */
+export function loopSeconds(el: Element): number {
+  return seconds(el, ATTR.loopSeconds) ?? Number(ATTRS[ATTR.loopSeconds].default);
+}
+
 // ---- the declared cue order ------------------------------------------------------------------------
 
 /** Every element of a slide that declares a moment, in document order, from markup or from a mount. */
@@ -288,6 +347,10 @@ export function cueOrder(slide: Slide): string[] {
     for (const el of momentElements(slide.markup.content)) {
       for (const moment of momentsOf(el, slide.id)) add(moment.cue);
       for (const change of classChangesOf(el, slide.id)) add(change.cue);
+    }
+    for (const row of motionsOf(slide)) {
+      if (row.from) add(row.from);
+      if (row.to) add(row.to);
     }
   }
   for (const local of Object.keys(slide.on)) add(cueId(slide.id, local));
@@ -418,13 +481,14 @@ export function catalog(): CatalogEntry[] {
     slides: scene.slides.map((slide) => slide.id),
     cues: Object.fromEntries(scene.slides.map((slide) => [slide.id, cueOrder(slide)])),
     spans: Object.assign({}, ...scene.slides.map(spansOf)) as Record<string, number>,
+    motions: Object.fromEntries(scene.slides.map((slide) => [slide.id, motionsOf(slide)])),
   }));
 }
 
 // ---- declaring a scene in script --------------------------------------------------------------------
 
 /** One slide of a scene a script declares, in the shape a page writes it. */
-export type SlideInput = {
+type SlideInput = {
   id?: string | number;
   previewSeconds?: number;
   enter?: SlideEntrance;
@@ -549,6 +613,7 @@ function check(root: ParentNode, place: string, inSlide: boolean): void {
         warn("PAGE_BAD_VALUE", place, null, { attr: attribute.name, value: attribute.value, allowed: why });
       }
     }
+    if (REALTIME_MEDIA.includes(el.localName)) warn("PAGE_REALTIME_MEDIA", place, null, { value: el.localName });
     if (!inSlide) {
       for (const attr of MOMENTS) {
         const local = written(el, attr);

@@ -21,23 +21,42 @@
  * reading the page back. Nothing imports it, which is what keeps every other module testable.
  */
 
-import { motionScale } from "./canvas.ts";
-import { now, start, started } from "./clock.ts";
+import { type Caption, motionScale, showCaption } from "./canvas.ts";
+import { earliest, every, now, observe, started, stepTo } from "./clock.ts";
 import { MILLISECONDS } from "./contract.ts";
-import { begin, buildSlide, isFrozen, query, state, waitsForSignal } from "./modes.ts";
+import { begin, buildSlide, cueAt, isFrozen, query, state, waitsForSignal } from "./modes.ts";
+import {
+  born,
+  ending,
+  report as lanes,
+  moving,
+  type Region,
+  region,
+  type Scripted,
+  sample,
+  scripted,
+  stillUntil,
+  undeclaredChange,
+} from "./motion.ts";
 import { all, declare, findSlide, type Handler, on, type SceneInput, setMotionScale } from "./scene.ts";
 import { type Probe, type RuntimeView, setRecorder } from "./telemetry.ts";
+import { timeline, whenMet } from "./timeline.ts";
 import { warn, warnings } from "./warn.ts";
 
 /**
  * The version this page carries, which is the one version literal in the whole runtime.
  *
- * The bundle's first line names the engine version from the project file, and release-please writes
+ * Truth: the bundle's first line names the engine version from the project file, and release-please writes
  * both, so the version a page reports and the version its file names are the same.
  */
 const VERSION = "0.5.0"; // x-release-please-version
 
-/** How long the page waits for a promise its author handed it before it is drawn without it. */
+/**
+ * How long the page waits for a promise its author handed it before it is drawn without it.
+ *
+ * Calibration: long enough for a font or an image the local origin serves, and well under the default
+ * `record.page_deadline_seconds`, so a promise that never settles costs the page its wait and not the section.
+ */
 const GATE_SECONDS = 5;
 
 /** Every promise the page asked the runtime to wait for before it calls itself ready. */
@@ -87,6 +106,24 @@ function boot(): void {
   if (running) return;
   running = true;
   setRecorder(injected()?.recorder);
+  // The timeline holds every animation at the stepped second first, so a lane is sampled where the frame shows it.
+  // A step changed the picture when an animation moved or a declared motion or loop is under way, and the page
+  // is still until the first animation, motion or loop next moves.
+  observe({
+    running: (at) => timeline.running(at),
+    ran: (at) => timeline.ran(at),
+    stepped: (seconds) => {
+      const moved = timeline.stepped(seconds);
+      sample(seconds);
+      return moved || moving(seconds);
+    },
+    still: (seconds) => earliest(timeline.still(seconds), stillUntil(seconds)),
+  });
+  whenMet((animation) => {
+    const seen = animation as Animation;
+    const target = seen.effect instanceof KeyframeEffect ? seen.effect.target : null;
+    born({ target, endSeconds: ending(seen) }, state.slide?.id ?? null);
+  });
   setMotionScale(motionScale());
   const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
   const ready = fonts
@@ -111,12 +148,78 @@ const DeckTalk = {
   },
   /** Read the page and start it, which a page that loads the runtime late may need to call itself. */
   start: boot,
-  /** Start the section clock, which is what the recorder sends once its cover has come off. */
-  startClock: start,
+  /**
+   * Move the section clock to one second and show that second, which is how the recorder draws a frame.
+   *
+   * The first call puts the page on the stepped clock for good: every task due by then runs, every
+   * frame hook draws, and every animation is held at that second. It answers the second the next task
+   * is due and whether anything the runtime knows of changed the picture since the step before.
+   */
+  stepTo,
+  /**
+   * Draw something every frame from the section second, such as a canvas, a typed line or a scene.
+   *
+   * The hook is handed the second the frame shows, so a recorded frame and a preview frame draw the
+   * same picture for the same second. `region` is the element or selector it draws inside, which
+   * verify masks, and a hook that names none is undeclared motion. A hook that throws is reported
+   * once and stops drawing.
+   *
+   * Off the stepped clock the hook draws once as it is handed over, at the second the page shows, which
+   * is zero before the clock starts. A page draws its first animation frame whenever the browser gets
+   * to it, so a hook that waited for one would be reported before `ready` on one machine and after it
+   * on another, and `check` would see a throw only by luck. The recorder's page waits for its first
+   * step, so there the hook draws first at the second that step names, as every later frame does.
+   */
+  frame(fn: (seconds: number) => void, options: { region?: Region } = {}) {
+    region(options.region);
+    const hook = (seconds: number) => {
+      try {
+        fn(seconds);
+        return true;
+      } catch (err) {
+        warn("PAGE_FRAME_THREW", null, null, { value: String(err) });
+        return false;
+      }
+    };
+    if (waitsForSignal() || hook(started() ? now() : 0)) every(hook);
+    return DeckTalk;
+  },
+  /**
+   * Move one element from one cue to another in script, drawing `draw(progress, seconds)` every frame between them.
+   *
+   * The cues are cue ids, the length is their seconds apart, and progress is eased by one of the
+   * contract's eases, so a script motion lands on its cue exactly as a declared one does.
+   */
+  motion(el: Region, motion: Scripted) {
+    scripted(el, motion, cueAt);
+    return DeckTalk;
+  },
   /** Hold readiness until a promise of the page's own has settled. */
   waitFor(promise: unknown) {
     gates.push(Promise.resolve(promise));
     return DeckTalk;
+  },
+  /**
+   * Every cue this page plays and the second on the section clock it is due, keyed by cue id.
+   *
+   * A composition page keys its own drawing on these, so a re-voiced line re-times it as it does a cue.
+   */
+  get cues(): Record<string, number> {
+    return Object.fromEntries(state.cues.map((cue) => [cue.id, cueAt(cue.id) ?? cue.at]));
+  },
+  /**
+   * Every word the section speaks, as the runtime matches it, the second the voice reaches it, and who says it.
+   *
+   * `voice` names the voice and `turn` counts the section's turns from one, so a page can place what
+   * it draws by its voice without showing the name.
+   */
+  get words(): { word: string; at: number; voice: string | null; turn: number | null }[] {
+    return (state.words ?? []).map((spoken) => ({
+      word: spoken.key,
+      at: spoken.at,
+      voice: spoken.voice,
+      turn: spoken.turn,
+    }));
   },
   /** Every scene the page declared, which a deck reads to walk its own slides. */
   get scenes() {
@@ -160,6 +263,9 @@ const view: RuntimeView = {
   get catalog() {
     return state.catalog;
   },
+  get motions() {
+    return lanes();
+  },
   get frozen() {
     return isFrozen();
   },
@@ -168,6 +274,8 @@ const view: RuntimeView = {
   },
   now,
   started,
+  caption: (caption: Caption | null) => showCaption(caption),
+  undeclared: undeclaredChange,
 };
 
 window.DeckTalk = DeckTalk;

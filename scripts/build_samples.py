@@ -3,30 +3,36 @@
     uv run scripts/build_samples.py --write    # run each row and write its block under its comment
     uv run scripts/build_samples.py --check    # exit 1 if a block no longer says what a run says
 
-A page marks a sample with `{/* sample: <id>, ... */}` on the line above its fenced block, and the row of
-that id says how the project was made, what ran on it and what the block shows: a file the run wrote,
-or what its last command printed. Each run is `decktalk` itself in a fresh `decktalk init my-lesson`,
-with no key and no voice id in its environment, an empty machine file and a take store of its own,
-so a sample is what any machine sees.
+A page marks a sample with `{/* sample: <id>, ... */}` on the line above its fenced block, or with
+`<!-- sample: <id>, ... -->` in a Markdown page such as the README, and the row of that id says how the
+project was made, what ran on it and what the block shows: a file the run wrote, the names in a folder
+it wrote, or what its last command printed. A comment that names no row is refused, because a block
+that looks generated and is not goes stale with nothing to say so.
+
+Each run is `decktalk` itself in a fresh `decktalk init my-lesson`, with no key and no voice id in its
+environment, an empty machine file and a take store of its own, so a sample is what any machine sees.
+The one machine key a sample shows the effect of, how many recorders `record` runs at once, is given
+to every run rather than chosen from the CPUs of the machine that runs it.
 
 A row's steps are commands and the edits between them. Rows that begin with the same steps share
 the project those steps made: each later step runs in a copy of it, so the starter is built once
 for every sample that reads a built starter.
+
+A command that serves until it is stopped, such as `serve` or `build --watch`, is read for the lines a
+row names and then stopped the way Ctrl-C stops it.
 
 A row that needs a voiced take reads its script with a fake `dtsp` voice on a loopback port, which
 answers the DeckTalk speech protocol with a tone the length of the words it was sent. It needs no key
 and spends nothing, and the take it makes is a voiced take like any other.
 
 The runs need ffmpeg and Chromium, so this runs in the e2e row beside the tools it needs rather than
-in generated. The encoder decides a take's bytes and the machine decides how long a stage takes, so
-a row names the keys and the patterns whose values a run decides, and `--check` holds those in its
-own block by their place rather than by their value, so the same run on another platform passes.
-
-A row whose last command verifies the film names in `measured` the findings a slower machine can
-add to that verdict, because a page is recorded in real time and a starved recording lands a reveal
-late where the docs machine's did not. Their lines are left out of the block, and the findings exit
-they bring is accepted only when every error the run names is one of them. What DeckTalk measures
-and the limits it holds are unchanged: the block is what the docs machine printed.
+in generated. The encoder decides a take's bytes, so a row names the keys and the patterns whose
+values a run decides, and `--check` holds those in its own block by their place rather than by their
+value. The machine decides how long a stage takes, so every block holds a stage's time that way
+without a row naming it. Every run prints at one width in UTF-8, and `--check` reads both sides
+without their line endings and trailing space, so the same run on Linux, macOS and Windows passes.
+The recorder steps the section clock one frame at a time, so a slower machine records the same
+frames and every verdict a block shows is the verdict any machine prints.
 """
 
 from __future__ import annotations
@@ -37,6 +43,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -47,15 +54,16 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 import generated
-from decktalk.findings import Code, Severity
 from decktalk.machine import MACHINE_FILE_VARIABLE, Machine, Toolchain
 from decktalk.media import ffmpeg
+from decktalk.pipeline import Stage
 from decktalk.settings import BY_ID
 from decktalk.speech import DECLARED
 from decktalk.speech.dtsp import SPEECH_PATH
+from decktalk.stages.record.pool import MOST_AT_ONCE
 from decktalk.toolchain.cache import standard_cache_dir
 
 ROOT = generated.ROOT
@@ -64,8 +72,15 @@ ROWS = ROOT / "scripts" / "samples.toml"
 PROJECT = "my-lesson"
 """The folder every sample's project is written to, which is the name the docs give the starter."""
 
-COMMENT = re.compile(r"^\{/\* sample: (?P<id>[a-z0-9-]+)\b.*\*/\}$")
-"""The comment above a block this generator writes, which names the row that writes it and says what ran."""
+COMMENT = re.compile(r"^(?:\{/\*|<!--) sample: (?P<id>[^,]*?)(?:,.*?)? ?(?:\*/\}|-->)$")
+"""The comment above a block this generator writes, which names the row that writes it and says what ran.
+
+Any comment that opens `sample:` is one, whatever follows, so a comment whose first words are not a row's
+id is read as naming that missing row and refused rather than passed over.
+"""
+
+FORMS = {".mdx": ("{/* ", " */}"), ".md": ("<!-- ", " -->")}
+"""How a page of each kind writes a comment: MDX in braces, and Markdown as HTML, which renders nothing."""
 
 FENCE = "```"
 
@@ -81,6 +96,15 @@ TONE_HZ = 220
 KEPT_VARIABLES = (BY_ID["tools.cache_dir"].environment,)
 """The only DeckTalk variables a run keeps from this process: where the fetched tools are."""
 
+SAMPLE_RECORDERS = MOST_AT_ONCE
+"""Calibration: the `record.concurrency` every run records with, the most an automatic choice ever runs.
+
+The recorders split a section into chunks, so a recording log's `pieces` and `steps` follow their
+number, and left automatic that number follows the CPUs of the machine that runs this. Every machine
+records with the number a machine of twelve or more CPUs chooses, so the docs show a long section
+split the way a large machine splits it, and every machine writes the same sample.
+"""
+
 STREAMS = ("stdout", "stderr", "both")
 """What a row may show of its last command: one stream, or both in the order they were printed."""
 
@@ -90,11 +114,17 @@ FENCES = {".json": "json", ".jsonl": "jsonl", ".md": "markdown"}
 EMPTY = "{empty}"
 """What a row's `env` value names an empty folder by, such as a tools cache that holds nothing."""
 
+HIDDEN = "..."
+"""What a row's `hide` patterns are written as, which is what `--check` reads in their place on both sides."""
+
+STOP_GRACE_SECONDS = 30
+"""Calibration: how long a command that serves is given to close its origin after Ctrl-C before it is killed."""
+
 FINDINGS_EXIT = 1
 """Truth: the exit of a command that ran and found something, which a step before the last may end with."""
 
-CODE_WORD = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
-"""A word shaped like a finding code, which output names in a line, a JSON field or an event."""
+STAGE_TIME = re.compile(rf"^(\s*(?:{'|'.join(stage.value.title() for stage in Stage)}) .*?   )\d+(?::\d\d){{1,2}}\b")
+"""The time on a stage's line, which the machine decides and `--check` holds by its place in every block."""
 
 
 @dataclass(frozen=True)
@@ -131,17 +161,19 @@ class Row:
     folder: bool = False
     exit: int = 0
     file: str | None = None
+    listing: str | None = None
     stream: str | None = None
+    lines: int | None = None
     fence: str | None = None
     head: int | None = None
     grep: str | None = None
+    hide: tuple[str, ...] = ()
     key: str | None = None
     fragment: bool = False
     only: tuple[str, ...] = ()
     keep: tuple[tuple[str, int], ...] = ()
     varies: tuple[str, ...] = ()
     masks: tuple[str, ...] = ()
-    measured: tuple[str, ...] = ()
 
     @property
     def start(self) -> tuple[object, ...]:
@@ -177,23 +209,26 @@ def rows() -> list[Row]:
             folder=row.get("folder", False),
             exit=row.get("exit", 0),
             file=row.get("file"),
+            listing=row.get("listing"),
             stream=row.get("stream"),
+            lines=row.get("lines"),
             fence=row.get("fence"),
             head=row.get("head"),
             grep=row.get("grep"),
+            hide=tuple(row.get("hide", ())),
             key=row.get("key"),
             fragment=row.get("fragment", False),
             only=tuple(row.get("only", ())),
             keep=tuple(row.get("keep", {}).items()),
             varies=tuple(row.get("varies", ())),
             masks=tuple(row.get("masks", ())),
-            measured=tuple(row.get("measured", ())),
         )
-        unknown = [code for code in made.measured if code not in Code.__members__]
-        if unknown:
-            raise SystemExit(f"{ROWS.name}: the sample {name} names {', '.join(unknown)}, which no finding is.")
-        if (made.file is None) == (made.stream is None) or (made.stream and made.stream not in STREAMS):
-            raise SystemExit(f"{ROWS.name}: the sample {name} shows one file or one of {', '.join(STREAMS)}.")
+        if [made.file, made.listing, made.stream].count(None) != 2 or (made.stream and made.stream not in STREAMS):
+            raise SystemExit(
+                f"{ROWS.name}: the sample {name} shows one file, one folder's names or one of {', '.join(STREAMS)}."
+            )
+        if made.lines is not None and made.stream not in ("stdout", "stderr"):
+            raise SystemExit(f"{ROWS.name}: the sample {name} reads lines of a command that serves from no one stream.")
         if made.stream is not None and not (made.steps and isinstance(made.steps[-1], tuple)):
             raise SystemExit(f"{ROWS.name}: the sample {name} shows what a command printed and ends on no command.")
         every.append(made)
@@ -281,7 +316,8 @@ def environment(scratch: Path) -> dict[str, str]:
     """What every run sees: this process's environment with no DeckTalk variable but the tools' cache.
 
     That leaves out the API key, the voice id and any machine file, so the run is a fresh
-    machine's, and its take store is a folder of its own rather than this user's.
+    machine's, and its take store is a folder of its own rather than this user's. It records with
+    `SAMPLE_RECORDERS` recorders whatever this machine's CPUs would choose.
     """
     kept = {name: value for name, value in os.environ.items() if not name.startswith("DECKTALK_")}
     kept |= {name: os.environ[name] for name in KEPT_VARIABLES if name in os.environ}
@@ -293,10 +329,14 @@ def environment(scratch: Path) -> dict[str, str]:
         **kept,
         MACHINE_FILE_VARIABLE: str(machine),
         BY_ID["narration.store_dir"].environment: str(scratch / "store"),
+        BY_ID["record.concurrency"].environment: str(SAMPLE_RECORDERS),
         "TTY_COMPATIBLE": "0",
         # Each write reaches the pipe as it is made, so both streams read in the order they were printed.
         "PYTHONUNBUFFERED": "1",
+        # A table is laid out at the width and in the characters the docs show, whatever console runs this:
+        # rich reads the width from COLUMNS, and draws its boxes in ASCII on a stream that is not UTF-8.
         "COLUMNS": str(LINE_WIDTH),
+        "PYTHONIOENCODING": "utf-8",
     }
 
 
@@ -307,13 +347,18 @@ def decktalk(
     environ: dict[str, str],
     stream: str | None,
     exits: set[int],
-    measured: tuple[str, ...] = (),
+    lines: int | None = None,
 ) -> str:
     """One command and what it printed on `stream`, refused when its exit is not one of `exits`.
 
-    A findings exit where 0 was wanted is accepted when every error the run names is `measured`.
-    A sample of a run that failed some other way would mislead, so the refusal says what it printed.
+    A sample of a run that exited some other way would mislead, so the refusal says what it printed.
+    A command that serves until stopped is read for its first `lines` lines instead, and stopped.
     """
+    if lines is not None:
+        assert stream is not None
+        return first_lines(
+            [sys.executable, "-m", "decktalk", *argv], cwd=cwd, environ=environ, stream=stream, lines=lines
+        )[0]
     done = subprocess.run(
         [sys.executable, "-m", "decktalk", *argv],
         cwd=cwd,
@@ -325,15 +370,67 @@ def decktalk(
         timeout=generated.COMMAND_TIMEOUT_SECONDS,
         check=False,
     )
-    slower = (
-        done.returncode == FINDINGS_EXIT and 0 in exits and only_measured(done.stdout + (done.stderr or ""), measured)
-    )
-    if done.returncode not in exits and not slower:
+    if done.returncode not in exits:
         raise SystemExit(
             f"decktalk {' '.join(argv)} exited {done.returncode}, not {' or '.join(map(str, sorted(exits)))}:\n"
             f"{done.stdout}{done.stderr or ''}"
         )
     return done.stderr if stream == "stderr" else done.stdout
+
+
+def first_lines(
+    argv: list[str], *, cwd: Path, environ: dict[str, str], stream: str, lines: int
+) -> tuple[str, subprocess.Popen[str]]:
+    """The first `lines` lines a command that serves until stopped prints on `stream`, and the process, stopped.
+
+    The command runs in a process group of its own, so the Ctrl-C that stops it reaches it and
+    nothing else, and it is killed when it has not closed within `STOP_GRACE_SECONDS`.
+    """
+    piped = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, stream: subprocess.PIPE}
+    windows = sys.platform == "win32"
+    process = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=environ,
+        text=True,
+        encoding="utf-8",
+        stdout=piped["stdout"],
+        stderr=piped["stderr"],
+        start_new_session=not windows,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if windows else 0,
+    )
+    pipe = process.stdout if stream == "stdout" else process.stderr
+    assert pipe is not None
+    read: list[str] = []
+
+    def take(source: IO[str]) -> None:
+        read.extend(source.readline() for _ in range(lines))
+
+    reader = threading.Thread(target=take, args=(pipe,), daemon=True)
+    reader.start()
+    reader.join(generated.COMMAND_TIMEOUT_SECONDS)
+    stop(process)
+    pipe.close()
+    printed = "".join(read)
+    if reader.is_alive() or printed.count("\n") < lines:
+        raise SystemExit(f"{' '.join(argv)} printed {printed.count(chr(10))} lines, not {lines}:\n{printed}")
+    return printed, process
+
+
+def stop(process: subprocess.Popen[str]) -> None:
+    """Stop a command that serves the way Ctrl-C does, and kill it when it does not close in time."""
+    if sys.platform == "win32":
+        process.terminate()
+    else:
+        os.killpg(process.pid, signal.SIGINT)
+    try:
+        process.wait(STOP_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        if sys.platform == "win32":
+            process.kill()
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
 
 
 def apply(change: Edit | Delete, project: Path, *, row: str) -> None:
@@ -390,10 +487,10 @@ class Runs:
         if stream is None and (row.start, row.steps) in self.states:
             # A row that shows a file needs no printed output, so any run of the same steps serves it.
             return self.states[(row.start, row.steps)]
-        key = (row.start, row.steps, stream)
+        key = (row.start, row.steps, stream, row.lines)
         if key not in self.printed:
             folder = self.copy(self.state(row, row.steps[:-1]).folder)
-            printed = self.command(row, last, folder, stream=stream, exits={row.exit}, measured=row.measured)
+            printed = self.command(row, last, folder, stream=stream, exits={row.exit}, lines=row.lines)
             self.printed[key] = Ran(folder, printed)
             self.states.setdefault((row.start, row.steps), self.printed[key])
         return self.printed[key]
@@ -437,7 +534,7 @@ class Runs:
         *,
         stream: str | None,
         exits: set[int],
-        measured: tuple[str, ...] = (),
+        lines: int | None = None,
     ) -> str:
         """One command of `row` run in `folder`, read by the fake voice when the row names it."""
         machine = self.machine(row)
@@ -450,44 +547,7 @@ class Runs:
         with fake_voice(environ, machine) if row.voice == "dtsp" else nullcontext("") as base_url:
             if base_url:
                 environ[BY_ID["dtsp.base_url"].environment] = base_url
-            return decktalk(argv, cwd=cwd, environ=environ, stream=stream, exits=exits, measured=measured)
-
-
-# ---- a measured verdict --------------------------------------------------------------------------
-
-
-def errors_named(printed: str) -> set[str]:
-    """Every error code `printed` names, in a finding line, a JSON result or an event."""
-    named = {Code.__members__.get(word) for word in CODE_WORD.findall(printed)}
-    return {code.name for code in named if code is not None and code.severity is Severity.ERROR}
-
-
-def only_measured(printed: str, measured: tuple[str, ...]) -> bool:
-    """Whether a findings exit is one a slower machine added: it names an error, and every one it names is measured."""
-    named = errors_named(printed)
-    return bool(named) and named <= set(measured)
-
-
-def unmeasured(text: str, measured: tuple[str, ...]) -> str:
-    """`text` without the lines of a measured finding, each with the fix line printed under it."""
-    if not measured:
-        return text
-    naming = re.compile(rf"^\S+: (?:{'|'.join(map(re.escape, measured))}) ")
-    out: list[str] = []
-    dropping = False
-    for line in text.splitlines():
-        dropping = bool(naming.match(line)) or (dropping and line.startswith("  fix"))
-        if not dropping:
-            out.append(line)
-    return "\n".join(out)
-
-
-def unmeasured_value(value: object, measured: tuple[str, ...]) -> object:
-    """A JSON result without its measured findings, with every other finding as it was."""
-    if not measured or not isinstance(value, dict) or not isinstance(value.get("findings"), list):
-        return value
-    kept = [found for found in value["findings"] if not (isinstance(found, dict) and found.get("code") in measured)]
-    return {**value, "findings": kept}
+            return decktalk(argv, cwd=cwd, environ=environ, stream=stream, exits=exits, lines=lines)
 
 
 # ---- a block -------------------------------------------------------------------------------------
@@ -561,14 +621,25 @@ def fragment(path: str, value: object) -> str:
     return f"{json.dumps(path.rpartition('.')[2])}: {dumped(value)}"
 
 
-def shown_text(printed: str, *, head: int | None, grep: str | None) -> str:
-    """What a command printed, cut to the lines a row picks, with no trailing space and no blank first or last line."""
+def shown_text(printed: str, *, head: int | None, grep: str | None, hide: tuple[str, ...] = ()) -> str:
+    """What a command printed, cut to the lines a row picks, with no trailing space and no blank first or last line.
+
+    Each match of `hide` is written as `HIDDEN`, so a block names no path or version of the machine
+    that wrote it, and `--check` reads the same dots on both sides.
+    """
     lines = [line.rstrip() for line in printed.splitlines()]
     if grep is not None:
         lines = [line for line in lines if re.search(grep, line)]
     if head is not None:
         lines = lines[:head]
+    for pattern in hide:
+        lines = [re.sub(pattern, HIDDEN, line) for line in lines]
     return "\n".join(lines).strip("\n")
+
+
+def listed(folder: Path) -> str:
+    """The names in `folder` as `ls` prints them into a pipe: one to a line, sorted, and none that opens with a dot."""
+    return "\n".join(sorted(path.name for path in folder.iterdir() if not path.name.startswith(".")))
 
 
 def block(row: Row, ran: Ran) -> str:
@@ -586,14 +657,16 @@ def block(row: Row, ran: Ran) -> str:
         path = project / name
         fence = f"{row.fence or FENCES.get(path.suffix, 'text')} {name}"
         text = path.read_text(encoding="utf-8")
+    elif row.listing is not None:
+        return f"{FENCE}{row.fence or 'text'}\n{listed(project / row.listing)}\n{FENCE}\n"
     else:
         fence = row.fence or "text"
         text = ran.printed
     if fence.split(" ")[0] == "json":
-        value = cut(unmeasured_value(json.loads(text), row.measured), key=row.key, only=row.only, keep=row.keep)
+        value = cut(json.loads(text), key=row.key, only=row.only, keep=row.keep)
         shown = fragment(row.key, value) if row.fragment and row.key else dumped(value)
     else:
-        shown = shown_text(unmeasured(text, row.measured), head=row.head, grep=row.grep)
+        shown = shown_text(text, head=row.head, grep=row.grep, hide=row.hide)
     return f"{FENCE}{fence}\n{shown}\n{FENCE}\n"
 
 
@@ -623,7 +696,8 @@ def spliced(text: str, blocks: dict[str, tuple[str, str]], *, where: Path) -> st
 
 
 def masked(text: str, keys: tuple[str, ...], patterns: tuple[str, ...] = ()) -> str:
-    """`text` with the value of every key in `keys`, and every match of `patterns`, written as `...`."""
+    """`text` with the value of every key in `keys`, each match of `patterns` and each stage's time written as `...`."""
+    text = STAGE_TIME.sub(r"\g<1>...", text)
     for key in keys:
         text = re.sub(rf'("{re.escape(key)}": ?)("[^"]*"|[-0-9.eE]+|null|true|false)', r"\1...", text)
     for pattern in patterns:
@@ -656,23 +730,73 @@ def masked_page(text: str, masks: dict[str, tuple[tuple[str, ...], tuple[str, ..
 # ---- the generator -------------------------------------------------------------------------------
 
 
+def comment(page: Path, row: str, what: str) -> str:
+    """The comment above row `row`'s block, in the form `page` writes comments in."""
+    opens, closes = FORMS[page.suffix]
+    return f"{opens}sample: {row}, {what}{closes}"
+
+
+def pages() -> list[Path]:
+    """Every page a sample may sit on: the README and every docs page."""
+    return [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.mdx"))]
+
+
+def unbacked(texts: dict[Path, str], *, ids: set[str]) -> list[str]:
+    """Each sample comment in `texts` that names no row of `ids`, as the page, the line and the id it names."""
+    return [
+        f"{page.relative_to(ROOT)}:{number} names {found['id']!r}"
+        for page, text in texts.items()
+        for number, line in enumerate(text.splitlines(), start=1)
+        if (found := COMMENT.match(line.strip())) and found["id"] not in ids
+    ]
+
+
 def files() -> dict[Path, str]:
-    """Every page a row names, with every block written from a real run."""
+    """Every page a row names, with every block written from a real run.
+
+    A comment on any page that names no row is refused before anything runs.
+    """
     every = rows()
+    missing = unbacked({page: page.read_text(encoding="utf-8") for page in pages()}, ids={row.id for row in every})
+    if missing:
+        raise SystemExit(f"These sample comments name no row of {ROWS.name}:\n" + "\n".join(missing))
     blocks: dict[Path, dict[str, tuple[str, str]]] = {}
     with tempfile.TemporaryDirectory(prefix="decktalk-samples-") as scratch:
         runs = Runs(Path(scratch))
         # Shorter runs first, so a longer run that begins with one finds its folder already made.
         for row in sorted(every, key=lambda row: len(row.steps)):
-            comment = f"{{/* sample: {row.id}, {row.what} */}}"
-            blocks.setdefault(row.page, {})[row.id] = (comment, block(row, runs.reach(row)))
-    pages = {page: spliced(page.read_text(encoding="utf-8"), found, where=page) for page, found in blocks.items()}
+            blocks.setdefault(row.page, {})[row.id] = (comment(row.page, row.id, row.what), block(row, runs.reach(row)))
+    written = {page: spliced(page.read_text(encoding="utf-8"), found, where=page) for page, found in blocks.items()}
     for page, found in blocks.items():
-        named = {match["id"] for line in pages[page].splitlines() if (match := COMMENT.match(line.strip()))}
-        missing = sorted(set(found) - named)
-        if missing:
-            raise SystemExit(f"{page.relative_to(ROOT)} has no comment for the samples {', '.join(missing)}.")
-    return pages
+        named = {match["id"] for line in written[page].splitlines() if (match := COMMENT.match(line.strip()))}
+        absent = sorted(set(found) - named)
+        if absent:
+            raise SystemExit(f"{page.relative_to(ROOT)} has no comment for the samples {', '.join(absent)}.")
+    return written
+
+
+def lines_of(text: str) -> list[str]:
+    """`text` as lines with no line ending, no trailing space and no blank line after the last, on every platform."""
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
+
+
+def why_differs(committed: str, written: str, masks: dict[str, tuple[tuple[str, ...], tuple[str, ...]]]) -> str | None:
+    """The first line of `committed` that `written` changes once every value a run decides is masked, or None.
+
+    The reason quotes the line on both sides as it is, before the masks, so a failed check says what
+    the page holds and what this run wrote rather than only where they part.
+    """
+    pages = lines_of(committed), lines_of(written)
+    held, wrote = (lines_of(masked_page("\n".join(page), masks)) for page in pages)
+    if held == wrote:
+        return None
+    parted = (at for at, (old, new) in enumerate(zip(held, wrote, strict=False)) if old != new)
+    line = next(parted, min(len(held), len(wrote)))
+    page, run = (repr(lines[line]) if line < len(lines) else "the end of the page" for lines in pages)
+    return f"line {line + 1} is {page} where this run writes {run}"
 
 
 def why_stale(path: Path, text: str) -> str | None:
@@ -680,9 +804,7 @@ def why_stale(path: Path, text: str) -> str | None:
     masks = {row.id: (row.varies, row.masks) for row in rows() if row.page == path}
     if not path.exists():
         return generated.differs(path, text)
-    committed, written = (masked_page(page, masks) for page in (path.read_text(encoding="utf-8"), text))
-    # The line named is the first that differs once every value a run decides is masked on both sides.
-    return generated.moved(committed, written)
+    return why_differs(path.read_text(encoding="utf-8"), text, masks)
 
 
 if __name__ == "__main__":

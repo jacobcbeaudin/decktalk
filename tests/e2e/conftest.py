@@ -3,6 +3,9 @@
 The pipeline fixture and every packaged project record in Chromium and cut with ffmpeg. These suites
 are only collected when a run names `e2e` or `scaffold`, so a machine without either tool fails here
 with the command that fetches it rather than skipping a suite the run asked for.
+
+Every build here runs through `support.commands`, which audits the still frames it skips, so a frame
+written again that a capture would have drawn differently fails the build that wrote it.
 """
 
 from __future__ import annotations

@@ -34,6 +34,7 @@ from decktalk.page import (
     EXITS,
     FRAME_STEP_MS,
     MEASURABLE_SPAN_SECONDS,
+    MOTION_EASES,
     ONSET_FIRST_FRAME_PERCENT,
     PREVIEW_CUE_TIMES,
     SLIDE_ENTRANCES,
@@ -118,6 +119,32 @@ def opacity_one_frame_in(page: Page, selector: str) -> float:
     )
 
 
+STEP_UNTIL_JS = """async ([until, step]) => {
+  const painted = () => new Promise((done) => requestAnimationFrame(() => done()));
+  let due = window.DeckTalk.stepTo(0).due;
+  await painted();
+  for (let at = step; at < until; at += step) {
+    while (due !== null && due < at) due = window.DeckTalk.stepTo(due).due;
+    due = window.DeckTalk.stepTo(at).due;
+    await painted();
+  }
+  while (due !== null && due < until) due = window.DeckTalk.stepTo(due).due;
+  window.DeckTalk.stepTo(until);
+  await painted();
+}"""
+"""Step the section clock frame by frame to `until`, to every due task on its own second first, and paint each frame."""
+
+
+def stepped(page: Page, until: float) -> None:
+    """Show the page at `until` the way the recorder reaches it, one painted frame at a time.
+
+    An effect is born on the second its cue runs, and an entrance hands its element back when the
+    frame that ends it is painted, so the page is painted after every step as a recorded frame is.
+    What a test reads at `until` is then exact rather than a wait that hopes the effect has ended.
+    """
+    page.evaluate(STEP_UNTIL_JS, [until, FRAME_STEP_MS / 1000])
+
+
 ALIAS = PREVIEW_CUE_TIMES
 """The one router alias a preview asks its origin for, which the served directory does not hold."""
 
@@ -174,9 +201,11 @@ def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
     opened(page, write_page(tmp_path, "weight.html", MARKUP_SCENE, head=head + KATEX))
     sheet = page.evaluate("() => document.getElementById('dt-style').textContent")
     assert sheet.strip().startswith(":where(")
-    # A still is the one rule the page may not be argued out of, so it is the only forced one.
+    # A still and the clear frame the caption band is drawn on are the two things a page may not argue,
+    # so theirs are the only forced rules.
     forced = [line for line in sheet.splitlines() if "!important" in line]
-    assert all("dt-frozen" in line for line in forced)
+    assert all("dt-frozen" in line or "dt-captioning" in line for line in forced)
+    assert all(line.startswith(":where(") for line in sheet.splitlines() if "{" in line and "@keyframes" not in line)
     assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
     settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?freeze=1.1")
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
@@ -299,8 +328,269 @@ def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
     assert page.evaluate("() => window.__decktalk.slide") == "1.1"
     assert page.evaluate("() => window.__decktalk.started()") is False
     assert page.evaluate("() => window.__decktalk.fired") == []
-    page.evaluate("() => window.DeckTalk.startClock()")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
+    page.evaluate("() => window.DeckTalk.stepTo(0.6)")
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.2:sum"]
+
+
+def test_a_stepped_page_shows_each_second_the_recorder_steps_it_to(page, tmp_path):
+    """The recorder moves the section clock, and the page holds every animation at the second it shows.
+
+    The ball pops in at 0.1, so one stepped frame later it is exactly one frame into its entrance,
+    whatever the compositor was doing, and stepping back to that second gives the same opacity again.
+    """
+    url = deck(tmp_path, "stepped.html")
+    opened(page, f"{url}?scene=1&t0=signal&cues=1.1:ball@0.1,1.2:sum@0.6")
+    page.evaluate("() => window.DeckTalk.stepTo(0)")
+    assert page.evaluate("() => window.__decktalk.fired") == []
+    page.evaluate("() => window.DeckTalk.stepTo(0.1)")
+    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
+    page.evaluate(f"() => window.DeckTalk.stepTo({0.1 + FRAME_STEP_MS / 1000})")
+    opacity = page.evaluate("() => Number(getComputedStyle(document.querySelector('.ball')).opacity)")
+    held = page.evaluate(
+        """() => document.querySelector('.ball').getAnimations()
+            .map((one) => [one.playState, Math.round(one.currentTime)])"""
+    )
+    assert held == [["paused", FRAME_STEP_MS]]
+    assert 0 < opacity < 1
+    page.evaluate("() => window.DeckTalk.stepTo(0.6)")
+    assert page.evaluate("() => window.__decktalk.slide") == "1.2"
+    assert page.evaluate("() => window.__decktalk.now()") == 0.6
+
+
+def test_a_frame_hook_draws_every_stepped_second(page, tmp_path):
+    """`DeckTalk.frame` is the per-frame hook a canvas or a typed line is drawn from, on the section clock."""
+    script = (
+        'DeckTalk.scene(15, { slides: [{ id: "15.1", owns: ["beat"], render: () => "<p id=bar></p>" }] });'
+        "window.seen = []; DeckTalk.frame((t) => window.seen.push(t));"
+    )
+    opened(page, f"{script_page(tmp_path, 'frame.html', script)}?scene=15&t0=signal&cues=15.1:beat@0.1")
+    for seconds in (0, 0.04, 0.08):
+        page.evaluate(f"() => window.DeckTalk.stepTo({seconds})")
+    assert page.evaluate("() => window.seen") == [0, 0.04, 0.08]
+
+
+def test_the_index_page_reports_a_frame_hook_that_throws_before_it_is_ready(page, tmp_path):
+    """Off the stepped clock a hook draws once as it is handed over, so `check` meets a throw on every machine.
+
+    The index page draws no animation frame before it is ready, so a hook that waited for one would be
+    reported or not by the race between the frame and the probe. The hook is handed the second the
+    page shows, which is zero before the clock starts, and is never called again once it has thrown.
+    """
+    script = (
+        'DeckTalk.scene(15, { slides: [{ id: "15.1", owns: ["beat"], render: () => "<p></p>" }] });'
+        "window.handed = [];"
+        'DeckTalk.frame((t) => { window.handed.push(t); throw new Error("no"); }, { region: "p" });'
+        "window.atOnce = window.__decktalk.warnings.map((row) => row.code);"
+    )
+    opened(page, script_page(tmp_path, "index-threw.html", script))
+    assert page.evaluate("() => window.__decktalk.mode") == "index"
+    assert Code.PAGE_FRAME_THREW.value in page.evaluate("() => window.atOnce")
+    page.evaluate("() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert page.evaluate("() => window.handed") == [0]
+
+
+MOVING_SCENE = """
+<style>
+  @keyframes travel { from { transform: translateX(0px) } to { transform: translateX(1000px) } }
+  @keyframes spin { to { transform: rotate(360deg) } }
+</style>
+<div data-scene="16" data-name="Moving">
+  <template data-slide="16.1">
+    <div class="packet" style="width:40px;height:40px;background:#000" data-motion="travel"
+         data-motion-from="go" data-motion-to="land" data-motion-ease="firm"></div>
+    <div class="orbit" style="width:40px;height:40px;background:#000" data-loop="spin" data-loop-seconds="6"></div>
+    <p data-in="land" data-describe="the landing">landed</p>
+  </template>
+</div>
+"""
+
+
+def translated(page: Page, selector: str) -> float:
+    """How far an element sits along x, read from the transform the page computed for it."""
+    return page.evaluate(f"() => new DOMMatrix(getComputedStyle(document.querySelector('{selector}')).transform).m41")
+
+
+def firm(part: float) -> float:
+    """The firm ease the contract publishes, solved here so the test does not trust the page's own solver."""
+    curve = MOTION_EASES["firm"]["curve"]
+    assert isinstance(curve, list)
+    x1, y1, x2, y2 = (float(point) for point in curve)
+    lo, hi = 0.0, 1.0
+    for _ in range(60):
+        s = (lo + hi) / 2
+        x = 3 * (1 - s) ** 2 * s * x1 + 3 * (1 - s) * s**2 * x2 + s**3
+        lo, hi = (s, hi) if x < part else (lo, s)
+    return 3 * (1 - s) ** 2 * s * y1 + 3 * (1 - s) * s**2 * y2 + s**3
+
+
+def test_a_motion_travels_between_its_two_cues_on_the_stepped_clock_and_lands_on_the_second(page, tmp_path):
+    """The length is the two cues' seconds and never a duration in markup, so a re-voiced line re-times it."""
+    url = write_page(tmp_path, "moving.html", MOVING_SCENE)
+    opened(page, f"{url}?scene=16&t0=signal&cues=16.1:go@1.0,16.1:land@2.0")
+    for seconds in (0, 0.5, 1.0):
+        page.evaluate(f"() => window.DeckTalk.stepTo({seconds})")
+        assert translated(page, ".packet") == 0
+    page.evaluate("() => window.DeckTalk.stepTo(1.5)")
+    assert abs(translated(page, ".packet") - 1000 * firm(0.5)) < 1
+    page.evaluate("() => window.DeckTalk.stepTo(2.0)")
+    assert translated(page, ".packet") == 1000
+    page.evaluate("() => window.DeckTalk.stepTo(2.5)")
+    assert translated(page, ".packet") == 1000
+
+
+def test_a_motion_s_arrival_is_a_cue_the_slide_declares_even_when_nothing_else_lands_on_it(page, tmp_path):
+    scene = MOVING_SCENE.replace('<p data-in="land" data-describe="the landing">landed</p>', "")
+    assert scene != MOVING_SCENE
+    url = write_page(tmp_path, "arrival.html", scene)
+    opened(page, f"{url}?scene=16&t0=signal&cues=16.1:go@1.0,16.1:land@2.0")
+    page.evaluate("() => window.DeckTalk.stepTo(2.0)")
+    assert Code.PAGE_CUE_UNKNOWN.value not in codes_of(page)
+
+
+def test_a_loop_turns_from_the_mount_for_as_long_as_its_slide_is_on_screen(page, tmp_path):
+    url = write_page(tmp_path, "looping.html", MOVING_SCENE)
+    opened(page, f"{url}?scene=16&t0=signal&cues=16.1:go@1.0,16.1:land@2.0")
+    page.evaluate("() => window.DeckTalk.stepTo(1.5)")
+    turned = page.evaluate("() => document.querySelector('.orbit').getAnimations().map((one) => one.currentTime)")
+    assert [round(at) for at in turned] == [1500]
+
+
+def test_the_catalog_publishes_every_declared_motion_with_its_cues_and_its_ease(page, tmp_path):
+    opened(page, write_page(tmp_path, "motions.html", MOVING_SCENE))
+    motions = page.evaluate("() => window.__decktalk.catalog[0].motions")
+    assert motions == {
+        "16.1": [
+            {"kind": "motion", "name": "travel", "from": "16.1:go", "to": "16.1:land", "ease": "firm", "seconds": None},
+            {"kind": "loop", "name": "spin", "from": None, "to": None, "ease": None, "seconds": 6},
+        ]
+    }
+    assert "16.1:go" in page.evaluate("() => window.__decktalk.catalog[0].cues['16.1']")
+
+
+def test_a_loop_nobody_declared_is_refused_by_the_page(page, tmp_path):
+    """Undeclared motion is what makes verify's control dishonest, so it is refused rather than tolerated."""
+    declared = 'style="width:40px;height:40px;background:#000" data-loop="spin" data-loop-seconds="6"'
+    undeclared = 'style="width:40px;height:40px;background:#000;animation:spin 6s linear infinite"'
+    scene = MOVING_SCENE.replace(declared, undeclared)
+    assert scene != MOVING_SCENE
+    opened(page, write_page(tmp_path, "undeclared.html", scene))
+    assert Code.PAGE_MOTION_UNDECLARED.value in codes_of(page)
+    opened(page, write_page(tmp_path, "declared.html", MOVING_SCENE))
+    assert Code.PAGE_MOTION_UNDECLARED.value not in codes_of(page)
+
+
+def test_a_frame_hook_with_no_region_is_undeclared_motion(page, tmp_path):
+    script = (
+        'DeckTalk.scene(17, { slides: [{ id: "17.1", owns: ["beat"], render: () => "<canvas id=c></canvas>" }] });'
+        "DeckTalk.frame(() => {});"
+    )
+    opened(page, f"{script_page(tmp_path, 'bare-hook.html', script)}?scene=17&t0=signal&cues=17.1:beat@0.1")
+    assert Code.PAGE_MOTION_UNDECLARED.value in codes_of(page)
+    declared = script.replace("DeckTalk.frame(() => {});", "DeckTalk.frame(() => {}, { region: '#c' });")
+    opened(page, f"{script_page(tmp_path, 'region-hook.html', declared)}?scene=17&t0=signal&cues=17.1:beat@0.1")
+    assert Code.PAGE_MOTION_UNDECLARED.value not in codes_of(page)
+
+
+def test_a_video_on_a_page_is_refused_because_the_stepped_clock_cannot_hold_it(page, tmp_path):
+    scene = MOVING_SCENE.replace("<p data-in", '<video src="clip.mp4"></video><p data-in')
+    opened(page, write_page(tmp_path, "video.html", scene))
+    assert Code.PAGE_REALTIME_MEDIA.value in codes_of(page)
+
+
+CLIP_ATTRS_SCENE = """
+<div data-scene="19" data-name="Clip attributes">
+  <template data-slide="19.1" data-owns="play">
+    <div class="box" style="width:320px;height:180px" data-clip="deck/clips/film.mp4" data-clip-from="play"></div>
+  </template>
+</div>
+"""
+"""A slide owning the cue `play`, whose element names a clip in the attributes a page no longer plays one from."""
+
+
+def test_a_page_that_names_a_clip_in_data_clip_is_told_the_contract_does_not_know_the_attribute(page, tmp_path):
+    """A page plays no clip, so `data-clip` and `data-clip-from` are two misspelled attributes like any other."""
+    url = write_page(tmp_path, "clip-attrs.html", CLIP_ATTRS_SCENE)
+    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:play@0.1")
+    page.evaluate("() => window.DeckTalk.stepTo(0.5)")
+    unknown = sorted(row["attr"] for row in warnings_of(page) if row["code"] == Code.PAGE_ATTR_UNKNOWN.value)
+    assert unknown == ["data-clip", "data-clip-from"]
+    assert page.evaluate("() => window.__decktalk.catalog[0].motions") == {"19.1": []}
+    assert page.evaluate("() => document.querySelector('.box').childElementCount") == 0, "nothing plays in it"
+
+
+def test_a_script_motion_draws_its_eased_progress_between_two_cues_and_refuses_a_cue_nobody_owns(page, tmp_path):
+    script = (
+        'DeckTalk.scene(18, { slides: [{ id: "18.1", owns: ["go", "land"], render: () => "<p id=bar></p>" }] });'
+        "window.drawn = [];"
+        "DeckTalk.on('18.1:go', (slide) => DeckTalk.motion(slide.querySelector('#bar'),"
+        " { from: '18.1:go', to: '18.1:land', ease: 'glide', draw: (p, t) => window.drawn.push([p, t]) }));"
+        "DeckTalk.on('18.1:land', (slide) => DeckTalk.motion(slide.querySelector('#bar'),"
+        " { from: '18.1:land', to: '18.1:nowhere', draw: () => {} }));"
+    )
+    opened(page, f"{script_page(tmp_path, 'scripted.html', script)}?scene=18&t0=signal&cues=18.1:go@1.0,18.1:land@2.0")
+    for seconds in (1.0, 1.5, 2.0, 2.5):
+        page.evaluate(f"() => window.DeckTalk.stepTo({seconds})")
+    drawn = page.evaluate("() => window.drawn")
+    # The arrival is drawn once half a second past it, to learn whether the draw still moves there, and then at it.
+    later = 2.0 + MEASURABLE_SPAN_SECONDS
+    assert [(round(progress, 6), seconds) for progress, seconds in drawn] == [
+        (0, 1.0),
+        (0.5, 1.5),
+        (1, later),
+        (1, 2.0),
+    ]
+    assert Code.PAGE_MOTION_CUE_UNKNOWN.value in codes_of(page)
+    assert Code.PAGE_MOTION_UNFINISHED.value not in codes_of(page)
+
+
+def test_a_composition_reads_every_cue_s_second_and_every_spoken_word_from_the_runtime(page, tmp_path):
+    """A composition page keys its own drawing on the section's cues and words, which the runtime hands it."""
+    script = 'DeckTalk.scene(19, { slides: [{ id: "19.1", owns: ["go"], render: () => "<canvas id=c></canvas>" }] });'
+    url = script_page(tmp_path, "composition.html", script)
+    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:go@1.25&words=one@0.5,two@1.1&turns=narrator@0.40,guest@1.00")
+    assert page.evaluate("() => window.DeckTalk.cues") == {"19.1:go": 1.25}
+    assert page.evaluate("() => window.DeckTalk.words") == [
+        {"word": "one", "at": 0.5, "voice": "narrator", "turn": 1},
+        {"word": "two", "at": 1.1, "voice": "guest", "turn": 2},
+    ]
+
+
+CAPTION_JS = """() => window.__decktalk.caption({
+  lines: ["[door opens]", "Says who?"], voice: "guest", turn: 2, spoken: [1, 2],
+}).then(() => {
+  const caption = document.querySelector("#dt-captions .dt-caption");
+  return {
+    voice: caption.dataset.voice,
+    turn: caption.dataset.turn,
+    lines: [...caption.children].map((line) => [line.textContent, "sound" in line.dataset]),
+    text: caption.textContent,
+    body: getComputedStyle(document.body).visibility,
+    band: getComputedStyle(caption).visibility,
+    ground: getComputedStyle(document.documentElement).backgroundColor,
+    align: getComputedStyle(caption).textAlign,
+  };
+})"""
+
+
+def test_caption_mode_draws_one_caption_in_the_band_that_names_its_voice_only_as_data(page, tmp_path):
+    """The captioned copy is drawn from this mode: the page's own picture is cleared and the band styled by the page."""
+    head = '<style>html,body{background:#123456}.dt-caption[data-voice="guest"]{text-align:right}</style>'
+    opened(page, f"{write_page(tmp_path, 'caption.html', MARKUP_SCENE, head=head)}?caption=1")
+    assert page.evaluate("() => window.__decktalk.mode") == "caption"
+    drawn = page.evaluate(CAPTION_JS)
+    assert drawn == {
+        "voice": "guest",
+        "turn": "2",
+        "lines": [["[door opens]", True], ["Says who?", False]],
+        "text": "[door opens]Says who?",
+        "body": "hidden",
+        "band": "visible",
+        "ground": "rgba(0, 0, 0, 0)",
+        "align": "right",
+    }
+    page.evaluate("() => window.__decktalk.caption(null)")
+    assert page.evaluate("() => document.querySelector('#dt-captions').children.length") == 0
+    assert page.evaluate("() => window.__decktalk.fired") == []
 
 
 def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):
@@ -399,11 +689,10 @@ def test_an_entrance_plays_for_the_length_its_author_wrote(page, tmp_path):
 def test_a_step_back_dims_the_element_without_hiding_it(page, tmp_path):
     """Stepping back is emphasis, which is dim enough to read as secondary and light enough to read."""
     url = deck(tmp_path, "back.html")
-    page.goto(f"{url}?scene=1&t0=0&cues=1.1:step@0.05,1.1:ball@0.3")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    page.wait_for_timeout(int(ATTENTION["back"].seconds * 1000) + 200)
+    opened(page, f"{url}?scene=1&t0=signal&cues=1.1:step@0.05,1.1:ball@0.3")
+    stepped(page, 0.3 + ATTENTION["back"].seconds)
     assert float(page.evaluate("() => getComputedStyle(document.querySelector('.step')).opacity")) == pytest.approx(
-        BACK_OPACITY, abs=0.02
+        BACK_OPACITY
     )
 
 
@@ -460,12 +749,29 @@ def test_a_spotlight_brings_each_child_forward_and_steps_the_ones_before_it_back
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'spotlight.html', scene)}?scene=7&t0=0&cues=7.1:first@0.05,7.1:second@0.3")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    page.wait_for_timeout(int(ATTENTION["back"].seconds * 1000) + 200)
+    opened(
+        page, f"{write_page(tmp_path, 'spotlight.html', scene)}?scene=7&t0=signal&cues=7.1:first@0.05,7.1:second@0.3"
+    )
+    stepped(page, 0.3 + ATTENTION["back"].seconds)
     assert page.evaluate("() => document.querySelector('.one').classList.contains('dt-back')") is True
     assert page.evaluate("() => document.querySelector('.two').classList.contains('dt-back')") is False
     assert page.evaluate("() => window.__decktalk.catalog[0].cues['7.1']") == ["7.1:first", "7.1:second"]
+
+
+SWAP_FRAMES = """() => new Promise((done) => {
+  const outgoing = document.querySelector('.wrong');
+  const incoming = document.querySelector('.right');
+  const frames = [];
+  const read = () => {
+    const fired = window.__decktalk.fired.length;
+    const opacity = Number(getComputedStyle(outgoing).opacity);
+    frames.push({ fired, arriving: incoming.getAnimations().length > 0, outgoing: opacity });
+    if (fired === 2 && opacity < 0.5) done(frames);
+    else requestAnimationFrame(read);
+  };
+  requestAnimationFrame(read);
+})"""
+"""Every frame of the swap test: how many cues have fired, whether the entrance plays, and the outgoing opacity."""
 
 
 def test_a_swap_holds_what_it_replaces_until_it_has_arrived(page, tmp_path):
@@ -478,10 +784,15 @@ def test_a_swap_holds_what_it_replaces_until_it_has_arrived(page, tmp_path):
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'swap.html', scene)}?scene=8&t0=0&cues=8.1:show@0.05,8.1:fix@0.4")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.wrong')).opacity") == "1"
-    page.wait_for_function("() => Number(getComputedStyle(document.querySelector('.wrong')).opacity) < 0.5")
+    page.goto(f"{write_page(tmp_path, 'swap.html', scene)}?scene=8&t0=0&cues=8.1:show@0.05,8.1:fix@1")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    # Every frame from before the swap's cue until the outgoing element is half gone, read in the page,
+    # so the test judges the frames the page drew rather than the moment a round trip came back.
+    frames = page.evaluate(SWAP_FRAMES)
+    arriving = [frame for frame in frames if frame["fired"] == 2 and frame["arriving"]]
+    assert arriving, "no frame was read while the incoming element was arriving"
+    assert {frame["outgoing"] for frame in arriving} == {1}
+    assert frames[-1]["outgoing"] < 0.5
     assert warnings_of(page) == []
 
 
@@ -527,9 +838,8 @@ def test_a_count_runs_up_to_the_number_the_author_wrote(page, tmp_path):
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'count.html', scene)}?scene=9&t0=0&cues=9.1:show@0.05")
-    page.wait_for_function("() => window.__decktalk.fired.length === 1")
-    page.wait_for_timeout(int(COUNTS["last"].seconds * 1000) + 300)
+    opened(page, f"{write_page(tmp_path, 'count.html', scene)}?scene=9&t0=signal&cues=9.1:show@0.05")
+    stepped(page, 0.05 + COUNTS["last"].seconds)
     assert page.evaluate("() => document.querySelector('.tile').textContent") == "1 in 1,250"
 
 
@@ -677,6 +987,11 @@ def test_a_slide_handler_and_a_deck_handler_both_receive_the_slide(page, tmp_pat
             'DeckTalk.scene(13, { slides: [{ id: "13.1", owns: ["beat"], render: () => "<p>x</p>" }] });'
             'DeckTalk.on("13.1:beat", () => { throw new Error("no"); });',
             "PAGE_HANDLER_THREW",
+        ),
+        (
+            'DeckTalk.scene(13, { slides: [{ id: "13.1", owns: ["beat"], render: () => "<p>x</p>" }] });'
+            'DeckTalk.frame(() => { throw new Error("no"); }, { region: "p" });',
+            Code.PAGE_FRAME_THREW.value,
         ),
     ],
 )
