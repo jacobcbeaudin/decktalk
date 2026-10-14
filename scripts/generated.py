@@ -13,6 +13,7 @@ and is removed on a write.
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import subprocess
 import sys
@@ -118,6 +119,9 @@ def run(
     refused before it touches anything. `why_stale` is the comparison, which a measured figure widens
     to a tolerance, and `wrote` hears which files a write changed.
     """
+    # A reason quotes the file, which may hold any character, and a Windows console encodes cp1252.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
     main = sys.modules["__main__"]
     script = Path(main.__file__ or sys.argv[0]).name
     parser = argparse.ArgumentParser(description=main.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
