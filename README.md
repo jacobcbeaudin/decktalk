@@ -11,11 +11,11 @@ DeckTalk turns a Markdown script and plain HTML slides into one narrated mp4, vo
 
 <!-- x-release-please-start-version -->
 
-[![A frame of the film Halfway. On a dark city map, a white route runs from 14 Elm Street to a pin at Cafe Meridian, and a teal route runs on to 9 Harbour Road, each leg labelled 20 min.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.5.0/assets/halfway-frame.webp)](https://decktalk.ai/films/halfway)
+[![A moment from the film Follows. A built film plays an invoice app, and its Share button lights the instant the word "Share" is said, while the waveform below marks each spoken word as it lands.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.5.0/assets/follows.gif)](https://decktalk.ai/films/follows)
 
 <!-- x-release-please-end -->
 
-DeckTalk built the film [Halfway](https://decktalk.ai/films/halfway) from text files, and every reveal in it starts on its word. Watch it with the sound on, then build your own below.
+DeckTalk built the film [Follows](https://decktalk.ai/films/follows) from text files: two voices in conversation, a demo that clicks on the word it hears, and a rebuild that voices only the one word that changed. Watch it with the sound on, then build your own below.
 
 ## Make your first video
 
