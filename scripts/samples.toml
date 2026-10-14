@@ -514,7 +514,8 @@ what = "build/recordings/01.json after decktalk build --no-spend on a fresh deck
 run = [["build", "--no-spend"]]
 file = "build/recordings/01.json"
 keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0 }
-varies = ["engine", "load_seconds", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
+# The version is the release that wrote the file, which every release bump changes before this sample can run again.
+varies = ["engine", "version", "load_seconds", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
 
 [section-json]
 page = "docs/reference/artifacts.mdx"
