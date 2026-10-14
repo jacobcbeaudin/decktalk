@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/jacobcbeaudin/decktalk/compare/v0.6.0-rc1...v0.6.0) (2026-10-14)
+
+
+### Documentation
+
+* measure the release that the README and the numbers page describe ([9335e98](https://github.com/jacobcbeaudin/decktalk/commit/9335e989deca3284d3f3b16359ff89179d2fe4c9))
+
 ## [0.6.0-rc1](https://github.com/jacobcbeaudin/decktalk/compare/v0.5.0...v0.6.0-rc1) (2026-10-14)
 
 

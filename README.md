@@ -11,7 +11,7 @@ DeckTalk turns a Markdown script and plain HTML slides into one narrated mp4, vo
 
 <!-- x-release-please-start-version -->
 
-[![A moment from the film Follows. A built film plays an invoice app, and its Share button lights the instant the word "Share" is said, while the waveform below marks each spoken word as it lands.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.6.0-rc1/assets/follows.gif)](https://decktalk.ai/films/follows)
+[![A moment from the film Follows. A built film plays an invoice app, and its Share button lights the instant the word "Share" is said, while the waveform below marks each spoken word as it lands.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.6.0/assets/follows.gif)](https://decktalk.ai/films/follows)
 
 <!-- x-release-please-end -->
 
@@ -22,16 +22,16 @@ DeckTalk built the film [Follows](https://decktalk.ai/films/follows) from text f
 <!-- x-release-please-start-version -->
 
 ```console
-uv tool install decktalk==0.6.0-rc1
+uv tool install decktalk==0.6.0
 decktalk init my-lesson && cd my-lesson
 decktalk build --no-spend
 ```
 
-The first line pins 0.6.0-rc1, the release this page describes.
+The first line pins 0.6.0, the release this page describes.
 
-The same block runs on Windows in PowerShell 7 or cmd, and `pipx install decktalk==0.6.0-rc1` works in place of uv.
+The same block runs on Windows in PowerShell 7 or cmd, and `pipx install decktalk==0.6.0` works in place of uv.
 
-On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECKTALK_VERSION=0.6.0-rc1 sh` puts uv on the machine first, and uv brings its own Python. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it.
+On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECKTALK_VERSION=0.6.0 sh` puts uv on the machine first, and uv brings its own Python. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it.
 
 <!-- x-release-please-end -->
 
@@ -160,7 +160,7 @@ DeckTalk is a pipeline of six stages: `narrate`, `cue`, `record`, `score`, `asse
 
 <!-- x-release-please-start-version -->
 
-![The edit cycle. One sentence changes in script.md, and only its section is voiced and recorded again, while every other section comes back from the cache.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.6.0-rc1/docs/images/edit-cycle-light.svg)
+![The edit cycle. One sentence changes in script.md, and only its section is voiced and recorded again, while every other section comes back from the cache.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.6.0/docs/images/edit-cycle-light.svg)
 
 <!-- x-release-please-end -->
 
