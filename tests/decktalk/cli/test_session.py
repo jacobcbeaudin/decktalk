@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import rich.console
 from rich.console import Console
 
 from decktalk.cli.options import FailOn, When
@@ -26,6 +27,15 @@ from .conftest import ANSWERS, Fake, finding
 def session(flags: Globals | None = None, *, spend: bool | None = None, threshold: Threshold = ERRORS_FAIL) -> Session:
     """One session with the flags, the spend answer and the threshold a test is about, and nothing else set."""
     return Session(flags or Globals(), command="build", spend=spend, threshold=threshold)
+
+
+def test_a_pipe_on_windows_is_laid_out_at_the_whole_width_columns_names(monkeypatch):
+    """rich takes a Windows stream without VT for the legacy console, one column short, and a pipe is no console."""
+    monkeypatch.setattr(rich.console, "detect_legacy_windows", lambda: True)
+    monkeypatch.setenv("COLUMNS", "99")
+    assert Console(file=io.StringIO()).width == 98  # the shortfall this guards against, as Windows would draw it
+    made = session()
+    assert (made.out.width, made.err.width) == (99, 99)
 
 
 def terminal(**state: bool) -> Terminal:
