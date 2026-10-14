@@ -1166,6 +1166,9 @@ CRASH_AT = 5
 CRASH_CEILING_SECONDS = 60
 """A ceiling on a test of a crashed renderer, which ends in moments or hangs where a call is never answered."""
 
+HARD_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+"""The signal that kills a process outright: Windows has no SIGKILL, and `os.kill` there terminates for any signal."""
+
 
 def kill_renderer(page: Page) -> None:
     """Kill the renderer of `page` the way the system kills one for memory, and wait until the page says it crashed.
@@ -1179,7 +1182,7 @@ def kill_renderer(page: Page) -> None:
     with page.expect_event("crash"):
         for process in listed["processInfo"]:
             if process["type"] == "renderer":
-                os.kill(process["id"], signal.SIGKILL)
+                os.kill(process["id"], HARD_KILL)
 
 
 def crashing_once(patch: pytest.MonkeyPatch) -> list[int]:
@@ -1197,11 +1200,27 @@ def crashing_once(patch: pytest.MonkeyPatch) -> list[int]:
     return crashes
 
 
-def encodes_left() -> list[str]:
-    """Every ffmpeg this process started that is still running, which a recording that stopped leaves none of."""
-    listed = subprocess.run(["ps", "-A", "-o", "ppid=,pid=,command="], capture_output=True, text=True, check=True)
-    rows = (line.split(None, 2) for line in listed.stdout.splitlines())
-    return [row[2] for row in rows if len(row) == 3 and row[0] == str(os.getpid()) and "ffmpeg" in row[2]]
+def kept_tools(patch: pytest.MonkeyPatch) -> list[subprocess.Popen[bytes]]:
+    """Keep every tool a recording starts, so a test can ask which of them still run once it stopped.
+
+    The recording's own processes are asked, not the system's process list, which has no common form
+    across Linux, macOS and Windows.
+    """
+    started: list[subprocess.Popen[bytes]] = []
+    spawn = ffmpeg._spawn  # the one place every tool is started
+
+    def keeping(cmd: list[str], **kwargs: int) -> subprocess.Popen[bytes]:
+        process = spawn(cmd, **kwargs)
+        started.append(process)
+        return process
+
+    patch.setattr(ffmpeg, "_spawn", keeping)
+    return started
+
+
+def still_running(started: list[subprocess.Popen[bytes]]) -> list[str]:
+    """The tools in `started` that have not exited, which a recording that stopped leaves none of."""
+    return [str(process.args) for process in started if process.poll() is None]
 
 
 @pytest.mark.timeout(CRASH_CEILING_SECONDS)
@@ -1238,10 +1257,11 @@ def test_a_renderer_that_crashes_with_no_retry_left_says_it_crashed_naming_the_s
     """With no retry left the run stops, the error says the renderer crashed, and the piece's encode is stopped."""
     with pytest.MonkeyPatch.context() as patch:
         crashing_once(patch)
+        started = kept_tools(patch)
         with pytest.raises(ToolError) as raised:
             record(fixture_page(tmp_path, GROW), tmp_path / "a.mp4", 0.6, settings=replace(RECORD, renderer_retries=0))
     assert "section 1: the page's renderer crashed once" in str(raised.value)
-    assert encodes_left() == []
+    assert started and still_running(started) == []
 
 
 @pytest.mark.timeout(CRASH_CEILING_SECONDS)
@@ -1258,10 +1278,11 @@ def test_a_crash_that_takes_the_browser_with_it_stops_the_piece_saying_so_and_le
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(stepping.Stepper, "capture", lost)
+        started = kept_tools(patch)
         with pytest.raises(ToolError) as raised:
             record(fixture_page(tmp_path, GROW), tmp_path / "a.mp4", 0.6)
     assert "section 1: the page's renderer crashed and took the browser with it" in str(raised.value)
-    assert encodes_left() == []
+    assert started and still_running(started) == []
 
 
 ENCODE_FRAMES = 12
