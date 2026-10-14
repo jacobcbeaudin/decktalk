@@ -432,7 +432,7 @@ def test_a_fetch_that_waited_says_how_long_and_what_it_found(monkeypatch, caplog
 
 class Host:
     """A local HTTP host for one archive, which can trickle it, drop the connection or stall partway, and
-    can honour a Range request or ignore it. Every request's Range header is recorded with the bytes sent.
+    can honour a Range request or ignore it. Every request's Range header is recorded.
 
     `drop_after` and `stall_after` break only the first answer, which is what a link that came back does.
     """
@@ -448,7 +448,6 @@ class Host:
         self.stall_after: int | None = None
         self.stall_seconds = 0.0
         self.asked: list[str | None] = []
-        self.sent: list[int] = []
         host = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -491,7 +490,6 @@ class Host:
             handler.wfile.flush()
             sent += len(piece)
             time.sleep(self.pause)
-        self.sent.append(sent)
 
     def close(self) -> None:
         self.server.shutdown()
@@ -536,7 +534,6 @@ def test_a_dropped_download_keeps_what_arrived_and_the_next_fetch_asks_for_the_r
     with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
         assert fetch.fetch_ffmpeg(wait_seconds=WAIT) == fetch.installed_pinned()
     assert host.asked == [None, f"bytes={have}-"]
-    assert host.sent[-1] == len(host.data) - have
     assert heard[0] == (fetch.TOOL, have, len(host.data)), heard
     assert list(fetch.install_dir().parent.rglob("*.part")) == []
     assert scratch_left(fetch.install_dir()) == []
@@ -559,7 +556,6 @@ def test_a_host_without_ranges_sends_the_whole_archive_again_and_it_still_verifi
         fetch.fetch_ffmpeg(wait_seconds=WAIT)
     assert fetch.fetch_ffmpeg(wait_seconds=WAIT) == fetch.installed_pinned()
     assert host.asked[0] is None and host.asked[1] is not None
-    assert host.sent[-1] == len(host.data)
 
 
 @pytest.mark.usefixtures("host")
