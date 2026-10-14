@@ -135,12 +135,13 @@ jobs:
         with:
           path: *tool-paths
           key: ${{ matrix.cache }}
-      # The browser row launches Chromium under the untrusted policy, which requires its sandbox and
-      # never falls back. Ubuntu 23.10 and later refuse the unprivileged user namespace that sandbox
-      # needs, and Playwright's Chromium carries no setuid helper, so the Linux leg turns the switch
+      # The browser and e2e rows launch Chromium under the untrusted policy (e2e runs the Python API
+      # page's example that records an untrusted page), which requires its sandbox and never falls
+      # back. Ubuntu 23.10 and later refuse the unprivileged user namespace that sandbox needs, and
+      # Playwright's Chromium carries no setuid helper, so a Linux leg of those rows turns the switch
       # off for its own run. No other row launches an untrusted page.
       - name: Let the Chromium sandbox start
-        if: matrix.group == 'browser'
+        if: runner.os == 'Linux' && (matrix.group == 'browser' || matrix.group == 'e2e')
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run the group
         # check.py opens its own log with the group name and the one local command that reproduces
