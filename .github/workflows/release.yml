@@ -71,7 +71,7 @@ jobs:
       # The release pull request is opened with the changelog app's token rather than the workflow's
       # own, because GitHub holds every workflow on a pull request the workflow token opens until a
       # person approves it, and a release pull request nobody has to approve is the point of the app.
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: token
         with:
           client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
