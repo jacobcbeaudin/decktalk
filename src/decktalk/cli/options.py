@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import copy
 import inspect
+import operator
 from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
@@ -332,7 +333,9 @@ def restated(annotation: object, **changes: object) -> object:
     mine = copy.copy(info)
     for name, value in changes.items():
         setattr(mine, name, value)
-    return Annotated[base, mine, *rest]
+    # `base` is a value read at run time, so this builds an annotation object rather than writing a
+    # type. The call says that, where `Annotated[base, ...]` would ask the type checker for a type.
+    return operator.getitem(Annotated, (base, mine, *rest))
 
 
 def sections_of(values: Sequence[str] | None) -> tuple[int, ...] | None:

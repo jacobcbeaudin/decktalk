@@ -19,19 +19,23 @@ DeckTalk built the film [Follows](https://decktalk.ai/films/follows) from text f
 
 ## Make your first video
 
-<!-- x-release-please-start-version -->
-
 ```console
-uv tool install decktalk==0.6.0
+curl -LsSf https://decktalk.ai/install.sh | sh
 decktalk init my-lesson && cd my-lesson
 decktalk build --no-spend
 ```
 
-The first line pins 0.6.0, the release this page describes.
+The first line installs Pixi if the machine has none, checks it against the SHA-256 its release publishes, and runs `pixi global install decktalk` from DeckTalk's own conda channel. Pixi brings DeckTalk its own Python. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it, and run it again to update.
 
-The same block runs on Windows in PowerShell 7 or cmd, and `pipx install decktalk==0.6.0` works in place of uv.
+With Pixi already on the machine, the first line is `pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk`. The shell script stops on Windows, so in PowerShell the first line installs Pixi with its own installer and then runs the same command:
 
-On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECKTALK_VERSION=0.6.0 sh` puts uv on the machine first, and uv brings its own Python. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it.
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk"
+```
+
+<!-- x-release-please-start-version -->
+
+This page describes 0.6.0, and `uv tool install decktalk==0.6.0` installs exactly that release from PyPI on every platform.
 
 <!-- x-release-please-end -->
 
@@ -176,7 +180,7 @@ Measured on macOS 26.6.2 arm64 (Apple M5 Pro) with DeckTalk 0.6.0rc1 and placeho
 
 ## Requirements and costs
 
-- **Software.** The one-line installer runs on Linux and macOS and brings its own Python. On Windows, install with uv or pipx, which needs Python 3.12 or later. The first build downloads Chromium and ffmpeg, and `decktalk install` fetches them up front for a Docker layer, a CI cache or an offline machine. On Linux, `decktalk install` is also the one command that installs Chromium's system libraries.
+- **Software.** The one-line installer runs on Linux and macOS, and Pixi brings DeckTalk its own Python. On Windows, Pixi's PowerShell installer and `pixi global install` do the same, and `uv tool install decktalk` installs from PyPI everywhere. The first build downloads Chromium and ffmpeg, and `decktalk install` fetches them up front for a Docker layer, a CI cache or an offline machine. On Linux, `decktalk install` is also the one command that installs Chromium's system libraries.
 - **Accounts.** A build that does not spend needs no account. A build voiced by ElevenLabs needs an ElevenLabs API key and a voice id, and DeckTalk never prints the key. The local `dtsp` voice needs a voice id and a server on this machine, and no key.
 - **Cost.** Only a voiced build spends money, at your own ElevenLabs rate per character. A turn whose text and voice have not changed is not voiced again.
 

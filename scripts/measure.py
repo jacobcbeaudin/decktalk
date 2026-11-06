@@ -1,7 +1,7 @@
 """Measure DeckTalk on this machine and write docs/data/measured.json, which the numbers page reads.
 
-    uv run python scripts/measure.py                # every measurement, about five minutes
-    uv run python scripts/measure.py --repeats 5    # more builds per measurement
+    pixi run python scripts/measure.py                # every measurement, about five minutes
+    pixi run python scripts/measure.py --repeats 5    # more builds per measurement
 
 Nothing on the measured-numbers page is typed. This script runs the real commands and writes what
 they reported, and `scripts/build_measured.py` renders the page and the README's measured block from
@@ -49,7 +49,7 @@ from decktalk.stages.verify.plan import HALF_FRAME
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "docs" / "data" / "measured.json"
-SCRIPT = f"uv run python scripts/{Path(__file__).name}"
+SCRIPT = f"pixi run python scripts/{Path(__file__).name}"
 
 SCHEMA = 1
 """Truth: the shape version of the data file, which `scripts/build_measured.py` refuses any other of."""
@@ -251,13 +251,13 @@ def coverage() -> dict[str, Any]:
     # The groups run in the table's order, so the coverage row combines after every suite has measured.
     wanted = {group.name for group in check_coverage.suites().values()} | {COVERAGE_GROUP}
     groups = [group.name for group in check.GROUPS if group.name in wanted]
-    command = ["uv", "run", "python", "scripts/check.py", "--group", ",".join(groups)]
+    command = ["pixi", "run", "check", "--group", ",".join(groups)]
     print(f"$ {' '.join(command)}", file=sys.stderr)
     if subprocess.run(command, cwd=ROOT, check=False).returncode != 0:
         raise SystemExit("the check table failed, so its coverage is not a measurement of this code.")
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "coverage.json"
-        text(["uv", "run", "coverage", "json", "--quiet", "-o", str(report)])
+        text([sys.executable, "-m", "coverage", "json", "--quiet", "-o", str(report)])
         totals = coverage_totals(json.loads(report.read_text(encoding="utf-8")))
     return {"run": RUN, "command": " ".join(command), **totals, "suites": list(check_coverage.reporting_legs())}
 
@@ -304,7 +304,7 @@ def main() -> int:
         "what": "the starter `decktalk init` writes, built with placeholders",
         "command": command,
         "commit": text(["git", "rev-parse", "HEAD"]).strip(),
-        "source_changed": bool(text(["git", "status", "--porcelain", "--", "src", "pyproject.toml", "uv.lock"])),
+        "source_changed": bool(text(["git", "status", "--porcelain", "--", "src", "pyproject.toml", "pixi.lock"])),
         "machine": machine(),
         "versions": versions(doctor, decktalk=text([sys.executable, "-m", "decktalk", "--version"])),
         "repeats": args.repeats,
@@ -335,7 +335,7 @@ def main() -> int:
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     TARGET.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(document, indent=2))
-    print(f"wrote {TARGET.relative_to(ROOT).as_posix()}. Run `uv run scripts/build_measured.py --write` next.")
+    print(f"wrote {TARGET.relative_to(ROOT).as_posix()}. Run `pixi run python scripts/build_measured.py --write` next.")
     return 0
 
 

@@ -1,6 +1,6 @@
 """No closed vocabulary is spelled as a string outside the enum that defines it.
 
-    uv run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
+    pixi run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
 
 A stage, an outcome, a finding code, an error code, a layer, a scope, a take outcome, a take
 state, a sound outcome, a section kind, a skip reason, a substitute, a spend state, a setting's
@@ -318,7 +318,7 @@ def test_the_baseline_only_shrinks():
         f"These files spell a closed vocabulary as a string and are not excused: {added}. Use the enum "
         f"member, and `.value` where the word is written into text. These files grew a literal: {grown}. "
         f"These files spell fewer words than the baseline excuses: {stale}. Run "
-        "`uv run python tests/contract/test_vocabulary.py --write` to lower a beaten count."
+        "`pixi run python tests/contract/test_vocabulary.py --write` to lower a beaten count."
     )
 
 

@@ -1,7 +1,7 @@
 """Generate schemas/v1/events.json, the JSON Schema of one line of the events file, from the models.
 
-    uv run scripts/build_event_schema.py --write    # write the schema
-    uv run scripts/build_event_schema.py --check    # exit 1 if the committed schema would change
+    pixi run python scripts/build_event_schema.py --write    # write the schema
+    pixi run python scripts/build_event_schema.py --check    # exit 1 if the committed schema would change
 
 The schema is the one `decktalk schema event` prints, read off the event models in
 `src/decktalk/events.py`: one line of the stream, discriminated by its `event`, with every kind and

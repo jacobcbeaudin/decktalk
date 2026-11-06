@@ -1,6 +1,6 @@
 """No magic numbers: every number that decides something is a setting, an expression, or a named fact.
 
-    uv run python tests/contract/test_numbers.py --write   # lower a count the code has shrunk
+    pixi run python tests/contract/test_numbers.py --write   # lower a count the code has shrunk
 
 A number reaches the code through three doors and there is no fourth. It becomes a settings key when
 a project would turn it. It is derived when it is computable, and then it is written as the
@@ -345,7 +345,7 @@ def test_the_baseline_only_shrinks() -> None:
         "it as the expression it is, or bind it to a module-level upper-case name with one sentence "
         f"opening with truth, derived or calibration. These files grew a number: {grown}. These files "
         f"hold fewer numbers than the baseline excuses: {stale}. Run "
-        "`uv run python tests/contract/test_numbers.py --write` to lower a beaten count."
+        "`pixi run python tests/contract/test_numbers.py --write` to lower a beaten count."
     )
 
 

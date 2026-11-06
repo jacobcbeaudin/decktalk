@@ -17,23 +17,23 @@ def fake_path(
 ) -> dict[str, str]:
     """A PATH holding stubs that only record that they were called.
 
-    `decktalk` is one of them on purpose. Without it the script falls through to
-    `$HOME/.local/bin/decktalk`, so on a machine that has DeckTalk installed the tests would pass by
-    reaching the real one, and on a machine that does not they would fail for a reason that has
-    nothing to do with the script.
+    `decktalk` is one of them on purpose. Without it the script finds no `$PIXI_HOME/bin/decktalk`
+    and nothing on PATH, so the tests would fail for a reason that has nothing to do with the script.
+    `pixi` is one too, so a run finds Pixi already there and never downloads it, unless `without`
+    removes it.
 
     `fail` names stubs that exit 1, for the paths where something goes wrong. `slow` names stubs
     that take five seconds. `without` names tools that must not be found at all. `uname` is what a
     stub `uname -s` prints, for the platform the script is made to believe it runs on.
 
-    PATH is /usr/bin:/bin and nothing else, which is what makes `without` mean anything: uv lives in
-    ~/.local/bin or Homebrew, so a PATH that inherited the author's would still find the real one
-    after the stub was removed, and a test for "no uv on this machine" would silently be a test of
-    the machine that has uv.
+    PATH is /usr/bin:/bin and nothing else, which is what makes `without` mean anything: Pixi lives in
+    ~/.pixi/bin or Homebrew, so a PATH that inherited the author's would still find the real one
+    after the stub was removed, and a test for "no Pixi on this machine" would silently be a test of
+    the machine that has Pixi.
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for name in ("uv", "curl", "sudo", "wget", "decktalk"):
+    for name in ("pixi", "curl", "sudo", "wget", "decktalk"):
         lines = [
             "#!/bin/sh",
             f'echo "{name} $*" >> "{marker}"',
@@ -55,7 +55,9 @@ def fake_path(
         (bin_dir / "uname").chmod(0o755)
     env = dict(os.environ)
     env["PATH"] = f"{bin_dir}:/usr/bin:/bin"
-    # HOME too, because find_decktalk falls back to $HOME/.local/bin/decktalk. Left pointing at the
-    # real home, a test would quietly exercise whatever DeckTalk the author happens to have.
+    # HOME too, because Pixi's home defaults to $HOME/.pixi and find_decktalk reads its bin folder
+    # first. Left pointing at the real home, a test would quietly exercise whatever DeckTalk and
+    # Pixi the author happens to have. PIXI_HOME is dropped for the same reason.
     env["HOME"] = str(tmp_path)
+    env.pop("PIXI_HOME", None)
     return env

@@ -239,19 +239,23 @@ jobs:
   video:
     runs-on: ubuntu-latest
     env:
-      DECKTALK_VERSION: "0.5.0"
       DECKTALK_PROJECT: lessons/derivatives
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv tool install "decktalk==$DECKTALK_VERSION"
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
+        with:
+          pixi-version: v0.84.1
+          run-install: false
+      - run: pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk
+      - id: decktalk
+        run: echo "version=$(decktalk --version)" >> "$GITHUB_OUTPUT"
       - name: Cache Chromium and ffmpeg
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/decktalk
-          key: decktalk-tools-${{ runner.os }}-${{ runner.arch }}-${{ env.DECKTALK_VERSION }}
+          key: decktalk-tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.decktalk.outputs.version }}
       - run: decktalk install --no-input
       - run: mkdir -p reports
       - run: decktalk doctor --no-input --json > reports/doctor.json
@@ -277,9 +281,13 @@ jobs:
 
 The job runs on every push to `main` and on every pull request, and its token can read the
 repository and nothing more. Each action is pinned to a commit, with its version in the comment
-beside it.
+beside it. setup-pixi puts Pixi in `~/.pixi/bin` and that folder on PATH, and installs no workspace
+of its own, so `pixi global install` puts `decktalk` beside it, from DeckTalk's channel with
+conda-forge for its Python, Node and Playwright.
 
-`DECKTALK_VERSION` pins DeckTalk, and the tool cache is keyed on it as well as on the runner. Each
+`pixi global install` takes the newest final release the channel holds, and the tool cache is
+keyed on the version `decktalk --version` prints as well as on the runner. To hold the job to one
+release, write `"decktalk==<version>"` with a version from the [changelog](/changelog). Each
 DeckTalk version pins its own ffmpeg build and installs with the Playwright release that chooses its
 Chromium, so a new version starts from an empty cache and fetches the builds it wants, rather than
 restoring the ones the last version used. `decktalk install` fetches anything the restored cache

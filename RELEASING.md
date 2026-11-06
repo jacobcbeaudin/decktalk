@@ -15,16 +15,41 @@ judged.
 `.github/workflows/release.yml` never runs a check. It starts from a completed run of `ci` and
 releases only when that run was a green push on `main`, so what ships is what `ci` judged.
 
+A release goes to two places. PyPI gets the wheel and the sdist of every release. The conda channel
+`https://prefix.dev/jacobcbeaudin/jcbcodes`, which `install.sh` and `pixi global install` read, gets the noarch
+conda package of every final release, built by `pixi build` from the tag and uploaded after PyPI
+has the same version. The upload uses trusted publishing, as PyPI does: the `publish-conda` job
+holds a GitHub OIDC token, prefix.dev exchanges it for a short upload token, and no prefix.dev key
+is stored anywhere. The upload carries a Sigstore attestation of the package, signed with the same
+identity. When prefix.dev gives no token, the job stops with an error that names the trusted
+publisher to register.
+
+The channel `jacobcbeaudin/jcbcodes` names its trusted publisher once. On the channel page
+`https://prefix.dev/channels/@jacobcbeaudin/jcbcodes`, open Settings, then Repository Access, then
+Add access, and fill in:
+
+| Field | Value |
+|---|---|
+| Source | GitHub |
+| Owner | `jacobcbeaudin` |
+| Repository | `decktalk` |
+| Workflow file | `release.yml` |
+| Environment | empty, any environment |
+| Access | Read/write |
+| Upload access | All packages |
+
+The entry then reads "jacobcbeaudin / decktalk, READ/WRITE, release.yml, Any environment".
+
 Every action is pinned to a commit SHA with its version in a comment, every workflow grants
-`contents: read` at the top and more only per job, and `uvx zizmor .github/workflows` is part of the
-`lint` group. The name `release.yml` and the environment name `pypi` are registered with PyPI's
-trusted publisher, so neither may be renamed.
+`contents: read` at the top and more only per job, and `zizmor .github/workflows`, at the version
+pixi.lock pins, is part of the `lint` group. The name `release.yml` and the environment name `pypi` are registered with PyPI's
+trusted publisher, and the name `release.yml` with the trusted publisher of the channel `jacobcbeaudin/jcbcodes`, so neither may be renamed.
 
 Every leg holds a reveal to its own frame, the hosted macOS and Windows rows and the weekly
 `scaffold` row as much as the Linux ones, because the recorder steps the section clock and a slower
 runner records the same frames. `tests/support/timing_policy.py` holds that rule and the time budgets.
 
-Coverage has one floor, measured on Linux and written by `uv run scripts/check_coverage.py --write`
+Coverage has one floor, measured on Linux and written by `pixi run python scripts/check_coverage.py --write`
 rather than typed. The record only rises, and a run is held to it less a point of margin. Every
 suite that measures has to leave a data file with something in it, so a leg that never ran fails by
 name.
@@ -32,10 +57,10 @@ name.
 ## How the version moves
 
 release-please keeps a release pull request open against `main`. It bumps the version in
-`pyproject.toml`, `uv.lock`, `src/decktalk/runtime/src/index.ts` and the pinned blocks of
-`README.md`, writes `CHANGELOG.md`, and
+`pyproject.toml`, `src/decktalk/runtime/src/index.ts` and the pinned blocks of `README.md`,
+writes `CHANGELOG.md`, and
 picks the bump from the commits since the last release. That pull request runs `ci` like any other,
-and a job in `ci.yml` runs `uv run scripts/check.py --group generated --write` on its branch and
+and a job in `ci.yml` runs `scripts/check.py --group generated --write` on its branch and
 commits every file that changed, so no bot ever writes to `main`. The `rehearsal` group runs the same
 release path on every pull request first, and the docstring of `scripts/rehearse_release.py` says
 what it bumps and what it refuses.
@@ -74,10 +99,11 @@ merge, the release workflow marks it the latest release and replaces its notes w
 whole series from `scripts/release_notes.py`.
 
 The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc2`, the wheel is
-`decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`.
+`decktalk-0.5.0rc2-py3-none-any.whl` and its metadata says `0.5.0rc2`. pixi.lock holds no version
+of the package itself, so a bump leaves it as it is.
 `tests/contract/test_release_versions.py` accepts both spellings as long as every file names one
-version. PyPI excludes a prerelease from plain resolution, so to install a candidate, name it:
-`DECKTALK_VERSION=0.5.0rc2 sh install.sh`.
+version. A candidate goes to PyPI and never to the conda channel, so to install a candidate, name it to uv:
+`uv tool install decktalk==0.5.0rc2`.
 
 ## To release
 
@@ -88,3 +114,6 @@ version. PyPI excludes a prerelease from plain resolution, so to install a candi
    step with a reviewer.
 4. Check PyPI. The workflow publishes through trusted publishing and attaches the files to the
    GitHub release.
+5. For a final release, check `https://prefix.dev/channels/@jacobcbeaudin/jcbcodes`. The workflow uploads the conda
+   package and its attestation through trusted publishing after PyPI, and attaches the package to
+   the GitHub release.

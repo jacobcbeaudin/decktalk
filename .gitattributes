@@ -1,0 +1,3 @@
+# pixi.lock is written by `pixi lock` and never merged by hand, so git keeps one side whole on a
+# conflict, and GitHub folds it in a diff.
+pixi.lock merge=binary linguist-language=YAML linguist-generated=true -diff

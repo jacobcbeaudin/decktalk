@@ -1,7 +1,7 @@
 """Generate schemas/v1/results/*.json, one JSON Schema per command result, from the models.
 
-    uv run scripts/build_result_schemas.py --write    # write every schema
-    uv run scripts/build_result_schemas.py --check    # exit 1 if a committed schema would change
+    pixi run python scripts/build_result_schemas.py --write    # write every schema
+    pixi run python scripts/build_result_schemas.py --check    # exit 1 if a committed schema would change
 
 Every field's sentence, type, range and default come from the `Field` that declares it, so the
 published contract cannot drift from the code. Edit `src/decktalk/results.py`, then run this.

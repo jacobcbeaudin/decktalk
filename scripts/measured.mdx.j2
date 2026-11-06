@@ -70,4 +70,4 @@ The suites measured are {{ coverage.suites | join(", ") }}.
 | Command | `{{ run.command }}` |
 
 {% endfor %}To measure your own machine, run the command from a checkout of the repository, then
-`uv run scripts/build_measured.py --write` to render this page from what it wrote.
+`pixi run python scripts/build_measured.py --write` to render this page from what it wrote.

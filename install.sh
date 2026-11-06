@@ -3,7 +3,13 @@
 #
 #   curl -LsSf https://decktalk.ai/install.sh | sh
 #
-# It installs uv if you do not have it, then `uv tool install decktalk`. That is all it does.
+# It installs Pixi if you do not have it, then `pixi global install decktalk` from DeckTalk's own
+# conda channel. That is all it does.
+#
+# Pixi comes from its GitHub release, pinned below, and is checked against the SHA-256 the release
+# publishes before it is unpacked into ~/.pixi/bin (or $PIXI_HOME/bin). Pixi's own installer is
+# not run, so nothing edits a shell startup file and nothing reports the install to anyone: the
+# script prints the PATH line for you to add. Run it again to update DeckTalk.
 #
 # It never runs sudo, and it never fetches Chromium or ffmpeg: `decktalk install` does that,
 # separately and visibly, because on Linux it reaches `playwright install chromium --with-deps` and
@@ -14,8 +20,8 @@
 # Every step's output is kept in a log, whether or not it is shown. On failure the log's path is
 # printed and the file is left behind; on success it is removed unless you asked to keep it.
 #
-# DECKTALK_VERSION=0.4.0 pins the version. Options go after `-s --`, for example
-# `| sh -s -- --dry-run`; run with --help to see them.
+# DECKTALK_VERSION=X.Y.Z pins a final release the channel holds. Options go after `-s --`, for
+# example `| sh -s -- --dry-run`; run with --help to see them.
 #
 # Everything is inside main(), which is called on the last line, so a download cut off part way
 # through runs nothing at all instead of half an install.
@@ -23,7 +29,14 @@
 set -eu
 
 DECKTALK_VERSION="${DECKTALK_VERSION:-}"
-UV_INSTALLER="https://astral.sh/uv/install.sh"
+# The Pixi this script installs when the machine has none. It is the `requires-pixi` floor in
+# DeckTalk's pyproject.toml, which every CI leg runs, and tests/contract/test_installer.py holds the
+# two to one version.
+PIXI_VERSION="0.84.1"
+PIXI_RELEASES="https://github.com/prefix-dev/pixi/releases/download"
+# DeckTalk's conda package lives in its own channel, and its dependencies (Python, Node, Playwright)
+# in conda-forge, so `pixi global` is given both, in that order.
+CHANNEL="https://prefix.dev/jacobcbeaudin/jcbcodes"
 
 # ---- presentation -------------------------------------------------------------------------------
 # Colour and motion only when stdout is a terminal. Piping this script into sh leaves stdout on the
@@ -42,7 +55,9 @@ LABEL=''
 STEP_LOG=''
 STEP_RC=''
 TRANSCRIPT=''
-TMP_UV=''
+TMP_PIXI=''
+TARGET=''
+PIXI=''
 FAILED=0
 
 setup_style() {
@@ -191,8 +206,8 @@ step() {
 
 # step_stream "Label" cmd args...
 #
-# For work that already reports real progress: uv prints the size of each wheel and a live bar, and
-# a spinner over the top of that would replace a true number with a decorative one. So the child
+# For work that already reports real progress: Pixi prints each package it fetches and a live bar,
+# and a spinner over the top of that would replace a true number with a decorative one. So the child
 # keeps the screen, and its output is teed into the log at the same time.
 step_stream() {
 	LABEL="$1"
@@ -230,7 +245,7 @@ cleanup() {
 	spin_stop
 	[ -z "$STEP_LOG" ] || rm -f "$STEP_LOG"
 	[ -z "$STEP_RC" ] || rm -f "$STEP_RC"
-	[ -z "$TMP_UV" ] || rm -f "$TMP_UV"
+	[ -z "$TMP_PIXI" ] || rm -rf "$TMP_PIXI"
 	[ "$FANCY" != 1 ] || printf '%s' "$SHOW_CURSOR"
 	if [ -n "$TRANSCRIPT" ]; then
 		if [ "$FAILED" = 1 ] || [ "$KEEP_LOG" = 1 ]; then
@@ -267,6 +282,7 @@ Options, passed after `-s --`, for example `| sh -s -- --dry-run`:
 
 Environment:
     DECKTALK_VERSION     Install this version instead of the latest.
+    PIXI_HOME            Where Pixi and DeckTalk go, instead of ~/.pixi.
     DECKTALK_INSTALL_LOG Write the log here instead of a temp file.
     NO_COLOR             Set to anything for the same effect as --no-color.
 USAGE
@@ -290,98 +306,149 @@ check_platform() {
 	os="$(uname -s)"
 	case "$os" in
 	Linux)
-		# Playwright, which records the slides, publishes no musllinux wheels, so DeckTalk cannot
-		# resolve on Alpine at all. Say so here rather than leaving a resolver trace to read.
+		# conda-forge, which builds the Python, Node and Playwright that DeckTalk runs on, publishes
+		# no musl builds, so nothing it installs can start on Alpine. Say so before anything is
+		# downloaded rather than leaving a solver or loader error to read.
 		if (ldd --version 2>&1 | grep -qi musl) || [ -e /lib/ld-musl-x86_64.so.1 ] || [ -e /lib/ld-musl-aarch64.so.1 ]; then
 			err "this is a musl system (Alpine or similar), and DeckTalk needs glibc:"
-			err "Playwright, which records the slides, publishes no musl wheels."
+			err "conda-forge, which builds its Python, Node and Playwright, publishes no musl builds."
 			return 1
 		fi
+		# Pixi's Linux build is one static binary, so the same archive runs on every glibc.
+		suffix="unknown-linux-musl"
 		;;
-	Darwin) ;;
+	Darwin) suffix="apple-darwin" ;;
 	MINGW* | MSYS* | CYGWIN* | Windows_NT)
 		err "Windows: install with PowerShell instead."
-		err '  powershell -c "irm https://astral.sh/uv/install.ps1 | iex; uv tool install decktalk"'
+		err "  powershell -ExecutionPolicy ByPass -c \"irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c $CHANNEL -c conda-forge decktalk\""
 		return 1
 		;;
 	*)
-		err "unsupported system: $os. Install with: uv tool install decktalk"
+		err "unsupported system: $os. With Pixi, install with: pixi global install -c $CHANNEL -c conda-forge decktalk"
 		return 1
 		;;
 	esac
+	machine="$(uname -m)"
+	case "$machine" in
+	x86_64 | amd64) arch="x86_64" ;;
+	aarch64 | arm64) arch="aarch64" ;;
+	*)
+		err "unsupported processor: $machine. conda-forge builds DeckTalk's dependencies for x86_64 and arm64."
+		return 1
+		;;
+	esac
+	TARGET="$arch-$suffix"
 }
 
-download_uv_installer() {
-	# Downloaded to a file rather than piped: a pipeline reports the last command's status, so
-	# `fetch … | sh` would report sh succeeding on empty input and hide a failed download.
-	TMP_UV="${TMPDIR:-/tmp}/decktalk-uv-install.$$.sh"
-	if ! fetch "$UV_INSTALLER" >"$TMP_UV" || [ ! -s "$TMP_UV" ]; then
-		err "could not download uv's installer from $UV_INSTALLER"
+sha256_of() {
+	# sha256sum is GNU coreutils and busybox, shasum is macOS. Either prints the digest first.
+	if have sha256sum; then
+		sha256sum "$1" | awk '{print $1}'
+	elif have shasum; then
+		shasum -a 256 "$1" | awk '{print $1}'
+	else
+		err "needs sha256sum or shasum to check the Pixi download"
 		return 1
 	fi
 }
 
-ensure_uv() {
-	# uv does the hard part, including fetching a Python when the machine has none. Installing it
-	# here is the same trust the next line already assumes.
-	if have uv; then
-		say "uv $(uv --version 2>/dev/null | awk '{print $2}') is already installed."
-		log "uv already present: $(uv --version 2>/dev/null || echo '?')"
+download_pixi() {
+	# Downloaded to files rather than piped, so a failed download is a failed step and the checksum
+	# is read from the release's own .sha256 file beside the archive.
+	url="$PIXI_RELEASES/v$PIXI_VERSION/pixi-$TARGET.tar.gz"
+	if ! fetch "$url" >"$TMP_PIXI/pixi.tar.gz" || [ ! -s "$TMP_PIXI/pixi.tar.gz" ]; then
+		err "could not download Pixi from $url"
+		return 1
+	fi
+	if ! fetch "$url.sha256" >"$TMP_PIXI/pixi.tar.gz.sha256" || [ ! -s "$TMP_PIXI/pixi.tar.gz.sha256" ]; then
+		err "could not download Pixi's checksum from $url.sha256"
+		return 1
+	fi
+}
+
+verify_pixi() {
+	expected="$(awk '{print $1; exit}' "$TMP_PIXI/pixi.tar.gz.sha256")"
+	found="$(sha256_of "$TMP_PIXI/pixi.tar.gz")" || return 1
+	log "pixi sha256 expected $expected found $found"
+	if [ -z "$expected" ] || [ "$expected" != "$found" ]; then
+		err "the Pixi download does not match the SHA-256 its release publishes, so it was not installed"
+		err "  expected: $expected"
+		err "  found:    $found"
+		return 1
+	fi
+}
+
+unpack_pixi() {
+	mkdir -p "$PIXI_HOME/bin"
+	tar -xzf "$TMP_PIXI/pixi.tar.gz" -C "$PIXI_HOME/bin" pixi
+	chmod +x "$PIXI_HOME/bin/pixi"
+}
+
+ensure_pixi() {
+	# Pixi does the hard part, including fetching a Python and Node for DeckTalk alone.
+	if have pixi; then
+		PIXI=pixi
+	elif [ -x "$PIXI_HOME/bin/pixi" ]; then
+		PIXI="$PIXI_HOME/bin/pixi"
+	fi
+	if [ -n "$PIXI" ]; then
+		say "Pixi $("$PIXI" --version 2>/dev/null | awk '{print $2}') is already installed."
+		log "pixi already present: $("$PIXI" --version 2>/dev/null || echo '?') at $PIXI"
 		return 0
 	fi
+	PIXI="$PIXI_HOME/bin/pixi"
 	if [ "$DRY_RUN" = 1 ]; then
-		say "would install uv from $UV_INSTALLER"
+		say "would download Pixi $PIXI_VERSION for $TARGET, check its SHA-256 and unpack it into $PIXI_HOME/bin"
 		return 0
 	fi
 	if ! have curl && ! have wget; then
-		err "needs curl or wget to install uv. Install uv yourself (https://docs.astral.sh/uv/)"
-		err "and run: uv tool install decktalk"
+		err "needs curl or wget to download Pixi. Install Pixi yourself (https://pixi.prefix.dev)"
+		err "and run: pixi global install -c $CHANNEL -c conda-forge decktalk"
 		return 1
 	fi
-	step "Downloading uv" download_uv_installer
-	step "Installing uv" sh "$TMP_UV"
-	rm -f "$TMP_UV"
-	TMP_UV=''
-	# uv's installer puts it in ~/.local/bin, which this shell may not have on PATH yet.
-	if ! have uv; then
-		PATH="$HOME/.local/bin:$PATH"
-		export PATH
-		log "added ~/.local/bin to PATH for this shell"
-	fi
-	have uv || {
-		err "uv installed but is not on PATH. Open a new shell and run: uv tool install decktalk"
-		return 1
-	}
+	TMP_PIXI="${TMPDIR:-/tmp}/decktalk-pixi.$$"
+	mkdir -p "$TMP_PIXI"
+	step "Downloading Pixi $PIXI_VERSION" download_pixi
+	step "Checking Pixi" verify_pixi
+	step "Installing Pixi" unpack_pixi
+	rm -rf "$TMP_PIXI"
+	TMP_PIXI=''
 }
 
 install_decktalk() {
 	spec="decktalk"
 	[ -n "$DECKTALK_VERSION" ] && spec="decktalk==$DECKTALK_VERSION"
+	# `pixi global install` leaves an installed package where it is, and writes the spec it was
+	# given into Pixi's global manifest. So a run with a version moves to that version, and a run
+	# without one first sets the spec back to any version and then updates to the newest.
+	update=0
+	[ -z "$DECKTALK_VERSION" ] && [ -d "$PIXI_HOME/envs/decktalk" ] && update=1
 	if [ "$DRY_RUN" = 1 ]; then
-		say "would run: uv tool install $spec"
+		say "would run: pixi global install -c $CHANNEL -c conda-forge $spec"
+		[ "$update" = 0 ] || say "would run: pixi global update decktalk"
 		return 0
 	fi
-	# Streamed, not spun: uv prints the real size of each wheel and a live bar, and this is the one
-	# step long enough for a number to be worth more than a spinner.
-	step_stream "Installing $spec" uv tool install "$spec"
+	# Streamed, not spun: Pixi prints each package it fetches, and this is the one step long enough
+	# for a real line to be worth more than a spinner.
+	step_stream "Installing $spec" "$PIXI" global install -c "$CHANNEL" -c conda-forge "$spec"
+	[ "$update" = 0 ] || step_stream "Updating decktalk" "$PIXI" global update decktalk
 }
 
 find_decktalk() {
 	# "Installed" was a claim about the command that had just run, not about the command the reader
-	# is about to type. uv puts the shim in ~/.local/bin, which this shell may still not have.
-	if have decktalk; then
+	# is about to type. Pixi puts the command in $PIXI_HOME/bin, which this shell may not have, and
+	# that copy is read first, because an older decktalk elsewhere on PATH is not the one installed.
+	if [ -x "$PIXI_HOME/bin/decktalk" ]; then
+		DECKTALK="$PIXI_HOME/bin/decktalk"
+	elif have decktalk; then
 		DECKTALK=decktalk
-	elif [ -x "$HOME/.local/bin/decktalk" ]; then
-		DECKTALK="$HOME/.local/bin/decktalk"
 	else
-		err "decktalk was installed but will not run. Try: uv tool install --force decktalk"
+		err "decktalk was installed but will not run. Try: pixi global install -c $CHANNEL -c conda-forge decktalk"
 		return 1
 	fi
 	INSTALLED="$("$DECKTALK" --version 2>/dev/null || echo decktalk)"
 	log "verified: $INSTALLED at $DECKTALK"
 }
-
-
 
 report() {
 	say ""
@@ -401,11 +468,17 @@ report() {
 	# One link, and the one that answers the next question. Installers that end in a paragraph get
 	# skimmed; rustup, uv, bun and deno all end in commands and at most one URL.
 	printf '%sDocs%s  https://docs.decktalk.ai/quickstart\n' "$DIM" "$RESET"
+	note "Update later with: pixi global update decktalk"
 	case ":$ORIGINAL_PATH:" in
-	*":$HOME/.local/bin:"*) ;;
+	*":$PIXI_HOME/bin:"*) ;;
 	*)
+		# Printed, never written: an installer that edits a startup file is one that does more than
+		# it says. One line, for the reader to put in ~/.zshrc, ~/.bashrc or their shell's own file.
 		say ""
-		printf '%sAdd ~/.local/bin to your PATH to run decktalk from a new shell.%s\n' "$GOLD" "$RESET"
+		printf '%sAdd Pixi'"'"'s bin folder to your PATH to run decktalk from a new shell:%s\n' "$GOLD" "$RESET"
+		# The reader's own $PATH is meant to stay a word in the line they copy, so it is not expanded.
+		# shellcheck disable=SC2016
+		printf '    export PATH="%s/bin:$PATH"\n' "$PIXI_HOME"
 		;;
 	esac
 }
@@ -414,9 +487,11 @@ main() {
 	DRY_RUN=0
 	DECKTALK=decktalk
 	INSTALLED="DeckTalk"
-	# Kept because ensure_uv may add ~/.local/bin to this shell's PATH. The advice at the end is
-	# about the author's NEXT shell, so it has to read the PATH they actually have.
+	# The advice at the end is about the author's NEXT shell, so it reads the PATH they started with.
 	ORIGINAL_PATH="$PATH"
+	# Exported, so every `pixi global` this script runs reads the same home it reports.
+	PIXI_HOME="${PIXI_HOME:-$HOME/.pixi}"
+	export PIXI_HOME
 	for arg in "$@"; do
 		case "$arg" in
 		--dry-run) DRY_RUN=1 ;;
@@ -446,7 +521,7 @@ main() {
 
 	banner
 	check_platform
-	ensure_uv
+	ensure_pixi
 	install_decktalk
 	[ "$DRY_RUN" = 1 ] || find_decktalk
 	report

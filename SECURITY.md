@@ -26,11 +26,13 @@ after you have read them.
 
 ## Verify a release
 
-Every release is published from CI by [trusted publishing](https://docs.pypi.org/trusted-publishers/), and every file on PyPI carries a [provenance attestation](https://docs.pypi.org/attestations/). The attestation names the repository and the workflow that built the file, and Sigstore signs it. This command downloads one file and its attestation from PyPI and checks both against this repository.
+Every release is published from CI by [trusted publishing](https://docs.pypi.org/trusted-publishers/), and every file on PyPI carries a [provenance attestation](https://docs.pypi.org/attestations/). The attestation names the repository and the workflow that built the file, and Sigstore signs it. The `pypi-attestations` tool downloads one file and its attestation from PyPI and checks both against this repository. Pixi runs it from conda-forge without installing it:
 
 ```console
-uvx pypi-attestations verify pypi --repository https://github.com/jacobcbeaudin/decktalk pypi:decktalk-0.5.0-py3-none-any.whl
+pixi exec pypi-attestations verify pypi --repository https://github.com/jacobcbeaudin/decktalk pypi:decktalk-0.5.0-py3-none-any.whl
 ```
+
+`pipx run pypi-attestations` or `uvx pypi-attestations`, with the same arguments, runs the same tool from PyPI.
 
 It prints `OK:` and the file name when the file was built from this repository by `release.yml`. It exits 1 when the file was built anywhere else, or when the file does not match its attestation. Put any file name from the release's page on PyPI after `pypi:`, the wheel or the source archive.
 

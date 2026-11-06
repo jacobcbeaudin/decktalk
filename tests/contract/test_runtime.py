@@ -7,7 +7,7 @@ and never here, which is the property the split between the two bundles is suppo
 The numbers every assertion is written against come from `decktalk.page`, which is generated from
 `contract.ts`, so a length that changes in the registry changes here without an edit.
 
-    uv run pytest -m browser tests/contract/test_runtime.py
+    pixi run pytest -m browser tests/contract/test_runtime.py
 """
 
 from __future__ import annotations

@@ -2,7 +2,6 @@
 .env.*
 !.env.example
 node_modules/
-.venv/
 __pycache__/
 .ruff_cache/
 .pytest_cache/
@@ -19,3 +18,5 @@ coverage.xml
 
 # Scratch folders a local tool or test run may leave in a checkout.
 .tmp/
+# The environments `pixi install` builds from pixi.lock, which every clone builds for itself.
+.pixi/

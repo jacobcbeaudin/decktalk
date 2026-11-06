@@ -1,7 +1,7 @@
 """Generate the skills table in docs/agents/skills.mdx from the packaged SKILL.md front matter.
 
-    uv run scripts/build_skills_list.py --write    # write the table
-    uv run scripts/build_skills_list.py --check    # exit 1 if the committed page would change
+    pixi run python scripts/build_skills_list.py --write    # write the table
+    pixi run python scripts/build_skills_list.py --check    # exit 1 if the committed page would change
 
 Each row is one packaged skill: its name, when it starts and what it leaves behind. The name is the
 skill's own `name`, and when it starts is the sentence of its `description` that opens "Use when ",

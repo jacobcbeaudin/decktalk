@@ -1,7 +1,7 @@
 """Generate the measured-numbers page and the README's measured block from docs/data/measured.json.
 
-    uv run scripts/build_measured.py --write    # write the page and the block
-    uv run scripts/build_measured.py --check    # exit 1 if either would change
+    pixi run python scripts/build_measured.py --write    # write the page and the block
+    pixi run python scripts/build_measured.py --check    # exit 1 if either would change
 
 `scripts/measure.py` runs the real commands on a real machine and writes the data file, and this
 renders it. Every number on the page and in the README's block is read from that file, so neither

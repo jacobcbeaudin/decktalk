@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -49,7 +50,7 @@ def test_a_write_keeps_what_prepares_the_machine_in_its_place() -> None:
 
 
 def test_a_generator_that_needs_more_to_check_needs_the_same_to_write() -> None:
-    command = ("uv", "run", "--with", "jinja2", "python", "scripts/build_example.py", "--check")
+    command = ("python", "-X", "utf8", "scripts/build_example.py", "--check")
     assert check.writing(command) == (*command[:-1], "--write")
 
 
@@ -57,8 +58,8 @@ def test_a_generator_that_needs_more_to_check_needs_the_same_to_write() -> None:
     "command",
     [
         check.BY_NAME["generated"].commands[-1],
-        ("uv", "run", "scripts/check_wheel.py"),
-        ("uv", "run", "ruff", "check", "src"),
+        (*check.PYTHON, "scripts/check_wheel.py"),
+        ("ruff", "check", "src"),
     ],
     ids=["docs links", "wheel", "ruff"],
 )
@@ -111,6 +112,27 @@ def test_every_tool_a_row_declares_is_prepared_before_its_checks(group) -> None:
         if prepare is not None:
             prepared = group.steps[: len(group.preparations)]
             assert prepare in prepared, f"{group.name} declares {tool} and never fetches it"
+
+
+def test_setup_runs_every_preparation_of_every_row_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`pixi run setup` readies a new clone for every row, so no task spells `npm ci` or `decktalk install` itself."""
+    ran: list[tuple[str, ...]] = []
+    monkeypatch.setattr(check, "run", lambda command, _env=(): ran.append(command) or True)
+    assert check.run_setup() == 0
+    every = {command for group in check.GROUPS for command in group.preparations}
+    assert ran == list(check.setup_commands())
+    assert set(ran) == every and len(ran) == len(every)
+    assert ran == [check.NPM_CI, check.INSTALL]
+
+
+def test_a_group_opens_with_the_command_that_runs_it_again_in_its_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    group = check.BY_NAME["unit"]
+    monkeypatch.delenv("PIXI_ENVIRONMENT_NAME", raising=False)
+    assert check.reproduce(group) == "pixi run check --group unit"
+    monkeypatch.setenv("PIXI_ENVIRONMENT_NAME", check.environment("3.13"))
+    assert check.reproduce(group, " --write") == "pixi run -e py313 check --group unit --write"
 
 
 def test_a_preparation_fetches_only_what_the_tools_cache_keeps(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,11 +237,142 @@ def test_the_workflow_acts_on_exactly_the_needs_the_table_says_it_provides() -> 
     assert read == {name for name, need in check.NEEDS.items() if need.workflow}
 
 
-def test_every_node_the_workflow_installs_is_the_tables() -> None:
-    versions = [step["with"]["node-version"] for step in steps() if "setup-node" in step.get("uses", "")]
-    assert versions, "the workflow installs no Node, so this test says nothing"
-    assert all(version in ("${{ matrix.node }}", check.NODE) for version in versions), versions
-    assert all(row["node"] == check.NODE for row in check.legs(check.GROUPS))
+# ---- every leg runs in the Pixi environment pyproject.toml declares for its Python ---------------
+
+RELEASE = REPO / ".github" / "workflows" / "release.yml"
+
+
+def setups() -> list[tuple[str, dict[str, Any]]]:
+    """Every setup-pixi step in ci.yml and release.yml, with the job it belongs to."""
+    found = []
+    for path in (WORKFLOW, RELEASE):
+        for name, job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].items():
+            found += [(name, step) for step in job.get("steps", []) if "setup-pixi" in step.get("uses", "")]
+    return found
+
+
+def test_no_workflow_installs_a_python_or_node_of_its_own() -> None:
+    for path in (WORKFLOW, RELEASE):
+        text = path.read_text(encoding="utf-8")
+        assert "setup-uv" not in text and "setup-node" not in text and "setup-python" not in text, path.name
+
+
+def installing() -> list[tuple[str, dict[str, Any]]]:
+    """Every setup-pixi step that installs a workspace environment, which is every one that runs Python."""
+    return [(name, step) for name, step in setups() if step["with"].get("run-install", True) is not False]
+
+
+def test_every_job_that_runs_python_installs_a_named_environment_from_the_lock() -> None:
+    """A step with no `environments` caches under another key, and one without `locked` may solve."""
+    jobs = {name for name, _ in installing()}
+    assert jobs == {"plan", "run", "coverage", "regenerate", "build"}, jobs
+    for name, step in installing():
+        assert step["with"]["environments"], name
+        assert step["with"]["locked"] is True, name
+        assert step["with"]["activate-environment"] is True, name
+    named = {step["with"]["environments"] for _, step in installing()}
+    assert named == {"plan", check.DEFAULT_ENVIRONMENT, "${{ matrix.pixi }}"}
+
+
+def test_only_the_conda_jobs_run_pixi_without_an_environment() -> None:
+    """`pixi build` solves its own build environment and `pixi upload` needs none, so those two jobs
+    install nothing, and no other job may skip the install and run on whatever the runner has."""
+    bare = {name for name, step in setups() if step["with"].get("run-install", True) is False}
+    assert bare == {"conda", "publish-conda"}, bare
+
+
+def test_every_pixi_ci_runs_is_the_floor_pyproject_requires() -> None:
+    """setup-pixi reads no version from the manifest, so `requires-pixi` is held here to every step's pin."""
+    floor = pixi()["workspace"]["requires-pixi"]
+    assert floor.startswith(">=")
+    assert {step["with"]["pixi-version"] for _, step in setups()} == {f"v{floor.removeprefix('>=')}"}
+
+
+def test_the_release_builds_and_judges_the_wheel_as_the_wheel_row_does() -> None:
+    build, _, judge = check.BY_NAME["wheel"].commands
+    job = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))["jobs"]["build"]
+    runs = [step["run"] for step in job["steps"] if "run" in step]
+    assert " ".join(build) in runs
+    assert any(run.startswith(" ".join(judge)) for run in runs), runs
+
+
+def test_the_conda_package_ships_only_for_a_final_release_and_only_after_pypi() -> None:
+    """A candidate stays on PyPI, and the channel never holds a version PyPI refused."""
+    jobs = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))["jobs"]
+    assert jobs["conda"]["if"] == "needs.build.outputs.prerelease == 'false'"
+    assert "publish" in jobs["publish-conda"]["needs"]
+    assert "publish-conda" in jobs["attach-conda"]["needs"]
+
+
+def test_the_conda_upload_uses_trusted_publishing_with_an_attestation() -> None:
+    """A stored prefix.dev key would outlive the release, and an attestation needs the OIDC identity."""
+    job = yaml.safe_load(RELEASE.read_text(encoding="utf-8"))["jobs"]["publish-conda"]
+    assert job["permissions"] == {"id-token": "write"}
+    text = yaml.safe_dump(job)
+    assert "secrets." not in text and "PREFIX_API_KEY" not in text, text
+    uploads = [step["run"] for step in job["steps"] if "pixi upload prefix" in step.get("run", "")]
+    assert len(uploads) == 1 and "--generate-attestation" in uploads[0], uploads
+    # The channel is namespaced, so `--channel` is the path after the host of the URL install.sh reads.
+    [url] = re.findall(r'^CHANNEL="(.+)"$', (REPO / "install.sh").read_text(encoding="utf-8"), re.M)
+    assert f"--channel {url.removeprefix('https://prefix.dev/')} " in uploads[0], (url, uploads)
+
+
+def test_pixis_own_image_is_the_pixi_the_manifest_requires() -> None:
+    """The scenario that finds Pixi already there runs the Pixi every CI leg and install.sh run."""
+    floor = pixi()["workspace"]["requires-pixi"].removeprefix(">=")
+    assert check.PIXI_IMAGE.split("@")[0] == f"ghcr.io/prefix-dev/pixi:{floor}"
+    assert any(check.PIXI_IMAGE in command for command in check.BY_NAME["installer"].commands)
+
+
+MANIFEST = REPO / "pyproject.toml"
+
+INTERPRETER = check.PYTHON[0]
+"""The conda package each Python feature of the manifest pins, which is named as the interpreter every row runs."""
+
+
+def pixi() -> dict[str, Any]:
+    """The `[tool.pixi]` tables of pyproject.toml, which are the one home of every environment."""
+    return tomllib.loads(MANIFEST.read_text(encoding="utf-8"))["tool"]["pixi"]
+
+
+def pinned_pythons(environment: str) -> list[str]:
+    """The Python lines the features of one Pixi environment pin, which a leg needs exactly one of."""
+    spec = pixi()["environments"][environment]
+    features = spec if isinstance(spec, list) else spec["features"]
+    return [
+        pin
+        for feature in features
+        if (pin := pixi()["feature"].get(feature, {}).get("dependencies", {}).get(INTERPRETER)) is not None
+    ]
+
+
+def test_every_python_a_leg_runs_is_the_one_its_pixi_environment_pins() -> None:
+    for row in check.legs(check.GROUPS):
+        assert pinned_pythons(row["pixi"]) == [f"{row['python']}.*"], row["leg"]
+
+
+def test_every_python_the_package_supports_has_an_environment_and_no_other_does() -> None:
+    """The classifiers, the table and the environments name the same Pythons, the floor being the default."""
+    classifiers = tomllib.loads(MANIFEST.read_text(encoding="utf-8"))["project"]["classifiers"]
+    declared = tuple(c.rsplit(" :: ", 1)[1] for c in classifiers if re.fullmatch(r".* :: Python :: 3\.\d+", c))
+    assert declared == check.EVERY_PYTHON
+    named = {check.environment(python) for python in check.EVERY_PYTHON}
+    developing = {name for name in pixi()["environments"] if name != "plan"}
+    assert named == developing
+    assert check.environment(check.FLOOR) == check.DEFAULT_ENVIRONMENT
+
+
+def test_the_plan_environment_is_the_floor_python_and_nothing_else() -> None:
+    plan = pixi()["environments"]["plan"]
+    assert plan["no-default-feature"] is True
+    assert pinned_pythons("plan") == [f"{check.FLOOR}.*"]
+    assert all(set(pixi()["feature"][feature]) == {"dependencies"} for feature in plan["features"])
+    assert all(set(pixi()["feature"][feature]["dependencies"]) == {INTERPRETER} for feature in plan["features"])
+
+
+def test_the_node_pixi_installs_starts_at_the_floor_package_json_sets() -> None:
+    floor = json.loads((REPO / "package.json").read_text(encoding="utf-8"))["engines"]["node"]
+    assert pixi()["dependencies"]["nodejs"].startswith(f"{floor},")
 
 
 def test_every_moment_the_workflow_computes_is_one_the_table_gates_at() -> None:
@@ -251,17 +404,34 @@ def test_every_runner_the_workflow_names_is_one_the_table_names() -> None:
     assert f"-{check.LINUX}-" in pattern
 
 
-def test_the_tools_cache_is_saved_to_the_key_it_is_restored_from() -> None:
-    caches = [step for step in steps() if "actions/cache/" in step.get("uses", "")]
-    assert [step["uses"].split("@")[0] for step in caches] == ["actions/cache/restore", "actions/cache/save"]
-    restore, save = caches
+def caches(key: str) -> list[dict[str, Any]]:
+    """The cache steps of the workflow that use the key the matrix carries in `key`, in order."""
+    return [
+        step
+        for step in steps()
+        if "actions/cache/" in step.get("uses", "") and step["with"]["key"] == f"${{{{ matrix.{key} }}}}"
+    ]
+
+
+@pytest.mark.parametrize("key", ["cache", "npm"])
+def test_every_cache_is_saved_to_the_key_it_is_restored_from(key: str) -> None:
+    """The tools cache and npm's download cache each have one restore and one save, under one key the table writes."""
+    found = caches(key)
+    assert [step["uses"].split("@")[0] for step in found] == ["actions/cache/restore", "actions/cache/save"]
+    restore, save = found
     assert restore["with"] == save["with"]
-    assert restore["with"]["key"] == "${{ matrix.cache }}"
+    every = [step for step in steps() if "actions/cache/" in step.get("uses", "")]
+    assert len(every) == 2 * len(["cache", "npm"])
+
+
+def test_npm_downloads_are_kept_on_every_leg_that_runs_npm_and_no_other() -> None:
+    for row in check.legs(check.GROUPS):
+        assert bool(row["npm"]) == ("npm" in row["tools"]), row["leg"]
 
 
 def test_the_tools_cache_is_the_one_directory_doctor_names() -> None:
     """Chromium and ffmpeg both live in the directory `doctor --json` names, so a leg on any platform keeps one."""
-    restore = next(step for step in steps() if "actions/cache/restore" in step.get("uses", ""))
+    restore, _ = caches("cache")
     assert restore["with"]["path"] == "${{ env.TOOLS_CACHE }}"
     named = [step for step in steps() if "TOOLS_CACHE=" in step.get("run", "")]
     assert len(named) == 1, "no step names the directory the tools are kept in"
@@ -282,13 +452,13 @@ def test_a_file_the_unit_suite_leaves_elsewhere_runs_in_its_row_alone(path: str)
 
 
 @pytest.mark.parametrize("marker", tools.BUILT)
-def test_a_suite_that_reads_a_build_runs_in_one_row_right_after_uv_build(marker: str) -> None:
+def test_a_suite_that_reads_a_build_runs_in_one_row_right_after_the_build(marker: str) -> None:
     rows = [
         (group.name, group.commands) for group in check.GROUPS if marker in map(check.selected_marker, group.commands)
     ]
     assert [name for name, _ in rows] == ["wheel"], rows
     ((_, commands),) = rows
-    assert commands[0] == ("uv", "build")
+    assert commands[0] == (*check.PYTHON, "-m", "build", "--no-isolation")
     assert check.selected_marker(commands[1]) == marker
 
 
@@ -306,8 +476,8 @@ def test_a_pull_request_runs_the_command_line_at_every_floor_pyproject_declares(
     """The lockfile holds every dependency at its newest, so only a row that installs at the floors judges them."""
     floors = check.BY_NAME["floors"]
     ((*_, script, _, floor),) = floors.commands
-    assert "--resolution lowest-direct" in script
-    assert '--python "$1"' in script
+    assert '--constraint "$scratch/floors.txt"' in script
+    assert "sys.version_info" in script and '"$1"' in script
     assert floor == check.FLOOR
     assert "--version" in script
     assert "pr" in floors.when

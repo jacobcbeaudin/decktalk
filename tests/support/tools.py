@@ -25,7 +25,7 @@ default suite may not collect them.
 """
 
 BUILT = ("wheel",)
-"""The marker of the suite that reads the wheel `uv build` wrote into `dist/`, which no fetch provides."""
+"""The marker of the suite that reads the wheel `python -m build` wrote into `dist/`, which no fetch provides."""
 
 SUITE_MARKERS = (*INSTALLED, *BUILT)
 """The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
@@ -36,7 +36,7 @@ SUITE_MARKERS = (*INSTALLED, *BUILT)
 MARKED_BY_PATH = {"contract/test_wheel.py": "wheel"}
 """The suite marker of each test file that carries none of its own, keyed by its path under `tests/`.
 
-The wheel test reads a file only `uv build` makes, so the collection hook marks it by where it is
+The wheel test reads a file only `python -m build` makes, so the collection hook marks it by where it is
 and a fresh clone's bare run never collects a test of a wheel it has not built.
 """
 
@@ -46,7 +46,7 @@ FETCHED = ("browser", "media", "platform")
 A browser test needs the binding too, because the driver looks for Chromium in the machine's tool cache.
 """
 
-FETCH = "uv run decktalk install"
+FETCH = "pixi run decktalk install"
 """The command that fetches every tool a suite needs, which is the command a person runs."""
 
 
