@@ -41,6 +41,7 @@ import ast
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -654,13 +655,35 @@ GROUPS: tuple[Group, ...] = (
         # Every scenario but the musl refusal installs from the conda channel, and skips with its
         # reason while the channel holds fewer releases than it needs.
         commands=(
-            in_image("debian:13-slim", RELEASED, "install-in-a-bare-image"),
-            in_image("ubuntu:24.04", RELEASED, "install-in-a-bare-image"),
-            in_image("fedora:42", RELEASED, "install-in-a-bare-image"),
-            in_image("alpine:3.22", "refuse-musl"),
+            in_image(
+                "debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2",
+                RELEASED,
+                "install-in-a-bare-image",
+            ),
+            in_image(
+                "ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852",
+                RELEASED,
+                "install-in-a-bare-image",
+            ),
+            in_image(
+                "fedora:42@sha256:99e203b80b1c3d8f7e161ec10a68fd02b081ef83a3963553e513c82846b97814",
+                RELEASED,
+                "install-in-a-bare-image",
+            ),
+            in_image(
+                "alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f", "refuse-musl"
+            ),
             in_image(PIXI_IMAGE, RELEASED, "keep-the-pixi-already-there"),
-            in_image("debian:13-slim", RELEASED, "install-the-pinned-version"),
-            in_image("debian:13-slim", RELEASED, "rerun-upgrades"),
+            in_image(
+                "debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2",
+                RELEASED,
+                "install-the-pinned-version",
+            ),
+            in_image(
+                "debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2",
+                RELEASED,
+                "rerun-upgrades",
+            ),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
@@ -765,6 +788,9 @@ def run_group(group: Group, mode: str = "") -> bool:
     return all(run(command, group.env) for command in group.steps)
 
 
+DIGEST = re.compile(r"@sha256:[0-9a-f]{64}")
+"""An image's digest, which the tables leave out. Renovate moves it weekly, and a reader names an image by its tag."""
+
 NO_TOOLS = "nothing beyond Pixi"
 """What a row that fetches nothing says it needs, because an empty cell reads as a gap."""
 
@@ -780,7 +806,7 @@ def summary(group: Group) -> tuple[str, str, str, str]:
     """
     more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
     return (
-        f"`{shell(group.commands[0])}`{more}",
+        f"`{DIGEST.sub('', shell(group.commands[0]))}`{more}",
         ", ".join(group.tools) or NO_TOOLS,
         ", ".join(PLATFORM_NAMES[runner] for runner in group.runners),
         ", ".join(group.when),

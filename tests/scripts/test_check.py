@@ -152,6 +152,16 @@ def test_a_shown_command_drops_the_checkout_only_where_a_path_starts(monkeypatch
     assert check.shell(command) == "node tests/decktalk/runtime/src/*.test.ts scripts/x.sh --junitxml=out/u.xml"
 
 
+def test_every_image_runs_by_digest_and_the_tables_name_it_by_tag() -> None:
+    """Renovate moves a digest weekly, so a table that printed it would need a regeneration on every move."""
+    installer = check.BY_NAME["installer"]
+    for command in installer.commands:
+        image = command[command.index("sh") - 1]
+        assert check.DIGEST.search(image), f"{image} runs by tag alone, so the image can change under the scenario"
+    runs, *_ = check.summary(installer)
+    assert "debian:13-slim " in runs and not check.DIGEST.search(runs)
+
+
 def test_a_shown_environment_value_drops_the_checkout_only_from_its_start(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
