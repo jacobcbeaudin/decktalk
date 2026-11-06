@@ -1,6 +1,6 @@
 """Every packaged project's sections, recorded in pieces that start at any frame, are the frames one pass recorded.
 
-    uv run pytest -m scaffold tests/e2e/test_frame_addressing.py
+    pixi run pytest -m scaffold tests/e2e/test_frame_addressing.py
 
 The recorder addresses frame `k` by its index: it steps only the seconds work is due before it and
 then `k / fps`, so a piece of a section can start anywhere, which is what a render split across

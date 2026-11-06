@@ -1,7 +1,7 @@
 """Generate the module tree and the check table in CONTRIBUTING.md from the code itself.
 
-    uv run scripts/build_contributing.py --write    # write both blocks
-    uv run scripts/build_contributing.py --check    # exit 1 if either block would change
+    pixi run python scripts/build_contributing.py --write    # write both blocks
+    pixi run python scripts/build_contributing.py --check    # exit 1 if either block would change
 
 The module tree is one line per module of `src/decktalk`, and its sentence is the first sentence of
 that module's own docstring, so a module that is added, renamed or repurposed changes this tree by

@@ -1,6 +1,6 @@
 """The starter copied and made square or vertical by its one key builds a film of its own frame that verifies clean.
 
-    uv run pytest -m scaffold tests/e2e/test_sizes.py
+    pixi run pytest -m scaffold tests/e2e/test_sizes.py
 
 One project makes one video, so a square cut of a deck is the project copied by hand with `[video]
 size` changed. This builds the starter that way with no voice, at each named size but the default,

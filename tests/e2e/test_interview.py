@@ -1,6 +1,6 @@
 """The interview example, a narrator and a guest in dialogue, builds on placeholders, says who reads what, and captions.
 
-    uv run pytest -m e2e tests/e2e/test_interview.py
+    pixi run pytest -m e2e tests/e2e/test_interview.py
 
 The interview is the one packaged project whose section reads in two voices, and both of its voices
 ship with an empty id, so a fresh copy built without spending plays one placeholder per turn and

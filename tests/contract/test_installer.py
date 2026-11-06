@@ -5,18 +5,22 @@ and `main "$@"` on the last line: a download cut off part way through then runs 
 rather than half an install. That is a property worth testing rather than trusting, and it is the
 reason for `test_a_truncated_download_installs_nothing`.
 
-The container matrix (Debian, Alpine's busybox sh, Fedora) runs in CI, where a machine without uv,
-without Python and with an empty PATH can be had cheaply. These are the parts that need no
-container: the script parses under a POSIX shell, it never asks for root, and the ways it can be
-called all do what they say.
+The container matrix (Debian, Ubuntu, Fedora, Alpine's busybox sh, Pixi's own image) runs in CI,
+where a machine without Pixi, without Python and with an empty PATH can be had cheaply. These are the
+parts that need no container: the script parses under a POSIX shell, it never asks for root, it
+checks the Pixi it downloads, and the ways it can be called all do what they say.
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
 import os
 import signal
 import subprocess
+import tarfile
 import time
+import tomllib
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +37,9 @@ from support.paths import REPO
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="install.sh needs a POSIX shell and a pty")
 
 SCRIPT = REPO / "install.sh"
+
+INSTALLS = "pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk"
+"""What a stub `pixi` records when the script installs DeckTalk from its channel, with conda-forge beside it."""
 
 POLL_SECONDS = 0.2
 """How long one wait on the pty lasts before the run is asked again whether it is ready to interrupt."""
@@ -82,12 +89,12 @@ def clean_run(tmp_path_factory: pytest.TempPathFactory, source: str) -> Install:
 
 @pytest.fixture(scope="module")
 def failed_run(tmp_path_factory: pytest.TempPathFactory, source: str) -> Install:
-    """An install on a machine with no uv, where the download of uv's installer fails.
+    """An install on a machine with no Pixi, where the download of Pixi fails.
 
-    Both halves matter. Without `without=("uv",)` the script finds a uv, returns early and never
+    Both halves matter. Without `without=("pixi",)` the script finds a Pixi, returns early and never
     reaches a step that can fail, and a test of the failure passes while testing nothing.
     """
-    return install(tmp_path_factory.mktemp("no-uv"), source, fail=("curl", "wget"), without=("uv",))
+    return install(tmp_path_factory.mktemp("no-pixi"), source, fail=("curl", "wget"), without=("pixi",))
 
 
 @pytest.mark.parametrize("shell", SHELLS)
@@ -140,14 +147,14 @@ def test_the_whole_script_does_install(clean_run: Install) -> None:
     done = clean_run.done
     assert done.returncode == 0, done.stderr
     assert clean_run.marker.exists(), done.stdout
-    assert "uv tool install decktalk" in clean_run.marker.read_text()
+    assert INSTALLS in clean_run.marker.read_text()
 
 
 def test_a_pinned_version_is_the_version_it_installs(tmp_path: Path, source: str) -> None:
     marker = tmp_path / "called"
     env = fake_path(tmp_path, marker) | {"DECKTALK_VERSION": "0.4.1"}
     run([], env=env, script=source)
-    assert "uv tool install decktalk==0.4.1" in marker.read_text()
+    assert f"{INSTALLS}==0.4.1" in marker.read_text()
 
 
 def test_a_dry_run_changes_nothing(tmp_path: Path, source: str) -> None:
@@ -155,7 +162,7 @@ def test_a_dry_run_changes_nothing(tmp_path: Path, source: str) -> None:
     done = run(["--dry-run"], env=fake_path(tmp_path, marker), script=source)
     assert done.returncode == 0, done.stderr
     assert "nothing was installed" in done.stdout
-    assert "uv tool install" not in marker.read_text() if marker.exists() else True
+    assert "pixi global" not in marker.read_text() if marker.exists() else True
 
 
 def test_help_explains_itself_and_exits_zero(tmp_path: Path, source: str) -> None:
@@ -178,28 +185,28 @@ def test_a_failing_step_stops_the_install(failed_run: Install) -> None:
 
     `step` reads the command's own status. An `if` with no `else` whose condition is false exits 0,
     so a status read after one is the if statement's own, not the command's, and would record every
-    failed step as a success. A 404 on uv's installer would then print its error, report a tick for
-    installing uv from the empty file it failed to download, and die three lines later complaining
-    about PATH.
+    failed step as a success. A 404 on the Pixi archive would then print its error, report a tick
+    for checking the empty file it failed to download, and die two lines later for another reason.
     """
-    # No uv anywhere, so the script must download and run uv's installer, and curl fails when it
-    # tries, which is the run `failed_run` makes.
+    # No Pixi anywhere, so the script must download it, and curl fails when it tries, which is the
+    # run `failed_run` makes.
     done = failed_run.done
-    assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
+    assert "Downloading Pixi" in done.stdout, f"never reached the failing step:\n{done.stdout}"
     assert done.returncode != 0, f"a failed download exited 0:\n{done.stdout}\n{done.stderr}"
     # The load-bearing assertion, and the one that tells the fault apart from its symptom. A script
     # that misreads the status still exits non-zero, three steps later and for the wrong reason, so
     # asserting only on the exit code passes on a broken script. What it must not do is begin
-    # the next step, running uv's installer over the empty file the download just failed to write.
-    assert "Installing uv" not in done.stdout, f"it started the next step anyway:\n{done.stdout}"
+    # the next step, checking and unpacking the empty file the download just failed to write.
+    assert "Checking Pixi" not in done.stdout, f"it started the next step anyway:\n{done.stdout}"
+    assert "Installing Pixi" not in done.stdout, f"it started the next step anyway:\n{done.stdout}"
     called = failed_run.marker.read_text() if failed_run.marker.exists() else ""
-    assert "uv tool install" not in called, f"it carried on after the failure: {called}"
+    assert "pixi global" not in called, f"it carried on after the failure: {called}"
 
 
 def test_a_failure_shows_the_output_it_held_back(failed_run: Install) -> None:
     """Held-back output is only worth holding back if it arrives when it is needed."""
     done = failed_run.done
-    assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
+    assert "Downloading Pixi" in done.stdout, f"never reached the failing step:\n{done.stdout}"
     assert "deliberate failure" in done.stdout + done.stderr, done.stdout + done.stderr
 
 
@@ -223,7 +230,103 @@ def test_keep_log_keeps_it(tmp_path: Path, source: str) -> None:
     done = run(["--keep-log"], env=env, script=source)
     assert done.returncode == 0, done.stderr
     assert log.exists()
-    assert "uv tool install decktalk" in log.read_text()
+    assert INSTALLS in log.read_text()
+
+
+# ---- the Pixi it downloads, and the DeckTalk it updates ------------------------------------------
+
+
+def test_the_pixi_it_downloads_is_the_pixi_ci_runs(source: str) -> None:
+    """`requires-pixi` is the one home of the Pixi version, and the installer pins its own copy of it."""
+    floor = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pixi"]["workspace"]
+    pinned = [line for line in source.splitlines() if line.startswith("PIXI_VERSION=")]
+    assert pinned == [f'PIXI_VERSION="{floor["requires-pixi"].removeprefix(">=")}"'], pinned
+
+
+def serve_pixi(root: Path, marker: Path, *, digest: str | None = None) -> None:
+    """Replace the curl stub with one that serves a Pixi archive and its checksum file.
+
+    The archive holds a stub `pixi` that records its calls, so a run that unpacks it goes on to
+    install DeckTalk with it. `digest` is what the checksum file says, which is the archive's own
+    unless a test gives another.
+    """
+    stub = f'#!/bin/sh\necho "pixi $*" >> "{marker}"\nexit 0\n'.encode()
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+        entry = tarfile.TarInfo("pixi")
+        entry.size, entry.mode = len(stub), 0o755
+        tar.addfile(entry, io.BytesIO(stub))
+    (root / "pixi.tar.gz").write_bytes(archive.getvalue())
+    said = digest or hashlib.sha256(archive.getvalue()).hexdigest()
+    (root / "pixi.tar.gz.sha256").write_text(f"{said}  pixi.tar.gz\n")
+    curl = root / "bin" / "curl"
+    curl.write_text(
+        "#!/bin/sh\n"
+        f'echo "curl $*" >> "{marker}"\n'
+        f'case "$*" in *.sha256) cat "{root}/pixi.tar.gz.sha256" ;; *) cat "{root}/pixi.tar.gz" ;; esac\n'
+    )
+    curl.chmod(0o755)
+
+
+def test_a_checked_download_is_unpacked_and_installs_decktalk(tmp_path: Path, source: str) -> None:
+    """The whole download path, offline: the archive for this machine, its checksum, the unpack, the install."""
+    marker = tmp_path / "called"
+    env = fake_path(tmp_path, marker, without=("pixi",))
+    serve_pixi(tmp_path, marker)
+    done = run([], env=env, script=source)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (tmp_path / ".pixi" / "bin" / "pixi").exists(), done.stdout
+    called = marker.read_text()
+    assert "releases/download/v" in called and ".sha256" in called, called
+    assert INSTALLS in called, called
+
+
+def test_a_digest_that_does_not_match_stops_before_the_unpack(tmp_path: Path, source: str) -> None:
+    marker = tmp_path / "called"
+    env = fake_path(tmp_path, marker, without=("pixi",))
+    serve_pixi(tmp_path, marker, digest="0" * 64)
+    done = run([], env=env, script=source)
+    assert done.returncode != 0, done.stdout
+    assert "does not match" in done.stderr, done.stderr
+    assert "Installing Pixi" not in done.stdout, done.stdout
+    assert not (tmp_path / ".pixi" / "bin" / "pixi").exists(), "it unpacked an archive that failed its check"
+    assert "pixi global" not in marker.read_text()
+
+
+def test_a_second_run_updates_what_the_first_installed(tmp_path: Path, source: str) -> None:
+    """`pixi global install` leaves an installed package where it is, so a rerun must also update."""
+    marker = tmp_path / "called"
+    (tmp_path / ".pixi" / "envs" / "decktalk").mkdir(parents=True)
+    done = run([], env=fake_path(tmp_path, marker), script=source)
+    assert done.returncode == 0, done.stderr
+    called = marker.read_text().splitlines()
+    assert called.index(INSTALLS) < called.index("pixi global update decktalk"), called
+
+
+def test_a_pinned_rerun_moves_to_the_pin_and_updates_nothing(tmp_path: Path, source: str) -> None:
+    """A pinned install writes the pin into Pixi's manifest, so an update after it would change nothing."""
+    marker = tmp_path / "called"
+    (tmp_path / ".pixi" / "envs" / "decktalk").mkdir(parents=True)
+    env = fake_path(tmp_path, marker) | {"DECKTALK_VERSION": "0.4.1"}
+    done = run([], env=env, script=source)
+    assert done.returncode == 0, done.stderr
+    called = marker.read_text()
+    assert f"{INSTALLS}==0.4.1" in called and "pixi global update" not in called, called
+
+
+def test_no_shell_startup_file_is_written(clean_run: Install) -> None:
+    """The script prints the PATH line. Writing it into a startup file would be doing more than it says."""
+    home = clean_run.marker.parent
+    startup = (".profile", ".bashrc", ".bash_profile", ".zshrc", ".tcshrc", ".config")
+    assert [name for name in startup if (home / name).exists()] == []
+
+
+def test_the_path_line_names_the_pixi_home_it_installed_into(tmp_path: Path, source: str) -> None:
+    home = tmp_path / "elsewhere"
+    env = fake_path(tmp_path, tmp_path / "called") | {"PIXI_HOME": str(home)}
+    done = run([], env=env, script=source)
+    assert done.returncode == 0, done.stderr
+    assert f'export PATH="{home}/bin:$PATH"' in done.stdout, done.stdout
 
 
 # ---- the one step that can reach sudo -----------------------------------------------------------
@@ -354,7 +457,7 @@ def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path) -> 
     terminal with no cursor in it until the next `reset`, and throws away the log of what happened."""
     log = tmp_path / "install.log"
     called = tmp_path / "called"
-    env = fake_path(tmp_path, called, slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
+    env = fake_path(tmp_path, called, slow=("pixi",)) | {"DECKTALK_INSTALL_LOG": str(log)}
 
     def installing() -> bool:
         """Whether the slow stub has started, which is after the traps are set and inside the step.
@@ -362,7 +465,7 @@ def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path) -> 
         The step's label is printed before its child is forked, and an interrupt that lands in that
         gap reaches the shell alone, which holds the trap until the child it has not yet started ends.
         """
-        return called.exists() and "uv tool install" in called.read_text(encoding="utf-8")
+        return called.exists() and "pixi global install" in called.read_text(encoding="utf-8")
 
     code, out = run_pty([], env, interrupt_when=installing, timeout=30)
     assert code == 130, f"an interrupt should exit 130, got {code}:\n{out}"

@@ -1,6 +1,6 @@
 """The whole pipeline on the fixture project in tests/e2e/fixture, built once and read by every test here.
 
-    uv run pytest -m e2e
+    pixi run pytest -m e2e
 
 The build is unvoiced, so it needs no API key and spends nothing, and it runs with the network
 blocked. The fixture is copied under tests/out/e2e, which CI uploads when a test fails. That

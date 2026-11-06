@@ -1,7 +1,7 @@
 """One coverage floor, measured from a real run and written down rather than typed.
 
-    uv run scripts/check_coverage.py --write    # record what the run just measured
-    uv run scripts/check_coverage.py --check    # exit 1 if the run measured less than the record
+    pixi run python scripts/check_coverage.py --write    # record what the run just measured
+    pixi run python scripts/check_coverage.py --check    # exit 1 if the run measured less than the record
 
 A number typed into a configuration file is a magic number wherever it sits, and a floor is the one
 number in the repository that decides whether a change may land. So the number here is measured:

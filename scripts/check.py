@@ -1,15 +1,17 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Every check DeckTalk runs, in one table, spelled once.
 
-    uv run scripts/check.py                  # every group a pull request runs, in order
-    uv run scripts/check.py --fast           # lint and unit alone, the two a change most often fails
-    uv run scripts/check.py --group browser  # one group, by name, repeatable and comma-separated
-    uv run scripts/check.py --list           # the table, for a person
-    uv run scripts/check.py --group generated --write  # every generator in the group, writing
-    uv run scripts/check.py --group e2e --prepare      # only what fetches the group's cached tools
-    uv run scripts/check.py --json --when pr # the matrix, for a workflow
+    pixi run check                           # every group a pull request runs, in order
+    pixi run check --fast                    # lint and unit alone, the two a change most often fails
+    pixi run check --group browser           # one group, by name, repeatable and comma-separated
+    pixi run check --list                    # the table, for a person
+    pixi run check --group generated --write # every generator in the group, writing
+    pixi run check --group e2e --prepare     # only what fetches the group's cached tools
+    pixi run check --setup                   # every row's preparation, once, for a new clone
+    pixi run -e py313 check --group unit     # one group on another Python
+    pixi run check --json --when pr          # the matrix, for a workflow
+
+`pixi run check` is `python scripts/check.py` in a Pixi environment, and every command a row runs
+runs in that same environment, so pixi.lock decides every tool and every package a check sees.
 
 `GROUPS` below is the only place any check is written down. A workflow reads this table at runtime and
 names no command of its own, so a workflow cannot disagree with it. There is no switch that skips a
@@ -25,6 +27,9 @@ command that regenerates what a release made stale cannot forget a generator the
 `--prepare` runs only the commands at the head of a row that fetch what the tools cache keeps. CI
 runs it before it saves that cache, so a cache is only ever saved from a fetch that finished.
 
+`--setup` runs every row's preparation once, which is what `pixi run setup` does before it installs
+the git hooks, so a new clone is ready for every row and no task spells a command this table owns.
+
 The first run may download headless Chromium and ffmpeg through `decktalk install`, once per machine.
 No check needs an ElevenLabs key, and after `decktalk install` no check needs the network.
 """
@@ -33,23 +38,24 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
-import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
-UV = ("uv", "run")
-"""Every Python command runs in the project environment, so the lockfile decides what it runs."""
+PYTHON = ("python",)
+"""Every Python command runs on the interpreter of the Pixi environment the run is in, so pixi.lock decides
+what it imports."""
 
-PYTEST = (*UV, "pytest", "-q", "-rs")
+PYTEST = (*PYTHON, "-m", "pytest", "-q", "-rs")
 """How every suite is run. `-rs` prints the reason of every skip, so a skipped test is never silent in a log."""
 
 PARALLEL = ("-n", "auto")
@@ -104,10 +110,15 @@ def ignoring_elsewhere() -> tuple[str, ...]:
 
 
 def selected_marker(command: tuple[str, ...]) -> str | None:
-    """The marker a suite's command names with `-m`, or None for the suite that needs no tool."""
-    if "pytest" not in command or "-m" not in command:
+    """The marker a suite's command names with `-m`, or None for the suite that needs no tool.
+
+    The marker is read from pytest's own options, because the `-m` before `pytest` is Python's, and
+    names the module the suite runs as.
+    """
+    if "pytest" not in command:
         return None
-    return command[command.index("-m") + 1]
+    options = command[command.index("pytest") + 1 :]
+    return options[options.index("-m") + 1] if "-m" in options else None
 
 
 def measured(name: str) -> tuple[tuple[str, str], ...]:
@@ -132,22 +143,22 @@ FLOOR = "3.12"
 
 EVERY_PYTHON = (FLOOR, "3.13", "3.14")
 
+DEFAULT_ENVIRONMENT = "default"
+"""The Pixi environment a bare `pixi install` builds and a bare `pixi run` enters, which holds the floor."""
+
+
+def environment(python: str) -> str:
+    """The Pixi environment that provides `python`, named by the rule pyproject.toml follows.
+
+    The floor is the default environment, and every other Python is `py` and its digits, so 3.13 is
+    `py313`. The name is derived rather than listed, so the version and its environment cannot
+    disagree, and tests/scripts/test_check.py holds every name to the Python pyproject.toml pins in it.
+    """
+    return DEFAULT_ENVIRONMENT if python == FLOOR else "py" + python.replace(".", "")
+
+
 PLATFORM_HEADROOM = 15
 """Calibration: the minutes a macOS or Windows row gets beyond its Linux row, as Windows e2e took 28 of 30."""
-
-NODE = "22"
-"""The Node every leg that lists npm runs, which is the floor `package.json` sets and ci.yml reads from the matrix."""
-
-TOOLS = {
-    "shellcheck": "0.11.0.1",
-    "zizmor": "1.30.1",
-}
-"""Every tool the lint row fetches by version, because neither the lockfile nor `package.json` holds it.
-
-`shellcheck` is also the `shellcheck-py` rev in `.pre-commit-config.yaml`, and `zizmor` is named here
-alone. A tool fetched without a version is a different tool on the day it releases, which is a check
-that changes its mind on its own. Ruff is pinned by the lockfile and Biome by `package.json`.
-"""
 
 RUNTIME_TESTS = "tests/decktalk/runtime/src/*.test.ts"
 """Every test of the runtime, named as a pattern because Node 22 runs a directory rather than reading it.
@@ -165,24 +176,30 @@ SHELL = ROOT / "scripts" / "shell"
 """The shell programs a group runs, kept as files so shellcheck reads them as it reads `install.sh`."""
 
 
-SHELLCHECKED = tuple(sorted(path.relative_to(ROOT).as_posix() for path in SHELL.glob("*.sh")))
-"""Every program under `scripts/shell/`, which the lint row holds to POSIX sh beside the installer."""
-
-
 def program(name: str) -> str:
     """The text of one shell program under `scripts/shell/`, which a group hands to `sh -euc`."""
     return (SHELL / f"{name}.sh").read_text(encoding="utf-8")
 
 
-def in_image(image: str, name: str) -> tuple[str, ...]:
-    """The program `name` run by POSIX sh inside `image`, with `install.sh` mounted read only and nothing else."""
-    return ("docker", "run", "--rm", "-v", f"{ROOT / 'install.sh'}:/install.sh:ro", image, "sh", "-euc", program(name))
+def in_image(image: str, *names: str) -> tuple[str, ...]:
+    """The programs `names`, joined in order, run by POSIX sh inside `image`, with `install.sh` mounted read only
+    and nothing else."""
+    text = "\n".join(program(name) for name in names)
+    return ("docker", "run", "--rm", "-v", f"{ROOT / 'install.sh'}:/install.sh:ro", image, "sh", "-euc", text)
+
+
+RELEASED = "released-versions"
+"""The program that reads the conda channel's releases, put ahead of every scenario that installs from the channel."""
+
+PIXI_IMAGE = "ghcr.io/prefix-dev/pixi:0.84.1@sha256:2d8821a1f3ee11a7fe8055f2c72d2b116d22f00c4caa73809857b5f216fcdebc"
+"""Pixi's own image, at the Pixi `requires-pixi` names, which tests/scripts/test_check.py holds the tag to. The
+digest pins the image the tag named when it was chosen, so a retagged image is a change of its own."""
 
 
 NPM_CI = ("npm", "ci")
 """The pinned Node toolchain, which the runtime generator compiles with and the linters run from."""
 
-INSTALL = (*UV, "decktalk", "install")
+INSTALL = ("decktalk", "install")
 """Chromium and ffmpeg, fetched by the command a person runs, which is a no-op on a machine that has both."""
 
 
@@ -208,9 +225,8 @@ class Need:
 
 NEEDS: dict[str, Need] = {
     "npm": Need(
-        why="Node, which the workflow installs, and the pinned packages, which the row installs.",
+        why="Node, which every Pixi environment but `plan` provides, and the pinned packages, which the row installs.",
         prepare=NPM_CI,
-        workflow=True,
     ),
     "chromium": Need(
         why="The headless Chromium the recorder drives.",
@@ -227,7 +243,7 @@ NEEDS: dict[str, Need] = {
         workflow=True,
     ),
 }
-"""Every need a row may declare. uv is not one of them, because every row runs through it."""
+"""Every need a row may declare. The Pixi environment is not one of them, because every row runs in one."""
 
 MOMENTS = ("pr", "main", "schedule")
 """The moments a row can gate at, which are the three ci.yml computes from the event that started it.
@@ -237,16 +253,30 @@ A pull request is `pr`, a push to `main` and a manual run are `main`, and the we
 on the tip of `main`, so a release gates on exactly what `main` gates on and has no column here.
 """
 
-LOCKFILE = ROOT / "uv.lock"
+LOCKFILE = ROOT / "pixi.lock"
 FFMPEG_PIN = ROOT / "src" / "decktalk" / "toolchain" / "ffmpeg_fetch.py"
 FFMPEG_VERSION = "FFMPEG_VERSION"
 """The name `ffmpeg_fetch.py` gives its pin, read from the source because this script imports no package."""
 
 
 def locked_version(package: str) -> str:
-    """The version of `package` the lockfile resolves, which decides the Chromium revision Playwright fetches."""
-    lock = tomllib.loads(LOCKFILE.read_text(encoding="utf-8"))
-    return next(str(entry["version"]) for entry in lock["package"] if entry["name"] == package)
+    """The version of `package` the lockfile resolves, which decides the Chromium revision Playwright fetches.
+
+    pixi.lock is YAML, and this script imports nothing outside the standard library because the plan
+    job runs it on a Python with no packages. So it reads each `name:` line of the package and the
+    `version:` line Pixi writes under it. Every environment on every platform has to resolve one
+    version, because one cache key names it.
+    """
+    lines = LOCKFILE.read_text(encoding="utf-8").splitlines()
+    versions = {
+        following.split(":", 1)[1].strip()
+        for line, following in zip(lines, lines[1:], strict=False)
+        if line.strip() == f"name: {package}" and following.strip().startswith("version:")
+    }
+    if len(versions) != 1:
+        found = ", ".join(sorted(versions)) or "none"
+        raise SystemExit(f"{LOCKFILE.name} resolves {package} to {found}, and one cache key can name one version.")
+    return versions.pop()
 
 
 def ffmpeg_pin() -> str:
@@ -273,7 +303,22 @@ def tools_key(group: Group, runner: str) -> str:
     return f"tools-{group.name}-{runner}-playwright-{locked_version('playwright')}-ffmpeg-{ffmpeg_pin()}"
 
 
-CHECK, WRITE, PREPARE = "--check", "--write", "--prepare"
+NODE_LOCKFILE = ROOT / "package-lock.json"
+
+
+def npm_key(group: Group, runner: str) -> str:
+    """The cache key of the packages `npm ci` downloads on one leg, or an empty string when the leg runs no npm.
+
+    Every leg on one runner installs the same package-lock.json, so the legs share one key, and the
+    key changes only when the lockfile does. setup-pixi keeps the Pixi environment and nothing else,
+    so npm's download cache needs a key of its own.
+    """
+    if "npm" not in group.tools:
+        return ""
+    return f"npm-{runner}-{hashlib.sha256(NODE_LOCKFILE.read_bytes()).hexdigest()}"
+
+
+CHECK, WRITE, PREPARE, SETUP = "--check", "--write", "--prepare", "--setup"
 
 GENERATES = "build_"
 """The prefix every generator's script carries, and the one thing that tells a generator from a check."""
@@ -282,14 +327,11 @@ GENERATES = "build_"
 def generator(name: str) -> tuple[str, ...]:
     """A generated file held to its source. Every generator takes `--check` and `--write` alike.
 
-    The script is named to the project's own interpreter rather than run as a file. No generator
-    carries an inline script header, so either form runs in the project environment today, and
-    naming the interpreter keeps it there even if one gains a header, because a file with a header
-    is resolved by `uv run` in an environment of its own and most generators read the package they
-    generate from. The lockfile decides what a generator sees, the same way it decides what a test
-    sees.
+    The script runs on the environment's interpreter, where the package it generates from is
+    installed from this checkout, so pixi.lock decides what a generator sees, the same way it decides
+    what a test sees.
     """
-    return (*UV, "python", f"scripts/{name}.py", CHECK)
+    return (*PYTHON, f"scripts/{name}.py", CHECK)
 
 
 FIRST_GENERATOR = "build_runtime"
@@ -317,7 +359,7 @@ def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
     """The command that writes what `command` checks, or None when it only judges.
 
     A generator is a `scripts/build_*.py` run with `--check`, and its write is the same command with
-    `--write`, so a generator that needs `uv run --with` to check needs it to write as well. A check
+    `--write`, so a generator that needs an interpreter option to check gets it to write as well. A check
     that generates nothing, such as `check_docs_links.py` or `check_wheel.py`, has no write at all.
     """
     generates = any(Path(part).name.startswith(GENERATES) for part in command)
@@ -441,23 +483,14 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="lint",
         why="Style, types and shell held to one set of rules, so no review spends a comment on them.",
+        # The hooks config is the one place a file linter, its arguments and its pin are written, so
+        # this row runs every hook over every file rather than calling ruff, ty, Biome and
+        # shellcheck a second time. A hook that fixes a file fails here and prints what it changed.
+        # The lock check comes first, because every later command runs from what pixi.lock pins.
         commands=(
-            ("uv", "lock", "--check"),
-            (*UV, "ruff", "check", "src", "tests", "scripts"),
-            (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
-            (*UV, "ty", "check", "src", "tests", "scripts"),
-            ("npm", "exec", "--no", "--", "biome", "ci", "."),
-            (
-                "uvx",
-                "--from",
-                f"shellcheck-py=={TOOLS['shellcheck']}",
-                "shellcheck",
-                "-s",
-                "sh",
-                "install.sh",
-                *SHELLCHECKED,
-            ),
-            ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
+            ("pixi", "lock", "--check"),
+            ("prek", "run", "--all-files", "--show-diff-on-failure"),
+            ("zizmor", ".github/workflows"),
             (*PYTEST, *LINT_TESTS),
         ),
         runners=(LINUX,),
@@ -465,6 +498,21 @@ GROUPS: tuple[Group, ...] = (
         tools=("npm",),
         timeout=10,
         when=("pr", "main"),
+    ),
+    Group(
+        name="playwright-pair",
+        why="conda-forge holds the Playwright client and its driver at the minor pyproject.toml names.",
+        commands=((*PYTHON, "scripts/check_playwright_pair.py"),),
+        runners=(LINUX,),
+        pythons=(FLOOR,),
+        tools=(),
+        # One request to anaconda.org per package, each held to 30 seconds by the script.
+        timeout=5,
+        # The row reads anaconda.org, so it gates `main` and not a pull request, and an anaconda.org
+        # outage cannot block a change that does not touch Playwright. release.yml starts only from
+        # a green `ci` run on `main`, so no release ships a Playwright minor conda-forge lacks. The
+        # unit suite holds the two ranges in pyproject.toml equal on every pull request.
+        when=("main",),
     ),
     Group(
         name="unit",
@@ -510,7 +558,7 @@ GROUPS: tuple[Group, ...] = (
         # unattended on all three platforms before the suite asserts what the fetch left behind.
         commands=(
             (*PYTEST, "-m", "platform"),
-            (*UV, "decktalk", "doctor"),
+            ("decktalk", "doctor"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
@@ -525,7 +573,7 @@ GROUPS: tuple[Group, ...] = (
         # generator launches a browser, so the row fetches none.
         commands=(
             *(generator(name) for name in GENERATORS),
-            (*UV, "python", "scripts/check_docs_links.py"),
+            (*PYTHON, "scripts/check_docs_links.py"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
@@ -542,7 +590,7 @@ GROUPS: tuple[Group, ...] = (
         # version is computed by release-please's own code from the history since the last tag, so
         # the row needs the Node packages in the checkout and the whole history, which `history`
         # asks the workflow's checkout for.
-        commands=((*UV, "python", "scripts/rehearse_release.py"),),
+        commands=((*PYTHON, "scripts/rehearse_release.py"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm", "history"),
@@ -558,9 +606,9 @@ GROUPS: tuple[Group, ...] = (
             # cannot show: it looks exactly like a suite that passed. The report comes after the
             # check for the same reason, because measurement is parallel here and a report combines
             # every data file it finds, which consumes them.
-            (*UV, "coverage", "combine", "--keep"),
-            (*UV, "scripts/check_coverage.py", "--check"),
-            (*UV, "coverage", "report"),
+            (*PYTHON, "-m", "coverage", "combine", "--keep"),
+            (*PYTHON, "scripts/check_coverage.py", "--check"),
+            (*PYTHON, "-m", "coverage", "report"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
@@ -570,11 +618,14 @@ GROUPS: tuple[Group, ...] = (
     ),
     Group(
         name="wheel",
-        why="What `uv build` writes, opened on a machine that has only the wheel and the tag.",
+        why="What `python -m build` writes, opened on a machine that has only the wheel and the tag.",
+        # The build uses the hatchling pixi.lock pins rather than one it fetches, so the row needs no
+        # network and builds with the backend the lock check judged. `--no-isolation` still refuses
+        # a hatchling below the floor `[build-system]` names.
         commands=(
-            ("uv", "build"),
+            (*PYTHON, "-m", "build", "--no-isolation"),
             (*PYTEST, "-m", "wheel"),
-            (*UV, "scripts/check_wheel.py"),
+            (*PYTHON, "scripts/check_wheel.py"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
@@ -600,13 +651,16 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="installer",
         why="The one-line installer run for real, on images that start with nothing but a package manager.",
+        # Every scenario but the musl refusal installs from the conda channel, and skips with its
+        # reason while the channel holds fewer releases than it needs.
         commands=(
-            in_image("debian:13-slim", "install-in-a-bare-image"),
-            in_image("ubuntu:24.04", "install-in-a-bare-image"),
-            in_image("fedora:42", "install-in-a-bare-image"),
+            in_image("debian:13-slim", RELEASED, "install-in-a-bare-image"),
+            in_image("ubuntu:24.04", RELEASED, "install-in-a-bare-image"),
+            in_image("fedora:42", RELEASED, "install-in-a-bare-image"),
             in_image("alpine:3.22", "refuse-musl"),
-            in_image("ghcr.io/astral-sh/uv:debian-slim", "keep-the-uv-already-there"),
-            in_image("debian:13-slim", "install-the-pinned-version"),
+            in_image(PIXI_IMAGE, RELEASED, "keep-the-pixi-already-there"),
+            in_image("debian:13-slim", RELEASED, "install-the-pinned-version"),
+            in_image("debian:13-slim", RELEASED, "rerun-upgrades"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
@@ -655,8 +709,9 @@ def legs(groups: tuple[Group, ...]) -> list[dict[str, Any]]:
                         "python": python,
                         "timeout-minutes": group.timeout,
                         "tools": list(group.tools),
-                        "node": NODE,
+                        "pixi": environment(python),
                         "cache": tools_key(group, runner),
+                        "npm": npm_key(group, runner),
                         "leg": f"{group.name} ({runner}, {python})",
                     }
                 )
@@ -676,9 +731,7 @@ def selected(names: list[str], when: str | None) -> tuple[Group, ...]:
 def run(command: tuple[str, ...], extra: tuple[tuple[str, str], ...] = ()) -> bool:
     print(f"\n$ {shell(command)}", flush=True)
     started = time.monotonic()
-    # uv runs this script in an environment of its own, and a nested `uv run` would warn about it.
-    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
-    env.update(extra)
+    env = {**os.environ, **dict(extra)}
     # The tool is looked up rather than handed to the process table, because Windows spells npm as
     # npm.cmd and a name it cannot resolve is a traceback out of subprocess rather than a sentence
     # about a tool this machine does not have.
@@ -692,16 +745,27 @@ def run(command: tuple[str, ...], extra: tuple[tuple[str, str], ...] = ()) -> bo
     return code == 0
 
 
+def reproduce(group: Group, mode: str = "") -> str:
+    """The one local command that runs `group` again, in the Pixi environment this run is in.
+
+    Pixi names the environment it entered in `PIXI_ENVIRONMENT_NAME`, and setup-pixi's activation
+    sets the same variable on a CI leg, so a py313 leg prints the command that picks py313.
+    """
+    name = os.environ.get("PIXI_ENVIRONMENT_NAME", DEFAULT_ENVIRONMENT)
+    chosen = "" if name == DEFAULT_ENVIRONMENT else f" -e {name}"
+    return f"pixi run{chosen} check --group {group.name}{mode}"
+
+
 def run_group(group: Group, mode: str = "") -> bool:
     """Run one group, opening with the name and the one local command that reproduces it."""
-    print(f"\n== {group.name}: uv run scripts/check.py --group {group.name}{mode}", flush=True)
+    print(f"\n== {group.name}: {reproduce(group, mode)}", flush=True)
     print(f"   {group.why}", flush=True)
     for name, value in group.env:
         print(f"   {name}={bare(value)}", flush=True)
     return all(run(command, group.env) for command in group.steps)
 
 
-NO_TOOLS = "nothing beyond uv"
+NO_TOOLS = "nothing beyond Pixi"
 """What a row that fetches nothing says it needs, because an empty cell reads as a gap."""
 
 PLATFORM_NAMES = {LINUX: "Linux", MACOS: "macOS", WINDOWS: "Windows"}
@@ -774,6 +838,11 @@ def arguments() -> argparse.ArgumentParser:
         action="store_true",
         help="run only the commands that fetch what each named group keeps in the tools cache",
     )
+    mode.add_argument(
+        SETUP,
+        action="store_true",
+        help="run every preparation any row names, once each, which readies a new clone for every row",
+    )
     parser.add_argument("--list", action="store_true", help="print the table and run nothing")
     parser.add_argument("--json", action="store_true", help="print the matrix a workflow consumes, and run nothing")
     parser.add_argument(
@@ -811,6 +880,18 @@ def run_preparations(groups: tuple[Group, ...]) -> int:
     return 0 if all(run_group(group, f" {PREPARE}") for group in preparing) else 1
 
 
+def setup_commands() -> tuple[tuple[str, ...], ...]:
+    """Every preparation any row names, once each, in the order the table first names them."""
+    return tuple(dict.fromkeys(command for group in GROUPS for command in group.preparations))
+
+
+def run_setup() -> int:
+    """Run every row's preparation once, which is what `pixi run setup` runs before it installs the git hooks."""
+    print(f"\n== setup: pixi run check {SETUP}", flush=True)
+    print("   Every preparation the table names, so a new clone is ready for every row.", flush=True)
+    return 0 if all(run(command) for command in setup_commands()) else 1
+
+
 def run_checks(groups: tuple[Group, ...]) -> int:
     """Run every named group in order, stopping at the first that fails, and name the rows not run."""
     started = time.monotonic()
@@ -831,6 +912,10 @@ def main() -> int:
     names = [name for value in args.group for name in value.split(",") if name]
     if args.fast:
         names = [*FAST, *names]
+    if args.setup:
+        if names:
+            parser.error("--setup prepares the machine for every row, so it takes no --group.")
+        return run_setup()
     if (args.write or args.prepare) and not names:
         parser.error("--write and --prepare change what a row runs, so they run only the groups --group names.")
     groups = selected(names, args.when)

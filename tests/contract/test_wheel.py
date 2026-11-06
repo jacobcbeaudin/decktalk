@@ -1,7 +1,7 @@
 """The wheel's file list: it holds exactly the files the package means to ship, and nothing rides along.
 
-`uv build` reads the working tree, so a Finder metadata file or a stale cache next to the template
-would ship in a wheel cut from a laptop. This opens the wheel the wheel row's own `uv build` wrote
+`python -m build` reads the working tree, so a Finder metadata file or a stale cache next to the template
+would ship in a wheel cut from a laptop. This opens the wheel the wheel row's own `python -m build` wrote
 into `dist/`, which is the file that ships, and compares its contents with the files git tracks
 under `src/decktalk`, minus the patterns `pyproject.toml` excludes, which is read from that file
 rather than repeated here so the exclusion is written down once. It needs git and a checkout.
@@ -57,23 +57,23 @@ def _run(*cmd: str) -> str:
 def excluded() -> tuple[str, ...]:
     """The wheel's own exclude patterns, read from `pyproject.toml` so they are written down once."""
     config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    return tuple(config["tool"]["uv"]["build-backend"]["wheel-exclude"])
+    return tuple(config["tool"]["hatch"]["build"]["targets"]["wheel"]["exclude"])
 
 
 DIST = REPO / "dist"
-"""Where `uv build` writes, which the wheel row runs just before this file."""
+"""Where `python -m build` writes, which the wheel row runs just before this file."""
 
 
 @pytest.fixture(scope="module")
 def entries() -> list[str]:
-    """The file entries of the one wheel `uv build` left in `dist/`, directories left out.
+    """The file entries of the one wheel `python -m build` left in `dist/`, directories left out.
 
     The wheel is found the way `scripts/check_wheel.py` finds it, as the one `decktalk-*.whl` there,
     and never by the version text: a candidate is `0.6.0-rc1` in `pyproject.toml` and `0.6.0rc1` in
     the wheel's name, and which version the wheel carries is check_wheel's `--tag` question.
     """
     wheels = sorted(DIST.glob("decktalk-*.whl"))
-    assert wheels, "dist/ holds no wheel of decktalk: run `uv build` first, as the wheel row does"
+    assert wheels, "dist/ holds no wheel of decktalk: run `python -m build` first, as the wheel row does"
     assert len(wheels) == 1, f"dist/ holds more than one wheel, so it is unclear which would ship: {wheels}"
     with zipfile.ZipFile(wheels[0]) as wheel:
         return [name for name in wheel.namelist() if not name.endswith("/")]

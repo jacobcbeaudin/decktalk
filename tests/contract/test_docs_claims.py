@@ -67,12 +67,12 @@ def released_versions() -> set[str]:
 
 
 def test_every_documented_version_pin_is_a_version_that_exists() -> None:
-    """`DECKTALK_VERSION=` is shown so a reader can paste it, and a reader who pastes an unreleased
-    version gets a resolver failure rather than an install. A number written from the release being
-    prepared names a version that does not exist yet."""
+    """`DECKTALK_VERSION=` and `decktalk==` are shown so a reader can paste them, and a reader who
+    pastes an unreleased version gets a resolver failure rather than an install. A number written
+    from the release being prepared names a version that does not exist yet."""
     released = released_versions()
     assert released, "the changelog lists no releases, so this test cannot say anything"
-    pattern = re.compile(r"DECKTALK_VERSION=(\d+\.\d+\.\d+)")
+    pattern = re.compile(r"(?:DECKTALK_VERSION=|decktalk==)(\d+\.\d+\.\d+)")
     seen = []
     for path in [*reader_pages(), INSTALLER]:
         for version in pattern.findall(path.read_text(encoding="utf-8")):

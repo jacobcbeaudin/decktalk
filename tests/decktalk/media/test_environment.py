@@ -56,3 +56,12 @@ def test_a_launch_outside_any_run_gets_a_temporary_directory_and_nothing_of_the_
 
 def test_no_name_a_browser_may_see_is_one_a_credential_is_kept_under():
     assert not [key for key in CHILD_KEYS if any(word in key for word in ("KEY", "TOKEN", "SECRET", "PASS"))]
+
+
+def test_a_launch_from_a_conda_environment_keeps_the_prefix_its_playwright_finds_the_driver_under():
+    """conda-forge's Playwright reads `CONDA_PREFIX` on Windows to find its Node driver, which a scrub removed."""
+    prefix = r"C:\Users\author\.pixi\envs\default"
+    with children_see({"CONDA_PREFIX": prefix, "CONDA_DEFAULT_ENV": "base", "HOME": "/h"}):
+        seen = child_environment()
+    assert seen["CONDA_PREFIX"] == prefix
+    assert "CONDA_DEFAULT_ENV" not in seen

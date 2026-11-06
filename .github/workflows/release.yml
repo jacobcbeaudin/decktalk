@@ -1,11 +1,14 @@
 # Release: release-please keeps a release pull request open against `main`. It bumps the version in
-# pyproject.toml, uv.lock and the runtime's TypeScript source, writes CHANGELOG.md, and picks the
-# semver bump from the Conventional Commits landed since the last release. Merging that pull request
-# creates the vX.Y.Z tag and the GitHub release, and this workflow then builds the wheel and the
-# sdist from that tag, publishes them to PyPI through trusted publishing, and attaches them to the
-# release. Config: release-please-config.json and .release-please-manifest.json.
-# (The uv.lock entry there uses `@.name.value` because release-please parses TOML into tagged
-# {value,start,end} nodes, and a plain `@.name` filter silently matches nothing.)
+# pyproject.toml, the README's pinned blocks and the runtime's TypeScript source, writes
+# CHANGELOG.md, and picks the semver bump from the Conventional Commits landed since the last
+# release. Merging that pull request creates the vX.Y.Z tag and the GitHub release, and this
+# workflow then builds the wheel and the sdist from that tag, publishes them to PyPI through
+# trusted publishing, and attaches them to the release. A final release also goes to the conda
+# channel https://prefix.dev/jacobcbeaudin/jcbcodes, which `pixi global install` reads: the `conda` job builds
+# the noarch package from the tag with `pixi build`, and `publish-conda` uploads it after PyPI has
+# the same version. A candidate stays on PyPI alone. Config: release-please-config.json and
+# .release-please-manifest.json. pixi.lock holds no version of the package itself, so the bump
+# leaves it as it is.
 #
 # This workflow runs no check of its own. It starts from a completed run of `ci` and releases only
 # when that run was green, was a push and was on `main`, so what ships is what ci judged. A
@@ -20,6 +23,14 @@
 #     PyPI project name: decktalk
 #     Owner: jacobcbeaudin   Repository: decktalk
 #     Workflow name: release.yml   Environment name: pypi
+# One-time setup on prefix.dev (before the first final release):
+#   prefix.dev -> New channel "jcbcodes" in the namespace jacobcbeaudin, public. Its page is
+#     https://prefix.dev/channels/@jacobcbeaudin/jcbcodes and its URL https://prefix.dev/jacobcbeaudin/jcbcodes.
+#   channel page -> Settings -> Repository Access -> Add access:
+#     Source: GitHub   Owner: jacobcbeaudin   Repository: decktalk
+#     Workflow file: release.yml   Environment: (empty, any environment)
+#     Access: Read/write   Upload access: All packages
+#   The entry then reads "jacobcbeaudin / decktalk, READ/WRITE, release.yml, Any environment".
 # One-time setup on GitHub:
 #   Settings -> Environments -> New environment "pypi", with yourself as a required reviewer,
 #     because a PyPI version can never be re-uploaded and this is the one step with no undo.
@@ -30,7 +41,8 @@
 # candidate, 0.5.0-rc1, 0.5.0-rc2, until a pull request carries a `Release-As: 0.5.0` footer and the
 # next release pull request is the final one, as RELEASING.md describes under "Candidates and
 # finals". The workflow file name release.yml and the environment name pypi are registered with
-# PyPI's trusted publisher, so neither may be renamed.
+# PyPI's trusted publisher, and release.yml is also registered with the trusted publisher of the
+# jacobcbeaudin/jcbcodes channel, so neither may be renamed.
 name: release
 
 # `workflow_run` is the trigger this design needs and the usual objection to it does not apply here.
@@ -100,14 +112,22 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # The build runs in the default environment, with the hatchling pixi.lock pins at the tag, as
+      # the `wheel` row of scripts/check.py does on every pull request. No cache is read, so nothing
+      # a cache could hold reaches the artifact PyPI publishes. tests/scripts/test_check.py holds
+      # `pixi-version` to the `requires-pixi` floor, and the two build steps to the `wheel` row.
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         with:
-          enable-cache: true
-      - run: uv build
+          pixi-version: v0.84.1
+          environments: default
+          locked: true
+          activate-environment: true
+          cache: false
+      - run: python -m build --no-isolation
       - name: Open the built wheel on its own and hold the tag to the version in it
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: uv run scripts/check_wheel.py --tag "$TAG"
+        run: python scripts/check_wheel.py --tag "$TAG"
       - id: tag
         name: A tag with a prerelease part is a candidate
         env:
@@ -167,3 +187,80 @@ jobs:
             python3 scripts/release_notes.py "$TAG" > "$RUNNER_TEMP/notes.md"
             gh release edit "$TAG" --prerelease=false --latest --notes-file "$RUNNER_TEMP/notes.md"
           fi
+
+  conda:
+    # The conda package, built from the tag and from nothing else, for a final release only. A
+    # candidate stays on PyPI, so `pixi global install` never meets a version the docs call a candidate.
+    needs: [release-please, build]
+    if: needs.build.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+          persist-credentials: false
+      # `pixi build` solves its own build environment from conda-forge, so no workspace environment
+      # is installed. tests/scripts/test_check.py holds `pixi-version` to the `requires-pixi` floor.
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
+        with:
+          pixi-version: v0.84.1
+          run-install: false
+          cache: false
+      - run: pixi build --output-dir dist-conda
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: conda
+          path: dist-conda/
+
+  publish-conda:
+    # The one job that talks to prefix.dev holds the OIDC token and nothing else, as `publish` does
+    # for PyPI, so no long-lived prefix.dev key exists anywhere. It runs after PyPI has the version,
+    # so the conda package never names a release PyPI refused. It uploads the file the `conda` job
+    # built, which is the file `attach-conda` puts on the release.
+    needs: [release-please, conda, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      # prefix.dev exchanges this GitHub OIDC token for a short upload token, and Sigstore signs the
+      # attestation with the same identity.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: conda
+          path: dist-conda/
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
+        with:
+          pixi-version: v0.84.1
+          run-install: false
+          cache: false
+      # No API key is given, so `pixi upload prefix` asks prefix.dev for a token through trusted
+      # publishing. `--generate-attestation` signs a Sigstore attestation of the file and uploads it
+      # with the package, and it works only with trusted publishing. Without a registered trusted
+      # publisher prefix.dev gives no token, the upload fails, and the error names the fix. The channel
+      # lives in the namespace jacobcbeaudin, so `--channel` takes `<namespace>/<channel>`: that is
+      # the path after the host of the channel URL, which `pixi publish --to <url>` passes to the
+      # same upload call.
+      - name: Upload the package to the jacobcbeaudin/jcbcodes channel
+        run: |
+          if ! pixi upload prefix --channel jacobcbeaudin/jcbcodes --generate-attestation dist-conda/*.conda; then
+            echo "::error::The upload to https://prefix.dev/jacobcbeaudin/jcbcodes failed. If the log above says that no prefix.dev API key was found or that trusted publishing failed, the channel has no trusted publisher for this workflow: on https://prefix.dev/channels/@jacobcbeaudin/jcbcodes open Settings -> Repository Access -> Add access and add Source GitHub, owner jacobcbeaudin, repository decktalk, workflow file release.yml, environment empty, access Read/write, upload access All packages, then re-run this job."
+            exit 1
+          fi
+
+  attach-conda:
+    # A repository write, so it sits apart from the job that publishes with the OIDC token.
+    needs: [release-please, publish-conda]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: conda
+          path: dist-conda/
+      - name: Attach the conda package to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: gh release upload "$TAG" dist-conda/*.conda --clobber

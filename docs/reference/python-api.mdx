@@ -58,8 +58,8 @@ A type any public field, parameter or return value names is importable from one 
 `tests/contract/test_api.py` holds by walking every public signature.
 
 ```bash
-uv run python -c "import decktalk; print(sorted(decktalk.__all__))"
-uv run python -c "import decktalk.results as r; print(sorted(r.__all__))"
+python -c "import decktalk; print(sorted(decktalk.__all__))"
+python -c "import decktalk.results as r; print(sorted(r.__all__))"
 ```
 
 Those lists are the one authority. Check a name against them before you write it.
@@ -402,7 +402,7 @@ command line derives its own flags from those two, which is why no list of comma
 models.
 
 Every result is a frozen pydantic model, so `result.model_dump_json()` gives exactly what the
-command line prints under `--json`, and `uv run decktalk schema NAME` prints the schema of the
+command line prints under `--json`, and `decktalk schema NAME` prints the schema of the
 result named after that command.
 
 ## Findings and fixes

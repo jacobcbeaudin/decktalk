@@ -80,8 +80,19 @@ def test_the_bumped_copy_builds_its_wheel_and_holds_it_to_the_tag_release_please
     *build, judge = check.BY_NAME["wheel"].commands
     steps = rehearse.rehearsed("0.6.0-rc1")
     assert steps[: steps.index(rehearse.GENERATED) + 1] == (
-        ("uv", "lock"),
+        ("pixi", "lock", "--check"),
         (*rehearse.GENERATED, "--write"),
         rehearse.GENERATED,
     )
-    assert steps[-len(build) - 1 :] == (*build, (*judge, "--tag", "v0.6.0-rc1"))
+    in_copy = rehearse.IN_COPY
+    assert steps[-len(build) - 1 :] == (
+        *((*in_copy, *command) for command in build),
+        (*in_copy, *judge, "--tag", "v0.6.0-rc1"),
+    )
+
+
+def test_every_command_in_the_copy_runs_in_the_copys_own_locked_environment() -> None:
+    """The bumped package is installed in the copy's environment, so a command outside it reads the old version."""
+    for command in rehearse.rehearsed("0.6.0-rc1"):
+        assert command == rehearse.LOCK_CHECK or command[: len(rehearse.IN_COPY)] == rehearse.IN_COPY, command
+    assert "--locked" in rehearse.IN_COPY

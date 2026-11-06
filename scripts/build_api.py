@@ -1,7 +1,7 @@
 """Generate src/decktalk/__init__.py, the root of the public API: about twenty entry points and the errors.
 
-    uv run scripts/build_api.py --write    # write the package's __init__.py
-    uv run scripts/build_api.py --check    # exit 1 if the committed file would change
+    pixi run python scripts/build_api.py --write    # write the package's __init__.py
+    pixi run python scripts/build_api.py --check    # exit 1 if the committed file would change
 
 `ROOT` is the one list of names the root carries, grouped by why a caller reaches for each. Every
 other public type lives in a public module, `decktalk.results`, `decktalk.events`,

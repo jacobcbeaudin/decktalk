@@ -1,6 +1,6 @@
 """The v3 p1 prototype, the waveform landing, as a real DeckTalk page that verifies with no finding.
 
-    uv run pytest -m e2e tests/e2e/test_landing.py
+    pixi run pytest -m e2e tests/e2e/test_landing.py
 
 The prototype drew a voice line that scrolls under a fixed playhead at the speed of speech, with
 each picture landing on its word. Here the voice line is a frame hook drawn from the section second

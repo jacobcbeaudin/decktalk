@@ -1,6 +1,6 @@
 """Every Python example on the Python API reference runs as it is written, against the real package.
 
-    uv run pytest -m e2e tests/e2e/test_python_api.py
+    pixi run pytest -m e2e tests/e2e/test_python_api.py
 
 A reader copies these blocks into a script, so a field the page names that a result has not got is an
 `AttributeError` in the reader's hands. Each block is read off `docs/reference/python-api.mdx` and run

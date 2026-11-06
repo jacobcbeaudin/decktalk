@@ -8,8 +8,9 @@ are read from the config, so a new extra file is held here by being added there.
 
 A marked line is read the way release-please's generic updater reads it, with an unanchored semver
 pattern, so a PyPI spelling such as `0.5.0rc1` on a marked line reads as `0.5.0` and fails the one
-version rule. The spelling of a whole field, in `pyproject.toml` or `uv.lock`, is free, because
-release-please replaces the field entire and `uv lock` writes the PEP 440 spelling.
+version rule. The spelling of a whole field, in `pyproject.toml`, is free, because release-please
+replaces the field entire. pixi.lock holds no version of the package itself, so it is not a file
+the release writes.
 
 The config is held to the candidate cycle RELEASING.md describes under "Candidates and finals": the
 package stays in the series, and a final release is named by a footer rather than by editing the config.
@@ -45,13 +46,6 @@ BLOCK_START = "x-release-please-start-version"
 BLOCK_END = "x-release-please-end"
 """The comment that marks a line release-please's generic updater rewrites."""
 
-TOML_ROW = re.compile(
-    r"^\$\.(?P<table>[\w-]+)"
-    r"\[\?\(@\.(?P<key>[\w-]+)\.value==['\"](?P<match>[^'\"]+)['\"]\)\]"
-    r"\.(?P<field>[\w-]+)$"
-)
-"""The one jsonpath shape the config uses for a TOML file: a field of the array rows one key picks."""
-
 PRERELEASE_VERSIONING = "prerelease"
 """The versioning strategy that numbers the candidates of a series itself."""
 
@@ -80,15 +74,6 @@ def generic_versions(text: str) -> list[str]:
     return found
 
 
-def toml_versions(text: str, jsonpath: str) -> list[str]:
-    """The field `jsonpath` names, in every array row its filter picks."""
-    path = TOML_ROW.match(jsonpath)
-    if path is None:
-        pytest.fail(f"the jsonpath {jsonpath!r} is not a shape this test can follow, so teach it the new shape")
-    rows = tomllib.loads(text).get(path["table"], [])
-    return [row[path["field"]] for row in rows if row.get(path["key"]) == path["match"]]
-
-
 def written_versions() -> dict[str, str]:
     """Every version the release writes, keyed by the file and the place in it that carries it."""
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -100,8 +85,6 @@ def written_versions() -> dict[str, str]:
             text = (REPO / extra["path"]).read_text(encoding="utf-8")
             if extra["type"] == "generic":
                 found = generic_versions(text)
-            elif extra["type"] == "toml":
-                found = toml_versions(text, extra["jsonpath"])
             else:
                 pytest.fail(f"{extra['path']} is bumped by the {extra['type']!r} updater, which this test cannot read")
             if not found:

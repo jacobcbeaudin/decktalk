@@ -1,6 +1,6 @@
 """A section a program draws: the voice keeps going through it, and its cues are measured or said to be unmeasured.
 
-    uv run pytest -m e2e tests/e2e/test_render_section.py
+    pixi run pytest -m e2e tests/e2e/test_render_section.py
 
 The motion example's third section names a `render_command`, a short script that composes an ffmpeg
 filter graph from the motion document `record` writes. This builds the example with no spend, once

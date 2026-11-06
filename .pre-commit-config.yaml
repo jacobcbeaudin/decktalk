@@ -1,44 +1,72 @@
-# Install once per clone: `uvx pre-commit install` (installs both the pre-commit and commit-msg hooks).
+# The one place a file linter, its arguments and its pin are written. prek runs these hooks at
+# every commit, and the lint row in scripts/check.py runs them over every file, so a commit and CI
+# judge a change by the same rules. `pixi run setup` installs prek from pixi.lock and runs
+# `prek install`, which writes the pre-commit and commit-msg hooks into the clone.
+#
+# Each tool hook enters the Pixi environment through `pixi run --locked`, so it finds the ruff, ty
+# and Node that pixi.lock pins from a plain terminal, and never rewrites pixi.lock in the middle of a
+# commit. A commit needs only Pixi on PATH.
+
+# The prek that pixi.lock holds, and the first release with every key and hook below.
+minimum_prek_version: "0.5.9"
 default_install_hook_types: [pre-commit, commit-msg]
+# A hook with no stages of its own runs at pre-commit only, rather than a second time at commit-msg.
+default_stages: [pre-commit]
 
 repos:
   # Commit messages must follow Conventional Commits (https://www.conventionalcommits.org).
   # release-please reads them to pick the next version and write CHANGELOG.md:
   #   fix: -> patch   feat: -> minor   feat!: / BREAKING CHANGE: -> major (minor while 0.x)
+  # No built-in hook knows the format, so prek fetches this one and its Python by the rev.
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
 
-  # Same lint + format rules CI enforces (config in pyproject.toml).
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
-    hooks:
-      - id: ruff-check
-        args: [--fix]
-      - id: ruff-format
-
-  # JavaScript and TypeScript lint plus format, as CI does, run from the copy `npm ci` installed so
-  # that package-lock.json is the one home of the Biome version. Run `npm ci` once before committing.
+  # pixi.lock pins ruff and ty, and package-lock.json pins Biome, so each hook runs the copy the
+  # environment holds. Their rules are in pyproject.toml and biome.json.
   - repo: local
     hooks:
+      - id: ruff-check
+        name: ruff check
+        language: system
+        entry: pixi run --locked ruff check --fix --force-exclude
+        types_or: [python, pyi, jupyter]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        language: system
+        entry: pixi run --locked ruff format --force-exclude
+        types_or: [python, pyi, jupyter, markdown]
+        require_serial: true
+      # The copy `npm ci` installed, called by its path, because `npm exec` costs a quarter second
+      # more on every commit. `npm ci` comes before `prek install` in `pixi run setup`.
       - id: biome-check
         name: biome check
         language: system
-        entry: node_modules/.bin/biome check --write --no-errors-on-unmatched
+        entry: pixi run --locked node_modules/.bin/biome check --write --no-errors-on-unmatched
         types_or: [javascript, ts, json]
+      # ty resolves imports against the installed packages, so it checks the three roots at once
+      # rather than the files a commit touches.
+      - id: ty
+        name: ty check
+        language: system
+        entry: pixi run --locked ty check src tests scripts
+        types: [python]
+        pass_filenames: false
 
-  # The same check CI runs over install.sh. shellcheck-py ships the binary as a wheel, so the hook
-  # needs no docker, and -s sh holds the installer to POSIX sh, as tests/contract/test_installer.py does.
+  # shellcheck-py ships the binary as a wheel, so the hook needs no docker, and this rev is the one
+  # shellcheck pin. -s sh holds the installer and scripts/shell/ to POSIX sh, as
+  # tests/contract/test_installer.py does.
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
         args: [-s, sh]
 
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  # prek's own copies of the pre-commit-hooks checks, so they need no clone and no rev of their own.
+  - repo: builtin
     hooks:
       - id: end-of-file-fixer
         exclude: ^src/decktalk/template/examples/[^/]+/deck/fonts/
@@ -46,14 +74,3 @@ repos:
         exclude: ^src/decktalk/template/examples/[^/]+/deck/fonts/
       - id: check-toml
       - id: check-yaml
-
-  # Type check with ty, as CI does. ty publishes no pre-commit hook repo, and it needs the project's
-  # installed dependencies to resolve imports, so it runs from the project environment through uv.
-  - repo: local
-    hooks:
-      - id: ty
-        name: ty check
-        entry: uv run ty check src tests scripts
-        language: system
-        types: [python]
-        pass_filenames: false

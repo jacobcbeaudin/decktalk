@@ -12,13 +12,16 @@ DeckTalk runs on Linux, macOS and Windows, and records with headless Chromium on
 
 | Platform | How to install | Notes |
 |---|---|---|
-| macOS | `curl -LsSf https://decktalk.ai/install.sh \| sh` | The installer brings uv, and uv brings its own Python. |
+| macOS | `curl -LsSf https://decktalk.ai/install.sh \| sh` | The installer brings Pixi, and Pixi brings DeckTalk its own Python. |
 | Linux with glibc | `curl -LsSf https://decktalk.ai/install.sh \| sh` | `decktalk install` also adds Chromium's system libraries, which is the one step that asks for a password. |
-| Windows | `uv tool install decktalk` or `pipx install decktalk` | The one-line installer stops on Windows and points at uv. |
-| Linux with musl | Unsupported | Playwright, which records the slides, publishes no musl wheels, so DeckTalk cannot resolve at all. |
+| Windows | `powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 \| iex; pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk"` | The one-line installer stops on Windows, because it is a POSIX shell script, so Pixi's own PowerShell installer comes first. |
+| Linux with musl | Unsupported | conda-forge, which builds DeckTalk's Python, Node and Playwright, publishes no musl builds, so nothing it installs can start. |
+
+With Pixi already on the machine, `pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk`
+is the whole install on every platform. `uv tool install decktalk` installs the same release from PyPI.
 
 On a musl system such as Alpine the installer stops before it installs anything and says why, rather
-than leaving a page of resolver output to read. Build in a container from a Debian-based image, such
+than leaving a page of loader errors to read. Build in a container from a Debian-based image, such
 as `debian`, `ubuntu` or `python:3.13-slim`, and never from `python:3.13-alpine`. Debian is also
 where Chromium's system libraries can be installed, because Playwright installs them with `apt-get`.
 
@@ -26,13 +29,16 @@ where Chromium's system libraries can be installed, because Playwright installs 
 
 DeckTalk needs Python 3.12 or later.
 
-The one-line installer never asks you to supply one. It installs uv if the machine has none and then
-runs `uv tool install decktalk`, and uv fetches a Python of its own. `uv tool install decktalk` does
-the same thing without the script. `pipx install decktalk` uses a Python that is already on the
-machine, so that one is where the floor bites.
+The one-line installer never asks you to supply one. It installs Pixi if the machine has none and
+then runs `pixi global install decktalk`, and Pixi gives DeckTalk an environment of its own in
+`~/.pixi/envs/decktalk`, with the newest Python conda-forge builds. That environment is about 330 MB,
+and Pixi keeps the packages it downloaded in its cache, about as much again, which `pixi clean cache`
+removes. `uv tool install decktalk` fetches a Python of its own too.
 
-Seven packages come with DeckTalk: blake3, filelock, Playwright, Pydantic, Rich, tomlkit and Typer. Playwright ships
-its own browser driver, so Node is not needed. KaTeX is not a dependency at all: the pinned release
+Seven packages come with DeckTalk: blake3, filelock, Playwright, Pydantic, Rich, tomlkit and Typer. From PyPI,
+Playwright ships its own browser driver. From conda-forge, the driver is a package of its own, which
+brings Node into DeckTalk's environment, and DeckTalk's package holds the two to one minor. You
+install no Node yourself either way. KaTeX is not a dependency at all: the pinned release
 ships inside the wheel, and DeckTalk serves it at `/__decktalk/katex/` on the page's own origin, so a
 project typesets its equations with no network and no content delivery network.
 
@@ -137,7 +143,7 @@ is one setting, and none of them changes the project.
 
 | What the machine blocks | What to set |
 |---|---|
-| The package index | Point uv, pipx or pip at your mirror the way you already do. |
+| The package index | Point Pixi at a mirror of the two conda channels with its `mirrors` setting, or point uv or pip at your PyPI mirror, the way you already do. |
 | The Chromium download host | `PLAYWRIGHT_DOWNLOAD_HOST`, as Playwright documents it. |
 | The ffmpeg download | `[tools] ffmpeg` and `[tools] ffprobe`, naming two executables from one build. They override every other source, so nothing downloads a build. |
 | A write to the per-user cache | `[tools] cache_dir`, which moves Chromium and ffmpeg together. |

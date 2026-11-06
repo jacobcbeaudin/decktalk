@@ -31,7 +31,10 @@ MODEL = ConfigDict(frozen=True, extra="forbid", populate_by_name=True, serialize
 """The configuration every model in the package uses, so a result is hashable, closed and one shape."""
 
 
-class Model(BaseModel):
+# `frozen=True` is also a class keyword because a type checker reads it there and not in
+# `model_config`. With it, the checker knows every field is read-only, so a subclass can narrow a
+# field's type, as each event narrows `event` to its one name.
+class Model(BaseModel, frozen=True):
     """The base of every model in the package, which is what carries `MODEL` to each of them."""
 
     model_config = MODEL

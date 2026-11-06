@@ -144,8 +144,9 @@ same way in a year.
 
 Yes. DeckTalk runs on Linux, macOS and Windows.
 
-- The one-line installer covers Linux and macOS. On Windows, install with uv or pipx, which needs
-  Python 3.12 or later.
+- The one-line installer covers Linux and macOS and stops on Windows. On Windows, install Pixi with
+  its PowerShell installer and then run
+  `pixi global install -c https://prefix.dev/jacobcbeaudin/jcbcodes -c conda-forge decktalk`, as the [quickstart](/quickstart) shows, or run `uv tool install decktalk`.
 - Paths in `decktalk.toml` use forward slashes on every platform, and every path DeckTalk reports
   back is project-relative with forward slashes.
 - What DeckTalk fetches goes under `%LOCALAPPDATA%` on Windows, and `[tools] cache_dir` moves it.
@@ -158,7 +159,7 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
   hosted runner presents frames late. The Linux `e2e` leg reports it too, until its own runs show the
   runner can be trusted.
   [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/RELEASING.md#what-ci-runs)
-  says how each leg is judged, and `uv run scripts/check.py --list` names every one.
+  says how each leg is judged, and `pixi run check --list` names every one.
 
 ## Can an agent drive it?
 

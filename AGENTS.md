@@ -59,11 +59,16 @@ The suite mirrors the source tree: `src/decktalk/media/audio.py` is tested by
 `tests/decktalk/media/test_audio.py` and by nothing else, and `tests/contract/` is a closed list of
 the tests that belong to no module.
 
-Run `uv run scripts/check.py` before calling anything done. It runs every group a pull request gates
+Pixi provides the tools: pixi.lock pins Python, Node, prek and every Python package, and installs
+DeckTalk from this checkout. `pixi run` runs every command, as `pixi run check`, `pixi run pytest` or
+`pixi run decktalk`, and a new clone runs `pixi run setup` once. No Pixi task repeats a command that
+has a home in `scripts/check.py`, `.pre-commit-config.yaml` or package-lock.json.
+
+Run `pixi run check` before calling anything done. It runs every group a pull request gates
 on: lint and types, the suites and every generated-file check. `--fast` runs lint, types and the unit tests alone.
 
 Never edit a generated file. Change its source and run its `scripts/build_*.py --write`, or
-`uv run scripts/check.py --group generated --write` to update them all.
+`pixi run check --group generated --write` to update them all.
 
 Every public sentence a key, a code, a command or a field publishes lives once, in the model or the
 registry the generators read.

@@ -1,7 +1,7 @@
 """Generate one docs page per error code and per finding code, from the enums that declare them.
 
-    uv run scripts/build_code_pages.py --write    # write every page
-    uv run scripts/build_code_pages.py --check    # exit 1 if a committed page would change
+    pixi run python scripts/build_code_pages.py --write    # write every page
+    pixi run python scripts/build_code_pages.py --check    # exit 1 if a committed page would change
 
 Every error block and every finding line prints a docs URL, so the page for a code lands with the
 code and resolves from the first run. The sentence, the severity, the exit code and the settings

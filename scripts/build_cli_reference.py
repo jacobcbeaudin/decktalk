@@ -1,7 +1,7 @@
 """Generate docs/reference/cli.mdx from the command line itself.
 
-    uv run scripts/build_cli_reference.py --write    # write the page
-    uv run scripts/build_cli_reference.py --check    # exit 1 if the committed page would change
+    pixi run python scripts/build_cli_reference.py --write    # write the page
+    pixi run python scripts/build_cli_reference.py --check    # exit 1 if the committed page would change
 
 Every command, its purpose, its usage line and each of its options come from one walk over the
 parser, which is the same walk `decktalk schema` prints and the same one Click renders `--help`
