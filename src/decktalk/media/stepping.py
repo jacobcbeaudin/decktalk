@@ -93,10 +93,11 @@ ends one millisecond early, which at worst steps one frame of it more and never 
 """
 
 STARTED_JS = "(wait) => window.__decktalkProbe.started(wait)"
-"""The call the hold waits on, which answers once every animation the page set playing has started.
+"""The call the hold waits on, which answers once the page is ready and every animation it set playing has started.
 
 A loop the first slide starts is still waiting for the browser to start it when the page loads, and
-one paused before it starts can show a frame further on than the second it is sought to.
+one paused before it starts can show a frame further on than the second it is sought to. The first
+slide itself can mount after the page loads, so the call waits for the runtime's `ready` first.
 """
 
 NOW_JS = "() => Date.now()"
@@ -397,8 +398,10 @@ class Stepper:
     def hold(self) -> None:
         """Stop the page's clock a moment ahead of where it stands, which is where the section starts.
 
-        The clock is held only once every animation the page has set playing has started, so the first
-        step pauses each one where it is sought rather than where the browser was about to start it.
+        The clock is held only once the runtime is ready, which includes the mount of the first slide,
+        and every animation the page has set playing has started. The first step then pauses each one
+        where it is sought rather than where the browser was about to start it. The hold waits for this
+        itself, so it is safe from a caller that did not wait for the page to be ready.
         """
         with driving("could not hold the page's clock"), self.held("the hold before its first frame"):
             self.page.evaluate(STARTED_JS, self.deadline_seconds)
