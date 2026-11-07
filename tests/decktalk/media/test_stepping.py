@@ -1393,3 +1393,69 @@ def test_a_reveal_due_later_still_enters_from_its_own_second(tmp_path):
     due = round(go * FPS)
     assert not shows_box(frames[due])
     assert shows_box(frames[due + 1])
+
+
+# ---- DIAGNOSTIC, throwaway: the frame-zero race on the Linux runner -----------------------------
+
+import json  # noqa: E402
+
+FZ_OUT = Path(os.environ.get("FZ_OUT", "tests/out/fz"))
+
+FZ_MOUNT_JS = """(() => {
+  window.__fzMount = null;
+  new MutationObserver((records, observer) => {
+    if (document.querySelector('.packet')) {
+      window.__fzMount = document.timeline.currentTime;
+      observer.disconnect();
+    }
+  }).observe(document, { childList: true, subtree: true });
+})()"""
+
+FZ_SNAP = """() => ({
+  timeline: document.timeline.currentTime,
+  mount: window.__fzMount,
+  anims: document.getAnimations().map((a) => ({
+    name: a.animationName || a.id || (a.effect && a.effect.target && a.effect.target.className) || '?',
+    target: a.effect && a.effect.target ? a.effect.target.className : null,
+    state: a.playState, pending: a.pending, current: a.currentTime, start: a.startTime,
+  })),
+})"""
+
+FZ_V0 = "(wait) => window.__decktalkProbe.started(wait).then(() => { window.__fzHold = (%s)(); })" % FZ_SNAP
+
+FZ_V1 = (
+    "(wait) => window.__decktalkProbe.started(wait).then(() => new Promise((done) => {"
+    " const t0 = document.timeline.currentTime;"
+    " const poll = () => document.timeline.currentTime > t0 ? done() : setTimeout(poll, 2);"
+    " poll(); })).then(() => { window.__fzHold = (%s)(); })" % FZ_SNAP
+)
+
+FZ_VARIANTS = {"v0": FZ_V0, "v1": FZ_V1}
+
+
+@pytest.mark.parametrize("variant", sorted(FZ_VARIANTS))
+def test_fz_diag(tmp_path, monkeypatch, variant):
+    """Record, per fresh page, the hold-time animation state and frame 0, on time and late."""
+    monkeypatch.setattr(stepping, "STARTED_JS", FZ_VARIANTS[variant])
+    allowed = moving_page(tmp_path)
+    out = FZ_OUT / variant
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    plan = [0] * 6 + [30] * 10 + [300] * 10 + [5] * 10
+    for i, delay in enumerate(plan):
+        before = FZ_MOUNT_JS if delay == 0 else FZ_MOUNT_JS + ";" + LATE_FONTS_JS % delay
+        with held(allowed, MOVING_URL, ready=False, before=before) as stepper:
+            hold = stepper.page.evaluate("() => window.__fzHold")
+            zero = stepper.frame(0)
+            after = stepper.page.evaluate(FZ_SNAP)
+            one = stepper.frame(1)
+        digest = hashlib.sha256(zero).hexdigest()
+        if digest[:8] not in {p.name.split("-")[0] for p in out.glob("*.png")}:
+            out.joinpath(f"{digest[:8]}-f0-{i}-d{delay}.png").write_bytes(zero)
+            out.joinpath(f"{digest[:8]}-f1-{i}-d{delay}.png").write_bytes(one)
+        rows.append({"i": i, "delay": delay, "f0": digest[:8], "f1": hashlib.sha256(one).hexdigest()[:8], "hold": hold, "after0": after})
+    out.joinpath("rows.json").write_text(json.dumps(rows, indent=1))
+    for row in rows:
+        ring = [a for a in row["hold"]["anims"]] if row["hold"] else None
+        print(variant, row["i"], row["delay"], row["f0"], row["f1"], "mount", row["hold"] and row["hold"]["mount"], "hold", row["hold"] and row["hold"]["timeline"], ring)
+    assert True

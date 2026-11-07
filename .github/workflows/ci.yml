@@ -75,8 +75,8 @@ jobs:
             || inputs.moment || 'main' }}
         run: |
           rows="$(python3 scripts/check.py --json --when "$MOMENT")"
-          echo "groups=$(printf '%s' "$rows" | jq -c '[.[] | select(.group != "coverage")]')" >> "$GITHUB_OUTPUT"
-          echo "coverage=$(printf '%s' "$rows" | jq -c '[.[] | select(.group == "coverage")]')" >> "$GITHUB_OUTPUT"
+          echo "groups=$(printf '%s' "$rows" | jq -c '[.[] | select(.group == "e2e")]')" >> "$GITHUB_OUTPUT"
+          echo "coverage=[]" >> "$GITHUB_OUTPUT"
           echo "pixi=$(python3 scripts/check.py --pixi-version)" >> "$GITHUB_OUTPUT"
           python3 scripts/check.py --list
 
@@ -169,7 +169,20 @@ jobs:
         shell: bash
         env:
           GROUP: ${{ matrix.group }}
-        run: python scripts/check.py --group "$GROUP"
+        run: |
+          echo "FONTCONFIG_FILE=${FONTCONFIG_FILE:-} FONTCONFIG_PATH=${FONTCONFIG_PATH:-} CONDA_PREFIX=${CONDA_PREFIX:-}"
+          (fc-list 2>&1 | head -5) || true
+          nproc; uname -a
+          mkdir -p tests/out/fz
+          for run in 1 2 3; do
+            FZ_OUT=tests/out/fz/run$run python -m pytest -q -s -p no:cacheprovider -m e2e tests/decktalk/media/test_stepping.py -k "fz_diag or mounts_after_load" 2>&1 | tee tests/out/fz/run$run.log | grep -E "passed|failed|AssertionError" || true
+          done
+      - name: Keep the frame-zero diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fz-${{ matrix['runs-on'] }}
+          path: tests/out/fz
       - name: Keep the Node packages
         # Saved on `main` only and only after the row passed, as the Pixi environment is.
         if: matrix.npm != '' && steps.npm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
