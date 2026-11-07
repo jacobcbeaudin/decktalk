@@ -15,8 +15,8 @@
  *                                    whether the picture may have changed, the earliest second it next
  *                                    can and what the page changed undeclared since the step before,
  *                                    once the page has drawn it, or refuse once s seconds pass without that
- *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
- *                                    refuse once s seconds pass without that
+ *   window.__decktalkProbe.started(s) answer once the page is ready and every animation it set playing
+ *                                    has started, or refuse once s seconds pass without that
  *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
  *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
  *   window.__decktalkProbe.within(p, s) what p settles with, or a refusal once s seconds pass on the
@@ -491,23 +491,29 @@ export function step(seconds: number, waitSeconds: number): Promise<Stepped> {
 }
 
 /**
- * Answer once no animation on the page is still waiting for the browser to start it, which is when the
- * recorder may hold the clock.
+ * Answer once the page is ready and no animation on it is still waiting for the browser to start it,
+ * which is when the recorder may hold the clock.
  *
  * A loop the first slide starts plays from the mount, before the recorder's first step, and the
  * browser starts it in a rendering update of its own, often on the compositor. Paused and sought to
  * the section's second zero while it is still waiting to start, it keeps whatever the compositor had
  * begun, so frame 0 showed it a frame further on from some pages and not from others. Started, it
  * pauses where it is sought. Each pass waits for what is pending now, until nothing is.
+ *
+ * The runtime mounts the first slide only once the page's fonts are ready, and on a cold machine that
+ * can be after `load`. Before the mount there is no animation to wait for, and a slide mounted after
+ * the hold shows frame 0 as the browser first draws it. So the wait starts with `ready`, which ends
+ * with the mount, and the one deadline covers both waits. A page with no runtime waits for its fonts.
  */
 export function started(waitSeconds: number): Promise<boolean> {
   const pending = () => document.getAnimations().filter((animation) => animation.pending);
   const settle = async (): Promise<void> => {
+    await ready();
     for (let waiting = pending(); waiting.length; waiting = pending()) {
       await Promise.all(waiting.map((animation) => animation.ready.catch(() => undefined)));
     }
   };
-  const late = `the page's animations had not started within ${waitSeconds} seconds`;
+  const late = `the page had not mounted or its animations had not started within ${waitSeconds} seconds`;
   return within(
     settle().then(() => true),
     waitSeconds,

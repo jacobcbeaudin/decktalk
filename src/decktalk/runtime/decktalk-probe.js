@@ -441,8 +441,8 @@
    *                                    whether the picture may have changed, the earliest second it next
    *                                    can and what the page changed undeclared since the step before,
    *                                    once the page has drawn it, or refuse once s seconds pass without that
-   *   window.__decktalkProbe.started(s) answer once every animation the page set playing has started, or
-   *                                    refuse once s seconds pass without that
+   *   window.__decktalkProbe.started(s) answer once the page is ready and every animation it set playing
+   *                                    has started, or refuse once s seconds pass without that
    *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
    *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
    *   window.__decktalkProbe.within(p, s) what p settles with, or a refusal once s seconds pass on the
@@ -697,11 +697,12 @@
   function started(waitSeconds) {
     const pending = () => document.getAnimations().filter((animation) => animation.pending);
     const settle = async () => {
+      await ready();
       for (let waiting = pending(); waiting.length; waiting = pending()) {
         await Promise.all(waiting.map((animation) => animation.ready.catch(() => void 0)));
       }
     };
-    const late = `the page's animations had not started within ${waitSeconds} seconds`;
+    const late = `the page had not mounted or its animations had not started within ${waitSeconds} seconds`;
     return within(
       settle().then(() => true),
       waitSeconds,

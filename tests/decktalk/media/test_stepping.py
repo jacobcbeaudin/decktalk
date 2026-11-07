@@ -383,16 +383,21 @@ def test_a_changed_box_with_an_edge_that_is_not_finite_stands_for_the_whole_fram
 
 
 @contextmanager
-def held(allowed: Allowed, url: str = URL, *, ready: bool = True) -> Generator[stepping.Stepper]:
+def held(
+    allowed: Allowed, url: str = URL, *, ready: bool = True, before: str | None = None
+) -> Generator[stepping.Stepper]:
     """A loaded fixture page held still on its clock, prepared the way `record_piece` prepares one.
 
     With `ready` false the page is held straight after it loads, with nothing waited on in between.
+    A `before` script runs ahead of the page's own scripts, after the recorder's.
     """
     with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
         opened = stepping.stepping(
             real, allowed, width=WIDTH, height=HEIGHT, color_scheme="dark", motion=MotionConfig()
         )
         with opened as (page, _assets):
+            if before is not None:
+                page.add_init_script(before)
             page.goto(url, wait_until="load")
             if ready:
                 pages.await_ready(page)
@@ -776,6 +781,38 @@ def test_frame_zero_of_a_slide_whose_loop_is_turning_is_the_same_from_every_fres
         with held(allowed, MOVING_URL, ready=False) as stepper:
             first.append(hashlib.sha256(stepper.frame(0)).hexdigest())
     assert len(set(first)) == 1, first
+
+
+LATE_FONTS_MS = (30, 300)
+"""How many milliseconds late the page's fonts answer, which moves the mount of the first slide past `load`.
+
+A cold machine's font cache does this on its own, so a warm machine reaches the late mount only here.
+"""
+
+LATE_FONTS_JS = """(() => {
+  const real = Object.getOwnPropertyDescriptor(FontFaceSet.prototype, "ready").get;
+  const later = window.setTimeout;
+  Object.defineProperty(FontFaceSet.prototype, "ready", {
+    configurable: true,
+    get() {
+      const fonts = real.call(this);
+      return new Promise((answer) => later(() => answer(fonts), %d));
+    },
+  });
+})()"""
+"""A script that makes the page's fonts answer late, and the runtime mounts the first slide only after they answer."""
+
+
+def test_frame_zero_of_a_slide_that_mounts_after_load_is_the_frame_zero_of_one_that_mounts_before(tmp_path):
+    """A hold before the first slide mounts finds no loop to wait for, and frame 0 shows the ring as first drawn."""
+    allowed = moving_page(tmp_path)
+    with held(allowed, MOVING_URL, ready=False) as stepper:
+        on_time = hashlib.sha256(stepper.frame(0)).hexdigest()
+    late = {}
+    for delay in LATE_FONTS_MS:
+        with held(allowed, MOVING_URL, ready=False, before=LATE_FONTS_JS % delay) as stepper:
+            late[delay] = hashlib.sha256(stepper.frame(0)).hexdigest()
+    assert late == dict.fromkeys(LATE_FONTS_MS, on_time), (on_time, late)
 
 
 # ---- the lossless pipe never makes the stepper wait for a repeat --------------------------------
