@@ -1,0 +1,227 @@
+// Renovate keeps every pinned version in DeckTalk current: the locked Python, conda and Node packages,
+// the SHA-pinned actions and hook repositories, the container images, and the Pixi version.
+// Updates arrive once a week as one pull request per ecosystem. Nothing merges on its own: a person
+// reads each pull request and its CI run before it merges.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    // Every action stays pinned by its full commit SHA, with the tag as a comment beside it. A tag can
+    // move to other code after review, and a SHA cannot.
+    'helpers:pinGitHubActionDigests',
+    // The ecosystem pull requests move a range only when a release falls outside it. This weekly
+    // refresh solves pixi.lock again and refreshes package-lock.json, so every locked package, direct
+    // or transitive, moves inside its range.
+    ':maintainLockFilesWeekly',
+  ],
+  // config:recommended makes a dependency bump fix(deps), and release-please cuts a release for every
+  // fix. A dependency bump is build(deps), so it never cuts a release or writes a changelog line.
+  ignorePresets: [':semanticPrefixFixDepsChoreOthers'],
+  semanticCommits: 'enabled',
+  semanticCommitType: 'build',
+  semanticCommitScope: 'deps',
+  timezone: 'America/Los_Angeles',
+  // One run a week, before the work week starts, so a week of releases arrives as one set of pull requests.
+  schedule: ['* 0-5 * * 1'],
+  // Renovate reads the repository's Dependabot alerts and opens a fix at once, outside the schedule.
+  // It is the one bot that writes security fixes, so each fix keeps the build(deps) type and the
+  // release-please rule below. Dependabot alerts stay on, and Dependabot security updates stay off.
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: ['security'],
+  },
+  // Renovate turns this manager off by default. It moves the `rev:` of each hook repository that prek
+  // fetches. Each rev is a commit SHA with `# frozen: <tag>` beside it, the one SHA form this manager
+  // reads and writes back: it moves the SHA and the tag together. The local hooks have no `rev:`.
+  'pre-commit': {
+    enabled: true,
+  },
+  packageRules: [
+    // A release younger than three days can still be yanked or unpublished, and most bad releases are
+    // found in that time.
+    {
+      matchDatasources: ['pypi', 'npm', 'conda'],
+      minimumReleaseAge: '3 days',
+    },
+
+    // One pull request per ecosystem.
+    {
+      matchManagers: ['github-actions'],
+      groupName: 'actions',
+    },
+    // The pep621 manager reads [project] and [dependency-groups] in pyproject.toml. Renovate reads no
+    // locked version from pixi.lock, so the weekly lock refresh above moves each package inside its
+    // range, and this group opens only for a release outside a range. update-lockfile keeps each floor
+    // where it is: a floor rises only when DeckTalk needs a newer release, and its comment says why.
+    {
+      matchManagers: ['pep621'],
+      groupName: 'python',
+      rangeStrategy: 'update-lockfile',
+    },
+    // The pixi manager reads the [tool.pixi.*] tables in pyproject.toml: the conda-forge packages beside
+    // each Python. It runs `pixi lock`, so pyproject.toml and pixi.lock change in one pull request. It
+    // has no update-lockfile strategy, so it moves a range only when a release falls outside it.
+    {
+      matchManagers: ['pixi'],
+      groupName: 'conda',
+    },
+    // esbuild and Biome are pinned by package-lock.json, because a lockfile is the only way to make the
+    // byte-for-byte bundle check mean anything.
+    {
+      matchManagers: ['npm'],
+      groupName: 'node',
+    },
+    {
+      matchManagers: ['pre-commit'],
+      groupName: 'pre-commit hooks',
+    },
+    {
+      matchDatasources: ['docker'],
+      groupName: 'images',
+    },
+    // The weekly lock refresh is one pull request for both lock files. The pep621 and pixi managers
+    // both read pyproject.toml and would each solve pixi.lock again, so only the pixi manager does it.
+    {
+      matchUpdateTypes: ['lockFileMaintenance'],
+      groupName: 'lock files',
+    },
+    {
+      matchManagers: ['pep621'],
+      matchUpdateTypes: ['lockFileMaintenance'],
+      enabled: false,
+    },
+
+    // Playwright is pinned to one minor in two places that must stay equal: the client in [project]
+    // (pep621). The driver pin in the conda package's run-dependencies is written from that range by
+    // scripts/build_driver_pin.py, so no manager reads it: the `generated` row names the write a person
+    // runs on the pull request, and that person confirms the conda-forge build of the minor first.
+    {
+      matchDatasources: ['pypi'],
+      matchPackageNames: ['playwright'],
+      groupName: 'playwright',
+    },
+
+    // The Pixi version has one home, `requires-pixi` in pyproject.toml, moved by the custom manager
+    // below. install.sh's version and archive digests and the check table's Pixi image are written from
+    // it by scripts/build_pixi_pins.py, which reads the new release from GitHub and the registry.
+    // Renovate cannot run that generator (the hosted app runs only its own approved commands), so the
+    // pull request says what a maintainer runs before it can pass.
+    {
+      matchPackageNames: ['prefix-dev/pixi'],
+      groupName: 'pixi',
+      prBodyNotes: [
+        '**Before this can pass:** `install.sh` and the Pixi image in `scripts/check.py` still name the old Pixi, so the `generated` row and `test_a_version_that_has_not_moved_is_checked_offline_and_already_holds` in `tests/scripts/test_build_pixi_pins.py` fail. Check out this branch, run `pixi run check --group generated --write`, and push the result to this branch.',
+      ],
+    },
+    // The github-actions manager reads the `pixi-version` that the setup action hands to setup-pixi,
+    // `v${{ inputs.pixi-version }}`, as a dependency. That is an input and not a pin, because every job
+    // passes the version `requires-pixi` names, so the manager leaves it alone. The manager still reads
+    // the setup action's file, because the setup-pixi SHA pin has its one home there.
+    {
+      matchManagers: ['github-actions'],
+      matchPackageNames: ['prefix-dev/pixi'],
+      enabled: false,
+    },
+    // The Pixi image is written by scripts/build_pixi_pins.py at the version `requires-pixi` names, so
+    // the images manager never moves it alone.
+    {
+      matchDatasources: ['docker'],
+      matchPackageNames: ['ghcr.io/prefix-dev/pixi'],
+      enabled: false,
+    },
+
+    // The jobs outside the matrix name the runner image that scripts/check.py names for the matrix
+    // legs, and a new image can change what a row finds installed. A runner moves by hand, in the
+    // workflows and the check table together.
+    {
+      matchDatasources: ['github-runners'],
+      enabled: false,
+    },
+
+    // release-please is pinned to the version release-please-action bundles, so the next version the
+    // rehearsal computes is the one the release computes. It moves by hand with the action's pin.
+    {
+      matchManagers: ['npm'],
+      matchPackageNames: ['release-please'],
+      enabled: false,
+    },
+    // Each Pixi environment pins one Python line, and CI runs one leg per line. A new line is a new
+    // environment and a new leg, which a person adds by hand, so Renovate never moves a line.
+    {
+      matchManagers: ['pixi'],
+      matchPackageNames: ['python'],
+      enabled: false,
+    },
+    // nodejs is capped below 25 because the next line conda-forge builds has no osx-64 build, and the
+    // floor is the one package.json sets in `engines`. A new major line moves by hand with both.
+    {
+      matchManagers: ['pixi'],
+      matchPackageNames: ['nodejs'],
+      matchUpdateTypes: ['major'],
+      enabled: false,
+    },
+
+    // Each installer image carries a digest beside its tag, so a scenario judges install.sh and not the
+    // image that was current on the day it ran. The digest moves weekly in the images pull request.
+    {
+      matchDatasources: ['docker'],
+      pinDigests: true,
+    },
+    // An image's tag names a distribution release the installer promises to support. A new release is a
+    // line on the Dependency Dashboard, and a person decides when the installer supports it.
+    {
+      matchDatasources: ['docker'],
+      matchUpdateTypes: ['major', 'minor', 'patch'],
+      dependencyDashboardApproval: true,
+    },
+    // A new FFmpeg release is a line on the Dependency Dashboard, never a pull request on its own. The
+    // build URLs and SHA-256 digests beside FFMPEG_VERSION change with it, and Renovate cannot compute
+    // them: a person runs the fetch, reads the builds' notices, and writes the digests. An approval
+    // opens a pull request that changes the version only, so add the digests to it before it merges.
+    {
+      matchPackageNames: ['FFmpeg/FFmpeg'],
+      groupName: 'ffmpeg',
+      dependencyDashboardApproval: true,
+    },
+  ],
+  customManagers: [
+    {
+      // `requires-pixi`, the one home of the Pixi version CI runs and install.sh downloads. The pixi
+      // manager reads it as a constraint only and never moves it.
+      customType: 'regex',
+      description: 'requires-pixi in pyproject.toml',
+      managerFilePatterns: ['/^pyproject\\.toml$/'],
+      matchStrings: ['requires-pixi\\s*=\\s*">=(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'pixi',
+      packageNameTemplate: 'prefix-dev/pixi',
+      datasourceTemplate: 'github-releases',
+      extractVersionTemplate: '^v(?<version>.+)$',
+      versioningTemplate: 'semver',
+    },
+    {
+      // The images the installer scenarios run in, each an `Image(name, tag, digest)` constant. Docker
+      // pulls the digest, and the tag tells a reader which release the digest is.
+      customType: 'regex',
+      description: 'Image constants in scripts/check.py',
+      managerFilePatterns: ['/^scripts/check\\.py$/'],
+      matchStrings: [
+        'Image\\(\\s*"(?<depName>[a-z0-9./-]+)",\\s*"(?<currentValue>[A-Za-z0-9._-]+)",\\s*"(?<currentDigest>sha256:[a-f0-9]{64})"\\s*\\)',
+      ],
+      datasourceTemplate: 'docker',
+      versioningTemplate: 'docker',
+      autoReplaceStringTemplate: 'Image("{{{depName}}}", "{{{newValue}}}", "{{{newDigest}}}")',
+    },
+    {
+      // The ffmpeg build `decktalk install` fetches. FFmpeg tags its releases n8.1.2, so the version is
+      // the part after the n. See the packageRule above: this pin is a dashboard line only.
+      customType: 'regex',
+      description: 'FFMPEG_VERSION in the ffmpeg fetch',
+      managerFilePatterns: ['/^src/decktalk/toolchain/ffmpeg_fetch\\.py$/'],
+      matchStrings: ['FFMPEG_VERSION = "(?<currentValue>[^"]+)"'],
+      depNameTemplate: 'FFmpeg/FFmpeg',
+      datasourceTemplate: 'github-tags',
+      extractVersionTemplate: '^n(?<version>\\d+\\.\\d+(?:\\.\\d+)?)$',
+      versioningTemplate: 'loose',
+    },
+  ],
+}
