@@ -10,29 +10,34 @@ privately, as [SECURITY.md](SECURITY.md) says, and never in a public issue.
 
 ## Setup
 
-You need [uv](https://docs.astral.sh/uv/), which installs Python and every dependency, and
-[Node.js](https://nodejs.org/), whose `npm ci` installs the pinned esbuild that compiles the runtime
-and the pinned Biome that lints it. Run every command in this file from the repository root.
+You need [Pixi](https://pixi.sh) and nothing else. Pixi installs Python, Node.js, the git hook
+runner and every dependency from pixi.lock, and installs DeckTalk itself from this checkout. Run
+every command in this file from the repository root.
 
 ```console
 git clone https://github.com/jacobcbeaudin/decktalk.git
 cd decktalk
-uv sync --group dev           # Python 3.12 or later and every dependency, into .venv
-npm ci                        # esbuild and Biome, pinned by package-lock.json
-uv run decktalk install       # headless Chromium and ffmpeg, once per machine
-uvx pre-commit install        # the lint hooks and the commit message hook
+pixi install                  # Python 3.12, Node.js and every dependency, pinned by pixi.lock
+pixi run setup                # the Node packages, Chromium, ffmpeg and the git hooks
 ```
 
-`npm ci` runs before `pre-commit install`, because one of the hooks is Biome from the lockfile.
+`pixi run setup` runs `pixi run check --setup`, which installs esbuild and Biome from
+package-lock.json and fetches headless Chromium and ffmpeg once per machine. Then it runs
+`prek install --prepare-hooks`, which writes the lint hooks and the commit message hook and fetches
+the two hook repositories. Each hook enters the Pixi environment itself, so a commit needs only Pixi
+on PATH. On Linux, `decktalk install` asks for a password to install Chromium's system libraries,
+so run `pixi run setup` where a person can answer it.
 
-`uv run decktalk` runs the working tree's CLI, and every command below uses it. `uv tool install .`
-puts the same CLI on PATH as a bare `decktalk`, which is what the packaged skills and the docs
-assume, so install it that way before trying a skill by hand.
+`pixi run decktalk` runs the working tree's CLI, and every command below uses it. The packaged
+skills and the docs call a bare `decktalk`, so run `pixi shell` before you try a skill by hand,
+which puts the working tree's `decktalk` on PATH. The default environment is Python 3.12, the
+lowest DeckTalk supports, and `pixi run -e py313` or `-e py314` runs a command on a later one.
 
-`decktalk install` is the only step that needs the network after the sync, and
-[Requirements](https://docs.decktalk.ai/requirements#what-decktalk-downloads) says what it fetches.
-On Linux it also installs Chromium's system libraries, which asks for a password. Every check runs
-offline once it has finished, and `uv run decktalk doctor` prints what it found.
+[Requirements](https://docs.decktalk.ai/requirements#what-decktalk-downloads) says what
+`decktalk install` fetches, and `pixi run decktalk doctor` prints what it found. `pixi run setup`
+also installs every Pixi environment a group runs in beyond the default one, such as `floors`. After
+it, a group needs the network only when its row names the `network` need, which the table below
+prints in its Needs column.
 
 You need no ElevenLabs key. No check calls a paid API, and no key is a CI secret.
 
@@ -42,12 +47,19 @@ Every check is one row of the `GROUPS` table in `scripts/check.py`, and CI runs 
 nothing else.
 
 ```console
-uv run scripts/check.py          # every group a pull request gates on, in order
-uv run scripts/check.py --fast   # lint and unit, the two a change most often fails
-uv run scripts/check.py --list   # the table, with what each group needs and what calls it
-uv run scripts/check.py --group browser,media
-uv run scripts/check.py --group generated --write   # bring every generated file up to date
+pixi run check          # every group a pull request gates on, in order
+pixi run check --fast   # lint and unit, the two a change most often fails
+pixi run check --list   # the table, with what each group needs and what calls it
+pixi run check --group browser,media
+pixi run check --group generated --write   # bring every generated file up to date
+pixi run -e py314 check --group unit       # one group on another Python
 ```
+
+The `lint` group runs every hook in `.pre-commit-config.yaml` over every file and nothing else, so it
+judges a change by the rules a commit does. A hook that fixes a file still fails the group, and
+prints the change. A plain `pixi run` solves a stale pixi.lock again before it starts, and
+`pixi run --locked check` refuses one instead. The `pixi-lock` hook refuses a commit whose
+pyproject.toml and pixi.lock disagree either way.
 
 A run that selects fewer groups than the full set prints the rows it did not run and why. Each
 group's log opens with its name and the one local command that reproduces it.
@@ -57,39 +69,60 @@ group's log opens with its name and the one local command that reproduces it.
 
 | Group | What it runs | Needs | Where | Gates on |
 |---|---|---|---|---|
-| `lint` | `uv lock --check`, and 7 more | npm | Linux | pr, main |
-| `unit` | `uv run pytest -q -rs -n auto --ignore=tests/contract/test_prose.py --ignore=tests/contract/test_vocabulary.py --ignore=tests/contract/test_numbers.py --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond uv | Linux | pr, main |
-| `floors` | `sh -euc <shell script> sh 3.12` | nothing beyond uv | Linux | pr, main |
+| `lint` | `prek run --all-files --show-diff-on-failure` | npm | Linux | pr, main |
+| `playwright-pair` | `python scripts/check_playwright_pair.py` | network | Linux | a release only |
+| `unit` | `python -m pytest -q -rs -n auto --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond Pixi | Linux | pr, main |
+| `floors` | `python -m pytest -q -rs -n auto` | nothing beyond Pixi | Linux | pr, main |
 | `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
-| `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
-| `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
-| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml`, and 1 more | chromium, ffmpeg | Linux | pr, main |
-| `browser-platforms` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | macOS, Windows | pr, main |
-| `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | macOS, Windows | pr, main |
-| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml`, and 1 more | chromium, ffmpeg | macOS, Windows | pr, main |
-| `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
-| `generated` | `uv run python scripts/build_runtime.py --check`, and 14 more | npm | Linux | pr, main |
-| `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, history | Linux | pr, main |
-| `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
-| `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
-| `scaffold` | `uv run pytest -q -rs -n auto -m scaffold` | chromium, ffmpeg | Linux | schedule |
-| `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | nothing beyond uv | Linux | main, schedule |
+| `browser` | `python -m pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
+| `media` | `python -m pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
+| `e2e` | `python -m pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml`, and 1 more | chromium, ffmpeg | Linux | pr, main |
+| `browser-platforms` | `python -m pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | macOS, Windows | pr, main |
+| `media-platforms` | `python -m pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | macOS, Windows | pr, main |
+| `e2e-platforms` | `python -m pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml`, and 1 more | chromium, ffmpeg | macOS, Windows | pr, main |
+| `platform` | `python -m pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
+| `generated` | `python scripts/build_runtime.py --check`, and 17 more | npm | Linux | pr, main |
+| `rehearsal` | `python scripts/rehearse_release.py` | npm, history, network | Linux | pr, main |
+| `coverage` | `python -m coverage combine --keep`, and 2 more | nothing beyond Pixi | Linux | pr, main |
+| `wheel` | `python -m build --no-isolation`, and 2 more | network | Linux, macOS, Windows | pr, main |
+| `conda` | `pixi publish --path . --target-dir dist-conda --force`, and 1 more | chromium, ffmpeg, network | Linux, macOS, Windows | pr, main |
+| `scaffold` | `python -m pytest -q -rs -n auto -m scaffold` | chromium, ffmpeg | Linux | schedule |
+| `installer` | `download-the-pinned-pixi on debian:13-slim`, and 8 more | docker, network | Linux | main, schedule |
 <!-- checks:end -->
 
-A bare `uv run pytest -q` runs every test that needs no tool. A marker reaches the rest:
+A bare `pixi run pytest -q` runs every test that needs no tool. A marker reaches the rest:
 `browser`, `media`, `e2e` and `scaffold` each name a tool, `platform` names the machine and its
-fetched toolchain, and `wheel` names the wheel `uv build` writes. `uv run pytest --markers` says what
-each one needs, and an empty selection is an error rather than a pass.
+fetched toolchain, and `wheel` names the wheel `python -m build` writes. `pixi run pytest --markers`
+says what each one needs, and an empty selection is an error rather than a pass.
 
 ```console
-uv run pytest -q
-uv run pytest -q -m "browser or media"
-uv run pytest -q -m e2e
+pixi run pytest -q
+pixi run pytest -q -m "browser or media"
+pixi run pytest -q -m e2e
 ```
 
 A generated file is never edited by hand. Change its source and run its `scripts/build_*.py` with
 `--write`, or run the `generated` group with `--write` to update them all. Each generator's
 docstring names what it reads, and `--check` fails with the command that fixes it.
+
+## When Renovate bumps Pixi
+
+Renovate moves `requires-pixi` in `pyproject.toml`, which is the one home of the Pixi version. Two
+copies follow it, and a person writes them, because their digests are read from the new release
+over the network: the version and the four archive digests in `install.sh`, and Pixi's own image in
+`scripts/check.py`. A Pixi below the new floor refuses every `pixi run` in the bumped tree, every
+hook included. On the Renovate branch:
+
+1. Move your Pixi to the new version: `pixi self-update --version <version>` for a Pixi from
+   pixi.sh, or the package manager that installed it.
+2. Run `pixi run check --group generated --write` with the network. A release that is not
+   published yet fails with the address it could not read, so wait for it and run the step again.
+3. Commit `install.sh` and `scripts/check.py`, and push to the Renovate branch.
+
+A Renovate pull request that moves the Playwright client in `[project.dependencies]` alone fails
+the `generated` row, because `scripts/build_driver_pin.py` writes the driver's range from it. Run
+`pixi run check --group generated --write`, and `pixi lock` when the pull request does not carry
+pixi.lock, then commit `pyproject.toml` and `pixi.lock` to the branch.
 
 ## Layout
 
@@ -293,5 +326,5 @@ Docs are written for people and agents alike.
 - Use active voice, present tense and American spelling, with no idioms and no version-specific
   wording.
 
-`uv run scripts/check_docs_links.py` checks every page's front matter, every internal link, the
+`pixi run python scripts/check_docs_links.py` checks every page's front matter, every internal link, the
 navigation and the redirects, and fetches nothing.

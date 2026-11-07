@@ -294,6 +294,33 @@ def test_a_hidden_pattern_is_written_as_dots_so_a_block_names_no_path_of_this_ma
     )
 
 
+def test_a_hidden_cell_keeps_the_columns_of_its_table() -> None:
+    printed = " chromium   156.0.8078.4   a\n ffmpeg     8.1.2          b\n"
+    shown = build_samples.shown_text(printed, head=None, grep=None, hide=(r"\d+(?:\.\d+)+",))
+    assert shown == " chromium   ...            a\n ffmpeg     ...            b"
+
+
+def doctor_table(chromium: str) -> str:
+    """A `decktalk doctor` table as rich prints it, whose version column is as wide as its longest version."""
+    tools = (("chromium", chromium), ("ffmpeg", "8.1.2"), ("ffprobe", "8.1.2"), ("katex", "0.18.7"))
+    width = max(len(version) for _, version in tools)
+    head = f" {'Tool':<8}   {'Version':<{width}}   Where"
+    return "\n".join([head, *(f" {tool:<8}   {version:<{width}}   /cache/{tool}" for tool, version in tools)])
+
+
+def test_the_doctor_sample_holds_whatever_versions_a_dependency_bump_fetches() -> None:
+    """A Playwright bump moves the Chromium version, and the e2e row's `--check` must not wait on a hand write."""
+    [row] = [row for row in build_samples.rows() if row.id == "doctor"]
+    blocks = [
+        build_samples.shown_text(doctor_table(chromium), head=row.head, grep=row.grep, hide=row.hide)
+        for chromium in ("156.0.8078.4", "1570.0.80999.123")
+    ]
+    assert not [line for block in blocks for line in block.splitlines() if any(c.isdigit() for c in line)], blocks
+    opening = build_samples.comment(row.page, row.id, row.what)
+    held, wrote = (f"{opening}\n```text\n{block}\n```\n" for block in blocks)
+    assert build_samples.why_differs(held, wrote, {row.id: (row.varies, row.masks)}) is None
+
+
 def test_a_command_that_serves_until_stopped_gives_its_first_lines_and_is_stopped(tmp_path: Path) -> None:
     script = "import sys, time\nprint('one', flush=True)\nprint('two', flush=True)\ntime.sleep(600)\n"
     printed, process = build_samples.first_lines(

@@ -17,7 +17,7 @@ from decktalk.results import TakeOutcome
 
 RUN: dict[str, Any] = {
     "what": "the starter `decktalk init` writes, built with placeholders",
-    "command": "uv run python scripts/measure.py",
+    "command": "pixi run python scripts/measure.py",
     "commit": "0123456789abcdef0123456789abcdef01234567",
     "source_changed": False,
     "machine": {"platform": "macOS-26.6.2-arm64", "cpu": "Test CPU", "cores": 8},
@@ -59,7 +59,7 @@ DATA: dict[str, Any] = {
     },
     "coverage": {
         "run": "measure",
-        "command": "uv run python scripts/check.py --group unit,browser,media,e2e,coverage",
+        "command": "pixi run check --group unit,browser,media,e2e,coverage",
         "percent": 98.1,
         "statements": 12200,
         "covered": 11966,
@@ -75,7 +75,7 @@ def test_the_page_states_every_measured_number_from_the_data() -> None:
         assert said in page, f"the page does not say {said}"
     assert "1 of 3" in page
     assert "Test CPU" in page and "9.9.9" in page and "0123456789ab" in page
-    assert "uv run python scripts/measure.py" in page
+    assert "pixi run python scripts/measure.py" in page
     assert "load average of 1.2 when the builds began" in page
 
 

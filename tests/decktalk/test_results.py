@@ -133,7 +133,8 @@ def test_every_path_is_written_with_forward_slashes() -> None:
 def test_a_result_is_frozen() -> None:
     built = sample(RESULTS["status"])
     with pytest.raises(Exception, match="frozen"):
-        built.ok = False
+        # The write is the claim under test, and the type checker refuses it as it should.
+        built.ok = False  # ty: ignore[invalid-assignment]
 
 
 @pytest.mark.parametrize("generator", ["build_result_schemas.py", "build_api.py"])

@@ -20,6 +20,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -102,6 +103,15 @@ def test_the_installer_puts_chromium_in_the_tool_cache_and_not_where_the_host_sa
     [env] = installer.envs
     assert env[BROWSERS_VARIABLE] == str(cache / "ms-playwright")
     assert env["PATH"] == "/usr/bin"
+
+
+def test_the_installer_is_told_the_prefix_of_the_python_it_runs_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """conda-forge's Playwright finds its driver under `CONDA_PREFIX`, which the scrubbed environment never carries."""
+    installer = FakeInstaller()
+    monkeypatch.setattr(chromium_fetch.subprocess, "Popen", installer)
+    chromium_fetch.fetch_chromium(env={"PATH": "/usr/bin", "CONDA_PREFIX": "/another/environment"})
+    [env] = installer.envs
+    assert env["CONDA_PREFIX"] == sys.prefix
 
 
 def test_the_driver_looks_for_chromium_where_the_installer_put_it(monkeypatch: pytest.MonkeyPatch, cache: Path) -> None:

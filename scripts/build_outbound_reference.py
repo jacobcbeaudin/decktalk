@@ -1,7 +1,7 @@
 """Generate docs/reference/what-leaves-your-machine.mdx from docs/data/outbound.toml.
 
-    uv run scripts/build_outbound_reference.py --write    # write the page
-    uv run scripts/build_outbound_reference.py --check    # exit 1 if the committed page would change
+    pixi run python scripts/build_outbound_reference.py --write    # write the page
+    pixi run python scripts/build_outbound_reference.py --check    # exit 1 if the committed page would change
 
 Every host on the page comes from the data file, so the page is a complete list by construction.
 Add a host to docs/data/outbound.toml, then run this. The prose around the two tables lives in

@@ -79,7 +79,7 @@ def test_each_selection_runs_exactly_one_test(suite, args):
 
 
 def test_the_wheel_test_is_marked_by_its_path_and_runs_only_when_named(suite):
-    """It reads the wheel `uv build` wrote into `dist/`, which a fresh clone does not have."""
+    """It reads the wheel `python -m build` wrote into `dist/`, which a fresh clone does not have."""
     assert "test_reads_the_built_wheel" not in suite.runpytest("-v").stdout.str()
     named = suite.runpytest("-v", "-m", "wheel")
     named.assert_outcomes(passed=1, deselected=5)

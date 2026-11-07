@@ -3,16 +3,22 @@ title: Quickstart
 description: Install DeckTalk, build the starter film with no account, then add your own voice.
 ---
 
-On macOS and Windows, three lines take a machine with nothing on it to a finished film. On Linux, run
-`decktalk install` after the first line, for Chromium's system libraries.
+On macOS, four lines take a machine with nothing on it to a finished film. On Linux, run
+`decktalk install` after the second line, for Chromium's system libraries. On Windows, the first two
+lines are the PowerShell line in Part 1.
 
+{/* install-docs:first-lines:start */}
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
+export PATH="$HOME/.pixi/bin:$PATH"
 decktalk init my-lesson && cd my-lesson
 decktalk build --no-spend
 ```
+{/* install-docs:first-lines:end */}
 
-The third line spends nothing and needs no account, because `--no-spend` buys no take and plays a
+The second line puts Pixi's bin folder on this shell's PATH, because the installer edits no shell
+startup file. The installer prints the same line for you to add to `~/.zshrc` or `~/.bashrc`. The
+last line spends nothing and needs no account, because `--no-spend` buys no take and plays a
 placeholder wherever a take is missing. Part 3 of this page adds your own voice, which is
 the one thing in DeckTalk that costs money.
 
@@ -26,37 +32,53 @@ the one thing in DeckTalk that costs money.
         curl -LsSf https://decktalk.ai/install.sh | sh
         ```
 
-        The script installs uv if the machine has none, then runs `uv tool install decktalk`, and uv
-        brings its own Python. That is all it does. It never runs sudo, and it fetches neither
-        Chromium nor ffmpeg, because on Linux that download reaches `apt-get` through sudo and an
-        installer you piped into a shell has no business asking for a root password. [Read the
+        The script installs Pixi if the machine has none, then installs DeckTalk from DeckTalk's
+        own conda channel with `pixi global install`, and Pixi brings DeckTalk its own Python. That
+        is all it does. It downloads Pixi from its GitHub release and checks it against the SHA-256
+        the script pins for it before it unpacks it into `~/.pixi/bin`. It edits no shell startup
+        file: its first next step is the PATH line, for you to run and to add to your startup file. It never runs sudo, and it fetches neither Chromium
+        nor ffmpeg, because on Linux that download reaches `apt-get` through sudo and an installer
+        you piped into a shell has no business asking for a root password. [Read the
         script](https://decktalk.ai/install.sh) before you run it. That is why it is served from a
         URL rather than hidden in a package.
 
-        It finishes by naming the version it installed and the three commands to run next. Pipe it
+        It finishes by naming the version it installed and the commands to run next. Pipe it
         into `sh -s -- --dry-run` to print what it would do and change nothing, and set
-        `DECKTALK_VERSION` to install one version rather than the latest.
+        `DECKTALK_VERSION` to install one final release rather than the latest. Run it again to
+        update DeckTalk.
 
         It runs on Linux and on macOS. On a musl system such as Alpine it stops and says why, because
-        Playwright, which records the slides, publishes no musl wheels. On Windows, use the uv tab.
+        conda-forge, which builds DeckTalk's Python, Node and Playwright, publishes no musl builds.
+        On Windows it stops too: use the Windows tab.
       </Tab>
-      <Tab title="uv">
+      <Tab title="Pixi">
+        {/* install-docs:pixi-line:start */}
         ```console
-        uv tool install decktalk
+        pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk
         ```
+        {/* install-docs:pixi-line:end */}
 
-        uv is a Python package manager and it brings its own Python. This is the way to install on
-        Windows. [Install uv](https://docs.astral.sh/uv/getting-started/installation/) first if the
-        machine has none.
+        This is the line the script runs, for a machine that has Pixi. The first channel holds
+        DeckTalk and the second holds its Python, Node and Playwright. `pixi global update decktalk`
+        updates it, and `pixi global uninstall decktalk` removes it.
       </Tab>
-      <Tab title="pipx">
-        ```console
-        pipx install decktalk
+      <Tab title="Windows">
+        {/* install-docs:windows-line:start */}
+        ```powershell
+        powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk"
         ```
+        {/* install-docs:windows-line:end */}
 
-        pipx uses a Python already on the machine, which has to be 3.12 or later.
+        install.sh stops on Windows, because it is a POSIX shell script, so Windows uses Pixi's own
+        PowerShell installer and then the same `pixi global install` line. Pixi's installer adds Pixi to your user PATH and does
+        not check a checksum, which is the step install.sh does for itself on Linux and macOS. Open
+        a new terminal after it finishes.
       </Tab>
     </Tabs>
+
+    {/* install-docs:uv-line:start */}
+    `uv tool install decktalk` installs the same version from PyPI on every platform.
+    {/* install-docs:uv-line:end */}
 
     Check the install by asking for the version.
 
@@ -64,8 +86,8 @@ the one thing in DeckTalk that costs money.
     decktalk --version
     ```
 
-    If the shell cannot find `decktalk`, add `~/.local/bin` to your PATH and open a new shell. That
-    is where uv puts the command.
+    If a new shell cannot find `decktalk`, the PATH line is not in your shell's startup file yet.
+    `~/.pixi/bin` is where Pixi puts the command, and the script prints the line to add.
   </Step>
 
   <Step title="Read the machine">
@@ -76,21 +98,22 @@ the one thing in DeckTalk that costs money.
     decktalk doctor
     ```
 
-    {/* sample: doctor, decktalk doctor, on a machine that has fetched its tools, with every path, the Python and the platform written as ... */}
+    {/* sample: doctor, decktalk doctor, on a machine that has fetched its tools, with every path, every version, the Python and the platform written as ... */}
     ```text
-     Tool       Version         Where
+     Tool       Version        Where
      ──────────────────────────────────────────────────────────────────────────────────────────────────
-     chromium   153.0.8010.12   ...
-     ffmpeg     8.1.2           ...
-     ffprobe    8.1.2           ...
-     katex      0.18.7          ...
+     chromium   ...            ...
+     ffmpeg     ...            ...
+     ffprobe    ...            ...
+     katex      ...            ...
 
     Python    ...
     Platform  ...
     API key   elevenlabs ELEVENLABS_API_KEY missing
     ```
 
-    The paths, the Python and the platform are this machine's, so they are written as `...` here.
+    The paths, the Python and the platform are this machine's, and each version is the one the
+    installed DeckTalk pins, so they are written as `...` here.
     `API key   elevenlabs ELEVENLABS_API_KEY missing` means the key the narrator's provider reads is
     unset, which is the right state for everything up to part 3. KaTeX is not a download: the pinned
     release ships inside the package, and DeckTalk serves it to the page.
@@ -173,14 +196,14 @@ cache paths.
 
     {/* sample: build, decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run cbcfff886822, events build/events/cbcfff886822.jsonl
+    run 101303b641d2, events build/events/101303b641d2.jsonl
          Narrate    0:00
              Cue    0:00
           Record    0:03
     The project declares no score for this run, so there is nothing to generate.
            Score    0:00
     The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
-        Assemble    0:02
+        Assemble    0:03
           Verify    0:02
            Built build/final/my-lesson.mp4, $0.00, 3 findings
     script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
@@ -305,7 +328,7 @@ decktalk serve
 
 {/* sample: serve, decktalk serve, in a fresh decktalk init my-lesson, the line it prints before it is stopped */}
 ```text
-Serving http://127.0.0.1:65298
+Serving http://127.0.0.1:61478
 ```
 
 `serve` answers from the project directory on 127.0.0.1, which is the origin the recorder uses, so

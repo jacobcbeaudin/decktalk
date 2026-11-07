@@ -1,7 +1,7 @@
 """The one `--write` and `--check` every generator runs, so every generator fails with one sentence.
 
-    uv run scripts/build_<name>.py --write    # write every file the generator owns that is stale
-    uv run scripts/build_<name>.py --check    # exit 1 if a committed file would change
+    pixi run python scripts/build_<name>.py --write    # write every file the generator owns that is stale
+    pixi run python scripts/build_<name>.py --check    # exit 1 if a committed file would change
 
 A generator is a function from its sources to every file it owns, by path. `run` turns that function
 into the command line, holds each file to what it returns, and writes only the files it calls stale,
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import io
-import os
 import subprocess
 import sys
 import time
@@ -23,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-STALE = "stale: {path}, because {reason}. Run `uv run scripts/{script} --write` to bring it up to date."
+STALE = "stale: {path}, because {reason}. Run `pixi run python scripts/{script} --write` to bring it up to date."
 """The one sentence every generator fails with, naming the file, why, and the command that fixes it."""
 
 MISSING = "it is not committed"
@@ -69,8 +68,6 @@ def command(cmd: list[str | Path], *, stdin: str | None = None) -> str:
     The tool is stopped after `COMMAND_TIMEOUT_SECONDS`, so a hung `npm` or `esbuild` fails the
     generator with a sentence rather than holding a check run open until its job is killed.
     """
-    # uv runs a generator in an environment of its own, and a nested `uv run` would warn about it.
-    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
     argv = [str(part) for part in cmd]
     started = time.monotonic()
     try:
@@ -78,7 +75,6 @@ def command(cmd: list[str | Path], *, stdin: str | None = None) -> str:
             argv,
             check=False,
             cwd=ROOT,
-            env=env,
             input=stdin,
             capture_output=True,
             text=True,
@@ -102,8 +98,8 @@ def ruff(text: str, target: Path) -> str:
     `ruff check` and `ruff format` would leave and the rule for either lives in one place.
     """
     name = f"--stdin-filename={target}"
-    ordered = command(["uv", "run", "ruff", "check", "--select", "I", "--fix-only", "--quiet", name, "-"], stdin=text)
-    return command(["uv", "run", "ruff", "format", name, "-"], stdin=ordered)
+    ordered = command(["ruff", "check", "--select", "I", "--fix-only", "--quiet", name, "-"], stdin=text)
+    return command(["ruff", "format", name, "-"], stdin=ordered)
 
 
 def run(
@@ -112,12 +108,14 @@ def run(
     owned: Iterable[Path] = (),
     why_stale: Callable[[Path, str], str | None] = differs,
     wrote: Callable[[set[Path]], None] | None = None,
+    checked: Callable[[], dict[Path, str]] | None = None,
 ) -> int:
     """Parse the mode, then check or write every file `files` returns and every file `owned` matches.
 
     The mode is parsed before a source is read, so a generator run with neither mode or with both is
     refused before it touches anything. `why_stale` is the comparison, which a measured figure widens
-    to a tolerance, and `wrote` hears which files a write changed.
+    to a tolerance, and `wrote` hears which files a write changed. `checked` is what `--check` calls
+    in place of `files`, for a generator whose write reads the network and whose check must not.
     """
     # A reason quotes the file, which may hold any character, and a Windows console encodes cp1252.
     if isinstance(sys.stdout, io.TextIOWrapper):
@@ -130,7 +128,7 @@ def run(
     mode.add_argument("--check", action="store_true", help="exit 1 if a committed file would change")
     args = parser.parse_args()
 
-    wanted = files()
+    wanted = (checked or files)() if args.check else files()
     stale = {path: reason for path, text in wanted.items() if (reason := why_stale(path, text))}
     stale |= {
         path: GONE for pattern in owned for path in sorted(pattern.parent.glob(pattern.name)) if path not in wanted

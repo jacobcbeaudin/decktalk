@@ -189,13 +189,19 @@ stream = "both"
 
 [doctor]
 page = "docs/quickstart.mdx"
-what = "decktalk doctor, on a machine that has fetched its tools, with every path, the Python and the platform written as ..."
+what = "decktalk doctor, on a machine that has fetched its tools, with every path, every version, the Python and the platform written as ..."
 init = false
 run = [["doctor"]]
 stream = "both"
 # A long path wraps onto a second line of its cell, which names nothing but the rest of the path.
 grep = '^(?!\s{10,}\S)'
-hide = ['(?<=\s)(?:/|~|[A-Za-z]:[\\/])\S.*$', '(?<=^Python    )\S.*$', '(?<=^Platform  )\S.*$']
+# Each tool's version follows a pin that a dependency bump moves: Chromium follows the Playwright
+# release, ffmpeg and ffprobe follow FFMPEG_VERSION, and KaTeX follows the release the package ships.
+# So each version is written as dots, and the bump leaves the sample true.
+hide = ['(?<=\s)(?:/|~|[A-Za-z]:[\\/])\S.*$', '(?<=   )\d+(?:\.\d+)+(?=   )', '(?<=^Python    )\S.*$', '(?<=^Platform  )\S.*$']
+# A version of another length moves the width of the version column, so `--check` reads each run
+# of spaces between two cells as one.
+masks = [' {2,}']
 
 [doctor-empty-cache]
 page = "docs/quickstart.mdx"

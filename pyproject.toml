@@ -45,13 +45,22 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
+    # Every floor below is a release at which the floors row runs the whole suite and passes, and a
+    # test holds pixi.lock's floors environment to each floor. A comment gives a floor its reason
+    # only when it has a reason more than that one.
+
     # File fingerprints hash a large recording or film on every core. 1.0 is the first stable release.
     "blake3>=1.0",
     # 3.20.1 is the first release that refuses to follow a `build/.lock` planted as a link.
     "filelock>=3.20.1",
-    "playwright>=1.63.0,<2",
+    # conda-forge's playwright-python does not pin the Node driver it runs, and the two must be one
+    # release, so DeckTalk names one minor here, its one home, and scripts/build_driver_pin.py writes
+    # the same range for the driver in the conda package. Renovate moves the minor.
+    "playwright>=1.64,<1.65",
     "pydantic>=2.11",
-    "rich>=13",
+    # 14.0 is the first release that reads TTY_COMPATIBLE, which the suite sets to run the command
+    # line as a terminal and as a pipe, so the floors row cannot judge a lower floor.
+    "rich>=14.0",
     "tomlkit>=0.13",
     # 0.26 is the first release with its own copy of Click, which the command line subclasses, so
     # Click itself is not a dependency.
@@ -69,19 +78,32 @@ Changelog = "https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md"
 decktalk = "decktalk.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.12.18,<0.13.0"]
-build-backend = "uv_build"
+# Hatchling is the backend Pixi documents for a Python project. 1.27 is the first release that
+# writes the `license-files` of `[project]` as PEP 639 was accepted.
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
 
-# `uv build` reads the working tree, so a Finder sidecar next to the template would ship in a wheel
-# cut from a laptop. tests/contract/test_wheel.py checks the built wheel against the files git tracks.
-# The runtime ships as the two bundles the build writes, so the TypeScript they are built from and
-# the compiler's own configuration stay out of the wheel: a wheel carries what DeckTalk runs.
-[tool.uv.build-backend]
-source-exclude = ["**/.DS_Store"]
-wheel-exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
+# A wheel is built from the files on disk, so a Finder sidecar next to the template would ship in a
+# wheel cut from a laptop. tests/contract/test_wheel.py checks the built wheel against the files git
+# tracks, and reads these patterns from here. The runtime ships as the two bundles the build writes,
+# so the TypeScript they are built from and the compiler's own configuration stay out of the wheel:
+# a wheel carries what DeckTalk runs.
+[tool.hatch.build.targets.wheel]
+packages = ["src/decktalk"]
+exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
+
+# The sdist is the package source, its metadata and its licenses, which hatchling always adds. The
+# wheel is built from the sdist, so nothing outside `src/decktalk` can reach a wheel through it.
+[tool.hatch.build.targets.sdist]
+only-include = ["src/decktalk"]
+exclude = ["**/.DS_Store"]
 
 [dependency-groups]
 dev = [
+    # Every floor below is a release at which the floors row runs the whole suite and passes, and a
+    # test holds pixi.lock's floors environment to each floor. A comment gives a floor its reason
+    # only when it has a reason more than that one.
+
     # Property tests draw the cases a hand-written list would miss.
     "hypothesis>=6.168",
     # A renderer's output is held as literal text in its test. CI only compares, and a person writes
@@ -93,20 +115,161 @@ dev = [
     "jsonschema>=4.23",
     # install.sh branches on `[ -t 1 ]`, so its test runs it under a terminal and sends the Ctrl-C.
     "pexpect>=4.9.0",
-    "pytest>=8",
+    # The wheel row and the release build with the hatchling pixi.lock pins, without network, rather
+    # than with one fetched into an isolated environment. Its floor has one home, `[build-system]`, and
+    # `python -m build --no-isolation` refuses a hatchling below it.
+    "build>=1.2.1",
+    "hatchling",
+    # check_wheel.py compares the tag with the wheel as two PEP 440 versions, never as two strings.
+    "packaging>=24",
+    # 9.1 is the first release under which tests/decktalk/test_logs.py reads a record the package
+    # logs at INFO through `caplog`, which the floors row runs.
+    "pytest>=9.1",
     "pytest-cov>=6",
     # A loopback listener whose request log a "reaches nothing" test asserts is empty.
     "pytest-httpserver>=1.1.5",
-    "pytest-timeout>=2.3",
+    "pytest-timeout>=2.3.1",
     # The unit row runs under `-n auto`, which halves the time every push waits on.
-    "pytest-xdist>=3.6",
-    # Page front matter and `ci.yml` are read as YAML rather than searched as text.
-    "pyyaml>=6",
-    "ruff>=0.16.8",
+    "pytest-xdist>=3.6.1",
+    # Page front matter and `ci.yml` are read as YAML rather than searched as text. 6.0.2 is the
+    # first release whose source builds with the Cython conda-forge and PyPI ship, so the floors
+    # environment can install it.
+    "pyyaml>=6.0.2",
+    # 0.17 changed the default rule set and the rules for trailing pragma comments, and
+    # `[tool.ruff]` below is written against it.
+    "ruff>=0.17.4",
     # The import-layer test asks the import graph for its cycles rather than walking edges by hand.
-    "rustworkx>=0.17",
+    "rustworkx>=0.17.1",
     "ty>=0.0.83",
 ]
+
+# Pixi owns the environment and the wheel is the product. `[project]` and the dev group above say
+# what DeckTalk needs. The tables below say what a contributor's machine and every CI leg need
+# beside it, and pixi.lock pins all of it for four platforms: the Python, Node, the git hook runner,
+# the workflow auditor and every Python package. Two things a check runs come from elsewhere, each
+# with one pin: the hooks config names the two hooks prek fetches for itself, and `decktalk install`
+# fetches Chromium and ffmpeg as a user's machine fetches them.
+[tool.pixi.workspace]
+# One conda channel, so every conda package comes from one community build and one solver judges
+# them together. The Python packages `[project.dependencies]` and the dev group name come from PyPI.
+channels = ["conda-forge"]
+# The three platforms CI runs, and the Intel Mac a contributor may still have.
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
+# Pixi 0.84.0 changed how pixi.lock hashes a package, so an older Pixi reads this lock as stale. This
+# is also the one home of the Pixi version CI runs and install.sh downloads: every workflow reads it
+# with `scripts/check.py --pixi-version`, and scripts/build_pixi_pins.py writes it into install.sh
+# and into the check table's Pixi image.
+requires-pixi = ">=0.84.1"
+# pixi-build is how `pixi publish` turns this project into the conda package users
+# install with `pixi global install`. It is a preview feature, so Pixi asks for it by name.
+preview = ["pixi-build"]
+
+# What every environment installs beside its Python.
+[tool.pixi.dependencies]
+# Node 24 is the active LTS line, and conda-forge builds it for all four platforms. Node 26 has no
+# osx-64 build, so the cap holds the line every platform can install. The floor is the one
+# package.json sets in `engines`. Node runs esbuild, TypeScript, Biome and release-please, and
+# package-lock.json pins those.
+nodejs = ">=24.22,<25"
+# Runs .pre-commit-config.yaml, as the git hooks and as the lint row. `pixi run setup` installs the
+# hooks from this copy, so the hook a commit runs and the lint row CI runs are one version.
+# 0.5.9 is the newest release conda-forge builds, and the hooks config states it as its minimum.
+# prek is below 1.0, so a new minor may change what the hooks config means, and the cap holds the
+# line the config is written for.
+prek = ">=0.5.9,<0.6"
+# The workflow auditor the `zizmor` hook runs. 2.0 may rename the audits the workflows suppress by
+# name, so the cap holds the names the suppressions are written against.
+zizmor = ">=1.32,<2"
+
+# The package itself, installed from this checkout in editable mode, so every command imports the
+# working tree. Pixi reads `[project.dependencies]` for what it needs and pins those in pixi.lock.
+[tool.pixi.pypi-dependencies]
+decktalk = { path = ".", editable = true }
+
+# One Python per environment, because the unit row runs on every Python `requires-python` admits and
+# the classifiers list. scripts/check.py names each environment from its Python: `py313` for 3.13.
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.feature.py314.dependencies]
+python = "3.14.*"
+
+# `dev` is the dependency group above, which Pixi turns into a feature of the same name. The three
+# Pythons never share a solve-group, because one solve cannot hold two Python lines. This table is
+# the one list of the Pythons DeckTalk supports: scripts/check.py runs the unit row in every
+# environment here that carries `dev` at the newest versions, and a test holds the classifiers and
+# the conda package's Python range to it.
+[tool.pixi.environments]
+# The floor is the default, so a bare `pixi install` gives a contributor the oldest Python a user may
+# have.
+default = ["py312", "dev"]
+py313 = ["py313", "dev"]
+py314 = ["py314", "dev"]
+# The floor Python with every direct dependency, runtime and dev group, at the lowest version its
+# range admits, which the floors row runs the suite in. A lock keeps a version it already holds when
+# a floor moves down, so tests/scripts/test_check.py holds each locked version to its floor, and
+# `pixi update -e floors` solves the environment again.
+floors = { features = ["py312", "dev"], solve-strategy = "lowest-direct" }
+
+# Each task is a short name for a command whose home is elsewhere, and adds nothing of its own.
+# Arguments pass through, so `pixi run check --fast` is `python scripts/check.py --fast`. A task
+# cannot make its own `pixi run` refuse a stale lock, because Pixi solves the lock before the task
+# starts and has no manifest key that asks for `--locked`. `pixi run --locked check` refuses one,
+# CI's setup-pixi refuses one, and the `pixi-lock` hook refuses a commit whose manifest and lock
+# disagree.
+[tool.pixi.tasks]
+check = { cmd = "python scripts/check.py", description = "Run the check table in scripts/check.py, with every argument passed through" }
+# Once per clone. `check --setup` runs every preparation the table names, which is `npm ci` and
+# `decktalk install`, and installs every environment a row enters, which is `floors`. Then prek
+# writes the git hooks and fetches the hook repositories. `npm ci` comes first, because the Biome
+# hook runs from node_modules.
+setup = { cmd = "prek install --prepare-hooks", depends-on = [{ task = "check", args = ["--setup"] }], description = "Once per clone: the Node packages, Chromium, ffmpeg, the floors environment and the git hooks" }
+
+# The conda package users install with `pixi global install`, built by `pixi publish` in the `conda`
+# row of scripts/check.py and in release.yml's `conda` job, and uploaded by `publish-conda`.
+# pixi-build-python builds the wheel with the hatchling `[build-system]` names and reads name,
+# version, license files and `[project.dependencies]` from `[project]`, so this table holds only what
+# a conda package says differently from a wheel.
+[tool.pixi.package.build]
+# pixi.lock holds no build backend, so the backend is pinned to one release here. pixi-build is
+# preview, so any release may change what the config below means, and a new one is a pull request
+# of its own that the conda row judges.
+backend = { name = "pixi-build-python", version = "==0.8.7" }
+
+[tool.pixi.package.build.config]
+# Pure Python, so one package serves every platform conda-forge builds Playwright for.
+noarch = true
+# The backend installs the wheel with uv, which writes uv_cache.json with the build's time,
+# uv_build.json and a direct_url.json naming the build checkout into the dist-info. A package every
+# user receives names no one build, so the backend's uv is told to leave its installer files out.
+extra-args = ["--no-installer-metadata"]
+# `[project.dependencies]` and `[build-system]` become the conda run and host dependencies only with
+# the mapping on, which Pixi leaves off by default.
+ignore-pypi-mapping = false
+# The PyPI name `playwright` is the Python client, and on conda-forge `playwright` is the Node
+# driver it runs, so the client is renamed here and the driver is named in the table below.
+pypi-conda-map = { playwright = "playwright-python" }
+
+# The wheel bundles the Node driver its client calls, and the conda client does not pin the driver
+# it runs (conda-forge/playwright-python-feedstock#19). A driver of another minor fails at the first
+# launch, so the driver is held to the minor `[project.dependencies]` names for the client:
+# scripts/build_driver_pin.py writes the line between the markers from that range, and
+# scripts/check_playwright_pair.py confirms conda-forge has both at it.
+[tool.pixi.package.run-dependencies]
+# playwright-driver:start
+playwright = ">=1.64,<1.65"
+# playwright-driver:end
+# CI tests Python 3.12 to 3.14, and `pixi global install` takes the newest Python the channels hold,
+# so the package admits only the Pythons CI tests. The upper bound moves when py315 joins the matrix.
+python = ">=3.12,<3.15"
+
+# The build itself runs on the floor Python rather than on the newest conda-forge holds, so the
+# Python that builds the package is one CI tests.
+[tool.pixi.package.host-dependencies]
+python = "3.12.*"
 
 [tool.ruff]
 line-length = 120
@@ -166,7 +329,8 @@ markers = [
     "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
     "scaffold: needs Chromium and ffmpeg, and records every packaged project several times over without a voice",
     "platform: needs the machine it runs on, whose filesystem and fetched toolchain are what it asserts",
-    "wheel: needs the wheel `uv build` writes into dist/, and is given to tests/contract/test_wheel.py by its path",
+    "wheel: needs the wheel `python -m build` writes into dist/, and is given to tests/contract/test_wheel.py by its path",
+    "lint: needs nothing beyond Python, and reads the repository's files as text, so it runs once as lint rather than on every Python",
 ]
 # Selection is `tests/conftest.py`'s collection hook rather than an `-m` here, because a person's own
 # `-m` replaces this line whole and would admit every suite it did not name.

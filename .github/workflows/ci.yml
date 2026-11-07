@@ -26,6 +26,12 @@ on:
 permissions:
   contents: read
 
+# Every cache this workflow keeps is saved on `main` alone, so a pull request reads the caches and
+# never adds an entry, which keeps every environment and every tool download on three platforms
+# inside the repository's cache limit.
+env:
+  SAVE_CACHES: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
 # One run per branch, the tip's. A second push supersedes the first rather than racing it, on
 # `main` as well. GitHub keeps one queued run per group and drops the older one when a third
 # arrives, so a queue could drop the tip's run and leave release.yml with no verdict to consume.
@@ -44,17 +50,17 @@ jobs:
     # separately because it combines what the other legs produced and therefore has to run after
     # them, which a single matrix cannot express.
     name: plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       groups: ${{ steps.table.outputs.groups }}
       coverage: ${{ steps.table.outputs.coverage }}
+      pixi: ${{ steps.table.outputs.pixi }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with:
-          enable-cache: true
+      # The plan reads the table with the runner's own Python, because check.py imports nothing
+      # outside the standard library and no Pixi is installed yet.
       - id: table
         name: Read the check table
         env:
@@ -68,10 +74,11 @@ jobs:
             || github.event_name == 'schedule' && 'schedule'
             || inputs.moment || 'main' }}
         run: |
-          rows="$(uv run scripts/check.py --json --when "$MOMENT")"
+          rows="$(python3 scripts/check.py --json --when "$MOMENT")"
           echo "groups=$(printf '%s' "$rows" | jq -c '[.[] | select(.group != "coverage")]')" >> "$GITHUB_OUTPUT"
           echo "coverage=$(printf '%s' "$rows" | jq -c '[.[] | select(.group == "coverage")]')" >> "$GITHUB_OUTPUT"
-          uv run scripts/check.py --list
+          echo "pixi=$(python3 scripts/check.py --pixi-version)" >> "$GITHUB_OUTPUT"
+          python3 scripts/check.py --list
 
   run:
     name: ${{ matrix.leg }}
@@ -89,17 +96,26 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: ${{ contains(matrix.tools, 'history') && '0' || '1' }}
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # The leg's Python, Node and every package come from the Pixi environment its row names, as
+      # pixi.lock pins them, at the Pixi the plan read from pyproject.toml.
+      - uses: $/.github/actions/setup
         with:
-          python-version: ${{ matrix.python }}
-          enable-cache: true
-      # Node is installed on the legs whose row lists it, which the matrix row carries, so a leg
-      # that runs no JavaScript spends none of its minutes on a toolchain it never calls.
-      - if: contains(matrix.tools, 'npm')
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+          pixi-version: ${{ needs.plan.outputs.pixi }}
+          environments: ${{ matrix.environment }}
+          cache-write: ${{ env.SAVE_CACHES }}
+      # npm's download cache is kept under a key the table writes from package-lock.json, because
+      # setup-pixi keeps the Pixi environment and nothing else. It is saved after the row ran.
+      - name: Point npm at the directory this job keeps
+        if: matrix.npm != ''
+        shell: bash
+        run: echo "npm_config_cache=$RUNNER_TEMP/npm" >> "$GITHUB_ENV"
+      - name: Restore the Node packages
+        id: npm
+        if: matrix.npm != ''
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          node-version: ${{ matrix.node }}
-          cache: npm
+          path: &npm-paths ${{ runner.temp }}/npm
+          key: ${{ matrix.npm }}
       # The tools a leg fetches are cached per leg, under a key the table writes from the Playwright
       # version and the ffmpeg pin, and saved only after the fetch succeeded. A key shared by every
       # leg would let whichever leg saved first decide what every later run finds. DeckTalk keeps
@@ -110,8 +126,8 @@ jobs:
         if: matrix.cache != ''
         shell: bash
         run: |
-          uv run decktalk doctor --no-input --json > "$RUNNER_TEMP/doctor.json" || true
-          cache="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["cache"])' "$RUNNER_TEMP/doctor.json")"
+          decktalk doctor --no-input --json > "$RUNNER_TEMP/doctor.json" || true
+          cache="$(python -c 'import json, sys; print(json.load(open(sys.argv[1]))["cache"])' "$RUNNER_TEMP/doctor.json")"
           echo "TOOLS_CACHE=$cache" >> "$GITHUB_ENV"
       - name: Restore Chromium and ffmpeg
         id: tools
@@ -125,12 +141,12 @@ jobs:
         shell: bash
         env:
           GROUP: ${{ matrix.group }}
-        run: uv run scripts/check.py --group "$GROUP" --prepare
+        run: python scripts/check.py --group "$GROUP" --prepare
       - name: Keep Chromium and ffmpeg
         # A condition that names no status function also requires every earlier step to have
         # succeeded, so a fetch that failed is never saved for the next run to trust. The paths are
         # the restore step's own, through the anchor, so the two steps cannot disagree about them.
-        if: matrix.cache != '' && steps.tools.outputs.cache-hit != 'true'
+        if: matrix.cache != '' && steps.tools.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *tool-paths
@@ -153,14 +169,21 @@ jobs:
         shell: bash
         env:
           GROUP: ${{ matrix.group }}
-        run: uv run scripts/check.py --group "$GROUP"
+        run: python scripts/check.py --group "$GROUP"
+      - name: Keep the Node packages
+        # Saved on `main` only and only after the row passed, as the Pixi environment is.
+        if: matrix.npm != '' && steps.npm.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *npm-paths
+          key: ${{ matrix.npm }}
       - name: Keep the coverage this leg measured and the report of what it ran
         # Only the Linux legs reach the floor, and the coverage job selects them by name. The report
         # is kept beside the data because a suite whose every test skipped still measures lines.
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: coverage-${{ matrix.group }}-${{ matrix['runs-on'] }}-${{ matrix.python }}
+          name: coverage-${{ matrix.group }}-${{ matrix['runs-on'] }}-${{ matrix.environment }}
           path: |
             .coverage*
             tests/out/junit/*.xml
@@ -183,18 +206,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: $/.github/actions/setup
         with:
-          python-version: ${{ matrix.python }}
-          enable-cache: true
+          pixi-version: ${{ needs.plan.outputs.pixi }}
+          environments: ${{ matrix.environment }}
+          cache-write: ${{ env.SAVE_CACHES }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: coverage-*-ubuntu-latest-*
+          pattern: coverage-*-${{ matrix['runs-on'] }}-*
           path: coverage-legs
           merge-multiple: false
       - name: Gather what the Linux legs measured and ran
         # Each group names its own data file, so a whole run on one machine combines. Two legs of
-        # one group differ only by the Python they ran, and a suite that spawned subprocesses may
+        # one group differ only by the environment they ran, and a suite that spawned subprocesses may
         # have left more than one file, so each is renamed after the leg it came from and counted.
         # A leg's one test report is renamed after the leg the same way, which is the name
         # check_coverage.py looks for beside the suite's own.
@@ -223,7 +247,7 @@ jobs:
       - name: Run the group
         env:
           GROUP: ${{ matrix.group }}
-        run: uv run scripts/check.py --group "$GROUP"
+        run: python scripts/check.py --group "$GROUP"
 
   regenerate:
     # Everything release-please's own bump makes stale is regenerated on its pull request branch, so
@@ -237,10 +261,11 @@ jobs:
     # `rehearsal` group makes a throwaway bump and runs this same command on every pull request, so a
     # generator that cannot write fails there first rather than here.
     name: regenerate what the version bump made stale
+    needs: plan
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: token
         with:
           client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
@@ -252,16 +277,14 @@ jobs:
           ref: ${{ github.head_ref }}
           token: ${{ steps.token.outputs.token }}
           persist-credentials: true
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      # The default environment is the one the `generated` row runs in, so a write uses the Python
+      # and Node of the check that judges it. pixi.lock holds no version of the package itself, so
+      # the bump leaves it true and `locked` holds.
+      - uses: $/.github/actions/setup
         with:
-          enable-cache: true
-      # This job is not a row of the table, so it spells the table's `NODE` itself, and
-      # tests/scripts/test_check.py holds the two to one value.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "22"
-          cache: npm
-      - run: uv run scripts/check.py --group generated --write
+          pixi-version: ${{ needs.plan.outputs.pixi }}
+          environments: default
+      - run: python scripts/check.py --group generated --write
       - name: Commit what the bump made stale
         env:
           BRANCH: ${{ github.head_ref }}
@@ -276,13 +299,13 @@ jobs:
 
   ci:
     # A generated matrix cannot be a required check, because a ruleset names a check by literal
-    # string and `run (browser, macos-latest, 3.12)` does not exist until the plan job has run. This
-    # job is that literal string, and a `needs` on a matrix job aggregates every one of its legs, so
+    # string and a leg such as `browser (macos-26, default)` does not exist until the plan job has
+    # run. This job is that literal string, and a `needs` on a matrix job aggregates every one of its legs, so
     # requiring `ci` on `main` requires all of them.
     name: ci
     needs: [plan, run, coverage]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Every group the table selected was run and passed
         env:

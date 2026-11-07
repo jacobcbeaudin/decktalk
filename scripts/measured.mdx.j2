@@ -55,7 +55,7 @@ of {{ coverage.statements }}. This is the total `coverage report` prints after t
 every suite the coverage floor measures:
 
 ```console
-{{ coverage.command }}
+{{ coverage_command }}
 ```
 
 The suites measured are {{ coverage.suites | join(", ") }}.
@@ -67,7 +67,7 @@ The suites measured are {{ coverage.suites | join(", ") }}.
 | Machine | {{ run.machine.platform }}, {{ run.machine.cpu }}, {{ run.machine.cores }} cores{% if run.load is not none %}, with a load average of {{ "%.1f" | format(run.load) }} when the builds began{% endif %} |
 | Versions | DeckTalk {{ run.versions.decktalk }}, Python {{ run.versions.python }}, Chromium {{ run.versions.chromium }}, ffmpeg {{ run.versions.ffmpeg }} |
 | Commit | `{{ run.commit }}`{% if run.source_changed %} with uncommitted changes to the source{% endif %} |
-| Command | `{{ run.command }}` |
+| Recorded with | `{{ run.command }}` |
 
-{% endfor %}To measure your own machine, run the command from a checkout of the repository, then
-`uv run scripts/build_measured.py --write` to render this page from what it wrote.
+{% endfor %}To measure your own machine, run `{{ measure }}` from a checkout of the repository, then
+`pixi run python scripts/build_measured.py --write` to render this page from what it wrote.

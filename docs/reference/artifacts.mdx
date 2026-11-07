@@ -34,7 +34,7 @@ of each file that run wrote, in the order it wrote them. That is how a caller fi
 rather than by spelling a path.
 
 ```bash
-uv run decktalk narrate --json | python -c "import json,sys; print(json.load(sys.stdin)['written'])"
+decktalk narrate --json | python -c "import json,sys; print(json.load(sys.stdin)['written'])"
 ```
 
 ```python
@@ -703,7 +703,7 @@ are the recent ones, so `events.keep_runs` prunes the oldest. It defaults to 20 
 pruning happens as a run opens.
 
 ```bash
-uv run decktalk config set events.keep_runs 50
+decktalk config set events.keep_runs 50
 ```
 
 `decktalk status --json` reports every run whose events file is still open, which is how a caller

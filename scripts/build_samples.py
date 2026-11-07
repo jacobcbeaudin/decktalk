@@ -1,7 +1,7 @@
 """Write every docs sample `scripts/samples.toml` names from a real run of DeckTalk on a fresh starter.
 
-    uv run scripts/build_samples.py --write    # run each row and write its block under its comment
-    uv run scripts/build_samples.py --check    # exit 1 if a block no longer says what a run says
+    pixi run python scripts/build_samples.py --write    # run each row and write its block under its comment
+    pixi run python scripts/build_samples.py --check    # exit 1 if a block no longer says what a run says
 
 A page marks a sample with `{/* sample: <id>, ... */}` on the line above its fenced block, or with
 `<!-- sample: <id>, ... -->` in a Markdown page such as the README, and the row of that id says how the
@@ -272,13 +272,14 @@ class Voice(ThreadingHTTPServer):
 class Speaker(BaseHTTPRequestHandler):
     """The DeckTalk speech protocol's one request, answered by `spoken`."""
 
-    server: Voice
-
     def do_POST(self) -> None:
         if self.path != SPEECH_PATH:
             self.send_error(404)
             return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        # Only a Voice serves this handler. The base class lets any server be set here, so a
+        # narrower declaration of the attribute would be false, and the check narrows it instead.
+        assert isinstance(self.server, Voice)
         with self.server.toolchain.bound():
             reply = json.dumps(spoken(body)).encode()
         self.send_response(200)
@@ -625,7 +626,8 @@ def shown_text(printed: str, *, head: int | None, grep: str | None, hide: tuple[
     """What a command printed, cut to the lines a row picks, with no trailing space and no blank first or last line.
 
     Each match of `hide` is written as `HIDDEN`, so a block names no path or version of the machine
-    that wrote it, and `--check` reads the same dots on both sides.
+    that wrote it, and `--check` reads the same dots on both sides. The dots take the width of the
+    text they replace, so a hidden cell in the middle of a line keeps the columns of its table.
     """
     lines = [line.rstrip() for line in printed.splitlines()]
     if grep is not None:
@@ -633,7 +635,7 @@ def shown_text(printed: str, *, head: int | None, grep: str | None, hide: tuple[
     if head is not None:
         lines = lines[:head]
     for pattern in hide:
-        lines = [re.sub(pattern, HIDDEN, line) for line in lines]
+        lines = [re.sub(pattern, lambda found: HIDDEN.ljust(len(found[0])), line).rstrip() for line in lines]
     return "\n".join(lines).strip("\n")
 
 

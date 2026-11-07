@@ -56,3 +56,11 @@ def test_a_launch_outside_any_run_gets_a_temporary_directory_and_nothing_of_the_
 
 def test_no_name_a_browser_may_see_is_one_a_credential_is_kept_under():
     assert not [key for key in CHILD_KEYS if any(word in key for word in ("KEY", "TOKEN", "SECRET", "PASS"))]
+
+
+def test_a_browser_or_an_encoder_is_handed_no_conda_environment_name():
+    """Chromium and ffmpeg start no Python, so the prefix only the Chromium fetch needs never reaches them."""
+    with children_see({"CONDA_PREFIX": "/home/author/.pixi/envs/decktalk", "CONDA_DEFAULT_ENV": "base", "HOME": "/h"}):
+        seen = child_environment()
+    assert "CONDA_PREFIX" not in seen
+    assert "CONDA_DEFAULT_ENV" not in seen

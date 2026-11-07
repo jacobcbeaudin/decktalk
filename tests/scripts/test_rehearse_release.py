@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-import check
 import rehearse_release as rehearse
 from support.paths import REPO
 
@@ -75,13 +74,40 @@ def test_the_copy_carries_the_checkout_and_no_repository_to_commit_to(tmp_path: 
     assert not (tmp_path / ".git").exists()
 
 
-def test_the_bumped_copy_builds_its_wheel_and_holds_it_to_the_tag_release_please_cuts() -> None:
+def test_the_bumped_copy_regenerates_then_runs_the_wheel_row_last() -> None:
+    """The wheel is built from the regenerated copy, so it carries every file the bump made stale."""
+    assert rehearse.REHEARSED[-1][-2:] == ("--group", "wheel")
+    assert rehearse.REHEARSED.index((*rehearse.GENERATED, "--write")) < rehearse.REHEARSED.index(rehearse.WHEEL)
+
+
+def test_every_command_in_the_copy_runs_in_the_copys_own_locked_environment() -> None:
+    """The bumped package is installed in the copy's environment, so a command outside it reads the old version."""
+    for command in rehearse.REHEARSED:
+        assert command == rehearse.LOCK_CHECK or command[: len(rehearse.IN_COPY)] == rehearse.IN_COPY, command
+
+
+def test_the_activation_is_every_variable_pixi_names_for_this_checkout_but_path() -> None:
+    """The names are Pixi's own, so a variable a new Pixi adds, such as `PIXI_EXE`, is scrubbed too."""
+    names = rehearse.activation()
+    assert {"PIXI_PROJECT_ROOT", "PIXI_ENVIRONMENT_NAME", "PIXI_EXE", "CONDA_PREFIX"} <= names
+    assert "PATH" not in names and "PIXI_CACHE_DIR" not in names
+    assert not [name for name in names if name.startswith("CONDA_ENV_SHLVL_")], "Pixi answered as a nested activation"
+
+
+def test_the_copy_runs_without_this_checkouts_activation_and_with_the_tag_to_judge() -> None:
     """A candidate's wheel is named `0.6.0rc1` and tagged `v0.6.0-rc1`, which only a bumped build can show."""
-    *build, judge = check.BY_NAME["wheel"].commands
-    steps = rehearse.rehearsed("0.6.0-rc1")
-    assert steps[: steps.index(rehearse.GENERATED) + 1] == (
-        ("uv", "lock"),
-        (*rehearse.GENERATED, "--write"),
-        rehearse.GENERATED,
-    )
-    assert steps[-len(build) - 1 :] == (*build, (*judge, "--tag", "v0.6.0-rc1"))
+    activated = frozenset({"PIXI_PROJECT_ROOT", "PIXI_ENVIRONMENT_NAME", "CONDA_PREFIX"})
+    outer = {
+        "PIXI_PROJECT_ROOT": "/checkout",
+        "PIXI_ENVIRONMENT_NAME": "py313",
+        "CONDA_PREFIX": "/checkout/.pixi/envs/py313",
+        "PIXI_CACHE_DIR": "/cache/pixi",
+        "CONDA_PKGS_DIRS": "/cache/pkgs",
+        "PATH": "/usr/bin",
+    }
+    assert rehearse.scrubbed(outer, "v0.6.0-rc1", activated) == {
+        "PIXI_CACHE_DIR": "/cache/pixi",
+        "CONDA_PKGS_DIRS": "/cache/pkgs",
+        "PATH": "/usr/bin",
+        "RELEASE_TAG": "v0.6.0-rc1",
+    }

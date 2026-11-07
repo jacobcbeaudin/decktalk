@@ -1,8 +1,8 @@
 """Build the runtime bundles, contract.json and src/decktalk/page.py from the TypeScript sources.
 
     npm ci                                          # once, for the pinned esbuild, tsc and Biome
-    uv run scripts/build_runtime.py --write         # type check, bundle, and write every artifact
-    uv run scripts/build_runtime.py --check         # exit 1 if any committed artifact would change
+    pixi run python scripts/build_runtime.py --write         # type check, bundle, and write every artifact
+    pixi run python scripts/build_runtime.py --check         # exit 1 if any committed artifact would change
 
 The page contract lives once, in `src/decktalk/runtime/src/contract.ts`. This script is the only
 thing that reads it: esbuild builds the contract as a CommonJS module, node prints `CONTRACT` as

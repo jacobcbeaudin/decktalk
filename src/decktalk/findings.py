@@ -10,7 +10,7 @@ live once and the docs page, the JSON Schema and the printed line are three rend
 A code never spells its own severity, because an agent dispatching on a code would then meet two
 codes for one condition and have to know that one is the other's hedge.
 
-`MODEL` is the configuration every frozen model in the package shares, and `ProjectPath` is how
+`MODEL` is the configuration every model in the package shares, and `ProjectPath` is how
 every path is serialised. Both are declared here because the finding is the lowest model in the
 package and everything else that models anything sits above it.
 """
@@ -27,12 +27,16 @@ from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_valida
 
 from decktalk.pipeline import Stage
 
-MODEL = ConfigDict(frozen=True, extra="forbid", populate_by_name=True, serialize_by_alias=True)
-"""The configuration every model in the package uses, so a result is hashable, closed and one shape."""
+MODEL = ConfigDict(extra="forbid", populate_by_name=True, serialize_by_alias=True)
+"""The configuration every model in the package uses, so a result is closed and one shape."""
 
 
-class Model(BaseModel):
-    """The base of every model in the package, which is what carries `MODEL` to each of them."""
+# `frozen=True` is a class keyword rather than a key of `MODEL`, because a type checker reads it
+# there and not in `model_config`, and pydantic reads both. With it, a result is hashable, and the
+# checker knows every field is read-only, so a subclass can narrow a field's type, as each event
+# narrows `event` to its one name.
+class Model(BaseModel, frozen=True):
+    """The base of every model in the package, which is what carries `MODEL` and `frozen` to each of them."""
 
     model_config = MODEL
 

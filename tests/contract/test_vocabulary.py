@@ -1,6 +1,6 @@
 """No closed vocabulary is spelled as a string outside the enum that defines it.
 
-    uv run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
+    pixi run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
 
 A stage, an outcome, a finding code, an error code, a layer, a scope, a take outcome, a take
 state, a sound outcome, a section kind, a skip reason, a substitute, a spend state, a setting's
@@ -72,7 +72,7 @@ from decktalk.results import (
     TakeOutcome,
     TakeState,
 )
-from support import ratchet
+from support import house, ratchet
 from support.paths import REPO, SRC, TESTS
 
 BASELINE = Path(__file__).resolve().parent / "vocabulary-baseline.json"
@@ -295,10 +295,13 @@ def python_files() -> list[Path]:
     return sorted(p for p in files if "__pycache__" not in p.parts and "out" not in p.relative_to(REPO).parts)
 
 
-def measured() -> dict[str, int]:
-    """How many literals each file still spells, which is what the baseline is a count of."""
+def measured(config: pytest.Config | None = None) -> dict[str, int]:
+    """How many literals each file still spells, which is what the baseline is a count of.
+
+    A run of the house rules that names its files counts those alone, which `config` carries.
+    """
     found: dict[str, int] = {}
-    for path in python_files():
+    for path in house.within(config, python_files()):
         where = path.relative_to(REPO).as_posix()
         if where in DEFINING:
             continue
@@ -308,17 +311,17 @@ def measured() -> dict[str, int]:
     return found
 
 
-def test_the_baseline_only_shrinks():
+def test_the_baseline_only_shrinks(pytestconfig: pytest.Config):
     """A file off the list spells no word, a file on it never grows, and a beaten count is written down.
 
     One walk of the tree answers all three, so the message names every kind of drift at once.
     """
-    added, grown, stale = ratchet.drift(measured(), ratchet.baseline(BASELINE))
+    added, grown, stale = ratchet.drift(measured(pytestconfig), house.excused(pytestconfig, ratchet.baseline(BASELINE)))
     assert not (added or grown or stale), (
         f"These files spell a closed vocabulary as a string and are not excused: {added}. Use the enum "
         f"member, and `.value` where the word is written into text. These files grew a literal: {grown}. "
         f"These files spell fewer words than the baseline excuses: {stale}. Run "
-        "`uv run python tests/contract/test_vocabulary.py --write` to lower a beaten count."
+        "`pixi run python tests/contract/test_vocabulary.py --write` to lower a beaten count."
     )
 
 

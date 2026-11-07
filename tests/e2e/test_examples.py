@@ -1,6 +1,6 @@
 """Every packaged project, recorded by the stepped recorder, verifies clean with every cue on its own frame.
 
-    uv run pytest -m e2e tests/e2e/test_examples.py
+    pixi run pytest -m e2e tests/e2e/test_examples.py
 
 This is the promise the packaged projects make: a fresh project builds on the machine it was written
 on, with no API key, no spend and no file of the author's, and the starter and each shipped example

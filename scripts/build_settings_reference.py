@@ -1,7 +1,7 @@
 """Generate the settings reference from the JSON Schema of decktalk.toml.
 
-    uv run scripts/build_settings_reference.py --write    # write the page
-    uv run scripts/build_settings_reference.py --check    # exit 1 if the committed page would change
+    pixi run python scripts/build_settings_reference.py --write    # write the page
+    pixi run python scripts/build_settings_reference.py --check    # exit 1 if the committed page would change
 
 The page is a rendering of the published schema by construction. It reads the document
 `build_settings_schema.py` writes to `schemas/v1/decktalk.json` rather than the dataclasses, so a

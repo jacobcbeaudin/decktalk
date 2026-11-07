@@ -83,7 +83,8 @@ def test_a_writer_reads_its_own_readable_file_and_nothing_where_there_is_none(tm
 def test_an_artifact_is_frozen() -> None:
     tiny = Tiny(count=1)
     with pytest.raises(ValueError, match="frozen"):
-        tiny.count = 2
+        # The write is the claim under test, and the type checker refuses it as it should.
+        tiny.count = 2  # ty: ignore[invalid-assignment]
 
 
 def test_the_engine_names_the_version_it_was_installed_as() -> None:

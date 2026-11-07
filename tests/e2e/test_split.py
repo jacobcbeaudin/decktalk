@@ -1,6 +1,6 @@
 """The API key never shares a process with a page: voice in one job, render in another.
 
-    uv run pytest -m e2e tests/e2e/test_split.py
+    pixi run pytest -m e2e tests/e2e/test_split.py
 
 A host that renders other people's pages runs `narrate` in a voice job that holds the key, and the
 whole build in a render job whose environment holds none, with the project directory, build
