@@ -113,6 +113,9 @@ dev = [
     "jinja2>=3.1",
     # Every command's output and every setting's default are validated against the committed schemas.
     "jsonschema>=4.23",
+    # renovate.json5 is read as Renovate reads it, comments and all, so its test judges the parsed
+    # rules rather than the text. 0.17.3 is the release the test was written against.
+    "json5>=0.17.3",
     # install.sh branches on `[ -t 1 ]`, so its test runs it under a terminal and sends the Ctrl-C.
     "pexpect>=4.9.0",
     # The wheel row and the release build with the hatchling pixi.lock pins, without network, rather

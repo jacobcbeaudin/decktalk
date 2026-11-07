@@ -7,6 +7,10 @@
 # Each tool hook enters the Pixi environment through `pixi run --locked`, so it finds the ruff, ty
 # and Node that pixi.lock pins from a plain terminal, and never rewrites pixi.lock in the middle of a
 # commit. A commit needs only Pixi on PATH.
+#
+# Each fetched repository is pinned by commit SHA, because a tag can move to other code after review.
+# The tag sits beside it as `# frozen: <tag>`, the one SHA form Renovate's pre-commit manager reads,
+# so its pull request moves the SHA and the tag together.
 
 # The prek that pixi.lock holds, so a prek installed outside the environment that is older than the
 # one the lint row runs refuses the config rather than judging a commit by rules CI may not share.
@@ -21,7 +25,7 @@ repos:
   #   fix: -> patch   feat: -> minor   feat!: / BREAKING CHANGE: -> major (minor while 0.x)
   # No built-in hook knows the format, so prek fetches this one and its Python by the rev.
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: 33b50eb042bee26eac0ee96ad84aa9c1b4dccdd8 # v4.5.0
+    rev: 33b50eb042bee26eac0ee96ad84aa9c1b4dccdd8 # frozen: v4.5.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
@@ -90,7 +94,7 @@ repos:
   # shellcheck pin. -s sh holds the installer and scripts/shell/ to POSIX sh, as
   # tests/contract/test_installer.py does.
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: 745eface02aef23e168a8afb6b5737818efbea95 # v0.11.0.1
+    rev: 745eface02aef23e168a8afb6b5737818efbea95 # frozen: v0.11.0.1
     hooks:
       - id: shellcheck
         # -x follows the setup each installer scenario sources, so shellcheck reads its functions.

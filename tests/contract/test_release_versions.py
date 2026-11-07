@@ -33,7 +33,6 @@ from support.paths import REPO
 
 CONFIG = REPO / "release-please-config.json"
 PACKAGE_JSON = REPO / "package.json"
-DEPENDABOT = REPO / ".github" / "dependabot.yml"
 MANIFEST = REPO / ".release-please-manifest.json"
 PYPROJECT = REPO / "pyproject.toml"
 
@@ -126,11 +125,9 @@ def test_every_package_stays_in_the_candidate_series(path):
     )
 
 
-def test_release_please_is_pinned_exactly_and_moves_with_the_action():
+def test_release_please_is_pinned_exactly():
     # scripts/next_version.mjs runs release-please's own code, which is only the release's answer
-    # while both run one version. A range or a separate Dependabot bump would let them part.
+    # while both run one version. A range would let them part, and tests/scripts/test_renovate.py
+    # holds Renovate to leaving the pin alone.
     pinned = json.loads(PACKAGE_JSON.read_text(encoding="utf-8"))["devDependencies"]["release-please"]
     assert re.fullmatch(r"\d+\.\d+\.\d+", pinned), f"package.json names release-please as {pinned!r}, not one version"
-    assert "dependency-name: release-please" in DEPENDABOT.read_text(encoding="utf-8"), (
-        "Dependabot would bump release-please apart from the action that bundles it"
-    )
