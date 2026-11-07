@@ -402,9 +402,18 @@ class Stepper:
         and every animation the page has set playing has started. The first step then pauses each one
         where it is sought rather than where the browser was about to start it. The hold waits for this
         itself, so it is safe from a caller that did not wait for the page to be ready.
+
+        The page is then drawn once, through the capture every frame is taken with, before the clock
+        is held. An animation is started once the page knows when it began, which can be before the
+        compositor has drawn the slide it plays on. A slide that mounted after `load` was paused and
+        sought to zero before that draw on about one page in eighteen on a Linux runner, and frame 0
+        then showed it as the browser first drew it after the pause, a sub-pixel edge apart from
+        every other page. A page that mounted before `load` has long been drawn by then, and the draw
+        gives every other page the same start. Its picture is thrown away.
         """
         with driving("could not hold the page's clock"), self.held("the hold before its first frame"):
             self.page.evaluate(STARTED_JS, self.deadline_seconds)
+            devtools(self.page, self.cdp(), "Page.captureScreenshot", CAPTURE)
             ahead = float(self.page.evaluate(NOW_JS)) + HOLD_LEAD_MS
             # Playwright reads a number handed to `pause_at` as seconds, and the page counts milliseconds.
             self.page.clock.pause_at(ahead / MILLISECONDS)
