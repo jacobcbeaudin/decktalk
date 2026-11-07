@@ -1,6 +1,6 @@
 """A shipped section recorded again and again decodes to the same frames every time.
 
-    uv run pytest -m scaffold tests/e2e/test_same_frames.py
+    pixi run pytest -m scaffold tests/e2e/test_same_frames.py
 
 The stepped recorder promises that two recordings of one page are the same frames, and every later
 speed-up of the recorder is judged by that promise. The starter's closing section is the page that

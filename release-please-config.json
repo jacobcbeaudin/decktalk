@@ -53,11 +53,6 @@
       ],
       "extra-files": [
         {
-          "type": "toml",
-          "path": "uv.lock",
-          "jsonpath": "$.package[?(@.name.value=='decktalk')].version"
-        },
-        {
           "type": "generic",
           "path": "src/decktalk/runtime/src/index.ts"
         },

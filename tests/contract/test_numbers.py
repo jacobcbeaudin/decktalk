@@ -1,6 +1,6 @@
 """No magic numbers: every number that decides something is a setting, an expression, or a named fact.
 
-    uv run python tests/contract/test_numbers.py --write   # lower a count the code has shrunk
+    pixi run python tests/contract/test_numbers.py --write   # lower a count the code has shrunk
 
 A number reaches the code through three doors and there is no fourth. It becomes a settings key when
 a project would turn it. It is derived when it is computable, and then it is written as the
@@ -31,12 +31,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 # `--write` is run as a plain script, where pytest's own `pythonpath` is not in force yet.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.settings import KEYS
 from decktalk.settings.numbers import NUMBERS
-from support import ratchet
+from support import house, ratchet
 from support.paths import REPO, SRC
 
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
@@ -260,14 +262,22 @@ def _bare_typescript(name: str, number: int, code: str) -> list[Bare]:
     return [Bare(name, number, found) for found in NUMBER.findall(code) if float(found) not in FREE or "." in found]
 
 
-def measured() -> dict[str, int]:
-    """The count of bare literals in every file that still has one, which is what the baseline holds."""
+def typescript() -> list[Path]:
+    """Every TypeScript module of the runtime, in a stable order."""
+    return sorted((REPO / RUNTIME).rglob("*.ts")) if (REPO / RUNTIME).is_dir() else []
+
+
+def measured(config: pytest.Config | None = None) -> dict[str, int]:
+    """The count of bare literals in every file that still has one, which is what the baseline holds.
+
+    A run of the house rules that names its files counts those alone, which `config` carries.
+    """
     found: dict[str, int] = {}
-    for path in walked():
+    for path in house.within(config, walked()):
         bare = bare_python(path)
         if bare:
             found[bare[0].file] = len(bare)
-    for path in sorted((REPO / RUNTIME).rglob("*.ts")) if (REPO / RUNTIME).is_dir() else []:
+    for path in house.within(config, typescript()):
         bare = bare_typescript(path)
         if bare:
             found[bare[0].file] = len(bare)
@@ -334,18 +344,18 @@ def test_the_typescript_scan_finds_the_cap_a_python_walk_cannot_see(tmp_path: Pa
     assert [bare.value for bare in bare_typescript(path)] == ["5", "250"]
 
 
-def test_the_baseline_only_shrinks() -> None:
+def test_the_baseline_only_shrinks(pytestconfig: pytest.Config) -> None:
     """A file off the list holds no bare number, a file on it never grows, and a beaten count is written down.
 
     One walk of the tree answers all three, so the message names every kind of drift at once.
     """
-    added, grown, stale = ratchet.drift(measured(), ratchet.baseline(BASELINE))
+    added, grown, stale = ratchet.drift(measured(pytestconfig), house.excused(pytestconfig, ratchet.baseline(BASELINE)))
     assert not (added or grown or stale), (
         f"These files hold a number that went through no door: {added}. Make it a settings key, write "
         "it as the expression it is, or bind it to a module-level upper-case name with one sentence "
         f"opening with truth, derived or calibration. These files grew a number: {grown}. These files "
         f"hold fewer numbers than the baseline excuses: {stale}. Run "
-        "`uv run python tests/contract/test_numbers.py --write` to lower a beaten count."
+        "`pixi run python tests/contract/test_numbers.py --write` to lower a beaten count."
     )
 
 

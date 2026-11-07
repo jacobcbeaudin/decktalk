@@ -1,7 +1,7 @@
 """Generate the measured-numbers page and the README's measured block from docs/data/measured.json.
 
-    uv run scripts/build_measured.py --write    # write the page and the block
-    uv run scripts/build_measured.py --check    # exit 1 if either would change
+    pixi run python scripts/build_measured.py --write    # write the page and the block
+    pixi run python scripts/build_measured.py --check    # exit 1 if either would change
 
 `scripts/measure.py` runs the real commands on a real machine and writes the data file, and this
 renders it. Every number on the page and in the README's block is read from that file, so neither
@@ -24,6 +24,7 @@ from typing import Any
 import jinja2
 
 import generated
+import measure
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "docs" / "data" / "measured.json"
@@ -119,6 +120,9 @@ def view(data: dict[str, Any]) -> dict[str, Any]:
         "builds": {**builds, "rows": rows},
         "coverage": {**coverage, "statements": f"{coverage['statements']:,}", "covered": f"{coverage['covered']:,}"},
         "page_url": PAGE_URL,
+        # A reader runs the commands as they are today, which a past run recorded in its own words.
+        "measure": measure.SCRIPT,
+        "coverage_command": " ".join(measure.coverage_command()),
     }
 
 

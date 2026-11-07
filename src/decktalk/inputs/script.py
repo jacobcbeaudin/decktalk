@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from decktalk.errors import InputError
 from decktalk.inputs.paths import at
@@ -98,7 +98,12 @@ def estimated_words(spoken: str, seconds: float) -> list[Word]:
 class Reading:
     """What a stretch of script says and how long it runs, read from its pieces, for a section or one of its turns."""
 
-    pieces: tuple[Piece, ...]
+    if TYPE_CHECKING:
+        # A turn holds its pieces in a frozen field and a section joins its turns' pieces in a
+        # property, so each subclass only lets a reader read them. A property here says that, and
+        # it exists only for the type checker, because a real one would refuse the frozen field.
+        @property
+        def pieces(self) -> tuple[Piece, ...]: ...
 
     @property
     def spoken(self) -> str:

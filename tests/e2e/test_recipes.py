@@ -1,6 +1,6 @@
 """A slide recipe pasted into the starter as its page says to passes `decktalk check`.
 
-    uv run pytest -m e2e tests/e2e/test_recipes.py
+    pixi run pytest -m e2e tests/e2e/test_recipes.py
 
 `docs/guides/slide-recipes.mdx` promises markup the runtime accepts and a reveal `check` can see.
 These tests read a recipe's markup and cue rows straight off the page, paste them into a fresh

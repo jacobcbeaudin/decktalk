@@ -1,6 +1,6 @@
 """Check every page's front matter, every internal link in docs/ and the navigation in docs/docs.json.
 
-    uv run scripts/check_docs_links.py    # every problem, or what was checked when there is none
+    pixi run python scripts/check_docs_links.py    # every problem, or what was checked when there is none
 
 It exits 1 when something is wrong. Five things are checked, and no network is used.
 

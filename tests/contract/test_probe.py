@@ -5,7 +5,7 @@ Every page here is the same page `tests/contract/test_runtime.py` writes, opened
 carries. The cover, the wait helper, the measured boxes, the one report and the freeze that stops at
 one cue live here, and none of them may reach a page that no command is driving.
 
-    uv run pytest -m browser tests/contract/test_probe.py
+    pixi run pytest -m browser tests/contract/test_probe.py
 """
 
 from __future__ import annotations

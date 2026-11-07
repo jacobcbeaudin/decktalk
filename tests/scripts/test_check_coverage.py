@@ -66,18 +66,19 @@ def test_a_suite_that_wrote_no_report_is_silent(reports: Path) -> None:
     assert gate.silent_legs() == ["media (wrote no report of the tests it ran)"]
 
 
-def test_one_python_of_a_leg_that_ran_nothing_is_enough_to_silence_it(reports: Path) -> None:
-    """The coverage job renames each report after its leg, and the unit group runs on three Pythons."""
+def test_one_environment_of_a_leg_that_ran_nothing_is_enough_to_silence_it(reports: Path) -> None:
+    """The coverage job renames each report after its leg, and the unit group runs in every supported environment."""
     (reports / "unit.xml").unlink()
-    report(reports / f"unit-{check.LINUX}-3.12.xml", tests=4537, skipped=1)
-    report(reports / f"unit-{check.LINUX}-3.13.xml", tests=0, skipped=0)
+    first, second, *_ = check.supported()
+    report(reports / f"unit-{check.LINUX}-{first}.xml", tests=4537, skipped=1)
+    report(reports / f"unit-{check.LINUX}-{second}.xml", tests=0, skipped=0)
     assert gate.silent_legs() == ["unit (ran no test)"]
 
 
 def test_every_measuring_suite_writes_the_report_the_gate_reads() -> None:
     for leg, group in gate.suites().items():
-        (command,) = [command for command in group.commands if "pytest" in command]
-        assert f"--junitxml={check.REPORTS / f'{leg}.xml'}" in command, group.name
+        (suite,) = [command for command in group.commands if isinstance(command, check.Suite)]
+        assert f"--junitxml={check.REPORTS / f'{leg}.xml'}" in suite.argv, group.name
 
 
 @pytest.mark.parametrize("argv", [[], ["--check", "--write"]])

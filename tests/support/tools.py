@@ -25,19 +25,32 @@ default suite may not collect them.
 """
 
 BUILT = ("wheel",)
-"""The marker of the suite that reads the wheel `uv build` wrote into `dist/`, which no fetch provides."""
+"""The marker of the suite that reads the wheel `python -m build` wrote into `dist/`, which no fetch provides."""
 
-SUITE_MARKERS = (*INSTALLED, *BUILT)
+LINT = "lint"
+"""The marker of the house rules for prose, vocabulary and numbers, which read files as text.
+
+They are lint rather than behaviour, so they run once, where every other lint rule runs. In the unit
+suite they would run on three Pythons for one answer and count as a fifth of the tests it claims.
+"""
+
+SUITE_MARKERS = (*INSTALLED, *BUILT, LINT)
 """The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
 
 `tests/conftest.py` selects by these and nothing else is one.
 """
 
-MARKED_BY_PATH = {"contract/test_wheel.py": "wheel"}
+MARKED_BY_PATH = {
+    "contract/test_wheel.py": "wheel",
+    "contract/test_prose.py": LINT,
+    "contract/test_vocabulary.py": LINT,
+    "contract/test_numbers.py": LINT,
+}
 """The suite marker of each test file that carries none of its own, keyed by its path under `tests/`.
 
-The wheel test reads a file only `uv build` makes, so the collection hook marks it by where it is
-and a fresh clone's bare run never collects a test of a wheel it has not built.
+The wheel test reads a file only `python -m build` makes, so the collection hook marks it by where it is
+and a fresh clone's bare run never collects a test of a wheel it has not built. The three house-rule
+files are marked as lint by where they are, so the unit suite leaves them out by the same rule.
 """
 
 FETCHED = ("browser", "media", "platform")
@@ -46,7 +59,7 @@ FETCHED = ("browser", "media", "platform")
 A browser test needs the binding too, because the driver looks for Chromium in the machine's tool cache.
 """
 
-FETCH = "uv run decktalk install"
+FETCH = "pixi run decktalk install"
 """The command that fetches every tool a suite needs, which is the command a person runs."""
 
 

@@ -1,5 +1,6 @@
-# Dependabot keeps the GitHub Actions and the locked Python dependencies current.
-# Updates arrive as one grouped pull request per ecosystem, once a week.
+# Dependabot keeps the GitHub Actions and the Node packages current. Updates arrive as one grouped
+# pull request per ecosystem, once a week. Dependabot reads no pixi.lock, so it leaves the Python
+# packages and the Pixi environments alone.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -8,13 +9,6 @@ updates:
       interval: weekly
     groups:
       actions:
-        patterns: ["*"]
-  - package-ecosystem: uv
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      python:
         patterns: ["*"]
   # esbuild and Biome are pinned by package-lock.json, because a lockfile is the only way to make the
   # byte-for-byte bundle check mean anything.

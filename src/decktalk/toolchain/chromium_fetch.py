@@ -53,6 +53,9 @@ WITH_DEPS = "--with-deps"
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's installer and its driver read for the directory its browsers live in."""
 
+PREFIX_VARIABLE = "CONDA_PREFIX"
+"""The variable conda-forge's Playwright client reads for the environment it finds its Node driver in."""
+
 BROWSERS_DIR = "ms-playwright"
 """The folder inside the tool cache that Playwright's browsers live in, named as Playwright names its own."""
 
@@ -167,6 +170,13 @@ def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
     browser directory of the machine this run belongs to, so the browser lands where the driver
     looks for it.
 
+    `CONDA_PREFIX` is added too, naming this interpreter's own prefix, because the installer is this
+    Python run again. conda-forge's Playwright client, which `pixi global install decktalk` gives a
+    user, finds its Node driver under that prefix, and a scrubbed environment has no such variable.
+    PyPI's client carries its driver inside the wheel and reads no such variable, so the name is
+    harmless there. It is added for this child alone, because Chromium and ffmpeg never start a
+    Python.
+
     `with_deps` adds Chromium's system libraries and may ask for a root password, so only
     `decktalk install` passes it. The password prompt goes to the terminal itself, so it is seen
     although the installer's own output is kept. That output is kept rather than printed, because
@@ -177,7 +187,7 @@ def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
     `FETCH_TIMEOUT_SECONDS` is stopped and refused, so a stalled mirror cannot hold a build forever.
     The call is traced like every tool call, with its command, exit code, time and last lines.
     """
-    installer = {**env, BROWSERS_VARIABLE: str(browsers_dir())}
+    installer = {**env, BROWSERS_VARIABLE: str(browsers_dir()), PREFIX_VARIABLE: sys.prefix}
     announce(TOOL, 0, None)
     cmd = [sys.executable, *INSTALL_ARGS, *([WITH_DEPS] if with_deps else [])]
     started = time.monotonic()

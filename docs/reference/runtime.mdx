@@ -84,16 +84,16 @@ names the code that judges it. So every layer above it can read the contract wit
 without a project.
 
 ```bash
-uv run decktalk schema page
-uv run python -c "from decktalk import page; print(sorted(a.value for a in page.ATTRS))"
+decktalk schema page
+pixi run python -c "from decktalk import page; print(sorted(a.value for a in page.ATTRS))"
 ```
 
 ### Building the bundle
 
 ```bash
 npm ci                                   # once, for the pinned esbuild, tsc and Biome
-uv run scripts/build_runtime.py --write  # type check, bundle, and write every artifact
-uv run scripts/build_runtime.py --check  # exit 1 if any committed artifact would change
+pixi run python scripts/build_runtime.py --write  # type check, bundle, and write every artifact
+pixi run python scripts/build_runtime.py --check  # exit 1 if any committed artifact would change
 ```
 
 The script is the only thing that reads the contract. esbuild builds `contract.ts` as a CommonJS
@@ -177,7 +177,7 @@ Every key a DeckTalk page reads is published by the contract, and each is read o
 so no other module ever touches the URL.
 
 ```bash
-uv run python -c "from decktalk import page; print(page.QUERY)"
+pixi run python -c "from decktalk import page; print(page.QUERY)"
 ```
 
 | Key | What it does |
@@ -293,7 +293,7 @@ handful of evaluations, so what a command knows about a page is one snapshot tak
 Its fields are exactly `page.REPORT`.
 
 ```bash
-uv run python -c "from decktalk import page; print(page.REPORT)"
+pixi run python -c "from decktalk import page; print(page.REPORT)"
 ```
 
 | Field | What it carries |
@@ -328,7 +328,7 @@ console with a `decktalk:` prefix, and carries on drawing. A row is recorded onc
 cue and attribute, so a repeat adds nothing.
 
 ```bash
-uv run decktalk schema finding
+decktalk schema finding
 ```
 
 A warning travels as five fields: `code`, `message`, `slide`, `cue` and `attr`. The sentence belongs

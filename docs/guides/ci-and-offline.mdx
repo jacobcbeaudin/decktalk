@@ -224,6 +224,7 @@ sets one for a container it does not keep.
 
 ## A GitHub Actions job
 
+{/* install-docs:ci-workflow:start */}
 ```yaml .github/workflows/video.yml
 name: video
 
@@ -239,19 +240,22 @@ jobs:
   video:
     runs-on: ubuntu-latest
     env:
-      DECKTALK_VERSION: "0.5.0"
       DECKTALK_PROJECT: lessons/derivatives
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-      - run: uv tool install "decktalk==$DECKTALK_VERSION"
+      - uses: prefix-dev/setup-pixi@v0.11.3
+        with:
+          run-install: false
+      - run: pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk
+      - id: decktalk
+        run: echo "version=$(decktalk --version)" >> "$GITHUB_OUTPUT"
       - name: Cache Chromium and ffmpeg
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6
         with:
           path: ~/.cache/decktalk
-          key: decktalk-tools-${{ runner.os }}-${{ runner.arch }}-${{ env.DECKTALK_VERSION }}
+          key: decktalk-tools-${{ runner.os }}-${{ runner.arch }}-${{ steps.decktalk.outputs.version }}
       - run: decktalk install --no-input
       - run: mkdir -p reports
       - run: decktalk doctor --no-input --json > reports/doctor.json
@@ -260,7 +264,7 @@ jobs:
         env:
           DECKTALK_VIDEO_PRESET: veryfast
       - name: Keep the film, its files and the reports
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: film
@@ -268,18 +272,24 @@ jobs:
             ${{ env.DECKTALK_PROJECT }}/build/final/
             reports/
       - name: Keep the film on its own, so it plays without unzipping
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           path: ${{ env.DECKTALK_PROJECT }}/build/final/*.mp4
           archive: false
 ```
+{/* install-docs:ci-workflow:end */}
 
 The job runs on every push to `main` and on every pull request, and its token can read the
-repository and nothing more. Each action is pinned to a commit, with its version in the comment
-beside it.
+repository and nothing more. Each action is named by its release tag. To pin an action to a
+commit, as DeckTalk's own workflows do, write the commit the tag names in place of the tag, with the
+tag in a comment beside it. setup-pixi installs the newest Pixi in `~/.pixi/bin`, puts that folder
+on PATH and installs no workspace of its own, so `pixi global install` puts `decktalk` beside it, from DeckTalk's channel with
+conda-forge for its Python, Node and Playwright.
 
-`DECKTALK_VERSION` pins DeckTalk, and the tool cache is keyed on it as well as on the runner. Each
+`pixi global install` takes the newest final release the channel holds, and the tool cache is
+keyed on the version `decktalk --version` prints as well as on the runner. To hold the job to one
+release, write `"decktalk==<version>"` with a version from the [changelog](/changelog). Each
 DeckTalk version pins its own ffmpeg build and installs with the Playwright release that chooses its
 Chromium, so a new version starts from an empty cache and fetches the builds it wants, rather than
 restoring the ones the last version used. `decktalk install` fetches anything the restored cache

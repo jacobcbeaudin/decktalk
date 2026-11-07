@@ -1,7 +1,7 @@
 """Generate the JSON Schema for decktalk.toml, and the per-machine filter of it.
 
-    uv run scripts/build_settings_schema.py --write    # write both schemas
-    uv run scripts/build_settings_schema.py --check    # exit 1 if either committed file would change
+    pixi run python scripts/build_settings_schema.py --write    # write both schemas
+    pixi run python scripts/build_settings_schema.py --check    # exit 1 if either committed file would change
 
 One schema describes the whole project file, its document tables and its tuning tables together,
 because an editor binds one schema to one file and `#:schema` is a single directive. Every property

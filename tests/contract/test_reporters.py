@@ -9,7 +9,7 @@ and `verify` repeats every code the recording log carries.
 Each page below carries one condition, opened twice through decktalk-probe.js the way a command opens
 it, and the codes each opening reports are compared with what the code says of itself.
 
-    uv run pytest -m browser tests/contract/test_reporters.py
+    pixi run pytest -m browser tests/contract/test_reporters.py
 """
 
 from __future__ import annotations

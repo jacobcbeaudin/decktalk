@@ -32,7 +32,7 @@ The same schemas are committed in the repository under `schemas/v1/results/`, on
 in the folder the `schema` number names.
 
 ```bash
-uv run decktalk build --json | python -c "import json,sys; r=json.load(sys.stdin); print(r['schema'], r['ok'], r['run'])"
+decktalk build --json | python -c "import json,sys; r=json.load(sys.stdin); print(r['schema'], r['ok'], r['run'])"
 ```
 
 ## The events file

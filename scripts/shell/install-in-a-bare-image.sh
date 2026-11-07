@@ -1,14 +1,11 @@
-# What `install.sh` has to survive: an image with nothing but curl on it. The installer's own
-# promise is that a machine that has never had DeckTalk ends with `decktalk --version` printing one,
-# so the whole check is that line, run in a shell the installer did not write.
-#
-# Run as `sh -euc` inside the image, with install.sh mounted read only at /install.sh.
-if command -v apt-get >/dev/null 2>&1; then
-  apt-get update -qq && apt-get install -y -qq curl >/dev/null
-else
-  dnf install -y -q curl >/dev/null
-fi
+# What `install.sh` has to survive: an image with nothing but its package manager on it. The
+# installer's own promise is that a machine that has never had DeckTalk ends with `decktalk
+# --version` printing one, so the whole check is that line, run in a shell the installer did not
+# write. curl fetches and jq reads the channel's index.
+# The container's path is not this checkout's, so shellcheck is told where the file is.
+# shellcheck source=scripts/shell/scenario.sh
+. /shell/scenario.sh
+with_tools curl jq
+needs_releases 1
 sh /install.sh
-PATH="$HOME/.local/bin:$PATH"
-export PATH
 decktalk --version

@@ -1,7 +1,7 @@
 """Keep the command tree in AGENTS.md equal to the command tree the code has.
 
-    uv run scripts/build_agents_doc.py --write    # write the block
-    uv run scripts/build_agents_doc.py --check    # exit 1 if the committed block would change
+    pixi run python scripts/build_agents_doc.py --write    # write the block
+    pixi run python scripts/build_agents_doc.py --check    # exit 1 if the committed block would change
 
 `AGENTS.md` is prose an agent reads before it touches this repository, and prose is written by hand.
 The one part of it that goes stale on its own is the list of commands, so that block is written from

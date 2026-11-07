@@ -1,7 +1,7 @@
 """Generate docs/changelog.mdx from CHANGELOG.md, which release-please writes.
 
-    uv run scripts/build_changelog.py --write    # write the page
-    uv run scripts/build_changelog.py --check    # exit 1 if the committed page would change
+    pixi run python scripts/build_changelog.py --write    # write the page
+    pixi run python scripts/build_changelog.py --check    # exit 1 if the committed page would change
 
 Each release becomes a Mintlify Update component, so the docs site shows the changelog with a table
 of contents per release and serves an RSS feed at /changelog/rss.xml.

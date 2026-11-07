@@ -58,9 +58,9 @@ CHILD_KEYS = (
 None of them is where a credential is kept. The locale and the time zone are here so a trusted page
 formats a number or a date the way the author's own browser does, the proxy names so it reaches the
 network the way the machine does, and the Windows names because a Windows process started without
-them cannot load its own system libraries. An untrusted page's Chromium is handed a proxy of its own
-on the command line, which wins over any proxy named here, and ffmpeg opens files alone, so a proxy
-named here reaches nothing through it. A program a project names is handed none of the proxy
+them cannot load its own system libraries. An untrusted page's Chromium is handed a proxy of its
+own on the command line, which wins over any proxy named here, and ffmpeg opens files alone, so a
+proxy named here reaches nothing through it. A program a project names is handed none of the proxy
 names, by `program_environment`, because a proxy URL can carry a password.
 """
 

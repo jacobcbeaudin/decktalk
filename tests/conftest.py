@@ -2,8 +2,8 @@
 
 Location answers what a test is about and the marker answers what it needs, so the marker decides
 selection and nothing else does. A bare `pytest` runs everything that needs no tool, and each of the
-six suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
-`pytest -m scaffold`, `pytest -m platform`, `pytest -m wheel`. A file that carries no marker of its
+seven suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
+`pytest -m scaffold`, `pytest -m platform`, `pytest -m wheel`, `pytest -m lint`. A file that carries no marker of its
 own and still needs something beyond Python is marked by its path as it is collected. The rule
 lives in a hook rather than in `addopts`, because an `-m` written in `addopts` is replaced whole by
 the `-m` a person types, and `-m "not e2e"` would then admit the five-minute scaffold build.

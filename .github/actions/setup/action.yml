@@ -1,0 +1,43 @@
+# The one place a job installs Pixi and a Pixi environment, so the setup-pixi pin and the rules
+# every job shares are written once. Jobs name it as `$/.github/actions/setup`, GitHub's
+# self-repository form, which loads it from the commit the workflow runs at rather than from what a
+# checkout left on disk. Under `workflow_run`, as in release.yml, that commit is the tip of `main`,
+# which is the release's own commit when the release pull request is the tip.
+#
+# The Pixi version is an input rather than read here, because `publish-conda` checks nothing out,
+# so the action has no pyproject.toml to read in that job. Every job that installs Pixi hands on what
+# `python3 scripts/check.py --pixi-version` read from the `requires-pixi` floor at its own commit.
+name: setup
+description: Install the Pixi pyproject.toml requires and one Pixi environment from pixi.lock.
+
+inputs:
+  pixi-version:
+    description: The Pixi version without its `v`, as `check.py --pixi-version` prints it.
+    required: true
+  environments:
+    description: The Pixi environment to install and activate, or empty for Pixi alone.
+    default: ""
+  cache:
+    description: Whether to restore the environment from the cache, which a release build never does.
+    default: "true"
+  cache-write:
+    description: Whether to save the environment to the cache, which only `main` does.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # A job that names an environment installs it, activates it and refuses a missing or stale
+    # pixi.lock rather than solving one. Activation puts the environment on PATH for every later
+    # step of the job. A job that names none gets Pixi alone. setup-pixi refuses `locked` and `cache`
+    # without an install, and `cache-write` without a pixi.lock, which a job that checks nothing out
+    # does not have, so all three follow the same rule as `run-install`.
+    - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
+      with:
+        pixi-version: v${{ inputs.pixi-version }}
+        environments: ${{ inputs.environments }}
+        run-install: ${{ inputs.environments != '' }}
+        activate-environment: ${{ inputs.environments != '' }}
+        locked: ${{ inputs.environments != '' }}
+        cache: ${{ inputs.environments != '' && inputs.cache }}
+        cache-write: ${{ inputs.environments != '' && inputs.cache-write }}

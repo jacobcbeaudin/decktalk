@@ -8,7 +8,7 @@ dash in data would be one character with two meanings.
 
 Each rule is one test that lists every offending line in every file, because these are lint rather
 than behaviour, and a test per file would make them most of the suite's count and say nothing more.
-They run once, in the lint row, rather than in the unit suite on every Python.
+They run once, as lint, rather than in the unit suite on every Python.
 
 The third rule, that every sentence is complete and declarative, is not held here, and this
 says so out loud. Any regex over it passes everything or fails every heading, table and code fence, and a
@@ -33,6 +33,7 @@ from pathlib import Path
 
 import pytest
 
+from support import house
 from support.paths import REPO
 
 EM_DASH = "—"
@@ -153,15 +154,16 @@ def every_offence(character: str, paths: list[Path]) -> list[str]:
     return [line for path in paths for line in offences(path, character)]
 
 
-def test_no_tracked_file_writes_an_em_dash_in_prose():
+def test_no_tracked_file_writes_an_em_dash_in_prose(pytestconfig: pytest.Config):
     """The dash is the beat a script writes, so in a sentence it is a colon or a full stop instead."""
-    found = every_offence(EM_DASH, [path for path in tracked() if readable(path)])
+    found = every_offence(EM_DASH, [path for path in house.within(pytestconfig, tracked()) if readable(path)])
     assert found == [], "\n".join(found)
 
 
-def test_no_tracked_file_joins_two_clauses_with_a_semicolon():
+def test_no_tracked_file_joins_two_clauses_with_a_semicolon(pytestconfig: pytest.Config):
     """Two clauses a semicolon joins are one sentence with one less thing to read as two sentences."""
-    paths = [path for path in tracked() if readable(path) and path.suffix not in SEMICOLON_EXEMPT_SUFFIXES]
+    chosen = house.within(pytestconfig, tracked())
+    paths = [path for path in chosen if readable(path) and path.suffix not in SEMICOLON_EXEMPT_SUFFIXES]
     found = every_offence(SEMICOLON, paths)
     assert found == [], "\n".join(found)
 
@@ -207,8 +209,10 @@ def rows_that_swallow_text(path: Path) -> list[str]:
     return found
 
 
-def test_no_page_runs_text_straight_on_from_a_table():
+def test_no_page_runs_text_straight_on_from_a_table(pytestconfig: pytest.Config):
     """A sentence written on the line after a table renders as table rows, so a blank line must part them."""
-    pages = [path for path in tracked() if path.suffix in {".md", ".mdx"} and readable(path)]
+    pages = [
+        path for path in house.within(pytestconfig, tracked()) if path.suffix in {".md", ".mdx"} and readable(path)
+    ]
     found = [line for path in pages for line in rows_that_swallow_text(path)]
     assert found == [], "\n".join(found)

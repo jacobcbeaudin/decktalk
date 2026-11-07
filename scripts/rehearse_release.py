@@ -1,19 +1,21 @@
 """Rehearse the version bump release-please makes, then prove every generated file survives it.
 
-    uv run scripts/rehearse_release.py    # bump a scratch copy of this checkout, regenerate, check
+    pixi run python scripts/rehearse_release.py    # bump a scratch copy of this checkout, regenerate, check
 
 The release path runs for real only on release-please's own pull request, so a generator that cannot
 write, or a file the bump makes stale that nothing regenerates, would surface on the release and
 nowhere earlier. This script makes the same bump on every pull request instead. It copies the
 checkout into a temporary directory, so the checkout itself is never touched and nothing is ever
 committed or pushed. In the copy it writes the version release-please would propose next everywhere
-release-please would write one, runs `uv lock`, then `uv run scripts/check.py --group generated
---write`, and then `uv run scripts/check.py --group generated`. Then it runs the `wheel` row's own
-commands in the copy, `uv build`, `pytest -m wheel` and `check_wheel.py`, the last told the tag
-release-please would cut, because a candidate is spelled `0.6.0-rc1` in the tree and `0.6.0rc1` in the
-wheel's name and only a bumped build shows whether every wheel check reads both. It fails when a file
-cannot take the version, when a generator cannot write, when anything is still stale afterwards, or
-when the bumped wheel fails a wheel check.
+release-please would write one and runs `pixi lock --check`, because pixi.lock holds no version of
+the package itself and a bump must leave it true. Then, in the copy's own Pixi environment, it runs
+`scripts/check.py --group generated --write`, `scripts/check.py --group generated` and
+`scripts/check.py --group wheel`, with `RELEASE_TAG` naming the tag release-please would cut, because
+a candidate is spelled `0.6.0-rc1` in the tree and `0.6.0rc1` in the wheel's name and only a bumped
+build shows whether every wheel check reads both. The release workflow runs the same row with the
+same variable, so the rehearsal and the release build one wheel one way. It
+fails when a file cannot take the version, when the bump makes the lock stale, when a generator cannot
+write, when anything is still stale afterwards, or when the bumped wheel fails a wheel check.
 
 The version comes from `node scripts/next_version.mjs`, which runs release-please's own code over
 the history since the last release tag. When nothing releasable has landed it is the version one fix
@@ -33,8 +35,10 @@ ci.yml writes that branch for real.
 The bump itself is `node scripts/next_version.mjs --bump`, which runs release-please's own updaters
 over every file its config names, so a new extra file is rehearsed on the pull request that adds it.
 
-This script carries no `# /// script` header because it reads the `wheel` row from `check.py` beside
-it, so it runs from the project environment, as `build_contributing.py` does for the same table.
+The copy is a Pixi workspace of its own, so the variables Pixi's activation sets for this checkout
+are taken out of each command's environment, and every other variable, such as where Pixi keeps
+its cache, is kept. Pixi itself names the variables, through `pixi shell-hook --json`, so the list
+moves with each Pixi release rather than with a copy of it here.
 """
 
 from __future__ import annotations
@@ -49,11 +53,20 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import check
+import check_wheel
 
 ROOT = Path(__file__).resolve().parent.parent
 
-GENERATED = ("uv", "run", "scripts/check.py", "--group", "generated")
+IN_COPY = ("pixi", "run", "--locked")
+"""How a command runs in the copy: in the copy's own default environment, which Pixi builds from the copy's pixi.lock.
+
+The package is installed there from the copy, so every generator and the wheel read the bumped
+version. `--locked` refuses a lock the bump made stale rather than solving a new one.
+"""
+
+LOCK_CHECK = ("pixi", "lock", "--check")
+GENERATED = (*IN_COPY, "python", "scripts/check.py", "--group", "generated")
+WHEEL = (*IN_COPY, "python", "scripts/check.py", "--group", "wheel")
 NEXT_VERSION = ("node", "scripts/next_version.mjs")
 RELEASED_PACKAGE = "."
 """The package whose wheel is built, which release-please-config.json names as the repository root."""
@@ -147,31 +160,51 @@ def copy_checkout(source: Path, target: Path) -> None:
         shutil.copy2(origin, destination, follow_symlinks=False)
 
 
-def run(command: tuple[str, ...], tree: Path) -> None:
+SHELL_HOOK = ("pixi", "shell-hook", "--json", "--frozen")
+"""The command that prints, as JSON, every variable Pixi's activation sets for this checkout.
+
+It reads the environment as pixi.lock has it, because the names do not depend on whether the lock
+is current, and the rehearsal's own lock check is the one that judges that.
+"""
+
+KEPT = ("PATH",)
+"""The one variable the activation sets that the copy keeps, because the copy's own `pixi run` puts its
+environment first on PATH."""
+
+
+ACTIVATED_BY = ("PIXI_", "CONDA_")
+"""The prefixes of the variables an activation sets, which Pixi reads to tell a nested activation from a first one."""
+
+
+def activation() -> frozenset[str]:
+    """The variables Pixi's activation sets to name the workspace and the environment this script runs in.
+
+    A nested `pixi run` in the copy that read them would act on this checkout's environment. Every other
+    `PIXI_` or `CONDA_` variable is a person's own configuration, such as `PIXI_CACHE_DIR`, and is kept.
+
+    Pixi is asked from a shell with no `PIXI_` or `CONDA_` variable, because in a shell that is already
+    activated it prints only what a nested activation would change. The question reads no person's
+    configuration, so leaving it out changes no name in the answer.
+    """
+    fresh = {key: value for key, value in os.environ.items() if not key.startswith(ACTIVATED_BY)}
+    done = subprocess.run(SHELL_HOOK, cwd=ROOT, env=fresh, capture_output=True, text=True, check=True)
+    return frozenset(json.loads(done.stdout)["environment_variables"]) - set(KEPT)
+
+
+def scrubbed(environ: dict[str, str], tag: str, activated: frozenset[str]) -> dict[str, str]:
+    """The environment a command in the copy runs with: `environ` without the activation, and the tag to judge."""
+    return {key: value for key, value in environ.items() if key not in activated} | {check_wheel.TAG: tag}
+
+
+def run(command: tuple[str, ...], tree: Path, environ: dict[str, str]) -> None:
     """Run one command in the copy, and stop the rehearsal on the first one that fails."""
     print(f"\n$ {' '.join(command)}", flush=True)
-    # The copy is its own project, so the environment this script runs in must not leak into it.
-    env = {key: value for key, value in os.environ.items() if key not in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT")}
-    if subprocess.call(command, cwd=tree, env=env) != 0:
+    if subprocess.call(command, cwd=tree, env=environ) != 0:
         raise SystemExit(f"the rehearsal failed at: {' '.join(command)}")
 
 
-def rehearsed(version: str) -> tuple[tuple[str, ...], ...]:
-    """Every command the rehearsal runs in the bumped copy, with the wheel row's last check told the tag.
-
-    The wheel commands are read from the `wheel` row, so the rehearsal builds and judges the wheel
-    exactly as a pull request does, and adds only the tag release-please would cut for `version`.
-    """
-    *build, judge = check.BY_NAME["wheel"].commands
-    return (
-        # uv writes the lockfile's own spelling of the version, which is what `uv run` would
-        # otherwise do unasked in the first generator it starts.
-        ("uv", "lock"),
-        (*GENERATED, "--write"),
-        GENERATED,
-        *build,
-        (*judge, "--tag", f"{TAG_PREFIX}{version}"),
-    )
+REHEARSED = (LOCK_CHECK, (*GENERATED, "--write"), GENERATED, WHEEL)
+"""Every command the rehearsal runs in the bumped copy, in order."""
 
 
 def main() -> int:
@@ -186,8 +219,9 @@ def main() -> int:
         if not versions:
             print("\nthe release pull request's version keeps the rules of the candidate cycle")
             return 0
-        for command in rehearsed(versions[RELEASED_PACKAGE]):
-            run(command, tree)
+        environ = scrubbed(dict(os.environ), f"{TAG_PREFIX}{versions[RELEASED_PACKAGE]}", activation())
+        for command in REHEARSED:
+            run(command, tree, environ)
     print(
         f"\nthe release path is green at {', '.join(versions.values())}: every generator wrote, nothing is stale, "
         "and the wheel passed every wheel check"

@@ -1,6 +1,6 @@
 """Every packaged project records the same frames and measures the same numbers whether still frames are skipped or not.
 
-    uv run pytest -m scaffold tests/e2e/test_still_frames.py
+    pixi run pytest -m scaffold tests/e2e/test_still_frames.py
 
 The recorder writes a frame again without capturing it when the page reports that nothing it draws
 changed since the frame before, which is most frames of a narrated deck, and writes a whole still
