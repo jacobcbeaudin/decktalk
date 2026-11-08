@@ -14,6 +14,19 @@ A change to a file format or to the page contract raises the minor version. The 
 A page loads the runtime of the engine that opens it, which DeckTalk serves at
 `/__decktalk/decktalk-runtime.js`, so upgrading DeckTalk upgrades every project's runtime with it.
 
+<Update label="0.7.0" description="2026-11-08" tags={["feature", "fix"]}>
+
+**Features**
+
+* **install:** Pixi owns the environment, for contributors and users ([4902b93](https://github.com/jacobcbeaudin/decktalk/commit/4902b93c0b3ad84d5256d645022d760297748756))
+
+**Bug Fixes**
+
+* **media:** draw the page once before the hold freezes its clock ([f1862cd](https://github.com/jacobcbeaudin/decktalk/commit/f1862cdf6154efbe652af1c9789db6bc2f90a704))
+* **media:** hold the clock only after the runtime is ready ([0e300ad](https://github.com/jacobcbeaudin/decktalk/commit/0e300adf42c0788fb11a2cc5d1f92fc6ade70f92))
+
+</Update>
+
 <Update label="0.6.0" description="2026-10-14" tags={["docs", "feature", "fix", "performance"]}>
 
 **Documentation**

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0-rc1](https://github.com/jacobcbeaudin/decktalk/compare/v0.6.0...v0.7.0-rc1) (2026-11-08)
+
+
+### Features
+
+* **install:** Pixi owns the environment, for contributors and users ([4902b93](https://github.com/jacobcbeaudin/decktalk/commit/4902b93c0b3ad84d5256d645022d760297748756))
+
+
+### Bug Fixes
+
+* **media:** draw the page once before the hold freezes its clock ([f1862cd](https://github.com/jacobcbeaudin/decktalk/commit/f1862cdf6154efbe652af1c9789db6bc2f90a704))
+* **media:** hold the clock only after the runtime is ready ([0e300ad](https://github.com/jacobcbeaudin/decktalk/commit/0e300adf42c0788fb11a2cc5d1f92fc6ade70f92))
+
 ## [0.6.0](https://github.com/jacobcbeaudin/decktalk/compare/v0.6.0-rc1...v0.6.0) (2026-10-14)
 
 
