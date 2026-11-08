@@ -31,14 +31,8 @@ decktalk build --no-spend
 The first line installs Pixi if the machine has none, checks it against the SHA-256 the script pins for it, and installs DeckTalk from DeckTalk's own conda channel with `pixi global install`. Pixi brings DeckTalk its own Python. The script edits no shell startup file, so the second line puts Pixi's bin folder on this shell's PATH, and the script prints the same line for you to add to your shell's startup file. [Read the script](https://github.com/jacobcbeaudin/decktalk/blob/main/install.sh) before you run it, and run it again to update.
 
 <!-- install-docs:other-ways:start -->
-With Pixi already on the machine, `pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk` is the whole install, on Windows too. The one-line installer stops on Windows, because it is a POSIX shell script, so in PowerShell `powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk"` installs Pixi with its own installer and then runs that line. `uv tool install decktalk` installs the same version from PyPI on every platform.
+With Pixi already on the machine, `pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk` is the whole install, on Windows too. The one-line installer stops on Windows, because it is a POSIX shell script, so in PowerShell `powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk"` installs Pixi with its own installer and then runs that line. `uv tool install decktalk==0.6.0` installs the newest release from PyPI on every platform.
 <!-- install-docs:other-ways:end -->
-
-<!-- x-release-please-start-version -->
-
-This page describes 0.6.0, and `uv tool install decktalk==0.6.0` installs that version from PyPI.
-
-<!-- x-release-please-end -->
 
 `decktalk init` writes a starter of three sections that already builds. The build with `--no-spend` needs no account and spends nothing. It makes the whole film, captions and chapters included, with a click on every word where the voice would be, so the cues, the cuts and the pacing all run as they will when voiced. It prints this line, and one `TAKE_MISSING` per turn that has no voiced take yet, which in the starter is one per section, with the command that buys it.
 

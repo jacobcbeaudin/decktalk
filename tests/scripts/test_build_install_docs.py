@@ -12,6 +12,7 @@ import subprocess
 
 import pytest
 
+import build_changelog
 import build_install_docs as docs
 from support.paths import REPO
 
@@ -77,7 +78,7 @@ def test_every_block_of_one_name_in_a_page_is_written(monkeypatch: pytest.Monkey
     page = tmp_path / "page.md"
     page.write_text(block("uv-line", "pipx install decktalk\n") + "Between.\n" + block("uv-line", "pipx again\n"))
     written = docs.filled(page, docs.read_installer())
-    assert written.count(docs.UV_LINE) == 2, written
+    assert written.count(docs.uv_line(docs.read_installer())) == 2, written
     assert "pipx" not in written and "Between.\n" in written, written
 
 
@@ -92,7 +93,7 @@ def test_a_page_is_written_because_it_holds_a_marker(monkeypatch: pytest.MonkeyP
     unread.write_text(block("uv-line", "a tool's own file\n"))
     written = docs.files()
     assert list(written) == [faq]
-    assert docs.UV_LINE in written[faq] and "pipx" not in written[faq], written[faq]
+    assert docs.uv_line(docs.read_installer()) in written[faq] and "pipx" not in written[faq], written[faq]
 
 
 @pytest.mark.parametrize("where", ["help.yaml", ".changeset/note.mdx"])
@@ -102,10 +103,47 @@ def test_a_block_in_a_file_the_generator_does_not_read_is_refused(
     """A block in a kind or a folder the walk passes over would stay stale while `--check` passes."""
     monkeypatch.setattr(docs, "ROOT", tmp_path)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    (tmp_path / "page.md").write_text(block("uv-line", docs.UV_LINE + "\n"))
+    (tmp_path / "page.md").write_text(block("uv-line", docs.uv_line(docs.read_installer()) + "\n"))
     stray = tmp_path / where
     stray.parent.mkdir(exist_ok=True)
     stray.write_text(block("uv-line", "pipx install decktalk\n", opens="# ", closes=""))
     assert docs.pages() == [tmp_path / "page.md"]
     with pytest.raises(SystemExit, match=re.escape(where)):
         docs.files()
+
+
+CANDIDATE = (
+    "## [9.9.0-rc1](https://example.invalid/compare/v9.8.0...v9.9.0-rc1) (2000-01-01)\n\n### Bug Fixes\n\n* a fix\n\n"
+)
+"""The heading release-please writes at the top of CHANGELOG.md on a candidate branch."""
+
+
+def test_the_pin_skips_a_candidate_for_the_final_release_before_it() -> None:
+    """The docs page folds a candidate into its version, so only CHANGELOG.md's headings tell the two apart."""
+    final = "## [9.8.0](https://example.invalid/compare/v9.7.0...v9.8.0) (2000-01-01)\n\n### Features\n\n* a feature\n"
+    assert build_changelog.newest_final(f"# Changelog\n\n{CANDIDATE}{final}") == "9.8.0"
+    with pytest.raises(SystemExit, match="no final release"):
+        build_changelog.newest_final(f"# Changelog\n\n{CANDIDATE}")
+
+
+UV_BLOCKS = ("uv-line", "other-ways")
+"""The blocks that carry the uv line."""
+
+
+def test_every_uv_pin_names_the_newest_final_release() -> None:
+    """The uv line is the one pin a reader copies, so every page that carries it names a version PyPI serves."""
+    newest = build_changelog.newest_final(build_changelog.SOURCE.read_text(encoding="utf-8"))
+    pins = {
+        path.relative_to(REPO).as_posix(): [
+            pin
+            for block in docs.BLOCK.finditer(text)
+            if block["name"] in UV_BLOCKS
+            for pin in re.findall(r"decktalk==(\S+?)`", block["body"])
+        ]
+        for path, text in docs.files().items()
+    }
+    pinned = {path: found for path, found in pins.items() if found}
+    assert "README.md" in pinned, pins
+    assert all(found == [newest] for found in pinned.values()), (newest, pinned)
+    for path in pinned:
+        assert f"decktalk=={newest}`" in (REPO / path).read_text(encoding="utf-8"), path

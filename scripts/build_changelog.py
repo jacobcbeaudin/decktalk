@@ -110,6 +110,19 @@ def parse(text: str) -> list[Release]:
     return releases
 
 
+def newest_final(text: str) -> str:
+    """The newest version CHANGELOG.md heads without a prerelease suffix, the newest one PyPI serves as a release.
+
+    The docs page folds each candidate into the version it leads to, so its labels name that version
+    while only its candidate is on PyPI. Only a heading of CHANGELOG.md tells a final from a candidate.
+    """
+    for line in text.splitlines():
+        heading = RELEASE_RE.match(line)
+        if heading and not heading["suffix"]:
+            return heading["base"]
+    raise SystemExit("CHANGELOG.md heads no final release, so no page can pin one.")
+
+
 def once(block: str) -> str:
     """A section's lines with each change listed once, however many commits and merges carried it.
 

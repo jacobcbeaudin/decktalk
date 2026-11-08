@@ -10,7 +10,8 @@ name the block, and this generator writes them from install.sh, so a new channel
 install.sh and one `--write`. It writes the channel into RELEASING.md and into the upload of
 release.yml too, and the install line into the example workflow of the CI guide. That example names
 each action by its release tag, as a reader's own workflow would, so a new release of an action
-DeckTalk's CI pins leaves the guide true.
+DeckTalk's CI pins leaves the guide true. The uv line pins the newest final release CHANGELOG.md
+heads, so the one version pin a reader copies names a version PyPI serves as a release.
 
 A block starts at a line holding `install-docs:<name>:start` and ends at the next line holding
 `install-docs:<name>:end`, in whatever comment the file writes, and its lines take the start
@@ -30,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import build_changelog
 import generated
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -54,13 +56,14 @@ PREFIX_DEV = "https://prefix.dev/"
 
 @dataclass(frozen=True)
 class Install:
-    """The values install.sh holds, which every block is written from."""
+    """The values every block is written from: what install.sh holds, and the newest final release."""
 
     one_liner: str
     channel: str
     install_line: str
     windows_line: str
     bin_dir: str
+    release: str
 
     @property
     def upload_channel(self) -> str:
@@ -90,7 +93,8 @@ def read_installer() -> Install:
     home = re.findall(r'^\tPIXI_HOME="\$\{PIXI_HOME:-(.+)\}"$', text, re.M)
     if len(home) != 1:
         raise SystemExit("install.sh names no one default PIXI_HOME, so no page can name its bin folder.")
-    return Install(one_liner, channel, install_line, windows_line, f"{home[0]}/bin")
+    release = build_changelog.newest_final(build_changelog.SOURCE.read_text(encoding="utf-8"))
+    return Install(one_liner, channel, install_line, windows_line, f"{home[0]}/bin", release)
 
 
 def first_lines(install: Install) -> str:
@@ -114,12 +118,14 @@ def windows_line(install: Install) -> str:
     return f"```powershell\n{install.windows_line}\n```"
 
 
-UV_LINE = "`uv tool install decktalk` installs the same version from PyPI on every platform."
-"""The second path, in the one wording every page gives it."""
+def uv_line(install: Install) -> str:
+    """The second path, in the one wording every page gives it, pinned to a version PyPI serves as a release.
 
-
-def uv_line(_install: Install) -> str:
-    return UV_LINE
+    This line is the one pin a reader can copy. It names the newest final release, so a candidate
+    branch, whose version PyPI serves only as a prerelease, never names a version that is not
+    released.
+    """
+    return f"`uv tool install decktalk=={install.release}` installs the newest release from PyPI on every platform."
 
 
 def other_ways(install: Install) -> str:
@@ -127,7 +133,7 @@ def other_ways(install: Install) -> str:
         f"With Pixi already on the machine, `{install.install_line}` is the whole install, on Windows "
         "too. The one-line installer stops on Windows, because it is a POSIX shell script, so in "
         f"PowerShell `{install.windows_line}` installs Pixi with its own installer and then runs that "
-        f"line. {UV_LINE}"
+        f"line. {uv_line(install)}"
     )
 
 

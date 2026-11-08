@@ -25,7 +25,7 @@ The installer brings Pixi, and Pixi brings DeckTalk its own Python, on Linux and
 line puts Pixi's bin folder on this shell's PATH, because the installer edits no startup file.
 
 {/* install-docs:other-ways:start */}
-With Pixi already on the machine, `pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk` is the whole install, on Windows too. The one-line installer stops on Windows, because it is a POSIX shell script, so in PowerShell `powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk"` installs Pixi with its own installer and then runs that line. `uv tool install decktalk` installs the same version from PyPI on every platform.
+With Pixi already on the machine, `pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk` is the whole install, on Windows too. The one-line installer stops on Windows, because it is a POSIX shell script, so in PowerShell `powershell -ExecutionPolicy ByPass -c "irm -useb https://pixi.sh/install.ps1 | iex; pixi global install -c https://prefix.dev/jcbcodes/decktalk -c conda-forge decktalk"` installs Pixi with its own installer and then runs that line. `uv tool install decktalk==0.6.0` installs the newest release from PyPI on every platform.
 {/* install-docs:other-ways:end */}
 
 Chromium and ffmpeg are announced and downloaded by the first build that needs them, and

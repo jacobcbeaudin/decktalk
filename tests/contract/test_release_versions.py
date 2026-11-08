@@ -57,8 +57,8 @@ def packages() -> dict[str, dict[str, Any]]:
     return config()["packages"]
 
 
-def generic_versions(text: str) -> list[str]:
-    """Every version the generic updater rewrites: on a marked line, or between a block's start and end."""
+def marked_lines(text: str) -> list[str]:
+    """Every line the generic updater rewrites: a line with its marker, or a line between a block's start and end."""
     found: list[str] = []
     inside = False
     for line in text.splitlines():
@@ -69,8 +69,23 @@ def generic_versions(text: str) -> list[str]:
             inside = False
             continue
         if inside or LINE_MARKER in line:
-            found.extend(SEMVER.findall(line))
+            found.append(line)
     return found
+
+
+def generic_versions(text: str) -> list[str]:
+    """Every version the generic updater rewrites, on every line it rewrites."""
+    return [version for line in marked_lines(text) for version in SEMVER.findall(line)]
+
+
+def generic_files() -> list[str]:
+    """Every extra file the generic updater writes, by its path in the checkout."""
+    return [
+        extra["path"]
+        for package in packages().values()
+        for extra in package.get("extra-files", [])
+        if extra["type"] == "generic"
+    ]
 
 
 def written_versions() -> dict[str, str]:
@@ -101,6 +116,16 @@ def test_every_version_the_release_writes_is_one_version():
     except InvalidVersion as error:
         pytest.fail(f"a version the release writes is not a PEP 440 version: {error}")
     assert len(set(parsed.values())) == 1, f"the release writes more than one version: {versions}"
+
+
+@pytest.mark.parametrize("path", generic_files())
+def test_every_marked_line_carries_one_version(path):
+    """The generic updater replaces the first version on each line it rewrites and leaves the others,
+    so a second version on a marked line keeps the old number on the release branch. Each marked line
+    names its version once."""
+    lines = marked_lines((REPO / path).read_text(encoding="utf-8"))
+    doubled = [line.strip() for line in lines if len(SEMVER.findall(line)) > 1]
+    assert not doubled, f"{path} names a version more than once on a line the updater rewrites: {doubled}"
 
 
 def test_the_config_pins_no_version():
