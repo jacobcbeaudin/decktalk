@@ -11,7 +11,7 @@ DeckTalk turns a Markdown script and plain HTML slides into one narrated mp4, vo
 
 <!-- x-release-please-start-version -->
 
-[![A moment from the film Follows. A built film plays an invoice app, and its Share button lights the instant the word "Share" is said, while the waveform below marks each spoken word as it lands.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.6.0/assets/follows.gif)](https://decktalk.ai/films/follows)
+[![A moment from the film Follows. A built film plays an invoice app, and its Share button lights the instant the word "Share" is said, while the waveform below marks each spoken word as it lands.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.7.0-rc1/assets/follows.gif)](https://decktalk.ai/films/follows)
 
 <!-- x-release-please-end -->
 
@@ -159,7 +159,7 @@ DeckTalk is a pipeline of six stages: `narrate`, `cue`, `record`, `score`, `asse
 
 <!-- x-release-please-start-version -->
 
-![The edit cycle. One sentence changes in script.md, and only its section is voiced and recorded again, while every other section comes back from the cache.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.6.0/docs/images/edit-cycle-light.svg)
+![The edit cycle. One sentence changes in script.md, and only its section is voiced and recorded again, while every other section comes back from the cache.](https://raw.githubusercontent.com/jacobcbeaudin/decktalk/v0.7.0-rc1/docs/images/edit-cycle-light.svg)
 
 <!-- x-release-please-end -->
 
