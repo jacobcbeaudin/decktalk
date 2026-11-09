@@ -249,7 +249,7 @@ UBUNTU = Image("ubuntu", "26.04", "sha256:6a06111c3b0a8600feadb270aec771dc239bf4
 FEDORA = Image("fedora", "45", "sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c")
 """The newest Fedora, the one glibc distribution in the row that installs with dnf rather than apt."""
 
-ALPINE = Image("alpine", "3.24", "sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a")
+ALPINE = Image("alpine", "3.24", "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf")
 """The newest Alpine, a musl system, which the installer must refuse before it downloads anything."""
 
 # pixi-image:start
