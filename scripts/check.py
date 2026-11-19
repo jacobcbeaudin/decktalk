@@ -243,13 +243,13 @@ class Image:
 DEBIAN = Image("debian", "13-slim", "sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2")
 """Debian stable with nothing but apt, which is the bare machine most readers of the one-liner have."""
 
-UBUNTU = Image("ubuntu", "26.04", "sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c")
+UBUNTU = Image("ubuntu", "26.04", "sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db")
 """The newest Ubuntu LTS, which is what a new cloud machine or CI runner starts from."""
 
 FEDORA = Image("fedora", "45", "sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c")
 """The newest Fedora, the one glibc distribution in the row that installs with dnf rather than apt."""
 
-ALPINE = Image("alpine", "3.24", "sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a")
+ALPINE = Image("alpine", "3.24", "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf")
 """The newest Alpine, a musl system, which the installer must refuse before it downloads anything."""
 
 # pixi-image:start
